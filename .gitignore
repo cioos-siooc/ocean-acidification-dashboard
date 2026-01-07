@@ -1,0 +1,63 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.tox/
+.mypy_cache/
+*.log
+*.sqlite3
+.env
+.env.*
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# === Virtualenv tool (uv) ===
+.venv/
+.venv-*/
+
+# === NetCDF / large data ===
+# Ignore raw NetCDFs and large intermediate data (untracked by default)
+**.nc
+*.nc4
+process/data/
+
+# === Generated tiles / intermediate images ===
+# Keep front/public PNGs in version control, but ignore process outputs and out_tiles
+process/png/
+out_tiles/
+
+# === Node / Nuxt (front) ===
+/front/node_modules/
+/front/.nuxt/
+/front/.output/
+/front/dist/
+/front/.cache/
+/front/.parcel-cache/
+/front/.env
+/front/.env.*
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# === Docker / CI / Editor ===
+.dockerignore
+docker-compose.override.yml
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+
+# local env files
+.env.local
+.env.dev
+
+# keep package lock files (optionally) - do not ignore package-lock.json
+# package-lock.json

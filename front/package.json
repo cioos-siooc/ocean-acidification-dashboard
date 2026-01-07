@@ -1,0 +1,26 @@
+{
+  "name": "front",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "start": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@mdi/font": "^7.4.47",
+    "@nuxt/eslint": "^1.12.1",
+    "echarts": "^6.0.0",
+    "eslint": "^9.39.2",
+    "mapbox-gl": "^3.17.0",
+    "nuxt": "^4.2.2",
+    "typescript": "^5.9.3",
+    "vite-plugin-vuetify": "^2.1.2",
+    "vue": "^3.5.26",
+    "vue-router": "^4.6.4",
+    "vuetify": "^3.11.6"
+  }
+}
