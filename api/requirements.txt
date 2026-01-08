@@ -1,0 +1,7 @@
+fastapi>=0.128.0
+numpy>=2.4.0
+pandas>=2.3.3
+psycopg2-binary>=2.9.11
+uvicorn>=0.40.0
+xarray>=2025.12.0
+netCDF4>=1.6.4

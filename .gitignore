@@ -46,6 +46,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# === Downloaded Data ===
+data/
+
 # === Docker / CI / Editor ===
 .dockerignore
 docker-compose.override.yml

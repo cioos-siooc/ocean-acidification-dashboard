@@ -16,6 +16,7 @@ import { useRuntimeConfig } from '#app';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as echarts from 'echarts'
+import axios from 'axios' 
 
 const config = useRuntimeConfig();
 const mapContainer = ref<HTMLDivElement | null>(null);
@@ -367,21 +368,25 @@ async function addStations() {
     // Helper to add a single PNG image overlay given its public path (and sidecar .json bounds)
     async function addPngOverlay(publicPngPath: string, sourceId = 'png-image', layerId = 'png-image-layer') {
         if (!map) throw new Error('map not initialized');
-        // First try per-image sidecar JSON
+        // First try per-image sidecar JSON (use axios)
         const jsonPath = publicPngPath + '.json';
-        let resp = await fetch(jsonPath);
-        let meta = null;
-        if (resp.ok) {
-            meta = await resp.json();
-        } else {
+        let meta: any = null;
+        try {
+            const r = await axios.get(jsonPath);
+            meta = r.data;
+        } catch (e) {
             // fall back to a variable-level meta.json located at /png/<var>/meta.json
             const parts = publicPngPath.split('/').filter(Boolean);
             // expect ['png', '<var>', '<filename>']
             if (parts.length >= 2) {
                 const varName = parts[1];
                 const metaPath = `/png/${varName}/meta.json`;
-                resp = await fetch(metaPath);
-                if (resp.ok) meta = await resp.json();
+                try {
+                    const r2 = await axios.get(metaPath);
+                    meta = r2.data;
+                } catch (e2) {
+                    // ignore
+                }
             }
         }
         if (!meta || !meta.bounds || meta.bounds.length !== 4) throw new Error(`Invalid or missing meta JSON for: ${publicPngPath}`);

@@ -13,6 +13,10 @@
   "dependencies": {
     "@mdi/font": "^7.4.47",
     "@nuxt/eslint": "^1.12.1",
+    "axios": "^1.13.2",
+    "moment": "^2.29.4",
+    "moment-timezone": "^0.5.40",
+    "suncalc": "^1.9.0",
     "echarts": "^6.0.0",
     "eslint": "^9.39.2",
     "mapbox-gl": "^3.17.0",

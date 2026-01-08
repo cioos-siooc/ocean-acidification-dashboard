@@ -39,6 +39,7 @@ def _derive_filename_from_url(url: str) -> str:
 
 
 def download(
+    variable: str,
     from_date: str,
     to_date: str,
     out_path: str,
@@ -55,9 +56,7 @@ def download(
 
     url = (
         "https://salishsea.eos.ubc.ca/erddap/griddap/ubcSSg3DChemistryFields1hV21-11.nc"
-        f"?dissolved_inorganic_carbon%5B({from_date}):1:({to_date})%5D%5B(0.5000003):1:(441.4661)%5D%5B(0.0):1:(897.0)%5D%5B(0.0):1:(397.0)%5D,"  # noqa: E501
-        f"total_alkalinity%5B({from_date}):1:({to_date})%5D%5B(0.5000003):1:(441.4661)%5D%5B(0.0):1:(897.0)%5D%5B(0.0):1:(397.0)%5D,"
-        f"dissolved_oxygen%5B({from_date}):1:({to_date})%5D%5B(0.5000003):1:(441.4661)%5D%5B(0.0):1:(897.0)%5D%5B(0.0):1:(397.0)%5D"
+        f"?{variable}%5B({from_date}):1:({to_date})%5D%5B(0.5000003):1:(441.4661)%5D%5B(0.0):1:(897.0)%5D%5B(0.0):1:(397.0)%5D"
     )
 
     session = requests.Session()
@@ -114,10 +113,13 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         description="Download a NetCDF file from an ERDDAP/griddap URL"
     )
     p.add_argument(
-        "--from_date", help="Start date (ISO format)", required=True, dest="from_date"
+        "--variable", help="Variable name to download", required=True, dest="variable"
     )
     p.add_argument(
-        "--to_date", help="End date (ISO format)", required=True, dest="to_date"
+        "--from", help="Start date (ISO format)", required=True, dest="from_date"
+    )
+    p.add_argument(
+        "--to", help="End date (ISO format)", required=True, dest="to_date"
     )
     p.add_argument(
         "-f", "--force", action="store_true", help="Overwrite file if it exists"
@@ -137,19 +139,18 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
-    from_date = args.from_date
-    to_date = args.to_date
-    out = "out.nc"
+    out = f"/opt/data/nc/{args.variable}_{args.from_date}_to_{args.to_date}.nc"
 
     if os.path.exists(out) and not args.force:
         print(f"File exists: {out} (use --force to overwrite)")
         return 0
 
     try:
-        print(f"Downloading:\n  From: {from_date}\n  To: {to_date}\n  -> {out}")
+        print(f"Downloading:\n  From: {args.from_date}\n  To: {args.to_date}\n  -> {out}")
         path = download(
-            from_date,
-            to_date,
+            args.variable,
+            args.from_date,
+            args.to_date,
             out,
             chunk_size=args.chunk_size,
             max_retries=args.retries,

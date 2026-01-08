@@ -9,6 +9,10 @@ services:
     env_file:
       - .env.dev
     command: npm run dev
-  # api:
-  #   volumes:
-  #     - ./api:/app
+  api:
+    command: uvicorn server:app --reload --host 0.0.0.0 --port 4000
+    volumes:
+      - ./api:/app
+  process:
+    volumes:
+      - ./process:/app

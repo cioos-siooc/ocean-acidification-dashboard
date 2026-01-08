@@ -6,7 +6,7 @@ services:
       args:
         - NUXT_PUBLIC_API_BASE=https://oa.cioospacificlabs.ca/api
     ports:
-      - "9000:3000"
+      - "${FRONT_PORT:-3000}:3000"
     volumes: []
     environment:
       - NUXT_PUBLIC_API_BASE=https://oa.cioospacificlabs.ca/api
@@ -15,54 +15,52 @@ services:
     command: ${FRONTEND_COMMAND:-npm run start}
     restart: unless-stopped
 
-  # api:
-  #   build: ./api
-  #   ports:
-  #     - "9001:8000"
-  #   volumes:
-  #     - ./lib:/app/lib
-  #     - ./bathymetry_images:/app/bathymetry_images
-  #     - ./trajectory_maps:/app/trajectory_maps
-  #   environment:
-  #     - DB_HOST=db
-  #     - DB_NAME=glider
-  #     - DB_PORT=5432
-  #     - DB_USER=postgres
-  #     - DB_PASSWORD=postgres
-  #   depends_on:
-  #     - db
-  #   restart: unless-stopped
+  api:
+    build: ./api
+    ports:
+      - "${API_PORT:-4000}:4000"
+    volumes:
+      - ./data:/opt/data
+      # - ./lib:/app/lib
+      # - ./bathymetry_images:/app/bathymetry_images
+      # - ./trajectory_maps:/app/trajectory_maps
+    environment:
+      - DB_HOST=db
+      - DB_NAME=oa
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    depends_on:
+      - db
+    restart: unless-stopped
 
-  # db:
-  #   image: postgis/postgis:16-master
-  #   environment:
-  #     - POSTGRES_DB=glider
-  #     - POSTGRES_USER=postgres
-  #     - POSTGRES_PASSWORD=postgres
-  #   volumes:
-  #     - /opt/glidersDB:/var/lib/postgresql/data
-  #   ports:
-  #     - "9002:5432"
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
-  #     interval: 5s
-  #     timeout: 5s
-  #     retries: 5
-  #   restart: unless-stopped
+  db:
+    image: postgis/postgis:16-master
+    environment:
+      - POSTGRES_DB=oa
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - ./DB:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
-  # process:
-  #   build: ./process
-  #   profiles: ["tools"]
-  #   environment:
-  #     - DB_HOST=db
-  #     - DB_NAME=glider
-  #     - DB_USER=postgres
-  #     - DB_PASSWORD=postgres
-  #   volumes:
-  #     - ./lib:/app/lib
-  #     - ./process/bathymetry:/app/bathymetry
-  #     - ./bathymetry_images:/app/bathymetry_images
-  #     - ./trajectory_maps:/app/trajectory_maps
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
+  process:
+    build: ./process
+    # profiles: ["tools"]
+    environment:
+      - DB_HOST=db
+      - DB_NAME=oa
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    volumes:
+      # - ./lib:/app/lib
+      - ./data:/opt/data
+    depends_on:
+      db:
+        condition: service_healthy
