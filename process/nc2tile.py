@@ -306,37 +306,8 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
     # Use the capped array (if applicable) so values outside absolute bounds are clipped prior to packing.
     if not simulate:
         write_png_packed(interp_capped, alpha, out_png, precision=pack_precision, base=0.0)
-    # compute bbox (in geographic coordinates) before writing sidecar
-    if Transformer is None:
-        raise RuntimeError("pyproj.Transformer is required in worker")
-    tmerc2ll = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-    corners_x = [xx_merc[0, 0], xx_merc[0, -1], xx_merc[-1, -1], xx_merc[-1, 0]]
-    corners_y = [yy_merc[0, 0], yy_merc[0, -1], yy_merc[-1, -1], yy_merc[-1, 0]]
-    lons, lats = tmerc2ll.transform(corners_x, corners_y)
-    lonmin, lonmax = float(np.min(lons)), float(np.max(lons))
-    latmin, latmax = float(np.min(lats)), float(np.max(lats))
-
-    # write per-datetime sidecar (write per-datetime meta.json)
-    sidecar_path = os.path.join(png_dir, 'meta.json')
-    # write per-datetime sidecar (write per-datetime meta.json). Include packing metadata when used.
-    sidecar_meta = {'bounds': [lonmin, latmin, lonmax, latmax], 'depth': (None if d_val is None else float(d_val))}
-    # packing is fixed to a precision value (pack_precision) and base is fixed to 0.0 for consistency across files
-    sidecar_meta['packed'] = {'precision': float(pack_precision), 'base': 0.0}
-
-    if not simulate:
-        write_sidecar_json(sidecar_path, lonmin, latmin, lonmax, latmax, depth=(None if d_val is None else float(d_val)))
-        # write packed metadata into the same meta.json (append)
-        try:
-            with open(sidecar_path, 'r') as fh:
-                jm = json.load(fh)
-            jm['packed'] = sidecar_meta['packed']
-            with open(sidecar_path, 'w') as fh:
-                json.dump(jm, fh)
-        except Exception:
-            pass
-    else:
-        # simulate: don't write files but we still compute sidecar info
-        _ = sidecar_meta
+    # per-datetime sidecar files are not written anymore; we use the per-variable meta.json
+    # for bounds and packing metadata instead (fixed vmin/vmax and fixed bounds apply).
     if verbose:
         if d_val is None:
             print(f"Wrote (worker): {out_png}")
@@ -545,6 +516,8 @@ def process_variable(
 
     # meta.json will be written after we have the time/depth details
     meta = { 'bounds': [lonmin, latmin, lonmax, latmax], 'vmin': vmin, 'vmax': vmax }
+    # Include packing metadata (precision and base) so consumers know the packing format
+    meta['packed'] = {'precision': float(pack_precision), 'base': 0.0}
 
     time_dim = None
     depth_dim = None
