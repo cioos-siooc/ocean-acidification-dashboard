@@ -2,8 +2,8 @@
 """Reproject NetCDF variables to Web-Mercator and write per-timestep grayscale PNGs.
 
 Behavior (defaults chosen according to your inputs):
-- Uses xarray to open `ds_grid` and `ds_data` NetCDF files.
-- Reads lat/lon arrays from `ds_grid` (supports 2D or 1D coords named like 'lat', 'latitude', 'lon', 'longitude').
+- Uses xarray to open a `ds_data` NetCDF file (contains variables and time). Lat/lon grid is read from the Postgres `grid` table.
+- Reads lat/lon arrays from the Postgres `grid` table (columns: row_idx, col_idx, lat, lon). If the DB cannot be reached or the grid is missing the script will raise an error and exit.
 - For each variable in `ds_data` (or a selected subset) and for each time step,
   regrids the variable from the source curvilinear grid to a regular Web-Mercator (EPSG:3857) grid
   using `scipy.interpolate.griddata` (linear interpolation by default).
@@ -17,7 +17,7 @@ Dependencies:
 Example usage:
 
     python nc2tile.py \ 
-      --grid ds_grid.nc --data ds_data.nc \ 
+      --data ds_data.nc \ 
       --vars dissolved_inorganic_carbon,total_alkalinity \ 
       --outdir output --max-dim 2048 --interp linear
 
@@ -40,63 +40,83 @@ import xarray as xr
 from scipy.interpolate import griddata
 from PIL import Image
 
+# DB access for curvilinear grid
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
 try:
     from pyproj import Transformer
 except Exception:
     Transformer = None
+
+# module-level cache for grid loaded from DB
+GRID_CACHE = None
+
+import logging
 
 try:
     from tqdm import tqdm
 except Exception:  # optional
     tqdm = None
 
+logger = logging.getLogger("nc2tile")
 
-def find_latlon(ds_grid: xr.Dataset) -> Tuple[np.ndarray, np.ndarray]:
-    """Return lon, lat 2D arrays from ds_grid.
 
-    Handles cases where lon/lat are 1D coordinates or 2D variables named
-    'lon','longitude','lat','latitude'. Raises ValueError if not found.
+
+
+
+# ---- DB helpers for curvilinear grid ---------------------------------
+
+def get_db_conn():
+    host = os.getenv('PGHOST', 'db')
+    port = int(os.getenv('PGPORT', 5432))
+    db = os.getenv('PGDATABASE', 'oa')
+    user = os.getenv('PGUSER', 'postgres')
+    pw = os.getenv('PGPASSWORD', 'postgres')
+    return psycopg2.connect(host=host, port=port, dbname=db, user=user, password=pw)
+
+
+def get_grid_from_db(table: str = 'grid') -> Tuple[np.ndarray, np.ndarray]:
+    """Load curvilinear grid lon/lat arrays from Postgres table named `table`.
+
+    Expects columns: row_idx, col_idx, lon, lat
+    Returns lon2d, lat2d shaped (nrows, ncols) aligned by sorted unique row/col indices.
+    Caches result in module-level GRID_CACHE.
     """
-    # Candidate names
-    lon_names = ["lon", "longitude", "x", "lon_0"]
-    lat_names = ["lat", "latitude", "y", "lat_0"]
+    global GRID_CACHE
+    if GRID_CACHE is not None:
+        return GRID_CACHE
 
-    # First check for 2D variables
-    for ln in lon_names:
-        for la in lat_names:
-            if ln in ds_grid and la in ds_grid:
-                lon = ds_grid[ln].values
-                lat = ds_grid[la].values
-                if lon.ndim == 2 and lat.ndim == 2:
-                    return lon, lat
+    conn = get_db_conn()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(f"SELECT row_idx, col_idx, lon, lat FROM {table}")
+            rows = cur.fetchall()
+    finally:
+        conn.close()
 
-    # Next check for 1D coords (gridX, gridY mapping)
-    # Common pattern: lat(gridY), lon(gridX) OR lat(gridY, gridX) already covered
-    # Search coords for 1D
-    lon1 = None
-    lat1 = None
-    for name in ds_grid.coords:
-        if name.lower() in lon_names and ds_grid.coords[name].ndim == 1:
-            lon1 = ds_grid.coords[name].values
-        if name.lower() in lat_names and ds_grid.coords[name].ndim == 1:
-            lat1 = ds_grid.coords[name].values
-    if lon1 is not None and lat1 is not None:
-        # Build meshgrid
-        lon2d, lat2d = np.meshgrid(lon1, lat1)
-        return lon2d, lat2d
+    if not rows:
+        raise ValueError(f"Grid table '{table}' is empty or missing")
 
-    # Sometimes variables are named 'longitude' and 'latitude' but 1D
-    # Try variables too
-    for name in ds_grid.variables:
-        if name.lower() in lon_names and ds_grid[name].ndim == 1:
-            lon1 = ds_grid[name].values
-        if name.lower() in lat_names and ds_grid[name].ndim == 1:
-            lat1 = ds_grid[name].values
-    if lon1 is not None and lat1 is not None:
-        lon2d, lat2d = np.meshgrid(lon1, lat1)
-        return lon2d, lat2d
+    row_idxs = sorted({r['row_idx'] for r in rows})
+    col_idxs = sorted({r['col_idx'] for r in rows})
+    row_pos = {v: i for i, v in enumerate(row_idxs)}
+    col_pos = {v: j for j, v in enumerate(col_idxs)}
 
-    raise ValueError("Unable to locate latitude/longitude in ds_grid. Looked for common names.")
+    nrows = len(row_idxs)
+    ncols = len(col_idxs)
+    lon = np.full((nrows, ncols), np.nan, dtype=float)
+    lat = np.full((nrows, ncols), np.nan, dtype=float)
+
+    for r in rows:
+        i = row_pos[r['row_idx']]
+        j = col_pos[r['col_idx']]
+        lon[i, j] = float(r['lon'])
+        lat[i, j] = float(r['lat'])
+
+    GRID_CACHE = (lon, lat)
+    logger.info("Worker loaded grid from DB table 'grid'")
+    return GRID_CACHE
 
 
 def compute_mercator_grid_bounds(lon: np.ndarray, lat: np.ndarray) -> Tuple[float, float, float, float]:
@@ -104,8 +124,8 @@ def compute_mercator_grid_bounds(lon: np.ndarray, lat: np.ndarray) -> Tuple[floa
     if Transformer is None:
         raise RuntimeError("pyproj.Transformer is required but not installed")
     transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
-    lon_flat = np.array([lon.min(), lon.max()])
-    lat_flat = np.array([lat.min(), lat.max()])
+    lon_flat = np.array([np.nanmin(lon), np.nanmax(lon)])
+    lat_flat = np.array([np.nanmin(lat), np.nanmax(lat)])
     xs, ys = transformer.transform(lon_flat, lat_flat)
     minx, maxx = min(xs), max(xs)
     miny, maxy = min(ys), max(ys)
@@ -177,10 +197,12 @@ def reproject_and_interpolate(
     return interpolated.reshape(xx_merc.shape)
 
 
-def _process_task(task: Tuple) -> str:
-    """Worker function executed in a separate process. Returns the path of the written PNG."""
+def _process_task(task: Tuple) -> Tuple[str, str]:
+    """Worker function executed in a separate process.
+
+    Returns (path_of_written_png, t_str) where t_str is the folder (time) string.
+    """
     (
-        ds_grid_path,
         ds_data_path,
         varname,
         t_idx,
@@ -189,6 +211,8 @@ def _process_task(task: Tuple) -> str:
         d_val,
         vmin,
         vmax,
+        erddap_min,
+        erddap_max,
         minx,
         miny,
         maxx,
@@ -197,15 +221,22 @@ def _process_task(task: Tuple) -> str:
         h,
         method,
         clip,
-        out_var_dir,
         verbose,
+        simulate,
+        pack_precision,
     ) = task
 
-    # Open datasets in worker process
-    ds_grid = xr.open_dataset(ds_grid_path)
+    # Open dataset in worker process
     ds_data = xr.open_dataset(ds_data_path)
 
-    lon_src, lat_src = find_latlon(ds_grid)
+    # If we're simulating, return early without doing heavy work
+    if simulate:
+        ds_data.close()
+        return None, t_str
+
+    # Load curvilinear grid from DB (no fallback). This will raise if DB not available.
+    # get_grid_from_db logs a message only on the first load per process to avoid repeated DB hits.
+    lon_src, lat_src = get_grid_from_db('grid')
 
     # build mercator grid in worker to avoid large pickled arrays
     xs = np.linspace(minx, maxx, int(w))
@@ -249,18 +280,35 @@ def _process_task(task: Tuple) -> str:
     gray = scale_to_uint8(interp, vmin_local, vmax_local, clip_percentile=clip)
     alpha = np.where(np.isnan(interp) | (interp == 0), 0, 255).astype(np.uint8)
 
-    # filename
-    if d_val is None:
-        out_png = os.path.join(out_var_dir, f"{varname}_{t_str}.png")
+    # Apply erddap-provided absolute min/max caps to the interpolated values before packing to RGB.
+    # Leave NaNs untouched (they will remain transparent in alpha).
+    if erddap_min is not None or erddap_max is not None:
+        interp_capped = cap_to_range(interp, erddap_min, erddap_max)
     else:
-        depth_s = str(d_val).replace('.', 'p').replace('-', 'm')
-        out_png = os.path.join(out_var_dir, f"{varname}_{t_str}_depth{depth_s}.png")
+        interp_capped = interp
 
-    write_png_rgba(gray, alpha, out_png)
+    # filename and folder per user request: /opt/data/png/{var}/{datetime}/{depth}.png
+    png_root = os.getenv('PNG_ROOT', '/opt/data/png')
+    png_dir = os.path.join(png_root, varname, t_str)
+    os.makedirs(png_dir, exist_ok=True)
 
-    # compute bbox and sidecar
+    if d_val is None:
+        fname = 'time.png'
+    else:
+        # round depth to 1 decimal and format like 0p5, 18p0, etc.
+        depth_round = round(float(d_val), 1)
+        depth_s = f"{depth_round:.1f}".replace('.', 'p').replace('-', 'm')
+        fname = f"{depth_s}.png"
+
+    out_png = os.path.join(png_dir, fname)
+
+    # Pack values into RGB channels at fixed precision using base=0.0.
+    # Use the capped array (if applicable) so values outside absolute bounds are clipped prior to packing.
+    if not simulate:
+        write_png_packed(interp_capped, alpha, out_png, precision=pack_precision, base=0.0)
+    # compute bbox (in geographic coordinates) before writing sidecar
     if Transformer is None:
-        raise RuntimeError("pyproj is required in worker")
+        raise RuntimeError("pyproj.Transformer is required in worker")
     tmerc2ll = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
     corners_x = [xx_merc[0, 0], xx_merc[0, -1], xx_merc[-1, -1], xx_merc[-1, 0]]
     corners_y = [yy_merc[0, 0], yy_merc[0, -1], yy_merc[-1, -1], yy_merc[-1, 0]]
@@ -268,16 +316,38 @@ def _process_task(task: Tuple) -> str:
     lonmin, lonmax = float(np.min(lons)), float(np.max(lons))
     latmin, latmax = float(np.min(lats)), float(np.max(lats))
 
+    # write per-datetime sidecar (write per-datetime meta.json)
+    sidecar_path = os.path.join(png_dir, 'meta.json')
+    # write per-datetime sidecar (write per-datetime meta.json). Include packing metadata when used.
+    sidecar_meta = {'bounds': [lonmin, latmin, lonmax, latmax], 'depth': (None if d_val is None else float(d_val))}
+    # packing is fixed to a precision value (pack_precision) and base is fixed to 0.0 for consistency across files
+    sidecar_meta['packed'] = {'precision': float(pack_precision), 'base': 0.0}
+
+    if not simulate:
+        write_sidecar_json(sidecar_path, lonmin, latmin, lonmax, latmax, depth=(None if d_val is None else float(d_val)))
+        # write packed metadata into the same meta.json (append)
+        try:
+            with open(sidecar_path, 'r') as fh:
+                jm = json.load(fh)
+            jm['packed'] = sidecar_meta['packed']
+            with open(sidecar_path, 'w') as fh:
+                json.dump(jm, fh)
+        except Exception:
+            pass
+    else:
+        # simulate: don't write files but we still compute sidecar info
+        _ = sidecar_meta
     if verbose:
         if d_val is None:
             print(f"Wrote (worker): {out_png}")
         else:
             print(f"Wrote (worker): {out_png} (depth={d_val})")
 
-    ds_grid.close()
     ds_data.close()
 
-    return out_png
+    if simulate:
+        return None, t_str
+    return out_png, t_str
 
 
 def scale_to_uint8(arr: np.ndarray, vmin: float, vmax: float, clip_percentile: Optional[Tuple[float, float]] = None) -> np.ndarray:
@@ -308,6 +378,25 @@ def scale_to_uint8(arr: np.ndarray, vmin: float, vmax: float, clip_percentile: O
     return out
 
 
+def cap_to_range(arr: np.ndarray, vmin: Optional[float], vmax: Optional[float]) -> np.ndarray:
+    """Return a copy of `arr` with values capped to [vmin, vmax].
+
+    - Values that are NaN are left untouched.
+    - If vmin or vmax is None, that bound is ignored.
+    """
+    a = np.array(arr, dtype=float, copy=True)
+    fin = np.isfinite(a)
+    if vmin is not None:
+        mask = fin & (a < float(vmin))
+        if mask.any():
+            a[mask] = float(vmin)
+    if vmax is not None:
+        mask = fin & (a > float(vmax))
+        if mask.any():
+            a[mask] = float(vmax)
+    return a
+
+
 def write_png_rgba(gray_u8: np.ndarray, alpha_mask: np.ndarray, outpath: str) -> None:
     """Write 2D uint8 grayscale + alpha mask (0..255) to RGBA PNG using Pillow."""
     # gray_u8: HxW, alpha_mask: HxW uint8
@@ -321,10 +410,35 @@ def write_png_rgba(gray_u8: np.ndarray, alpha_mask: np.ndarray, outpath: str) ->
     img.save(outpath, compress_level=1)
 
 
-def ensure_out_dirs(outdir: str, varname: str) -> str:
-    d = os.path.join(outdir, varname)
-    os.makedirs(d, exist_ok=True)
-    return d
+def write_png_packed(float_arr: np.ndarray, alpha_mask: np.ndarray, outpath: str, precision: float = 0.1, base: float = 0.0) -> None:
+    """Pack float values into RGB channels using fixed-point quantization.
+
+    - precision: the smallest distinguishable unit (e.g., 0.1)
+    - base: the value that maps to 0 in packed representation (quant = round((val-base)/precision))
+
+    Quantized integers are clamped to [0, 2^24-1] and split into R,G,B bytes (big-endian).
+    Alpha channel is preserved as provided (0..255 uint8).
+    """
+    h, w = float_arr.shape
+    # quantize
+    q = np.rint((float_arr - base) / float(precision)).astype(np.int64)
+    q = np.where(np.isnan(float_arr), 0, q)
+    q = np.clip(q, 0, 2 ** 24 - 1).astype(np.int64)
+
+    r = ((q >> 16) & 255).astype(np.uint8)
+    g = ((q >> 8) & 255).astype(np.uint8)
+    b = (q & 255).astype(np.uint8)
+
+    rgba = np.zeros((h, w, 4), dtype=np.uint8)
+    rgba[..., 0] = r
+    rgba[..., 1] = g
+    rgba[..., 2] = b
+    rgba[..., 3] = alpha_mask
+
+    img = Image.fromarray(rgba, mode="RGBA")
+    img.save(outpath, compress_level=1)
+
+
 
 
 def write_sidecar_json(outpath: str, lonmin: float, latmin: float, lonmax: float, latmax: float, depth: Optional[float] = None) -> None:
@@ -362,21 +476,23 @@ def compute_global_minmax(ds_data: xr.Dataset, varname: str) -> Tuple[float, flo
 
 
 def process_variable(
-    ds_grid_path: str,
     ds_data_path: str,
     varname: str,
-    outdir: str,
     max_dim: int = 2048,
     method: str = "linear",
     clip_percentile: Optional[Tuple[float, float]] = None,
     global_scale: bool = True,
     verbose: bool = True,
     workers: int = 1,
+    simulate: bool = False,
+    pack_precision: float = 0.1,
 ):
-    ds_grid = xr.open_dataset(ds_grid_path)
-    ds_data = xr.open_dataset(ds_data_path)
+    # Load curvilinear grid from DB table 'grid'. Fail hard if unavailable.
+    lon_src, lat_src = get_grid_from_db('grid')
+    # get_grid_from_db logs a message only on the first load per process to avoid repeated DB hits.
 
-    lon_src, lat_src = find_latlon(ds_grid)
+    # Open ds_data and compute mercator bounds
+    ds_data = xr.open_dataset(ds_data_path)
 
     # Mercator bounds
     minx, miny, maxx, maxy = compute_mercator_grid_bounds(lon_src, lat_src)
@@ -393,7 +509,29 @@ def process_variable(
     else:
         vmin, vmax = None, None
 
-    out_var_dir = ensure_out_dirs(outdir, varname)
+    # Try to fetch any absolute min/max values stored in erddap_variables for this variable.
+    erddap_min = None
+    erddap_max = None
+    try:
+        conn = get_db_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT min, max FROM erddap_variables WHERE variable=%s LIMIT 1",
+                    (varname,),
+                )
+                row = cur.fetchone()
+                if row:
+                    erddap_min, erddap_max = row[0], row[1]
+        finally:
+            conn.close()
+    except Exception:
+        # Don't fail if DB is not available; just proceed without erddap caps
+        erddap_min = None
+        erddap_max = None
+
+    if verbose and (erddap_min is not None or erddap_max is not None):
+        print(f"Using erddap min/max for {varname}: min={erddap_min}, max={erddap_max}")
 
     # compute overall bounds for the variable (don't write meta.json yet - wait until we know time/depth info)
     if Transformer is None:
@@ -434,13 +572,21 @@ def process_variable(
         meta['time_count'] = int(len(times))
     except Exception:
         meta['time_count'] = None
+
+    # Write per-variable meta.json into PNG_ROOT/<var>/meta.json so the API can serve it
+    png_root = os.getenv('PNG_ROOT', '/opt/data/png')
+    out_var_dir = os.path.join(png_root, varname)
+    os.makedirs(out_var_dir, exist_ok=True)
     with open(os.path.join(out_var_dir, 'meta.json'), 'w') as fh:
         json.dump(meta, fh)
 
     # Prepare task list (time x depth) to be executed either locally or in parallel workers
     tasks = []
+    tstr_to_iso = {}
     for idx, tval in enumerate(times):
         tstr = np.datetime_as_string(tval, unit="s").replace(":", "")
+        t_iso = str(np.datetime_as_string(tval, unit="s"))
+        tstr_to_iso[str(tstr)] = t_iso
         depth_iter = [(None, None)]
         if depth_vals is not None:
             depth_iter = list(enumerate(depth_vals))
@@ -450,8 +596,8 @@ def process_variable(
             send_vmin = vmin if global_scale else None
             send_vmax = vmax if global_scale else None
 
+            # include any absolute min/max stored in erddap_variables for this variable
             tasks.append((
-                ds_grid_path,
                 ds_data_path,
                 varname,
                 int(idx),
@@ -460,6 +606,8 @@ def process_variable(
                 (float(dval) if dval is not None else None),
                 send_vmin,
                 send_vmax,
+                erddap_min,
+                erddap_max,
                 float(minx),
                 float(miny),
                 float(maxx),
@@ -468,18 +616,29 @@ def process_variable(
                 int(h),
                 method,
                 clip_percentile,
-                out_var_dir,
                 verbose,
+                simulate,
+                pack_precision,
             ))
 
+    processed_tstrs = set()
     if workers <= 1:
         # run sequentially in-process (use same worker fn)
         for task in tasks:
-            _process_task(task)
+            try:
+                out = _process_task(task)
+            except Exception as exc:
+                if verbose:
+                    print(f"Task failed: {exc}")
+            else:
+                # out is (out_png, t_str)
+                if isinstance(out, tuple) and len(out) >= 2:
+                    processed_tstrs.add(out[1])
     else:
         total = len(tasks)
         if total == 0:
-            return
+            ds_data.close()
+            return []
         if verbose:
             print(f"Dispatching {total} tasks to {workers} workers...")
         with ProcessPoolExecutor(max_workers=workers) as ex:
@@ -498,22 +657,27 @@ def process_variable(
                 else:
                     if verbose:
                         print(f"Completed: {out}")
-    ds_grid.close()
+                    if isinstance(out, tuple) and len(out) >= 2:
+                        processed_tstrs.add(out[1])
     ds_data.close()
+
+    # return ISO-format datetimes for all successfully processed time folders
+    processed_iso = [tstr_to_iso[t] for t in sorted(processed_tstrs)]
+    return processed_iso
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Regrid NetCDF variables to Web-Mercator PNG tiles")
-    p.add_argument("--grid", required=True, help="Path to ds_grid NetCDF (contains lat/lon)")
     p.add_argument("--data", required=True, help="Path to ds_data NetCDF (contains variables with gridY/gridX + time)")
     p.add_argument("--vars", default=None, help="Comma-separated variable names to process (default: all variables in ds_data)")
-    p.add_argument("--outdir", default="out_tiles", help="Output directory")
     p.add_argument("--max-dim", type=int, default=2048, help="Maximum pixel dimension for output (preserves aspect ratio)")
     p.add_argument("--interp", choices=["linear", "nearest", "cubic"], default="linear", help="Interpolation method")
     p.add_argument("--clip-pct", default=None, help="Clip percentiles e.g. 1,99 for contrast stretching (optional)")
     p.add_argument("--no-global-scale", action="store_true", help="Disable global per-variable scaling (use per-image) ")
     p.add_argument("--workers", type=int, default=None, help="Number of parallel worker processes to use (default: cpu_count()-1)")
     p.add_argument("--quiet", action="store_true", help="Less verbose")
+    p.add_argument("--simulate", action="store_true", help="Simulate PNG generation; don't write PNG/sidecar files, but return processed datetimes")
+    # packing precision is fixed at 0.1 (no CLI flag)
     return p.parse_args(argv)
 
 
@@ -544,22 +708,26 @@ def main(argv: Optional[list[str]] = None) -> int:
     else:
         workers = max(1, int(args.workers))
 
+    all_processed = []
     for var in varnames:
         print(f"Processing variable: {var} (workers={workers})")
-        process_variable(
-            args.grid,
+        processed = process_variable(
             args.data,
             var,
-            args.outdir,
             max_dim=args.max_dim,
             method=args.interp,
             clip_percentile=clip,
             global_scale=not args.no_global_scale,
             verbose=not args.quiet,
             workers=workers,
+            simulate=args.simulate,
+            # pack_precision is fixed at 0.1
+            pack_precision=0.1,
         )
+        if processed:
+            all_processed.extend(processed)
 
-    return 0
+    return all_processed
 
 
 if __name__ == "__main__":

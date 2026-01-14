@@ -1,7 +1,10 @@
 <template>
     <div class="d-flex flex-column h-screen overflow-hidden">
         <!-- Top: Map -->
-        <div ref="mapContainer" class="flex-grow-1"></div>
+        <div ref="mapContainer" class="flex-grow-1 map-container">
+            <Layers @toggleLayer="onToggleLayer" />
+            <DepthSlider />
+        </div>
 
         <!-- Bottom: Global Chart Footer -->
         <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
@@ -11,32 +14,55 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRuntimeConfig } from '#app';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as echarts from 'echarts'
 import axios from 'axios'
 import moment from 'moment-timezone'
+import Layers from '../components/layers.vue'
+import DepthSlider from '../components/depth-slider.vue'
+
+import { computeNightRanges } from '../../composables/useSunCalc'
+
+///////////////////////////////////  SETUP  ///////////////////////////////////
+
+import { useMainStore } from '../stores/main'
+const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
+const apiBaseUrl = config.public.apiBaseUrl
+
 const mapContainer = ref<HTMLDivElement | null>(null);
 const globalChartContainer = ref<HTMLDivElement | null>(null);
 let map: mapboxgl.Map | null = null;
 let globalChart: echarts.ECharts | null = null;
+let __seriesTs: number[] = []; // Global cache for chart timestamps to support "click anywhere"
+const meta = ref<any>(null);
+
+// [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
+const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, number]];
 
 ///////////////////////////////////  HOOKS  ///////////////////////////////////
 onMounted(async () => {
     mapboxgl.accessToken = config.public.mapboxToken;
     if (!mapContainer.value) return;
 
+
+
     map = new mapboxgl.Map({
         container: mapContainer.value,
-        style: 'mapbox://styles/taimazb/cmk1jwu8o005101sv1j41cj6j?optimize=true&fresh=true',
-        center: [-123.2, 48.8],
-        zoom: 9.5,
-        pitch: 45,
+        // style: 'mapbox://styles/taimazb/cmk1jwu8o005101sv1j41cj6j?optimize=true&fresh=true',
+        style: 'mapbox://styles/taimazb/cmkcsejwe005m01ssgtdz3tgd?optimize=true&fresh=true',
+        // center: [-123.2, 48.8],
+        bounds,
+        // zoom: 9.5,
+        // pitch: 45,
+        antialias: true,
+        preserveDrawingBuffer: true, // needed for exporting canvas
     });
+    console.log(map);
 
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
@@ -94,21 +120,65 @@ onBeforeUnmount(() => {
     }
 });
 
+///////////////////////////////////  WATCH  ///////////////////////////////////
+
+// Watcher: add/update/remove overlay when selected_variable changes
+watch(() => mainStore.selected_variable, async (newVar) => {
+    console.log('HERE');
+    if (!map) return;
+    if (!newVar) { removePngOverlay(); return; }
+    try {
+        await getMetadata();
+        await updatePngOverlay();
+    } catch (e) {
+        console.error('Failed to load PNG for variable', newVar, e);
+        removePngOverlay();
+    }
+}, { deep: true, immediate: true });
 
 ///////////////////////////////////  MEDTHODS  ///////////////////////////////////
+
+async function getVariables() {
+    try {
+        const r = await axios.get(`${apiBaseUrl}/variables`);
+        const data = r.data;
+
+        // Convert datetimes from string to moment objects
+        data.forEach((v: any) => {
+            v.dts = v.dts.map((dtstr: string) => moment.utc(dtstr));
+        });
+
+        mainStore.setVariables(data);
+        console.log(data);
+
+        if (data.length > 0) {
+            const dts = data[0].dts
+            mainStore.setSelectedVariable(data[0].var, dts[dts.length - 1], 5.5);
+        }
+    } catch (e) {
+        console.error('Failed to fetch variables:', e);
+    }
+}
+
+async function getMetadata() {
+    try {
+        const varId = mainStore.selected_variable.var;
+        const metaPath = `${apiBaseUrl}/metadata/${varId}`;
+        console.log('metaPath: ', metaPath);
+
+        const r = await axios.get(metaPath);
+        meta.value = JSON.parse(r.data);
+    } catch (e) {
+        console.error('Failed to fetch metadata:', e);
+    }
+}
+
 async function addStations() {
     if (!map) return;
 
-    // For the new flow we don't use station points. Instead, add a PNG overlay and
-    // register a click handler that queries the API for a timeseries at the clicked coordinate.
+    getVariables()
 
-    // Example PNG — change this to the variable you want to display
-    const examplePng = '/png/dissolved_inorganic_carbon/dissolved_inorganic_carbon_depth0p5000003_2026-01-06T123000.png';
-    try {
-        await addPngOverlay(examplePng);
-    } catch (e) {
-        console.warn('Failed to add PNG overlay:', e);
-    }
+    // For the new flow we don't use station points. Instead, we start with NO PNG overlay.
 
     // initialize the chart now with an empty series
     try { if (globalChart) { globalChart.dispose(); globalChart = null; } } catch (e) { /* ignore */ }
@@ -117,119 +187,233 @@ async function addStations() {
 
     const option = {
         title: { text: 'Timeseries', left: 'center' },
-        tooltip: { trigger: 'axis' },
-        xAxis: { type: 'time' },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'time'
+        },
         yAxis: { type: 'value', min: 'dataMin', max: 'dataMax' },
         series: []
     };
     globalChart.setOption(option);
     globalChart.resize();
 
-    // click handler for the map will be registered by addPngOverlay once the meta is available
+    // Clicks anywhere on the chart area (using global canvas coordinate conversion)
+    try {
+        let lastClickedX: string | number | null = null;
+        globalChart.getZr().on('click', (evt: any) => {
+            console.log(globalChart, evt);
+            if (!globalChart || !__seriesTs.length) return;
 
-    async function addPngOverlay(publicPngPath: string, sourceId = 'png-image', layerId = 'png-image-layer') {
-        if (!map) throw new Error('map not initialized');
-        // First try per-image sidecar JSON (use axios)
-        const jsonPath = publicPngPath + '.json';
-        let meta: any = null;
-        let varName: string | null = null;
-        try {
-            const r = await axios.get(jsonPath);
-            meta = r.data;
-        } catch (e) {
-            // fall back to a variable-level meta.json located at /png/<var>/meta.json
-            const parts = publicPngPath.split('/').filter(Boolean);
-            if (parts.length >= 2) {
-                varName = parts[1];
-                const metaPath = `/png/${varName}/meta.json`;
-                try {
-                    const r2 = await axios.get(metaPath);
-                    meta = r2.data;
-                } catch (e2) {
-                    // ignore and let later validation fail
+            // ZRender coordinates for the click
+            const px = evt.event.zrX;
+            const py = evt.event.zrY;
+
+            // Convert pixel point to chart coordinates (values)
+            const converted = globalChart.convertFromPixel('grid', [px, py]);
+            console.log('converted: ', converted);
+
+            if (!converted || converted[0] === undefined) return;
+
+            const clickX = Number(converted[0]);
+            console.log('clickX: ', clickX);
+
+            // Find nearest point in __seriesTs (assumed sorted timestamps)
+            // Binary search for efficiency
+            let low = 0;
+            let high = __seriesTs.length - 1;
+            let bestIdx = 0;
+
+            while (low <= high) {
+                const mid = Math.floor((low + high) / 2);
+                if (Math.abs(__seriesTs[mid] - clickX) < Math.abs(__seriesTs[bestIdx] - clickX)) {
+                    bestIdx = mid;
                 }
+                if (__seriesTs[mid] < clickX) low = mid + 1;
+                else if (__seriesTs[mid] > clickX) high = mid - 1;
+                else break;
             }
-        }
-        if (!meta || !meta.bounds || meta.bounds.length !== 4) throw new Error(`Invalid or missing meta JSON for: ${publicPngPath}`);
-        const [lonmin, latmin, lonmax, latmax] = meta.bounds;
 
-        const coords = [
-            [lonmin, latmax], // top-left
-            [lonmax, latmax], // top-right
-            [lonmax, latmin], // bottom-right
-            [lonmin, latmin], // bottom-left
-        ];
+            const finalX = __seriesTs[bestIdx];
 
-        // remove existing if present
-        try { if (map.getLayer(layerId)) map.removeLayer(layerId); } catch (e) { }
-        try { if (map.getSource(sourceId)) map.removeSource(sourceId); } catch (e) { }
-
-        map.addSource(sourceId, { type: 'image', url: publicPngPath, coordinates: coords });
-        map.addLayer({
-            id: layerId, type: 'raster', source: sourceId, paint: {
-                'raster-opacity': 1.0
+            if (finalX !== lastClickedX) {
+                lastClickedX = finalX;
+                console.log('ZR clicked nearest x:', finalX, 'moment:', moment(finalX).utc().format('YYYY-MM-DDTHHmmss'));
+                mainStore.setSelectedVariable(
+                    mainStore.selected_variable.var,
+                    moment.utc(finalX),
+                    mainStore.selected_variable.depth
+                );
             }
         });
-
-        // save active overlay metadata on the map instance for access by click handler
-        const overlayObj: any = { bounds: [lonmin, latmin, lonmax, latmax], varName, publicPngPath, meta, clickHandler: null };
-        // remove previous click handler if present
-        const prev = (map as any).__activePngOverlay;
-        if (prev && prev.clickHandler) {
-            try { map.off('click', prev.clickHandler); } catch (e) { }
-        }
-        (map as any).__activePngOverlay = overlayObj;
-
-        // register a click handler that queries the API for a timeseries at the clicked coordinate
-        const onMapClick = async (evt: any) => {
-            const { lng, lat } = evt.lngLat;
-            const overlay = (map as any).__activePngOverlay;
-            if (!overlay) return;
-            const [lon0, lat0, lon1, lat1] = overlay.bounds;
-            if (!(lng >= lon0 && lng <= lon1 && lat >= lat0 && lat <= lat1)) return; // outside overlay
-            // show a marker at clicked position
-            try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
-            const el = document.createElement('div'); el.style.width = '12px'; el.style.height = '12px'; el.style.borderRadius = '50%'; el.style.background = '#ff5722'; el.style.border = '2px solid white';
-            const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
-            (map as any).__clickMarker = marker;
-
-            // determine variable name
-            const vname = overlay.varName || inferVarNameFromPath(overlay.publicPngPath);
-            const apiBase = config.public.apiBase || 'http://localhost:9011';
-
-            // default time range: last 30 days
-            const to_dt = new Date().toISOString().replace('Z', '');
-            const from_dt = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().replace('Z', '');
-
-            // POST to the API and expect {time: [...], value: [...]} in response
-            try {
-                console.log({ var: vname, from_dt, to_dt, lat: lat, lon: lng });
-                const r = await axios.post(`${apiBase}/extractTimeseries`, { var: vname, from_dt, to_dt, lat: lat, lon: lng });
-                console.log(r);
-                
-                const json = r.data;
-                if (!json || !Array.isArray(json.time) || !Array.isArray(json.value)) throw new Error('Invalid API response');
-                plotTimeseriesFromApi(vname, json.time, json.value, lat, lng);
-            } catch (err) {
-                console.error('Failed to fetch timeseries:', err);
-            }
-        };
-
-        // register click handler
-        overlayObj.clickHandler = onMapClick;
-        map.on('click', onMapClick);
-
-        // Optionally zoom to the image bounds for visibility during testing
-        try { map.fitBounds([[lonmin, latmin], [lonmax, latmax]], { padding: 40, duration: 800 }); } catch (e) { }
-        console.info(`Added PNG overlay ${publicPngPath} as source='${sourceId}', layer='${layerId}'`);
+    } catch (e) {
+        console.warn('Failed to attach ECharts hover listeners:', e);
     }
-}
-// Plot timeseries returned from the API into the footer chart
-import { computeNightRanges } from '../../composables/useSunCalc'
 
+    // No click handler registered until an overlay is added by selecting a variable.
+}
+
+// Add / update / remove PNG overlay for a given public PNG path
+async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
+    if (!map) throw new Error('map not initialized');
+
+    const varId = mainStore.selected_variable.var;
+    const dt = mainStore.selected_variable.dt?.format('YYYY-MM-DDTHHmmss') || '';
+    const depth = mainStore.selected_variable.depth;
+
+    const pngPath = `${apiBaseUrl}/png/${varId}/${dt}/${depth}`;
+
+    const [lonmin, latmin, lonmax, latmax] = meta.value.bounds;
+    const coords = [
+        [lonmin, latmax], // top-left
+        [lonmax, latmax], // top-right
+        [lonmax, latmin], // bottom-right
+        [lonmin, latmin], // bottom-left
+    ] as [number, number][];
+
+    // remove existing if present
+    // try { if (map.getLayer(layerId)) map.removeLayer(layerId); } catch (e) { }
+    // try { if (map.getSource(sourceId)) map.removeSource(sourceId); } catch (e) { }
+
+    // prepare raster-color stops for Mapbox style
+    const raster_values: any[] = [];
+    // e.g.
+    // 0, 'rgba(0, 0, 0, 0)',
+    //             0.01, '#440154',
+    //             0.25, '#00f',
+    //             0.5, '#0f0',
+    //             0.75, '#fde725',
+    //             1.0, '#f00'
+    const vmin = mainStore.variables.find(v => v.var === varId)?.min
+    const vmax = mainStore.variables.find(v => v.var === varId)?.max
+    
+    // Get packing params from metadata, default to 0.1 precision and 0 base if missing
+    // Note: base might be equal to vmin if it was dynamic
+    const precision = mainStore.variables.find(v => v.var === varId)?.precision ?? 0.1;
+    const base = 0
+
+    const color_stops = [
+        [0.0, 'rgba(0, 0, 0, 1)'],
+        [0.001, '#440154'],
+        [0.25, '#00f'],
+        [0.5, '#0f0'],
+        [0.75, '#fde725'],
+        [1.0, '#f00']
+    ];
+    for (const stop of color_stops) {
+        const val_phys = vmin + stop[0] * (vmax - vmin);
+        // decode formula: q = (phys - base) / precision
+        const val_packed = (val_phys - base) / precision;
+        raster_values.push(val_packed, stop[1]);
+    }
+
+    if (map.getSource(sourceId)) {
+        map.getSource(sourceId)?.updateImage({
+            type: 'image',
+            url: pngPath,
+            // coordinates: coords
+        })
+        map.setPaintProperty(layerId, 'raster-color', [
+            'interpolate',
+            ['linear'],
+            ['raster-value'],
+            ...raster_values
+        ]);
+        map.setPaintProperty(layerId, 'raster-color-range', [(vmin - base) / precision, (vmax - base) / precision]);
+    }
+    else {
+        map.addSource(sourceId, { type: 'image', url: pngPath, coordinates: coords });
+        map.addLayer({
+            id: layerId, type: 'raster', source: sourceId, paint: {
+                'raster-opacity': 1.0,
+                'raster-color': [
+                    'interpolate',
+                    ['linear'],
+                    ['raster-value'],
+                    ...raster_values
+                ],
+                // Range of the packed integer values
+                'raster-color-range': [(vmin - base) / precision, (vmax - base) / precision],
+                // Mix to recover the 24-bit integer from normalized RGB [0..1]
+                // R_int = R_norm * 255. Packed = R_int*65536 + G_int*256 + B_int
+                // Coeffs: [255*65536, 255*256, 255, 0] -> [16711680, 65280, 255, 0]
+                'raster-color-mix': [16711680, 65280, 255, 0],
+                'raster-fade-duration': 0
+            }
+        });
+    }
+    console.log(vmin, vmax, base, precision, raster_values);
+
+    // save active overlay metadata on the map instance for access by click handler
+    const overlayObj: any = { bounds: [lonmin, latmin, lonmax, latmax], varId, pngPath, meta, clickHandler: null };
+    // remove previous click handler if present
+    const prev = (map as any).__activePngOverlay;
+    if (prev && prev.clickHandler) {
+        try { map.off('click', prev.clickHandler); } catch (e) { }
+    }
+    (map as any).__activePngOverlay = overlayObj;
+
+    // register a click handler that queries the API for a timeseries at the clicked coordinate
+    const onMapClick = async (evt: any) => {
+        const { lng, lat } = evt.lngLat;
+        const overlay = (map as any).__activePngOverlay;
+        if (!overlay) return;
+        const [lon0, lat0, lon1, lat1] = overlay.bounds;
+        if (!(lng >= lon0 && lng <= lon1 && lat >= lat0 && lat <= lat1)) return; // outside overlay
+        // show a marker at clicked position
+        try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
+        const el = document.createElement('div'); el.style.width = '12px'; el.style.height = '12px'; el.style.borderRadius = '50%'; el.style.background = '#ff5722'; el.style.border = '2px solid white';
+        const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
+        (map as any).__clickMarker = marker;
+
+        // determine variable name
+        const vname = overlay.varName || inferVarNameFromPath(overlay.publicPngPath);
+        console.log(overlay, vname);
+
+        // default time range: last 30 days
+        const to_dt = new Date().toISOString().replace('Z', '');
+        const from_dt = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().replace('Z', '');
+
+        // POST to the API and expect {time: [...], value: [...]} in response
+        try {
+            console.log({ var: mainStore.selected_variable.var, lat: lat, lon: lng });
+            const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat: lat, lon: lng });
+            console.log(r);
+
+            const json = r.data;
+            if (!json || !Array.isArray(json.time) || !Array.isArray(json.value)) throw new Error('Invalid API response');
+            plotTimeseriesFromApi(vname, json.time, json.value, lat, lng);
+        } catch (err) {
+            console.error('Failed to fetch timeseries:', err);
+        }
+    };
+
+    // register click handler
+    overlayObj.clickHandler = onMapClick;
+    map.on('click', onMapClick);
+
+    // Optionally zoom to the image bounds for visibility during testing
+    // try { map.fitBounds([[lonmin, latmin], [lonmax, latmax]], { padding: 40, duration: 800 }); } catch (e) { }
+    console.info(`Added PNG overlay ${pngPath} as source='${sourceId}', layer='${layerId}'`);
+}
+
+function removePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
+    if (!map) return;
+    try { const ov = (map as any).__activePngOverlay; if (ov && ov.clickHandler) map.off('click', ov.clickHandler); } catch (e) { }
+    try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
+    try { if (map.getLayer && map.getLayer(layerId)) map.removeLayer(layerId); } catch (e) { }
+    try { if (map.getSource && map.getSource(sourceId)) map.removeSource(sourceId); } catch (e) { }
+    try { delete (map as any).__activePngOverlay; } catch (e) { }
+}
+
+// Plot timeseries returned from the API into the footer chart
 function plotTimeseriesFromApi(varName: string | null, times: string[], values: number[], lat?: number, lon?: number) {
     if (!globalChart) return;
     const tz = 'America/Vancouver';
+
+    // Update global timestamp cache for the click handler
+    __seriesTs = (times || []).map(t => moment.utc(t).valueOf());
 
     // Convert the incoming UTC times to Vancouver local times (strings with offset)
     const localTimes = (times || []).map((t) => moment.utc(t).tz(tz).format());
@@ -273,28 +457,52 @@ function plotTimeseriesFromApi(varName: string | null, times: string[], values: 
         markAreaData = tmp;
     }
 
+    // selected time in chart timezone (to draw vertical marker)
+    const selectedXLocal = mainStore.selected_variable.dt ? moment.utc(mainStore.selected_variable.dt).tz(tz).format() : null;
+
     const option: any = {
         title: { text: varName ? `Timeseries — ${varName}` : 'Timeseries', left: 'center' },
-        tooltip: { trigger: 'axis', formatter: (params: any) => {
-            if (!Array.isArray(params)) return '';
-            const timeVal = params[0]?.value?.[0] ?? params[0]?.axisValue;
-            // timeVal will be a local-time string with offset; parseZone keeps offset
-            const timeStr = moment.parseZone(timeVal).format('YYYY-MM-DD HH:mm');
-            let out = `<b>${timeStr}</b><br/>`;
-            for (const p of params) {
-                const val = Array.isArray(p.value) ? p.value[1] : p.value;
-                out += `<span style="color:${p.color}">●</span> ${p.seriesName}: ${Number(val).toFixed(3)}<br/>`;
+        tooltip: {
+            trigger: 'axis', formatter: (params: any) => {
+                if (!Array.isArray(params)) return '';
+                const timeVal = params[0]?.value?.[0] ?? params[0]?.axisValue;
+                // timeVal will be a local-time string with offset; parseZone keeps offset
+                const timeStr = moment.parseZone(timeVal).format('DD MMM, HH:mm');
+                let out = `<b>${timeStr}</b><br/>`;
+                for (const p of params) {
+                    const val = Array.isArray(p.value) ? p.value[1] : p.value;
+                    out += `<span style="color:${p.color}">●</span> value: ${Number(val).toFixed(3)}<br/>`;
+                }
+                return out;
             }
-            return out;
-        }},
+        },
         xAxis: {
             type: 'time',
             axisLabel: {
-                formatter: (value: any) => moment.parseZone(value).format('YYYY-MM-DD HH:mm')
+                formatter: (value: any) => moment.parseZone(value).format('DD MMM, HH:mm')
             }
         },
-        yAxis: { type: 'value' },
-        series: [{ name: varName || 'value', type: 'line', showSymbol: false, data: seriesData }],
+        yAxis: {
+            type: 'value',
+            min: 'dataMin',
+            max: 'dataMax',
+            axisLabel: {
+                formatter: (value: any) => Number(value).toFixed()
+            }
+        },
+        series: [{
+            name: varName || 'value',
+            type: 'line',
+            showSymbol: false,
+            data: seriesData,
+            markLine: selectedXLocal ? {
+                silent: true,
+                symbol: 'none',
+                lineStyle: { color: '#ff5722', width: 2, type: 'dashed' },
+                label: { show: false },
+                data: [{ xAxis: selectedXLocal }]
+            } : { data: [] }
+        }],
     };
 
     // Add night mark areas if any
@@ -306,10 +514,26 @@ function plotTimeseriesFromApi(varName: string | null, times: string[], values: 
     globalChart.resize();
 }
 
+// Watch selected timestamp and update vertical marker without replotting the series
+try {
+    watch(() => mainStore.selected_variable.dt, (newDt) => {
+        if (!globalChart) return;
+        const tz = 'America/Vancouver';
+        const sel = newDt ? moment.utc(newDt).tz(tz).format() : null;
+        const data = sel ? [{ xAxis: sel }] : [];
+        try {
+            globalChart.setOption({ series: [{ markLine: { silent: true, symbol: 'none', lineStyle: { color: '#ff5722', width: 2 }, label: { show: false }, data } }] });
+        } catch (e) {
+            // ignore if chart has no series yet
+        }
+    });
+} catch (e) {
+    console.warn('Failed to attach selected timestamp watcher for chart marker:', e);
+}
+
 function inferVarNameFromPath(path: string) {
     try { const parts = path.split('/').filter(Boolean); return parts[1] || null; } catch (e) { return null; }
 }
-
 
 
 // async function loadData(url: string): Promise<{ hindcast: [number, number][], forecast: [number, number][] }> {
@@ -336,7 +560,40 @@ async function loadData(url: string): Promise<[number, number][]> {
 
     return array
 }
+
+function onToggleLayer(variable: string) {
+    // toggle: clicking the currently-selected variable will deselect it
+    if (mainStore.selected_variable.var === variable) {
+        mainStore.setSelectedVariable('', null, null);
+        console.info('Layers menu deselected:', variable);
+    } else {
+        console.log(variable);
+        const dts = mainStore.variables.find(v => v.var === variable)?.dts || [];
+        const depth = 5.5; // default depth
+        mainStore.setSelectedVariable(variable, mainStore.selected_variable.dt, depth);
+        console.info('Layers menu selected:', mainStore.selected_variable);
+    }
+}
 </script>
+
+<style scoped>
+.map-container {
+    position: relative;
+}
+</style>
+
+/* Shrink Mapbox bottom-left controls (logo + attribution) to reduce visual footprint */
+<style>
+.mapboxgl-ctrl-bottom-left .mapboxgl-ctrl-logo {
+    transform: scale(0.5) translateY(1px) !important;
+    transform-origin: left center !important;
+}
+
+/* make sure the controls remain clickable when scaled */
+.mapboxgl-ctrl-bottom-left a {
+    pointer-events: auto;
+}
+</style>
 
 <style scoped>
 .h-screen {

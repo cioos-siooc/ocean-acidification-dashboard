@@ -9,6 +9,7 @@ export default defineNuxtConfig({
   },
   modules: [
     '@nuxt/eslint',
+    ['@pinia/nuxt'],
     (_options, nuxt) => {
       nuxt.hooks.hook('vite:extendConfig', (config) => {
         // @ts-expect-error
@@ -26,6 +27,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       mapboxToken: '',
+      apiBaseUrl: '',
     },
   },
 })

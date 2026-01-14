@@ -23,6 +23,7 @@ Options:
 from __future__ import annotations
 import argparse
 import os
+from glob import glob
 from typing import Optional, Sequence, Tuple, List
 
 import re
@@ -139,8 +140,6 @@ def pick_time_slice(ds: xr.Dataset, time_dim: str, from_arg: Optional[str], to_a
 def extract_timeseries(
     *,
     var: str,
-    from_dt: str,
-    to_dt: str,
     lat: float,
     lon: float,
     data_dir: str = "/opt/data/nc",
@@ -154,10 +153,12 @@ def extract_timeseries(
     depth_index: Optional[int] = None,
     verbose: bool = False,
 ) -> Tuple[pd.Series, pd.Series]:
-    """Extract a time series and return a pandas.DataFrame(time,value).
+    """Extract a time series across all available files and return pandas Series (time, value).
 
-    This is the programmatic API intended for imports. Exceptions are raised on
-    errors; caller should catch and handle them.
+    Note: There is no longer a `from_dt`/`to_dt` filter — the function will
+    scan all NetCDF files matching the naming pattern for the requested
+    variable and return the concatenated, deduplicated, sorted timeseries.
+    Exceptions are raised on errors; caller should catch and handle them.
     """
     if db_dsn is None and not db_host:
         raise RuntimeError("No database host or DSN provided. Specify db_dsn or db_host")
@@ -177,39 +178,13 @@ def extract_timeseries(
         conn.close()
         raise RuntimeError(f"Data directory not found: {data_dir}")
 
-    pattern = re.compile(rf"^{re.escape(var)}_(?P<start>\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}:\d{{2}}:\d{{2}})_to_(?P<end>\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}:\d{{2}}:\d{{2}})\.nc$")
-
-    files: List[Tuple[str, pd.Timestamp, pd.Timestamp]] = []
-    req_start = pd.to_datetime(from_dt)
-    req_end = pd.to_datetime(to_dt)
-    for fn in os.listdir(data_dir):
-        if not fn.endswith(".nc"):
-            continue
-        m = pattern.match(fn)
-        if not m:
-            continue
-        start = pd.to_datetime(m.group("start"))
-        end = pd.to_datetime(m.group("end"))
-        # check intersection with requested window
-        if end < req_start or start > req_end:
-            continue
-        files.append((os.path.join(data_dir, fn), start, end))
-
-    if not files:
-        conn.close()
-        raise RuntimeError(f"No files found in {data_dir} for variable {var} intersecting [{from_dt} - {to_dt}]")
-
-    files.sort(key=lambda x: x[1])
-    if verbose:
-        print(f"Found {len(files)} files to scan:")
-        for f, s, e in files:
-            print(f"  {f} ({s.isoformat()} to {e.isoformat()})")
+    files = sorted(glob(os.path.join(data_dir, var, "*.nc")))
 
     # iterate files and extract
     times_list: List[pd.DatetimeIndex] = []
     values_list: List[np.ndarray] = []
 
-    sample_ds = xr.open_dataset(files[0][0])
+    sample_ds = xr.open_dataset(files[0])
     var_sample = find_variable(sample_ds, var)
     depth_dim = find_depth_dim(var_sample)
     if depth_dim is not None and depth_index is None:
@@ -223,7 +198,7 @@ def extract_timeseries(
     y_dim, x_dim = find_horiz_dims_by_shape(var_sample, nrows, ncols)
     sample_ds.close()
 
-    for fp, fstart, fend in files:
+    for fp in files:
         dsf = xr.open_dataset(fp)
         try:
             varf = find_variable(dsf, var)
@@ -242,7 +217,7 @@ def extract_timeseries(
             dsf.close()
             continue
 
-        idxs_local, times_local = pick_time_slice(dsf, tdim, from_dt, to_dt)
+        idxs_local, times_local = pick_time_slice(dsf, tdim, None, None)
         if len(idxs_local) == 0:
             dsf.close()
             continue
@@ -286,8 +261,9 @@ def extract_timeseries(
 def main(argv: Optional[Sequence[str]] = None) -> int:
     p = argparse.ArgumentParser(description="Extract a time series from a NetCDF variable at a grid point stored in PostGIS")
     p.add_argument("--var", "-v", required=True, help="Variable name to extract")
-    p.add_argument("--from", dest="from_dt", required=True, help="Start datetime (inclusive), ISO-8601")
-    p.add_argument("--to", dest="to_dt", required=True, help="End datetime (inclusive), ISO-8601")
+    # start/end selection removed — function now returns all available times
+    # p.add_argument("--from", dest="from_dt", required=True, help="Start datetime (inclusive), ISO-8601")
+    # p.add_argument("--to", dest="to_dt", required=True, help="End datetime (inclusive), ISO-8601")
     p.add_argument("--data-dir", default=os.environ.get("DATA_DIR", "/opt/data/nc"), help="Directory containing daily NetCDF files (default: /opt/data/nc)")
     p.add_argument("--lat", "-a", type=float, required=True, help="Latitude (required)")
     p.add_argument("--lon", "-o", type=float, required=True, help="Longitude (required)")
@@ -309,8 +285,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # Use the high-level callable to perform extraction
     df = extract_timeseries(
         var=args.var,
-        from_dt=args.from_dt,
-        to_dt=args.to_dt,
         lat=args.lat,
         lon=args.lon,
         data_dir=args.data_dir,

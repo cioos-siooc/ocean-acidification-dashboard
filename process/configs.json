@@ -1,0 +1,9 @@
+{
+  "depth_indices": [5, 20, 24, 26, 30, 34, 38],
+  "compression": {
+    "zlib": true,
+    "complevel": 4,
+    "shuffle": true,
+    "apply_to_downloads": true
+  }
+}

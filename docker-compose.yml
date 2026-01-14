@@ -54,10 +54,11 @@ services:
     build: ./process
     # profiles: ["tools"]
     environment:
-      - DB_HOST=db
-      - DB_NAME=oa
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      - PGHOST=db
+      - PGPORT=5432  # default Postgres port inside the Docker network
+      - PGDATABASE=oa
+      - PGUSER=postgres
+      - PGPASSWORD=postgres
     volumes:
       # - ./lib:/app/lib
       - ./data:/opt/data
