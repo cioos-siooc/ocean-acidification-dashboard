@@ -10,7 +10,6 @@ build/
 .tox/
 .mypy_cache/
 *.log
-*.sqlite3
 .env
 .env.*
 .venv/
