@@ -15,7 +15,10 @@ build/
 .venv/
 venv/
 .ipynb_checkpoints/
+
+# === Database ===
 DB/
+oa.dump
 
 # === Virtualenv tool (uv) ===
 .venv/

@@ -16,9 +16,9 @@ Dependencies:
 
 Example usage:
 
-    python nc2tile.py \ 
-      --data ds_data.nc \ 
-      --vars dissolved_inorganic_carbon,total_alkalinity \ 
+    python nc2tile.py  
+      --data ds_data.nc  
+      --vars dissolved_inorganic_carbon,total_alkalinity 
       --outdir output --max-dim 2048 --interp linear
 
 If you'd like different defaults (resolution, interpolation method, etc.) change options.
