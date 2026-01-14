@@ -40,7 +40,7 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     volumes:
-      - ./DB:/var/lib/postgresql/data
+      - oa_db:/var/lib/postgresql/data
     ports:
       - "${DB_PORT:-5432}:5432"
     healthcheck:
@@ -65,3 +65,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+volumes:
+  oa_db:
