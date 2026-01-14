@@ -7,13 +7,12 @@ set -euo pipefail
 # Ensure docker compose services are up (db)
 docker compose up -d db
 
-mkdir -p ./DB
-OUT=./DB/oa.dump
+OUT=./oa.dump
 echo "Exporting DB to ${OUT}..."
 # Default env fallbacks
 PGUSER=${PGUSER:-postgres}
 PGDATABASE=${PGDATABASE:-oa}
 
-docker exec -t db pg_dump -U "${PGUSER}" -d "${PGDATABASE}" -F c -Z 9 > "${OUT}"
+docker compose exec -t db pg_dump -U "${PGUSER}" -d "${PGDATABASE}" -F c -Z 9 > "${OUT}"
 
 echo "Export complete: ${OUT}"

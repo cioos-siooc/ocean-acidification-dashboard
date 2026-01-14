@@ -41,6 +41,7 @@ services:
       - POSTGRES_PASSWORD=postgres
     volumes:
       - oa_db:/var/lib/postgresql/data
+      # - ./DB:/var/lib/postgresql/data
     ports:
       - "${DB_PORT:-5432}:5432"
     healthcheck:
