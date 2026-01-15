@@ -142,6 +142,7 @@ def extract_timeseries(
     var: str,
     lat: float,
     lon: float,
+    depth: float,
     data_dir: str = "/opt/data/nc",
     db_dsn: Optional[str] = None,
     db_host: Optional[str] = "db",
@@ -150,7 +151,6 @@ def extract_timeseries(
     db_password: str = "postgres",
     db_name: str = "oa",
     db_table: str = "grid",
-    depth_index: Optional[int] = None,
     verbose: bool = False,
 ) -> Tuple[pd.Series, pd.Series]:
     """Extract a time series across all available files and return pandas Series (time, value).
@@ -187,12 +187,22 @@ def extract_timeseries(
     sample_ds = xr.open_dataset(files[0])
     var_sample = find_variable(sample_ds, var)
     depth_dim = find_depth_dim(var_sample)
-    if depth_dim is not None and depth_index is None:
-        if verbose:
-            print(f"Variable has depth dimension '{depth_dim}', selecting depth index 0 (surface) by default")
-        depth_sel = 0
+
+    # Determine which depth index to select, if any
+    if depth_dim is not None:
+            # Try to pick nearest depth index to requested depth_value
+            try:
+                depths = sample_ds[depth_dim].values
+                # support depth arrays that may be increasing or decreasing
+                depth_sel = int(np.argmin(np.abs(depths - depth)))
+                if verbose:
+                    print(f"Selecting depth index {depth_sel} nearest to requested depth {depth}")
+            except Exception:
+                depth_sel = None
+                if verbose:
+                    print("Failed to map depth_value to index; defaulting to 0")
     else:
-        depth_sel = depth_index
+        depth_sel = None
 
     nrows, ncols = get_grid_shape_from_db(conn, db_table)
     y_dim, x_dim = find_horiz_dims_by_shape(var_sample, nrows, ncols)
@@ -267,7 +277,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--data-dir", default=os.environ.get("DATA_DIR", "/opt/data/nc"), help="Directory containing daily NetCDF files (default: /opt/data/nc)")
     p.add_argument("--lat", "-a", type=float, required=True, help="Latitude (required)")
     p.add_argument("--lon", "-o", type=float, required=True, help="Longitude (required)")
-    p.add_argument("--depth-index", type=int, required=True, default=0, help="Optional depth index when variable has a vertical dim")
+    p.add_argument("--depth", type=float, required=True, help="Depth value to select (required)")
     p.add_argument("--output", "-O", default=None, help="CSV output file (time,value)")
     p.add_argument("--verbose", "-V", action="store_true", help="Verbose output")
 
@@ -287,6 +297,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         var=args.var,
         lat=args.lat,
         lon=args.lon,
+        depth=args.depth,
         data_dir=args.data_dir,
         db_dsn=args.db_dsn,
         db_host=args.db_host,
@@ -295,7 +306,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         db_password=args.db_password,
         db_name=args.db_name,
         db_table=args.db_table,
-        depth_index=args.depth_index,
         verbose=args.verbose,
     )
 

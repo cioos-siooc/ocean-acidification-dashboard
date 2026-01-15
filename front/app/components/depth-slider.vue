@@ -1,12 +1,12 @@
 <template>
     <v-card v-if="depths && depths.length > 0" rounded="pill"
         class="depth-control pa-2 d-flex flex-column align-center">
-        <v-slider v-model="index" thumb-label="always" direction="vertical" :min="0" 
+        <v-slider v-model="index" thumb-label="always" direction="vertical" :min="0"
             :max="Math.max(0, depths.length - 1)" step="1" reverse class="depth-slider-widget"
             @update:modelValue="onIndexChange">
             <template #thumb-label="{ value }">
                 <div class="depth-readout">
-                    {{ currentDepthDisplay }}
+                    {{ currentDepthDisplay }} m
                 </div>
             </template>
         </v-slider>
@@ -18,6 +18,7 @@ import { ref, computed, watch } from 'vue'
 import axios from 'axios'
 import { useMainStore } from '../stores/main'
 import { useRuntimeConfig } from '#app'
+import { formatDepth } from '../../composables/useFormatDepth'
 
 const mainStore = useMainStore()
 
@@ -27,10 +28,6 @@ const index = ref(0)
 // Derived display of current depth
 const currentDepth = computed(() => depths.value[index.value] ?? null)
 const currentDepthDisplay = computed(() => currentDepth.value === null ? '-' : `${formatDepth(currentDepth.value)}`)
-
-function formatDepth(d: number) {
-    return `${Number(d).toFixed(1)} m`
-}
 
 // Watch selected variable changes to fetch metadata (depths)
 watch(() => mainStore.selected_variable.var, async (newVar) => {
@@ -60,10 +57,7 @@ watch(() => mainStore.selected_variable.var, async (newVar) => {
 
 // When the slider index changes, update the selected variable depth in store
 function onIndexChange(v: number) {
-    const d = parseFloat(formatDepth(depths.value[v]))
-    if (typeof d === 'number') {
-        mainStore.setSelectedVariable(mainStore.selected_variable.var, mainStore.selected_variable.dt, d)
-    }
+    mainStore.setSelectedVariable(mainStore.selected_variable.var, mainStore.selected_variable.dt, depths.value[v])
 }
 
 function nearestIndex(arr: number[], target: number) {
@@ -87,7 +81,8 @@ function nearestIndex(arr: number[], target: number) {
     width: 40px;
     height: 200px;
     z-index: 1100;
-    overflow: visible; /* allow visibility outside the card */
+    overflow: visible;
+    /* allow visibility outside the card */
 }
 
 .depth-readout {
@@ -125,10 +120,10 @@ function nearestIndex(arr: number[], target: number) {
 
 /* Target Vuetify internals from scoped CSS using :deep() so the rule actually takes effect */
 .depth-control :deep(.v-slider__container) {
-  min-height: 150px !important;
-  max-height: 150px !important;
-  height: 150px !important;
-  overflow: visible !important;
+    min-height: 150px !important;
+    max-height: 150px !important;
+    height: 150px !important;
+    overflow: visible !important;
 }
 
 .depth-control :deep(.v-slider__thumb) {

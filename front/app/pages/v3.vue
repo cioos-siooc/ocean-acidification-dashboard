@@ -7,14 +7,41 @@
         </div>
 
         <!-- Bottom: Global Chart Footer -->
-        <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
+        <v-footer class="ma-0 pa-0" :style="{ maxHeight: `${footerHeight}` }">
+            <!-- <div ref="globalChartContainer" class="w-100" :style="{ height: `calc(${footerHeight} - 20px)` }"></div> -->
+            <v-container minWidth="100%" class="ma-0 pa-0">
+                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)` }">
+                    <div ref="globalChartContainer" style="width: 100%; height: 100%;"></div>
+                </v-row>
+                <v-row class="ma-0 pa-0" style="height:20px; background-color: #ccc;">
+                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
+                        <span class="footer-text" style="font-weight: bold;">SELECTED</span>
+                    </v-col>
+                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
+                        <span class="footer-text">{{ var2name(selectedVariable.var) }}</span>
+                    </v-col>
+                    <v-divider vertical class="mx-2"></v-divider>
+                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
+                        <span class="footer-text">{{ utc2pst(moment(selectedVariable.dt)) }}</span>
+                    </v-col>
+
+                    <v-spacer></v-spacer>
+                    
+                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
+                        <span class="footer-text">{{ mouseCoords.lat }} , {{ mouseCoords.lng }}</span>
+                    </v-col>
+                </v-row>
+            </v-container>
+
+        </v-footer>
+        <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
             <div ref="globalChartContainer" class="w-100 h-100"></div>
-        </div>
+        </div> -->
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch, reactive, computed } from 'vue';
 import { useRuntimeConfig } from '#app';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -25,6 +52,9 @@ import Layers from '../components/layers.vue'
 import DepthSlider from '../components/depth-slider.vue'
 
 import { computeNightRanges } from '../../composables/useSunCalc'
+import { var2name } from '../../composables/useVar2Name'
+import { utc2pst } from '../../composables/useUTC2PST'
+import { formatDepth } from '../../composables/useFormatDepth'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
@@ -40,16 +70,23 @@ let map: mapboxgl.Map | null = null;
 let globalChart: echarts.ECharts | null = null;
 let __seriesTs: number[] = []; // Global cache for chart timestamps to support "click anywhere"
 const meta = ref<any>(null);
+// remember last clicked point (lat/lon) so chart can be refreshed when var/depth changes
+const lastClicked = ref<{ lat: number; lon: number } | null>(null);
+const footerHeight = '200px';
 
 // [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
 const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, number]];
+
+const mouseCoords = ref<{ lng: number | null, lat: number | null }>({ lng: null, lat: null });
+
+///////////////////////////////////  COMPUTED  ///////////////////////////////////
+
+const selectedVariable = computed(() => mainStore.selected_variable);
 
 ///////////////////////////////////  HOOKS  ///////////////////////////////////
 onMounted(async () => {
     mapboxgl.accessToken = config.public.mapboxToken;
     if (!mapContainer.value) return;
-
-
 
     map = new mapboxgl.Map({
         container: mapContainer.value,
@@ -66,6 +103,10 @@ onMounted(async () => {
 
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
+        map?.on('mousemove', (e) => {
+            mouseCoords.value.lng = e.lngLat.lng.toFixed(4) as unknown as number;
+            mouseCoords.value.lat = e.lngLat.lat.toFixed(4) as unknown as number;
+        });
         addStations().catch((e) => console.warn('addStations failed:', e));
     });
 })
@@ -122,19 +163,65 @@ onBeforeUnmount(() => {
 
 ///////////////////////////////////  WATCH  ///////////////////////////////////
 
-// Watcher: add/update/remove overlay when selected_variable changes
-watch(() => mainStore.selected_variable, async (newVar) => {
-    console.log('HERE');
+// Watcher: add/update/remove overlay when selected variable or depth changes
+watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth], async ([v, depth]) => {
+    console.log('Watcher [var, depth] triggered:', v, depth);
     if (!map) return;
-    if (!newVar) { removePngOverlay(); return; }
+
+    if (!v) { removePngOverlay(); return; }
     try {
         await getMetadata();
         await updatePngOverlay();
+
+        // If the user previously clicked a point, refresh the timeseries chart for the new var/depth
+        if (lastClicked.value) {
+            try {
+                // debounce rapid var/depth changes to avoid hammering the API
+                if (tsRefreshTimer) clearTimeout(tsRefreshTimer);
+                tsRefreshTimer = setTimeout(async () => {
+                    try {
+                        const lat = lastClicked.value!.lat;
+                        const lon = lastClicked.value!.lon;
+                        const varId = mainStore.selected_variable.var;
+                        console.log('Refreshing timeseries for last clicked point due to var/depth change', { varId, lat, lon, depth: mainStore.selected_variable.depth });
+
+                        // abort previous request if any
+                        try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
+                        tsRequestController = new AbortController();
+
+                        const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: varId, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
+                        const json = r.data;
+                        if (json && Array.isArray(json.time) && Array.isArray(json.value)) {
+                            const vname = mainStore.variables.find(x => x.var === varId)?.name || varId;
+                            plotTimeseriesFromApi(vname, json.time, json.value, lat, lon);
+                        }
+                    } catch (e) {
+                        if (e && e.code === 'ERR_CANCELED') return; // aborted
+                        console.warn('Failed to refresh timeseries after var/depth change', e);
+                    } finally {
+                        tsRequestController = null;
+                    }
+                }, 200);
+            } catch (e) {
+                console.warn('Failed to schedule timeseries refresh after var/depth change', e);
+            }
+        }
     } catch (e) {
-        console.error('Failed to load PNG for variable', newVar, e);
+        console.error('Failed to load PNG for variable', v, e);
         removePngOverlay();
     }
-}, { deep: true, immediate: true });
+}, { immediate: true });
+
+// Watcher: when selected datetime changes (e.g. user clicks chart), update static overlay if not playing
+watch(() => mainStore.selected_variable.dt, async (newDt) => {
+    if (!map) return;
+    try {
+        // only update overlay image for the current dt
+        await updatePngOverlay();
+    } catch (e) {
+        console.error('Failed to update PNG for dt change', e);
+    }
+});
 
 ///////////////////////////////////  MEDTHODS  ///////////////////////////////////
 
@@ -186,7 +273,7 @@ async function addStations() {
     globalChart = echarts.init(globalChartContainer.value, undefined, { renderer: 'canvas' });
 
     const option = {
-        title: { text: 'Timeseries', left: 'center' },
+        // title: { text: 'Timeseries', left: 'center' },
         tooltip: {
             trigger: 'axis'
         },
@@ -194,6 +281,7 @@ async function addStations() {
             type: 'time'
         },
         yAxis: { type: 'value', min: 'dataMin', max: 'dataMax' },
+        grid: { left: 50, right: 30, top: 30, bottom: 30 },
         series: []
     };
     globalChart.setOption(option);
@@ -260,7 +348,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
     const varId = mainStore.selected_variable.var;
     const dt = mainStore.selected_variable.dt?.format('YYYY-MM-DDTHHmmss') || '';
-    const depth = mainStore.selected_variable.depth;
+    const depth = formatDepth(mainStore.selected_variable.depth);
 
     const pngPath = `${apiBaseUrl}/png/${varId}/${dt}/${depth}`;
 
@@ -287,7 +375,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     //             1.0, '#f00'
     const vmin = mainStore.variables.find(v => v.var === varId)?.min
     const vmax = mainStore.variables.find(v => v.var === varId)?.max
-    
+
     // Get packing params from metadata, default to 0.1 precision and 0 base if missing
     // Note: base might be equal to vmin if it was dynamic
     const precision = mainStore.variables.find(v => v.var === varId)?.precision ?? 0.1;
@@ -346,7 +434,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     console.log(vmin, vmax, base, precision, raster_values);
 
     // save active overlay metadata on the map instance for access by click handler
-    const overlayObj: any = { bounds: [lonmin, latmin, lonmax, latmax], varId, pngPath, meta, clickHandler: null };
+    const overlayObj: any = { bounds: [lonmin, latmin, lonmax, latmax], coords, varId, depth: depth, pngPath, meta, clickHandler: null };
     // remove previous click handler if present
     const prev = (map as any).__activePngOverlay;
     if (prev && prev.clickHandler) {
@@ -369,23 +457,31 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
         // determine variable name
         const vname = overlay.varName || inferVarNameFromPath(overlay.publicPngPath);
-        console.log(overlay, vname);
 
-        // default time range: last 30 days
-        const to_dt = new Date().toISOString().replace('Z', '');
-        const from_dt = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().replace('Z', '');
+        // remember clicked point so subsequent var/depth changes can refresh the chart
+        lastClicked.value = { lat, lon: lng };
+
+        // Abort any in-flight timeseries requests and create a new controller
+        try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
+        tsRequestController = new AbortController();
 
         // POST to the API and expect {time: [...], value: [...]} in response
         try {
-            console.log({ var: mainStore.selected_variable.var, lat: lat, lon: lng });
-            const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat: lat, lon: lng });
+            console.log({ var: mainStore.selected_variable.var, lat: lat, lon: lng, depth: mainStore.selected_variable.depth });
+            const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat: lat, lon: lng, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
             console.log(r);
 
             const json = r.data;
             if (!json || !Array.isArray(json.time) || !Array.isArray(json.value)) throw new Error('Invalid API response');
             plotTimeseriesFromApi(vname, json.time, json.value, lat, lng);
         } catch (err) {
-            console.error('Failed to fetch timeseries:', err);
+            if (err && err.code === 'ERR_CANCELED') {
+                // request was aborted; ignore
+            } else {
+                console.error('Failed to fetch timeseries:', err);
+            }
+        } finally {
+            tsRequestController = null;
         }
     };
 
@@ -396,7 +492,20 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     // Optionally zoom to the image bounds for visibility during testing
     // try { map.fitBounds([[lonmin, latmin], [lonmax, latmax]], { padding: 40, duration: 800 }); } catch (e) { }
     console.info(`Added PNG overlay ${pngPath} as source='${sourceId}', layer='${layerId}'`);
+
+    // Do not auto-initialize animator here; animation starts when Play pressed from footer controls
+    // We keep the static PNG overlay active by default.
 }
+
+// Called when component or overlay destroyed
+onBeforeUnmount(() => {
+
+});
+
+// NOTE: stopping animator on every change to `mainStore.selected_variable` caused the animator to stop
+// immediately after it updated the selected timestamp (dt). That logic is already handled by the
+// var/depth watcher above. Removed the blanket watcher to avoid stopping playback when the animator
+// updates the selected datetime.
 
 function removePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
     if (!map) return;
@@ -461,7 +570,7 @@ function plotTimeseriesFromApi(varName: string | null, times: string[], values: 
     const selectedXLocal = mainStore.selected_variable.dt ? moment.utc(mainStore.selected_variable.dt).tz(tz).format() : null;
 
     const option: any = {
-        title: { text: varName ? `Timeseries — ${varName}` : 'Timeseries', left: 'center' },
+        // title: { text: varName ? `Timeseries — ${varName}` : 'Timeseries', left: 'center' },
         tooltip: {
             trigger: 'axis', formatter: (params: any) => {
                 if (!Array.isArray(params)) return '';
@@ -535,6 +644,10 @@ function inferVarNameFromPath(path: string) {
     try { const parts = path.split('/').filter(Boolean); return parts[1] || null; } catch (e) { return null; }
 }
 
+// Abort controller for ongoing timeseries requests and debounce timer
+let tsRequestController: AbortController | null = null;
+let tsRefreshTimer: any = null;
+
 
 // async function loadData(url: string): Promise<{ hindcast: [number, number][], forecast: [number, number][] }> {
 async function loadData(url: string): Promise<[number, number][]> {
@@ -565,13 +678,8 @@ function onToggleLayer(variable: string) {
     // toggle: clicking the currently-selected variable will deselect it
     if (mainStore.selected_variable.var === variable) {
         mainStore.setSelectedVariable('', null, null);
-        console.info('Layers menu deselected:', variable);
     } else {
-        console.log(variable);
-        const dts = mainStore.variables.find(v => v.var === variable)?.dts || [];
-        const depth = 5.5; // default depth
-        mainStore.setSelectedVariable(variable, mainStore.selected_variable.dt, depth);
-        console.info('Layers menu selected:', mainStore.selected_variable);
+        mainStore.setSelectedVariable(variable, mainStore.selected_variable.dt, mainStore.selected_variable.depth);
     }
 }
 </script>
@@ -592,6 +700,12 @@ function onToggleLayer(variable: string) {
 /* make sure the controls remain clickable when scaled */
 .mapboxgl-ctrl-bottom-left a {
     pointer-events: auto;
+}
+
+.footer-text {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.75rem;
+    vertical-align: middle;
 }
 </style>
 

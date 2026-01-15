@@ -115,6 +115,7 @@ class timeseriesRequest(BaseModel):
     var: str
     lat: float
     lon: float
+    depth: float
 
 @app.post("/extractTimeseries")
 def fn_extract_timeseries(request: timeseriesRequest):
@@ -122,8 +123,10 @@ def fn_extract_timeseries(request: timeseriesRequest):
         var = request.var
         lat = request.lat
         lon = request.lon
+        # enforce depth with 1 decimal precision per UI contract
+        depth = round(float(request.depth), 1)
 
-        time, value = extract_timeseries(var=var, lat=lat, lon=lon)
+        time, value = extract_timeseries(var=var, lat=lat, lon=lon, depth=depth)
         return {"time": time.tolist(), "value": value.tolist()}
     except Exception as exc:
         logger.exception("extract_timeseries failed")
