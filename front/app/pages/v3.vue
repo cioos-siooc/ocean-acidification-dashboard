@@ -26,7 +26,7 @@
                     </v-col>
 
                     <v-spacer></v-spacer>
-                    
+
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ mouseCoords.lat }} , {{ mouseCoords.lng }}</span>
                     </v-col>
@@ -91,7 +91,8 @@ onMounted(async () => {
     map = new mapboxgl.Map({
         container: mapContainer.value,
         // style: 'mapbox://styles/taimazb/cmk1jwu8o005101sv1j41cj6j?optimize=true&fresh=true',
-        style: 'mapbox://styles/taimazb/cmkcsejwe005m01ssgtdz3tgd?optimize=true&fresh=true',
+        // style: 'mapbox://styles/taimazb/cmkcsejwe005m01ssgtdz3tgd?optimize=true&fresh=true',
+        style: 'mapbox://styles/taimazb/cmkfvuotu00mw01svbld48v7y?optimize=true&fresh=true',
         // center: [-123.2, 48.8],
         bounds,
         // zoom: 9.5,
@@ -201,7 +202,7 @@ watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth]
                     } finally {
                         tsRequestController = null;
                     }
-                }, 200);
+                }, 300);
             } catch (e) {
                 console.warn('Failed to schedule timeseries refresh after var/depth change', e);
             }
@@ -428,8 +429,8 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
                 // Coeffs: [255*65536, 255*256, 255, 0] -> [16711680, 65280, 255, 0]
                 'raster-color-mix': [16711680, 65280, 255, 0],
                 'raster-fade-duration': 0
-            }
-        });
+            },
+        }, 'country-boundaries');
     }
     console.log(vmin, vmax, base, precision, raster_values);
 

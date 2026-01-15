@@ -23,7 +23,7 @@ def test_extract_timeseries_collects_all_files(tmp_path, monkeypatch):
     monkeypatch.setattr('extractTimeseries.query_nearest_rowcol', lambda conn, table, lat, lon: (0,0,0.0,0.0))
     monkeypatch.setattr('extractTimeseries.get_grid_shape_from_db', lambda conn, table: (1,1))
 
-    times, values = extract_timeseries(var='temp', lat=0.0, lon=0.0, data_dir=str(tmp_path), db_dsn=None, db_host='db')
+    times, values = extract_timeseries(var='temp', lat=0.0, lon=0.0, depth=0.0, data_dir=str(tmp_path), db_dsn=None, db_host='db')
     assert isinstance(times, pd.Series)
     assert isinstance(values, pd.Series)
     # expect 4 time entries and values [0,0,1,1]

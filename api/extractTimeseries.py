@@ -173,9 +173,20 @@ def extract_timeseries(
     if verbose:
         print(f"Nearest grid point in DB: row={yi} col={xi} lat={lat_pt} lon={lon_pt}")
 
+    # Get grid shape and then close the DB connection promptly so heavy file work
+    # that follows doesn't hold DB resources or transactions open while clients
+    # may disconnect.
+    try:
+        nrows, ncols = get_grid_shape_from_db(conn, db_table)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        conn = None
+
     # find candidate files
     if not os.path.isdir(data_dir):
-        conn.close()
         raise RuntimeError(f"Data directory not found: {data_dir}")
 
     files = sorted(glob(os.path.join(data_dir, var, "*.nc")))
@@ -184,77 +195,128 @@ def extract_timeseries(
     times_list: List[pd.DatetimeIndex] = []
     values_list: List[np.ndarray] = []
 
-    sample_ds = xr.open_dataset(files[0])
-    var_sample = find_variable(sample_ds, var)
-    depth_dim = find_depth_dim(var_sample)
-
-    # Determine which depth index to select, if any
-    if depth_dim is not None:
-            # Try to pick nearest depth index to requested depth_value
+    # Find a sample dataset that can be opened to inspect variable and depth axis
+    sample_ds = None
+    var_sample = None
+    depth_dim = None
+    for fp in files:
+        try:
+            sample_ds = xr.open_dataset(fp)
+            var_sample = find_variable(sample_ds, var)
+            depth_dim = find_depth_dim(var_sample)
+            break
+        except Exception as e:
+            if verbose:
+                print(f"Skipping sample file {fp} due to open/inspection error: {e}")
             try:
-                depths = sample_ds[depth_dim].values
-                # support depth arrays that may be increasing or decreasing
-                depth_sel = int(np.argmin(np.abs(depths - depth)))
-                if verbose:
-                    print(f"Selecting depth index {depth_sel} nearest to requested depth {depth}")
+                if sample_ds is not None:
+                    sample_ds.close()
             except Exception:
-                depth_sel = None
-                if verbose:
-                    print("Failed to map depth_value to index; defaulting to 0")
+                pass
+            sample_ds = None
+            var_sample = None
+            depth_dim = None
+            continue
+
+    if var_sample is None:
+        # Ensure DB connection is closed if still open
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+        conn = None
+        raise RuntimeError("Could not open any NetCDF files to inspect variable and depth dimension")
+
+    # Determine which depth index to select based on the requested depth value
+    if depth_dim is not None:
+        try:
+            depths = sample_ds[depth_dim].values
+            # support depth arrays that may be increasing or decreasing
+            depth_sel = int(np.argmin(np.abs(depths - depth)))
+            if verbose:
+                print(f"Selecting depth index {depth_sel} nearest to requested depth {depth}")
+        except Exception:
+            depth_sel = 0
+            if verbose:
+                print("Failed to map requested depth to an index; defaulting to 0")
     else:
         depth_sel = None
 
-    nrows, ncols = get_grid_shape_from_db(conn, db_table)
     y_dim, x_dim = find_horiz_dims_by_shape(var_sample, nrows, ncols)
-    sample_ds.close()
+    try:
+        sample_ds.close()
+    except Exception:
+        pass
+
+    # Keep iteration robust: ensure file resources are closed on error and skip files that fail
+    # to open or select. This prevents a single corrupted .nc from bringing down the whole
+    # API and avoids leaving backend resources in an inconsistent/locked state.
 
     for fp in files:
-        dsf = xr.open_dataset(fp)
         try:
-            varf = find_variable(dsf, var)
-        except KeyError:
-            dsf.close()
+            with xr.open_dataset(fp) as dsf:
+                try:
+                    varf = find_variable(dsf, var)
+                except KeyError:
+                    if verbose:
+                        print(f"Skipping {fp}: variable {var} not present")
+                    continue
+
+                tdim = None
+                for d in varf.dims:
+                    if d.lower() in TIME_CANDIDATES:
+                        tdim = d
+                        break
+                if tdim is None:
+                    if verbose:
+                        print(f"Skipping {fp}: no time dimension found")
+                    continue
+
+                try:
+                    idxs_local, times_local = pick_time_slice(dsf, tdim, None, None)
+                except Exception as exc:
+                    if verbose:
+                        print(f"Skipping {fp}: pick_time_slice failed: {exc}")
+                    continue
+
+                if len(idxs_local) == 0:
+                    if verbose:
+                        print(f"Skipping {fp}: no timestamps in requested range")
+                    continue
+
+                sel = {tdim: idxs_local, y_dim: yi, x_dim: xi}
+                if depth_dim is not None and depth_sel is not None:
+                    sel[depth_dim] = depth_sel
+
+                try:
+                    sub = varf.isel(sel)
+                except Exception as exc:
+                    if verbose:
+                        print(f"Skipping {fp}: failed to index variable with selection {sel}: {exc}")
+                    continue
+
+                if tdim not in sub.dims and sub.ndim != 1:
+                    if verbose:
+                        print(f"Skipping {fp}: unexpected selection result; expected 1D time series")
+                    continue
+
+                vals = np.asarray(sub.values, dtype=float)
+                times_list.append(pd.to_datetime(times_local))
+                values_list.append(vals)
+        except Exception as e:
             if verbose:
-                print(f"Skipping {fp}: variable {var} not present")
+                print(f"Skipping {fp}: failed to open/process file: {e}")
             continue
-
-        tdim = None
-        for d in varf.dims:
-            if d.lower() in TIME_CANDIDATES:
-                tdim = d
-                break
-        if tdim is None:
-            dsf.close()
-            continue
-
-        idxs_local, times_local = pick_time_slice(dsf, tdim, None, None)
-        if len(idxs_local) == 0:
-            dsf.close()
-            continue
-
-        sel = {tdim: idxs_local, y_dim: yi, x_dim: xi}
-        if depth_dim is not None and depth_sel is not None:
-            sel[depth_dim] = depth_sel
-
-        try:
-            sub = varf.isel(sel)
-        except Exception as exc:
-            dsf.close()
-            conn.close()
-            raise RuntimeError(f"Failed to index variable in {fp} with selection {sel}: {exc}")
-
-        if tdim not in sub.dims and sub.ndim != 1:
-            dsf.close()
-            conn.close()
-            raise RuntimeError(f"Unexpected selection result in {fp}; expected a 1D time series")
-
-        vals = np.asarray(sub.values, dtype=float)
-        times_list.append(pd.to_datetime(times_local))
-        values_list.append(vals)
-        dsf.close()
 
     if not times_list:
-        conn.close()
+        # Ensure DB connection is closed if still open
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+        conn = None
         raise RuntimeError("No data found in files for the requested time range")
 
     times_concat = pd.DatetimeIndex([]).append(times_list)
@@ -263,7 +325,13 @@ def extract_timeseries(
     df = pd.DataFrame({"time": times_concat, "value": values_concat})
     df = df.drop_duplicates(subset="time").sort_values(by="time").reset_index(drop=True)
 
-    conn.close()
+    # Ensure DB connection is closed if still open
+    try:
+        if conn is not None:
+            conn.close()
+    except Exception:
+        pass
+    conn = None
     return df.time, df.value
 
 

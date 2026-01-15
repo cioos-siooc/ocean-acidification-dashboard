@@ -3,7 +3,7 @@
         class="depth-control pa-2 d-flex flex-column align-center">
         <v-slider v-model="index" thumb-label="always" direction="vertical" :min="0"
             :max="Math.max(0, depths.length - 1)" step="1" reverse class="depth-slider-widget"
-            @update:modelValue="onIndexChange">
+            @end="onIndexChange">
             <template #thumb-label="{ value }">
                 <div class="depth-readout">
                     {{ currentDepthDisplay }} m
@@ -69,6 +69,7 @@ function nearestIndex(arr: number[], target: number) {
     })
     return best
 }
+
 </script>
 
 <style scoped>

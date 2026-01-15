@@ -11,6 +11,11 @@ import logging
 # import pandas as pd
 
 from extractTimeseries import extract_timeseries
+from threading import Semaphore
+
+# Limit concurrent extract requests to avoid resource exhaustion (files + DB)
+MAX_CONCURRENT_EXTRACTS = int(os.getenv("MAX_CONCURRENT_EXTRACTS", "4"))
+_extract_semaphore = Semaphore(MAX_CONCURRENT_EXTRACTS)
 # from calc import bin
 # from lib.bathymetry import BathymetryProcessor
 # from lib.database import TrajectoryDatabase
@@ -119,18 +124,24 @@ class timeseriesRequest(BaseModel):
 
 @app.post("/extractTimeseries")
 def fn_extract_timeseries(request: timeseriesRequest):
+    # Reject requests if we are already at concurrency limit to protect the DB and FS
+    if not _extract_semaphore.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
+
     try:
         var = request.var
         lat = request.lat
         lon = request.lon
-        # enforce depth with 1 decimal precision per UI contract
-        depth = round(float(request.depth), 1)
+        # use provided depth exactly (float value passed from frontend)
+        depth = float(request.depth)
 
         time, value = extract_timeseries(var=var, lat=lat, lon=lon, depth=depth)
         return {"time": time.tolist(), "value": value.tolist()}
     except Exception as exc:
         logger.exception("extract_timeseries failed")
         raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        _extract_semaphore.release()
 
 #######################################
 
