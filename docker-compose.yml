@@ -10,8 +10,10 @@ services:
     volumes: []
     environment:
       - NUXT_PUBLIC_API_BASE=https://oa.cioospacificlabs.ca/api
-    # depends_on:
-    #   - api
+    depends_on:
+      - api
+    env_file:
+      - .env.prod
     command: ${FRONTEND_COMMAND:-npm run start}
     restart: unless-stopped
 
