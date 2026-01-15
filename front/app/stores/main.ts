@@ -13,8 +13,9 @@ export const useMainStore = defineStore('main', {
         },
 
         setSelectedVariable(varId: string, dt: moment.Moment | null, depth: number | null) {
-            this.selected_variable = { var: varId, dt: dt, depth: depth };
-            console.log('this.selected_variable: ', this.selected_variable);
+            this.selected_variable.var = varId;
+            this.selected_variable.dt = dt;
+            this.selected_variable.depth = depth;
         }
     }
 })
