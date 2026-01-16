@@ -298,8 +298,10 @@ def process_file_set(files, out_base_dir, workers=4, overwrite=False):
                     res_arrays["omega_arag"][idx] = r_arag
                     res_arrays["omega_cal"][idx] = r_cal
 
+                    logger.info(f"Processed: Time step {ti+1}/{t_size}, Depth level {di+1}/{d_size}")
+
                 if (t + 1) % 5 == 0:
-                    logger.info(f"Completed TimeStep {t+1}/{t_size}")
+                    logger.info(f"Finished TimeStep batch {t+1}/{t_size}")
 
         # Write Files and Zip
         created_files = []
