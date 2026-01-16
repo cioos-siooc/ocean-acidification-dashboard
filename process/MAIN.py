@@ -97,7 +97,15 @@ def do_check(conn, erddap_base, dataset_id, init_days=1, dry_run=True):
     )
 
     # For each variable we care about: we can detect variable list from store or use a superset. For now use the three variables we care about.
-    variables = ["dissolved_oxygen", "dissolved_inorganic_carbon", "total_alkalinity"]
+    # Get variables list from DB
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT variable FROM erddap_variables WHERE dataset_id=%s",
+            (ds_id,),
+        )
+        rows = cur.fetchall()
+        variables = [r[0] for r in rows]
+    
 
     for variable in variables:
         var_row_id = ensure_variable(conn, ds_id, variable)

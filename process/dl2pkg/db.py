@@ -86,8 +86,12 @@ def ensure_schema(conn):
             cur.execute("ALTER TABLE erddap_variables ADD COLUMN available_datetimes timestamptz[] DEFAULT '{}'::timestamptz[]")
         else:
             data_type, udt_name = col
-            if data_type.lower() == 'jsonb':
-                # Convert JSONB array of ISO strings to timestamptz[] in a new temporary column,
+            if data_type.lower() == 'jsonb':                # ensure 'type' column exists to indicate whether a variable is 'download' or 'compute'
+                cur.execute("ALTER TABLE erddap_variables ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'download'")
+            else:
+                # ensure 'type' column exists regardless
+                cur.execute("ALTER TABLE erddap_variables ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'download'")
+            if data_type.lower() == 'jsonb':                # Convert JSONB array of ISO strings to timestamptz[] in a new temporary column,
                 # then replace the original column to avoid data loss.
                 cur.execute("ALTER TABLE erddap_variables ADD COLUMN IF NOT EXISTS available_datetimes_ts timestamptz[] DEFAULT '{}'::timestamptz[]")
                 # Use jsonb_array_elements_text to extract strings and cast to timestamptz, aggregate distinct ordered list

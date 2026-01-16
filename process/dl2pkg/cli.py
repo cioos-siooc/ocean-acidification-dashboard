@@ -12,7 +12,7 @@ from .downloader import do_download
 logger = logging.getLogger("dl2.cli")
 
 
-def do_check(conn, erddap_base, dataset_id, init_days=1, dry_run=True):
+def do_check(conn, erddap_base, dataset_id, init_days=1, dry_run=True, variables=None):
     das_text = fetch_das(erddap_base, dataset_id)
     time_cov, actual_max = parse_das_for_times(das_text)
     remote_max = time_cov or actual_max
@@ -36,7 +36,12 @@ def do_check(conn, erddap_base, dataset_id, init_days=1, dry_run=True):
         meta={"das_parsed": True},
     )
 
-    variables = ["dissolved_oxygen", "dissolved_inorganic_carbon", "total_alkalinity"]
+    # If a variables list is supplied use that, otherwise query the DB for variables
+    # associated with this dataset that are marked as 'download'.
+    if variables is None:
+        with conn.cursor() as cur:
+            cur.execute("SELECT variable FROM erddap_variables WHERE dataset_id=%s AND type='download'", (ds_id,))
+            variables = [r[0] for r in cur.fetchall()]
 
     for variable in variables:
         var_row_id = ensure_variable(conn, ds_id, variable)
@@ -97,8 +102,8 @@ def do_check(conn, erddap_base, dataset_id, init_days=1, dry_run=True):
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("cmd", choices=["check", "download", "run", "sublevel", "png"])
-    parser.add_argument("--dataset", required=True)
+    parser.add_argument("cmd", choices=["check", "download", "run", "sublevel", "png", "compute"])
+    parser.add_argument("--dataset", required=False, help="Optional: dataset id string; if omitted, process all datasets/variables of type 'download' from DB")
     parser.add_argument(
         "--erddap-base",
         default=os.getenv("ERDDAP_BASE", "https://salishsea.eos.ubc.ca/erddap"),
@@ -120,40 +125,85 @@ def main(argv=None):
     ensure_schema(conn)
 
     if args.cmd == "check":
-        if args.date:
-            ds_id = upsert_dataset(conn, args.dataset)
-            vars_list = [args.variable] if args.variable else ["dissolved_oxygen", "dissolved_inorganic_carbon", "total_alkalinity"]
-            create_rows_for_date(conn, ds_id, vars_list, args.date, force=args.force, dry_run=args.dry_run)
+        if args.dataset:
+            if args.date:
+                ds_id = upsert_dataset(conn, args.dataset)
+                vars_list = [args.variable] if args.variable else ["dissolved_oxygen", "dissolved_inorganic_carbon", "total_alkalinity"]
+                create_rows_for_date(conn, ds_id, vars_list, args.date, force=args.force, dry_run=args.dry_run)
+                return
+            do_check(conn, args.erddap_base, args.dataset, init_days=args.init_days, dry_run=args.dry_run)
             return
-        do_check(conn, args.erddap_base, args.dataset, init_days=args.init_days, dry_run=args.dry_run)
+
+        # No dataset provided: iterate datasets in DB and process variables marked as 'download'
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, dataset_id FROM erddap_datasets ORDER BY id")
+            rows = cur.fetchall()
+        for ds_id, dataset_id in rows:
+            # variables filtered inside do_check if not provided
+            do_check(conn, args.erddap_base, dataset_id, init_days=args.init_days, dry_run=args.dry_run)
         return
 
     if args.cmd == "download":
-        if args.date:
-            ds_id = upsert_dataset(conn, args.dataset)
-            vars_list = [args.variable] if args.variable else ["dissolved_oxygen", "dissolved_inorganic_carbon", "total_alkalinity"]
-            create_rows_for_date(conn, ds_id, vars_list, args.date, force=args.force, dry_run=args.dry_run)
-        if args.requeue_failed:
-            from .downloader import requeue_failed
-            requeue_failed(conn, dataset=args.dataset, date=args.date, variable=args.variable, dry_run=args.dry_run)
-        do_download(conn, args.erddap_base, dry_run=args.dry_run, limit=args.limit)
-        return
-
-    if args.cmd == "run":
-        if args.date:
-            ds_id = upsert_dataset(conn, args.dataset)
-            vars_list = [args.variable] if args.variable else ["dissolved_oxygen", "dissolved_inorganic_carbon", "total_alkalinity"]
-            create_rows_for_date(conn, ds_id, vars_list, args.date, force=args.force, dry_run=args.dry_run)
-            # forward --requeue-failed to download
+        if args.dataset:
+            if args.date:
+                ds_id = upsert_dataset(conn, args.dataset)
+                vars_list = [args.variable] if args.variable else ["dissolved_oxygen", "dissolved_inorganic_carbon", "total_alkalinity"]
+                create_rows_for_date(conn, ds_id, vars_list, args.date, force=args.force, dry_run=args.dry_run)
             if args.requeue_failed:
                 from .downloader import requeue_failed
                 requeue_failed(conn, dataset=args.dataset, date=args.date, variable=args.variable, dry_run=args.dry_run)
             do_download(conn, args.erddap_base, dry_run=args.dry_run, limit=args.limit)
             return
-        do_check(conn, args.erddap_base, args.dataset, init_days=args.init_days, dry_run=args.dry_run)
+
+        # No dataset provided: build rows for date or run downloads for all datasets
+        if args.date:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, dataset_id FROM erddap_datasets ORDER BY id")
+                rows = cur.fetchall()
+            for ds_id, dataset_id in rows:
+                # get variables of type 'download' for this dataset
+                with conn.cursor() as cur:
+                    cur.execute("SELECT variable FROM erddap_variables WHERE dataset_id=%s AND type='download'", (ds_id,))
+                    vars_list = [r[0] for r in cur.fetchall()]
+                if args.variable:
+                    vars_list = [args.variable]
+                if vars_list:
+                    create_rows_for_date(conn, ds_id, vars_list, args.date, force=args.force, dry_run=args.dry_run)
         if args.requeue_failed:
             from .downloader import requeue_failed
-            requeue_failed(conn, dataset=args.dataset, date=args.date, variable=args.variable, dry_run=args.dry_run)
+            requeue_failed(conn, dataset=None, date=args.date, variable=args.variable, dry_run=args.dry_run)
+        do_download(conn, args.erddap_base, dry_run=args.dry_run, limit=args.limit)
+        return
+
+    if args.cmd == "run":
+        if args.dataset:
+            if args.date:
+                ds_id = upsert_dataset(conn, args.dataset)
+                vars_list = [args.variable] if args.variable else ["dissolved_oxygen", "dissolved_inorganic_carbon", "total_alkalinity"]
+                create_rows_for_date(conn, ds_id, vars_list, args.date, force=args.force, dry_run=args.dry_run)
+                # forward --requeue-failed to download
+                if args.requeue_failed:
+                    from .downloader import requeue_failed
+                    requeue_failed(conn, dataset=args.dataset, date=args.date, variable=args.variable, dry_run=args.dry_run)
+                do_download(conn, args.erddap_base, dry_run=args.dry_run, limit=args.limit)
+                return
+            do_check(conn, args.erddap_base, args.dataset, init_days=args.init_days, dry_run=args.dry_run)
+            if args.requeue_failed:
+                from .downloader import requeue_failed
+                requeue_failed(conn, dataset=args.dataset, date=args.date, variable=args.variable, dry_run=args.dry_run)
+            do_download(conn, args.erddap_base, dry_run=args.dry_run, limit=args.limit)
+            return
+
+        # No dataset provided: do check and download for all datasets/variables type='download'
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, dataset_id FROM erddap_datasets ORDER BY id")
+            rows = cur.fetchall()
+        for ds_id, dataset_id in rows:
+            # do_check will query variables of type 'download' if variables not provided
+            do_check(conn, args.erddap_base, dataset_id, init_days=args.init_days, dry_run=args.dry_run)
+        if args.requeue_failed:
+            from .downloader import requeue_failed
+            requeue_failed(conn, dataset=None, date=args.date, variable=args.variable, dry_run=args.dry_run)
         do_download(conn, args.erddap_base, dry_run=args.dry_run, limit=args.limit)
         return
 
@@ -166,10 +216,35 @@ def main(argv=None):
 
     if args.cmd == "png":
         from .png_worker import process_pending_png
-        # Previously args.workers indicated how many times to run the worker loop.
-        # Now it controls the internal nc2tile worker count passed to nc2tile via --workers.
-        # The --simulate flag can be used to avoid writing PNG/sidecar files for fast tests.
         process_pending_png(conn, dry_run=args.dry_run, limit=args.limit, workers=args.workers, simulate=args.simulate)
+        return
+
+    if args.cmd == "compute":
+        # Compute carbonate-system fields for available datetimes. If --dataset is provided, limit to it.
+        from subprocess import run
+        if args.dataset:
+            # compute for that dataset only: identify its numeric id
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM erddap_datasets WHERE dataset_id=%s", (args.dataset,))
+                r = cur.fetchone()
+            if not r:
+                print(f"Dataset not found: {args.dataset}")
+                return
+            ds_id = r[0]
+            # For each variable in this dataset marked 'download', run calc_carbon on its files
+            with conn.cursor() as cur:
+                cur.execute("SELECT variable FROM erddap_variables WHERE dataset_id=%s AND type='download'", (ds_id,))
+                vars_list = [r[0] for r in cur.fetchall()]
+            for v in vars_list:
+                # run calc_carbon per dataset directory
+                print(f"Computing carbonate fields for dataset {args.dataset}, variable {v}")
+                cmd = ["python", "process/calc_carbon.py", "--in-dir", os.getenv('DATA_DIR','/opt/data/nc')]
+                run(cmd)
+        else:
+            # run globally (over all datasets) - run calc script which scans DIC directory by default
+            print("Computing carbonate fields for all available datetimes")
+            cmd = ["python", "process/calc_carbon.py", "--in-dir", os.getenv('DATA_DIR','/opt/data/nc')]
+            run(cmd)
         return
 
 
