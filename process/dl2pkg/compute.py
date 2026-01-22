@@ -109,11 +109,12 @@ def compute_for_group(
             end_time,
             " ".join(cmd),
         )
-        # res = subprocess.run(cmd, check=False)
-        # if res.returncode != 0:
-        #     raise RuntimeError(
-        #         f"Compute subprocess failed with return code {res.returncode}"
-        #     )
+        
+        res = subprocess.run(cmd, check=False)
+        if res.returncode != 0:
+            raise RuntimeError(
+                f"Compute subprocess failed with return code {res.returncode}"
+            )
 
         # After compute finishes, find DIC filename for this dataset/time to infer computed filenames
         import os

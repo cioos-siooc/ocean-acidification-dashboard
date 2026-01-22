@@ -128,7 +128,7 @@ def create_rows_for_date(conn, ds_id, variables, date_str, force=False, dry_run=
 
 
 def create_compute_rows_for_group(conn, date_str):
-    compute_vars = get_compute_variable(conn)
+    compute_vars = get_compute_variables(conn)
     try:
         day = datetime.strptime(date_str, '%Y-%m-%d').date()
     except Exception:
@@ -137,10 +137,10 @@ def create_compute_rows_for_group(conn, date_str):
     end_time = datetime(day.year, day.month, day.day, 23, 30, tzinfo=timezone.utc)
     
     # For each compute variable, ensure a pending_compute row exists for the dataset/start_time/end_time
-    for cv in compute_vars:
+    for icv, cv in compute_vars:
         with conn.cursor() as cur2:
             cur2.execute(
-                "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, status) VALUES (%s, COALESCE((SELECT id FROM erddap_variables WHERE dataset_id=%s AND variable=%s),(SELECT id FROM erddap_variables WHERE variable=%s LIMIT 1)), %s, %s, 'pending_compute') ON CONFLICT DO NOTHING",
-                (None, None, cv, cv, start_time, end_time),
+                "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, status) VALUES (%s, %s , %s, %s, 'pending_compute') ON CONFLICT DO NOTHING",
+                (None, icv, start_time, end_time),
             )
             conn.commit()
