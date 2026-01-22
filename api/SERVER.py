@@ -84,6 +84,47 @@ def get_variables():
         logger.exception("get_variables failed")
         raise HTTPException(status_code=500, detail=str(exc))
 
+
+@app.get("/sensors")
+def get_sensors():
+    """
+    Return a list of sensors with their metadata.
+    """
+    try:
+        import psycopg2
+        import psycopg2.extras
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="psycopg2 is required for /sensors endpoint") from exc
+
+    query = "SELECT name, latitude, longitude, depths, variables FROM sensors;"
+    conn = None
+    try:
+        conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password)
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute(query)
+        rows = cur.fetchall()
+        cur.close()
+        
+        sensors = []
+        for row in rows:
+            sensors.append({
+                "name": row.get("name"),
+                "latitude": row.get("latitude"),
+                "longitude": row.get("longitude"),
+                "depths": row.get("depths"),
+                "variables": row.get("variables"),
+            })
+        return sensors
+    except Exception as exc:
+        logger.exception("get_sensors failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
 #######################################
 
 @app.get("/metadata/{var}")

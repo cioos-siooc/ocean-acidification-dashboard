@@ -14,7 +14,7 @@ def test_process_png_missing(tmp_path):
 
     conn.cursor.side_effect = cursor_cm
 
-    row = {'id': 1, 'file_path_sublevel': str(tmp_path / 'nope.nc'), 'variable': 'dissolved_oxygen'}
+    row = {'id': 1, 'file_path': str(tmp_path / 'nope.nc'), 'variable': 'dissolved_oxygen'}
 
     ok = process_png(conn, row, dry_run=False)
     assert ok is False
@@ -36,7 +36,7 @@ def test_process_png_calls_nc2tile(mock_nc2, tmp_path):
 
     conn.cursor.side_effect = cursor_cm
 
-    row = {'id': 2, 'file_path_sublevel': str(p), 'variable': 'dissolved_oxygen'}
+    row = {'id': 2, 'file_path': str(p), 'variable': 'dissolved_oxygen'}
 
     ok = process_png(conn, row, dry_run=True)
     assert ok is True

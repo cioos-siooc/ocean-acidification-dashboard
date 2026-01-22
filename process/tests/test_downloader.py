@@ -58,8 +58,8 @@ def test_download_nc_success(mock_get, tmp_path):
     ok = download_nc(conn, row, "https://example.erddap.org", dry_run=False)
     assert ok is True
 
-    # ensure that we updated nc_files status to success
-    assert any("UPDATE nc_files SET status_dl='success'" in str(c) for c in cur.execute.call_args_list)
+    # ensure that we updated nc_jobs status to success_download
+    assert any("UPDATE nc_jobs SET status='success_download'" in str(c) for c in cur.execute.call_args_list)
 
 
 @patch("dl2pkg.downloader.requests.get")
@@ -78,5 +78,5 @@ def test_download_nc_failure(mock_get, tmp_path):
     ok = download_nc(conn, row, "https://example.erddap.org", dry_run=False)
     assert ok is False
 
-    # ensure that we updated nc_files status to failed
-    assert any("UPDATE nc_files SET status_dl='failed'" in str(c) for c in cur.execute.call_args_list)
+    # ensure that we updated nc_jobs status to failed_download
+    assert any("UPDATE nc_jobs SET status='failed_download'" in str(c) for c in cur.execute.call_args_list)

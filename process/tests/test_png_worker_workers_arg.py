@@ -17,7 +17,7 @@ def test_process_png_passes_workers(mock_nc2, tmp_path):
     p = tmp_path / 's.nc'
     p.write_text('dummy')
 
-    row = {'id': 2, 'file_path_sublevel': str(p), 'variable': 'dissolved_oxygen'}
+    row = {'id': 2, 'file_path': str(p), 'variable': 'dissolved_oxygen'}
 
     ok = process_png(conn, row, dry_run=False, workers=7)
     assert ok is True

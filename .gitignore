@@ -51,6 +51,7 @@ yarn-error.log*
 
 # === Downloaded Data ===
 data/
+data.b/
 data.tar.gz
 
 # === Docker / CI / Editor ===

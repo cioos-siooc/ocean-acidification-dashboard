@@ -16,8 +16,10 @@ This package contains the `dl2` downloader utilities used by the OA project.
 
 ## Key concepts
 
-- Pipeline stages are tracked in the `nc_files` table using per-stage status columns:
-  - `status_dl`, `status_sublevel`, `status_png` (values: `pending`, `success`, `failed`, or `NULL`).
+- Pipeline stages are tracked in the `nc_files` table using a single ENUM column `status` with the following values:
+  - `pending_download`, `processing_download`, `failed_download`, `success_download`,
+    `pending_image`, `processing_image`, `failed_image`, `success_image`,
+    `pending_compute`, `processing_compute`, `failed_compute`, `success_compute`.
 - Per-stage metadata and attempt counters (e.g., `attempts_sublevel`, `last_error_png`) live alongside each row to support retries and observability.
 - `process/configs.json` controls behavior (depth indices and compression options).
 
@@ -82,7 +84,7 @@ python process/dl2.py png [--dry-run] [--limit 10] [--workers 2]
 - Use `--force` when creating rows for a date to reset an existing successful row to `status_dl='pending'` (also resets attempts and clears last_error) so the full pipeline will run again for that date.
 - `--requeue-failed` (passed to `download`) resets rows with `status_dl='failed'` to `pending` so they will be retried by the download worker.
 - To re-run only downstream stages you can update `nc_files` directly (SQL) and then run the relevant worker:
-  - Reset sublevel: `UPDATE nc_files SET status_sublevel='pending', attempts_sublevel=0 WHERE start_time='2026-01-05 00:30:00' AND variable='dissolved_oxygen';` then `python process/dl2.py sublevel`.
+  - If you need to re-run PNG generation for a specific date/variable: `UPDATE nc_files SET status_png='pending', attempts_png=0 WHERE start_time='2026-01-05 00:30:00' AND variable='dissolved_oxygen';` then `python process/dl2.py png`.  (Sublevels are deprecated in this workflow.)
   - Reset png: `UPDATE nc_files SET status_png='pending', attempts_png=0 WHERE ...;` then `python process/dl2.py png`.
 
 ## Testing & CI

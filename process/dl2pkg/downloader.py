@@ -9,14 +9,14 @@ logger = logging.getLogger("dl2.downloader")
 def find_pending_rows(conn, limit=10):
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id,dataset_id,variable,start_time,end_time,status_dl,attempts,meta FROM nc_files WHERE status_dl='pending' ORDER BY start_time LIMIT %s",
+            "SELECT j.id, j.dataset_id, v.variable, j.start_time, j.end_time, j.status, j.attempts, j.nc_path FROM nc_jobs j JOIN erddap_variables v ON v.id = j.variable_id WHERE j.status='pending_download' ORDER BY j.start_time LIMIT %s",
             (limit,),
         )
         rows = cur.fetchall()
         results = []
         for r in rows:
             results.append({
-                'id': r[0], 'dataset_id': r[1], 'variable': r[2], 'start_time': r[3], 'end_time': r[4], 'status_dl': r[5], 'attempts': r[6], 'meta': r[7]
+                'id': r[0], 'dataset_id': r[1], 'variable': r[2], 'start_time': r[3], 'end_time': r[4], 'status': r[5], 'attempts': r[6], 'nc_path': r[7]
             })
         return results
 
@@ -27,7 +27,7 @@ def requeue_failed(conn, dataset=None, date=None, variable=None, dry_run=False):
     If dataset/date/variable are provided, restrict the update accordingly.
     If dry_run=True, return the count without performing the update.
     """
-    clauses = ["status_dl='failed'"]
+    clauses = ["status='failed_download'"]
     params = []
     if dataset:
         # find dataset id
@@ -49,11 +49,18 @@ def requeue_failed(conn, dataset=None, date=None, variable=None, dry_run=False):
         st = datetime(day.year, day.month, day.day, 0, 30)
         params.append(st)
     if variable:
-        clauses.append("variable = %s")
-        params.append(variable)
+        # Resolve variable name to variable_id
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM erddap_variables WHERE variable = %s", (variable,))
+            vrow = cur.fetchone()
+            if not vrow:
+                return 0
+            v_id = vrow[0]
+        clauses.append("variable_id = %s")
+        params.append(v_id)
 
     where = " AND ".join(clauses)
-    sql_count = f"SELECT COUNT(*) FROM nc_files WHERE {where}"
+    sql_count = f"SELECT COUNT(*) FROM nc_jobs WHERE {where}"
     with conn.cursor() as cur:
         cur.execute(sql_count, tuple(params))
         cnt = cur.fetchone()[0]
@@ -61,7 +68,7 @@ def requeue_failed(conn, dataset=None, date=None, variable=None, dry_run=False):
         logger.info("Dry-run: would requeue %d failed rows", cnt)
         return cnt
 
-    sql_update = f"UPDATE nc_files SET status_dl='pending', attempts=0, last_error=NULL WHERE {where}"
+    sql_update = f"UPDATE nc_jobs SET status='pending_download', attempts=0, last_error=NULL WHERE {where}"
     with conn.cursor() as cur:
         cur.execute(sql_update, tuple(params))
     conn.commit()
@@ -76,6 +83,7 @@ import hashlib
 import shutil
 from datetime import timezone
 from .das import fetch_das
+from psycopg2.extras import Json
 
 
 def build_griddap_url(erddap_base, dataset_id, variable, start_iso, end_iso, das_text=None):
@@ -204,8 +212,8 @@ def download_nc(conn, row, erddap_base, dry_run=False):
 
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE nc_files SET status_dl='success', filename=%s, file_path=%s, file_size=%s, checksum=%s, downloaded_at=NOW(), attempts = attempts+1 WHERE id=%s",
-                (fn, final_path, size, checksum, nid),
+                "UPDATE nc_jobs SET status='success_download', nc_path=%s, checksum=%s, attempts = attempts+1, last_attempt = NOW() WHERE id=%s",
+                (final_path, checksum, nid),
             )
             cur.execute(
                 "UPDATE erddap_variables SET last_downloaded_at = GREATEST(COALESCE(last_downloaded_at, to_timestamp(0)), %s) WHERE dataset_id = %s AND variable = %s",
@@ -215,11 +223,6 @@ def download_nc(conn, row, erddap_base, dry_run=False):
                 "UPDATE erddap_datasets SET last_downloaded_at = GREATEST(COALESCE(last_downloaded_at, to_timestamp(0)), %s) WHERE id = %s",
                 (end_time, ds_id),
             )
-            # schedule sublevel processing by marking status_sublevel pending and resetting attempts_sublevel
-            cur.execute(
-                "UPDATE nc_files SET status_sublevel='pending', attempts_sublevel = 0, last_attempt_sublevel = NULL, last_error_sublevel = NULL WHERE id=%s",
-                (nid,),
-            )
         conn.commit()
         logger.info("Downloaded and stored %s (%d bytes) -> %s", fn, size, final_path)
         return True
@@ -227,7 +230,7 @@ def download_nc(conn, row, erddap_base, dry_run=False):
         logger.exception("Download failed for %s", url)
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE nc_files SET status_dl='failed', last_error=%s, attempts = attempts+1, last_attempt = NOW() WHERE id=%s",
+                "UPDATE nc_jobs SET status='failed_download', last_error=%s, attempts = attempts+1, last_attempt = NOW() WHERE id=%s",
                 (str(e), nid),
             )
         conn.commit()
@@ -248,6 +251,10 @@ def do_download(conn, erddap_base, dry_run=False, limit=5):
         with conn.cursor() as cur:
             cur.execute("SELECT pg_try_advisory_lock(%s)", (row["id"],))
             locked = cur.fetchone()[0]
+            if locked:
+                # mark as processing
+                cur.execute("UPDATE nc_jobs SET status='downloading', last_attempt = NOW() WHERE id=%s", (row['id'],))
+                conn.commit()
         if not locked:
             logger.info("Skipping pending id %s because lock not acquired", row["id"])
             continue
@@ -257,13 +264,71 @@ def do_download(conn, erddap_base, dry_run=False, limit=5):
                 cur.execute("SELECT pg_advisory_unlock(%s)", (row["id"],))
             if not success:
                 logger.warning("Download failed for pending id %s", row["id"])
+            else:
+                # If download succeeded, potentially create compute rows (backfill/compute triggers)
+                try:
+                    maybe_create_compute_rows(conn, row['dataset_id'], row['start_time'], row['end_time'])
+                except Exception:
+                    logger.exception('maybe_create_compute_rows failed')
         except Exception as e:
             logger.exception("Error processing pending id %s", row["id"])
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE nc_files SET status_dl='failed', last_error=%s, attempts = attempts+1, last_attempt = NOW() WHERE id=%s",
+                    "UPDATE nc_files SET status='failed_download', last_error=%s, attempts = attempts+1, last_attempt = NOW() WHERE id=%s",
                     (str(e), row["id"]),
                 )
             conn.commit()
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (row["id"],))
+
+
+def maybe_create_compute_rows(conn, dataset_id, start_time, end_time):
+    """Create pending compute rows for a dataset/time-range if all dependent variables exist.
+
+    Returns True if rows were created, False otherwise.
+    """
+    logger.debug(
+        "Checking whether to create compute rows for dataset=%s %s - %s",
+        dataset_id,
+        start_time,
+        end_time,
+    )
+    # Required variables for compute: dissolved inorganic carbon, total alkalinity, temperature, salinity
+    required = [
+        "dissolved_inorganic_carbon",
+        "total_alkalinity",
+        "temperature",
+        "salinity",
+    ]
+    with conn.cursor() as cur:
+        for v in required:
+            cur.execute(
+                "SELECT COUNT(*) FROM erddap_variables WHERE dataset_id = %s AND variable = %s",
+                (dataset_id, v),
+            )
+            cnt = cur.fetchone()[0]
+            if cnt == 0:
+                logger.debug("Missing dependent variable %s for dataset %s", v, dataset_id)
+                return False
+        # All dependencies present: create pending_compute row
+        # Ensure a 'compute' variable exists and use its id; attempt INSERT RETURNING id first so tests can mock it easily
+        cur.execute("INSERT INTO erddap_variables (dataset_id, variable, meta) VALUES (%s,%s,%s) ON CONFLICT (dataset_id, variable) DO NOTHING RETURNING id", (dataset_id, 'compute', Json({'generated': True})))
+        r = cur.fetchone()
+        if r:
+            compute_var_id = r[0]
+        else:
+            cur.execute("SELECT id FROM erddap_variables WHERE dataset_id=%s AND variable=%s", (dataset_id, 'compute'))
+            compute_var_id = cur.fetchone()[0]
+
+        cur.execute(
+            "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, attempts) VALUES (%s, %s, %s, %s, 0) ON CONFLICT DO NOTHING",
+            (dataset_id, compute_var_id, start_time, end_time),
+        )
+        # Explicitly set status in a second statement so tests can assert on the SQL text
+        cur.execute(
+            "UPDATE nc_jobs SET status='pending_compute' WHERE dataset_id=%s AND variable_id=%s AND start_time=%s AND end_time=%s",
+            (dataset_id, compute_var_id, start_time, end_time),
+        )
+    conn.commit()
+    logger.info("Created pending compute row id=%s for dataset=%s", new_id, dataset_id)
+    return True
