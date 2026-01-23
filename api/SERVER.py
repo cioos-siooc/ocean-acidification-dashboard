@@ -11,6 +11,7 @@ import logging
 # import pandas as pd
 
 from extractTimeseries import extract_timeseries
+from modules.extractSensorTimeseries import extract_sensor_timeseries, extract_sensor_timeseries_from_json
 from threading import Semaphore
 
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
@@ -125,6 +126,31 @@ def get_sensors():
             except Exception:
                 pass
 
+#######################################
+
+# class sensorTimeseries(BaseModel):
+#     var: str
+
+@app.get("/extractSensorTimeseries")
+def fn_extract_sensor_timeseries(var: str = "Temperature", max_samples: int = 100):
+    # Reject requests if we are already at concurrency limit to protect the DB and FS
+    if not _extract_semaphore.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
+
+    try:
+        # For now use a fixed test file path; in future you may accept a file/path parameter
+        path = os.getenv('SENSOR_TEST_FILE', '/opt/data/scalar_1216106_efc2_0290_9ff1.nc')
+        # Ask the extractor to sample up to `max_samples` rows directly from the file
+        # series = extract_sensor_timeseries(var=var, nc_path=path, max_samples=max_samples)
+        series = extract_sensor_timeseries_from_json()
+        # Return list of {time, value} objects as JSON (already small if sampled)
+        return JSONResponse(content=series)
+    except Exception as exc:
+        logger.exception("extract_sensor_timeseries failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        _extract_semaphore.release()
+    
 #######################################
 
 @app.get("/metadata/{var}")

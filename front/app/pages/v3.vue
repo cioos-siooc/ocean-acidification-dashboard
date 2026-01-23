@@ -50,17 +50,20 @@ import axios from 'axios'
 import moment from 'moment-timezone'
 import Layers from '../components/layers.vue'
 import DepthSlider from '../components/depth-slider.vue'
+import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 
 import { computeNightRanges } from '../../composables/useSunCalc'
 import { var2name } from '../../composables/useVar2Name'
 import { utc2pst } from '../../composables/useUTC2PST'
 import { formatDepth } from '../../composables/useFormatDepth'
 import { useCircleLayer } from '../../composables/useCircleLayer';
-import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
+import { getSensorTimeseries } from '../../composables/useGetSensorTimeseries'
+
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
+import { no } from 'vuetify/locale';
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
@@ -80,6 +83,8 @@ const footerHeight = '200px';
 const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, number]];
 
 const mouseCoords = ref<{ lng: number | null, lat: number | null }>({ lng: null, lat: null });
+
+const sensorData = ref<{time:string, value: number}[]>([])
 
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 
@@ -104,6 +109,10 @@ onMounted(async () => {
     });
     console.log(map);
 
+    // Test fetching sensor timeseries
+    const res = await getSensorTimeseries()
+    sensorData.value = res
+
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
         map?.on('mousemove', (e) => {
@@ -113,6 +122,8 @@ onMounted(async () => {
         init().catch((e) => console.warn('init failed:', e));
         addSensors().catch((e) => console.warn('addSensors failed:', e));
     });
+
+    
 })
 
 onBeforeUnmount(() => {
@@ -169,7 +180,6 @@ onBeforeUnmount(() => {
 
 // Watcher: add/update/remove overlay when selected variable or depth changes
 watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth], async ([v, depth]) => {
-    console.log('Watcher [var, depth] triggered:', v, depth);
     if (!map) return;
 
     if (!v) { removePngOverlay(); return; }
@@ -338,7 +348,9 @@ async function getVariables() {
 
         if (data.length > 0) {
             const dts = data[0].dts
-            mainStore.setSelectedVariable(data[0].var, dts[dts.length - 1], 5.5);
+            const precision = data[0].precision;
+            const depth = data[0].depths && data[0].depths.length > 0 ? data[0].depths[0] : 0.5;
+            mainStore.setSelectedVariable(data[0].var, dts[dts.length - 1], depth, precision);
         }
     } catch (e) {
         console.error('Failed to fetch variables:', e);
@@ -390,6 +402,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     const varId = mainStore.selected_variable.var;
     const dt = mainStore.selected_variable.dt?.format('YYYY-MM-DDTHHmmss') || '';
     const depth = formatDepth(mainStore.selected_variable.depth);
+    console.log(mainStore.selected_variable.depth, depth);
 
     const pngPath = `${apiBaseUrl}/png/${varId}/${dt}/${depth}`;
 
@@ -654,6 +667,8 @@ function plotTimeseriesFromApi(varName: string | null, times: string[], values: 
             type: 'line',
             showSymbol: false,
             data: seriesData,
+            smooth: true,
+            lineStyle: { width: 4 },
             markLine: selectedXLocal ? {
                 silent: true,
                 symbol: 'none',
@@ -732,6 +747,8 @@ function onToggleLayer(variable: string) {
         mainStore.setSelectedVariable(variable, mainStore.selected_variable.dt, mainStore.selected_variable.depth);
     }
 }
+
+
 </script>
 
 <style scoped>
