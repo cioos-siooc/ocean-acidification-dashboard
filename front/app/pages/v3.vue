@@ -57,7 +57,6 @@ import { var2name } from '../../composables/useVar2Name'
 import { utc2pst } from '../../composables/useUTC2PST'
 import { formatDepth } from '../../composables/useFormatDepth'
 import { useCircleLayer } from '../../composables/useCircleLayer';
-import { getSensorTimeseries } from '../../composables/useGetSensorTimeseries'
 
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
@@ -108,10 +107,6 @@ onMounted(async () => {
         preserveDrawingBuffer: true, // needed for exporting canvas
     });
     console.log(map);
-
-    // Test fetching sensor timeseries
-    const res = await getSensorTimeseries()
-    sensorData.value = res
 
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
