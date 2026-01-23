@@ -7,6 +7,18 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "autograd"
+version = "1.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/67/1c/3c24ec03c8ba4decc742b1df5a10c52f98c84ca8797757f313e7bdcdf276/autograd-1.8.0.tar.gz", hash = "sha256:107374ded5b09fc8643ac925348c0369e7b0e73bbed9565ffd61b8fd04425683", size = 2562146, upload-time = "2025-05-05T12:49:02.502Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/84/ea/e16f0c423f7d83cf8b79cae9452040fb7b2e020c7439a167ee7c317de448/autograd-1.8.0-py3-none-any.whl", hash = "sha256:4ab9084294f814cf56c280adbe19612546a35574d67c574b04933c7d2ecb7d78", size = 51478, upload-time = "2025-05-05T12:49:00.585Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -289,6 +301,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pillow" },
     { name = "psycopg2-binary" },
+    { name = "pyco2sys" },
     { name = "pyproj" },
     { name = "requests" },
     { name = "scipy" },
@@ -301,6 +314,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.0" },
     { name = "pillow", specifier = ">=12.1.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.7" },
+    { name = "pyco2sys", specifier = ">=1.8.3" },
     { name = "pyproj", specifier = ">=3.7.2" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "scipy", specifier = ">=1.16.3" },
@@ -335,6 +349,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/97/77/21b0ea2e1a73aa5fa9222b2a6b8ba325c43c3a8d54272839c991f2345656/psycopg2_binary-2.9.11-cp314-cp314-musllinux_1_2_riscv64.whl", hash = "sha256:32770a4d666fbdafab017086655bcddab791d7cb260a16679cc5a7338b64343b", size = 3044737, upload-time = "2025-10-30T02:55:35.69Z" },
     { url = "https://files.pythonhosted.org/packages/67/69/f36abe5f118c1dca6d3726ceae164b9356985805480731ac6712a63f24f0/psycopg2_binary-2.9.11-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:c3cb3a676873d7506825221045bd70e0427c905b9c8ee8d6acd70cfcbd6e576d", size = 3347643, upload-time = "2025-10-10T11:13:53.499Z" },
     { url = "https://files.pythonhosted.org/packages/e1/36/9c0c326fe3a4227953dfb29f5d0c8ae3b8eb8c1cd2967aa569f50cb3c61f/psycopg2_binary-2.9.11-cp314-cp314-win_amd64.whl", hash = "sha256:4012c9c954dfaccd28f94e84ab9f94e12df76b4afb22331b1f0d3154893a6316", size = 2803913, upload-time = "2025-10-10T11:13:57.058Z" },
+]
+
+[[package]]
+name = "pyco2sys"
+version = "1.8.3.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "autograd" },
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/0c/71f6a7210837ac1792cdfa12e4d80e733964570d9b9c91e61ccb4fbb056d/pyco2sys-1.8.3.4.tar.gz", hash = "sha256:a75d94b59e1bdd9e64d33b2c475b382862badda5e45d4c9e271ec95bdbb42c2c", size = 108351, upload-time = "2024-12-17T11:43:29.23Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/43/4d21caac64ab629b9022b9f2f629a6f7d17fd3a3adaf174ff74156cf612c/PyCO2SYS-1.8.3.4-py3-none-any.whl", hash = "sha256:ba6774d995357c8aaf3864b3e56a8f4603284b1fd7e213b33b24bf2eab92057e", size = 110575, upload-time = "2024-12-17T11:43:26.622Z" },
 ]
 
 [[package]]

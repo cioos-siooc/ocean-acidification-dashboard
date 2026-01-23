@@ -72,27 +72,11 @@ def _sha256_file(path: str) -> str:
 
 
 def find_pending_sublevels(conn, limit: int = 10):
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id,dataset_id,variable,start_time,end_time,filename,file_path,meta,attempts_sublevel,status_sublevel FROM nc_files WHERE status_dl='success' AND (status_sublevel IS NULL OR status_sublevel='pending' OR status_sublevel='failed') ORDER BY start_time LIMIT %s",
-            (limit,),
-        )
-        rows = cur.fetchall()
-        results = []
-        for r in rows:
-            results.append({
-                "id": r[0],
-                "dataset_id": r[1],
-                "variable": r[2],
-                "start_time": r[3],
-                "end_time": r[4],
-                "filename": r[5],
-                "file_path": r[6],
-                "meta": r[7],
-                "attempts_sublevel": r[8],
-                "status_sublevel": r[9],
-            })
-        return results
+    # Sublevel processing is deprecated in this pipeline. Return no pending sublevels so the
+    # worker remains inactive. If you absolutely need to run sublevels, use process_sublevel
+    # directly on desired rows or re-enable this function.
+    logger.info("Sublevel processing is deprecated; find_pending_sublevels will return no rows")
+    return []
 
 
 def process_sublevel(conn, row, depth_indices: Optional[List[int]] = None, dry_run: bool = False, force: bool = False, max_attempts: int = 1):
@@ -120,7 +104,7 @@ def process_sublevel(conn, row, depth_indices: Optional[List[int]] = None, dry_r
     try:
         # mark pending
         with conn.cursor() as cur:
-            cur.execute("UPDATE nc_files SET status_sublevel='pending', last_attempt_sublevel = NOW() WHERE id=%s", (nid,))
+            cur.execute("UPDATE nc_files SET last_attempt_sublevel = NOW() WHERE id=%s", (nid,))
         conn.commit()
 
         if dry_run:
@@ -161,13 +145,8 @@ def process_sublevel(conn, row, depth_indices: Optional[List[int]] = None, dry_r
 
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE nc_files SET status_sublevel='success', filename_sublevel=%s, file_path_sublevel=%s, file_size_sublevel=%s, checksum_sublevel=%s WHERE id=%s",
+                "UPDATE nc_files SET filename_sublevel=%s, file_path_sublevel=%s, file_size_sublevel=%s, checksum_sublevel=%s, last_attempt_sublevel=NOW() WHERE id=%s",
                 (out_fn, out_path, size, checksum, nid),
-            )
-            # set status_png pending to trigger png worker
-            cur.execute(
-                "UPDATE nc_files SET status_png='pending' WHERE id=%s",
-                (nid,),
             )
         conn.commit()
         logger.info("Created sublevel file %s", out_path)
@@ -176,7 +155,7 @@ def process_sublevel(conn, row, depth_indices: Optional[List[int]] = None, dry_r
         logger.exception("Sublevel processing failed for %s", src)
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE nc_files SET status_sublevel='failed', last_error_sublevel=%s, attempts_sublevel=attempts_sublevel+1, last_attempt_sublevel=NOW() WHERE id=%s",
+                "UPDATE nc_files SET last_error_sublevel=%s, attempts_sublevel=attempts_sublevel+1, last_attempt_sublevel=NOW() WHERE id=%s",
                 (str(e), nid),
             )
         conn.commit()

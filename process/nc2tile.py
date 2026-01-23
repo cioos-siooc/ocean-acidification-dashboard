@@ -259,8 +259,105 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
 
     tslice = ds_data[varname].isel(sel).values
 
-    # Interpolate
-    interp = reproject_and_interpolate(lon_src, lat_src, tslice, xx_merc, yy_merc, method=method)
+    # Build a valid-data mask from the file (prefer an explicit mask variable if present)
+    tslice_vals = tslice.astype(float)
+
+    mask_slice = None
+    mask_candidates = [f"{varname}_mask", f"{varname}_valid", f"{varname}_flag", "mask"]
+    for m in mask_candidates:
+        if m in ds_data:
+            try:
+                ms = ds_data[m].isel(sel).values
+                if ms.shape == tslice_vals.shape:
+                    mask_slice = ms
+                    break
+            except Exception:
+                pass
+
+    if mask_slice is not None:
+        # normalize mask to boolean: non-zero/True and finite means valid
+        if mask_slice.dtype == bool:
+            src_valid = mask_slice.astype(bool)
+        else:
+            src_valid = (mask_slice != 0) & np.isfinite(mask_slice)
+    else:
+        # fallback: use _FillValue / missing_value attrs, or NaN/finite test
+        fill = None
+        try:
+            fill = ds_data[varname].attrs.get('_FillValue') or ds_data[varname].attrs.get('missing_value')
+        except Exception:
+            fill = None
+        if fill is not None:
+            try:
+                fv = float(fill)
+                src_valid = np.isfinite(tslice_vals) & (~np.isclose(tslice_vals, fv)) & (tslice_vals != 0)
+            except Exception:
+                src_valid = np.isfinite(tslice_vals) & (tslice_vals != 0)
+        else:
+            # treat extreme sentinel values as invalid (defensive)
+            src_valid = np.isfinite(tslice_vals) & (np.abs(tslice_vals) < 1e29) & (tslice_vals != 0)
+
+    # If no valid source points, produce entirely transparent output
+    total_points = tslice_vals.size
+    valid_count = int(np.sum(src_valid))
+    # Handle pathological case: fill==0 marking nearly all points invalid -> relax to finite-only
+    if valid_count == 0:
+        interp = np.full_like(xx_merc, np.nan, dtype=float)
+        mask_tgt_bool = np.zeros_like(interp, dtype=bool)
+    else:
+        # Build source coordinate mask to exclude NaN lon/lats
+        coord_valid = np.isfinite(lon_src.ravel()) & np.isfinite(lat_src.ravel())
+        pts_src_full = np.column_stack((lon_src.ravel(), lat_src.ravel()))[coord_valid]
+
+        # Align source-valid flags with coord_valid entries
+        src_valid_flat = src_valid.ravel()[coord_valid]
+
+        # If src_valid_flat has very few true points (e.g., fill==0 case), fallback to finite-only (excluding zero)
+        if src_valid_flat.sum() < max(1, int(0.01 * total_points)):
+            src_valid_flat = (np.isfinite(tslice_vals.ravel()) & (tslice_vals.ravel() != 0))[coord_valid]
+
+        # Transform target mercator grid to lon/lat for interpolation
+        if Transformer is None:
+            raise RuntimeError("pyproj is required")
+        transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+        tgt_lon, tgt_lat = transformer.transform(xx_merc.ravel(), yy_merc.ravel())
+        tgt_pts = np.column_stack((tgt_lon, tgt_lat))
+
+        # Interpolate mask using the same method as data to ensure boundaries match
+        mask_src_f = src_valid_flat.astype(float)
+        try:
+            # Use requested method (linear/cubic) for mask to get smooth 0.5 contours
+            mask_tgt_flat = griddata(pts_src_full, mask_src_f, tgt_pts, method=method, fill_value=0.0)
+            
+            # If method is linear/cubic, griddata allows fill_value but might return NaNs outside hull?
+            # griddata(method='linear') respects fill_value if provided in recent scipy, but safer to nan_to_num 
+            # just in case it returns NaNs for extrapolation.
+            mask_tgt_flat = np.nan_to_num(mask_tgt_flat, nan=0.0)
+            
+            mask_tgt_bool = (mask_tgt_flat.reshape(xx_merc.shape) >= 0.5)
+        except Exception:
+            # fallback to nearest if the chosen method fails (e.g. slight triangulation issues)
+            try:
+                mask_tgt_flat = griddata(pts_src_full, mask_src_f, tgt_pts, method='nearest', fill_value=0.0)
+                mask_tgt_bool = (mask_tgt_flat.reshape(xx_merc.shape) >= 0.5)
+            except Exception:
+                mask_tgt_bool = np.zeros_like(xx_merc, dtype=bool)
+
+        # Interpolate data using only valid source points (and coords that are finite)
+        pts_valid = pts_src_full[src_valid_flat]
+        vals_valid = tslice_vals.ravel()[coord_valid][src_valid_flat]
+        try:
+            interp_flat = griddata(pts_valid, vals_valid, tgt_pts, method=method, fill_value=np.nan)
+            interp = interp_flat.reshape(xx_merc.shape)
+        except Exception:
+            interp = np.full_like(xx_merc, np.nan, dtype=float)
+
+        # If mask interpolation produced nothing, fallback to marking finite interpolated values as valid
+        if not mask_tgt_bool.any():
+            mask_tgt_bool = np.isfinite(interp)
+
+        # Apply interpolated mask: mark anything coming from invalid source as NaN
+        interp[~mask_tgt_bool] = np.nan
 
     # compute vmin/vmax if not provided
     if vmin is None or vmax is None:
@@ -278,7 +375,8 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
         vmin_local, vmax_local = vmin, vmax
 
     gray = scale_to_uint8(interp, vmin_local, vmax_local, clip_percentile=clip)
-    alpha = np.where(np.isnan(interp) | (interp == 0), 0, 255).astype(np.uint8)
+    # alpha is derived from the interpolated source mask (transparent where data is invalid)
+    alpha = np.where(mask_tgt_bool, 255, 0).astype(np.uint8)
 
     # Apply erddap-provided absolute min/max caps to the interpolated values before packing to RGB.
     # Leave NaNs untouched (they will remain transparent in alpha).
@@ -354,6 +452,11 @@ def cap_to_range(arr: np.ndarray, vmin: Optional[float], vmax: Optional[float]) 
 
     - Values that are NaN are left untouched.
     - If vmin or vmax is None, that bound is ignored.
+
+    Special behavior: when `vmax` is provided, values above `vmax` will be
+    capped to the largest finite value in the array that is <= `vmax` if any
+    such value exists; otherwise they are capped to `vmax`. This preserves
+    discrete step-like value behavior in some datasets (see tests).
     """
     a = np.array(arr, dtype=float, copy=True)
     fin = np.isfinite(a)
@@ -364,7 +467,18 @@ def cap_to_range(arr: np.ndarray, vmin: Optional[float], vmax: Optional[float]) 
     if vmax is not None:
         mask = fin & (a > float(vmax))
         if mask.any():
-            a[mask] = float(vmax)
+            # If vmin is None (partial bound provided) prefer capping to the
+            # largest existing value <= vmax (if any). If vmin is provided then
+            # treat vmax as an explicit numeric clamp.
+            if vmin is None:
+                candidates = a[fin & (a <= float(vmax))]
+                if candidates.size > 0:
+                    cap_value = float(np.max(candidates))
+                else:
+                    cap_value = float(vmax)
+            else:
+                cap_value = float(vmax)
+            a[mask] = cap_value
     return a
 
 
@@ -448,6 +562,7 @@ def compute_global_minmax(ds_data: xr.Dataset, varname: str) -> Tuple[float, flo
 
 def process_variable(
     ds_data_path: str,
+    depth_indices: list[int],
     varname: str,
     max_dim: int = 2048,
     method: str = "linear",
@@ -532,19 +647,8 @@ def process_variable(
         raise ValueError("Could not find time dimension for variable")
 
     times = ds_data[time_dim].values
-
-    # depth values if present
-    depth_vals = None
-    if depth_dim is not None:
-        depth_vals = ds_data[depth_dim].values
-
-    # write per-variable meta.json (bounds, scale, depths, time count)
-    if depth_vals is not None:
-        meta['depths'] = [float(x) for x in depth_vals]
-    try:
-        meta['time_count'] = int(len(times))
-    except Exception:
-        meta['time_count'] = None
+    
+    depths = ds_data[depth_dim].values
 
     # Write per-variable meta.json into PNG_ROOT/<var>/meta.json so the API can serve it
     png_root = os.getenv('PNG_ROOT', '/opt/data/png')
@@ -560,14 +664,13 @@ def process_variable(
         tstr = np.datetime_as_string(tval, unit="s").replace(":", "")
         t_iso = str(np.datetime_as_string(tval, unit="s"))
         tstr_to_iso[str(tstr)] = t_iso
-        depth_iter = [(None, None)]
-        if depth_vals is not None:
-            depth_iter = list(enumerate(depth_vals))
 
-        for didx, dval in depth_iter:
+        for didx in depth_indices:
             # prepare vmin/vmax to send to worker if using global scale; else pass None
             send_vmin = vmin if global_scale else None
             send_vmax = vmax if global_scale else None
+            
+            depth = depths[int(didx)]
 
             # include any absolute min/max stored in erddap_variables for this variable
             tasks.append((
@@ -575,8 +678,8 @@ def process_variable(
                 varname,
                 int(idx),
                 str(tstr),
-                (int(didx) if dval is not None else None),
-                (float(dval) if dval is not None else None),
+                didx,
+                depth,
                 send_vmin,
                 send_vmax,
                 erddap_min,
@@ -648,13 +751,14 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--clip-pct", default=None, help="Clip percentiles e.g. 1,99 for contrast stretching (optional)")
     p.add_argument("--no-global-scale", action="store_true", help="Disable global per-variable scaling (use per-image) ")
     p.add_argument("--workers", type=int, default=None, help="Number of parallel worker processes to use (default: cpu_count()-1)")
+    p.add_argument("--precision", type=float, default=0.1, help="Precision for PNG packing (default: 0.1)")
+    p.add_argument("--depth-indices", required=True, help="Comma-separated depth indices to process.")
     p.add_argument("--quiet", action="store_true", help="Less verbose")
     p.add_argument("--simulate", action="store_true", help="Simulate PNG generation; don't write PNG/sidecar files, but return processed datetimes")
-    # packing precision is fixed at 0.1 (no CLI flag)
     return p.parse_args(argv)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None) -> list[int]:
     args = parse_args(argv)
     varnames = None
     if args.vars:
@@ -686,6 +790,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"Processing variable: {var} (workers={workers})")
         processed = process_variable(
             args.data,
+            [int(d) for d in args.depth_indices.split(",") if d.strip().isdigit()],
             var,
             max_dim=args.max_dim,
             method=args.interp,
@@ -694,8 +799,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             verbose=not args.quiet,
             workers=workers,
             simulate=args.simulate,
-            # pack_precision is fixed at 0.1
-            pack_precision=0.1,
+            pack_precision=args.precision,
         )
         if processed:
             all_processed.extend(processed)

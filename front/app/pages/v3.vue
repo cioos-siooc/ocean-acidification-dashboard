@@ -50,15 +50,20 @@ import axios from 'axios'
 import moment from 'moment-timezone'
 import Layers from '../components/layers.vue'
 import DepthSlider from '../components/depth-slider.vue'
+import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 
 import { computeNightRanges } from '../../composables/useSunCalc'
 import { var2name } from '../../composables/useVar2Name'
 import { utc2pst } from '../../composables/useUTC2PST'
 import { formatDepth } from '../../composables/useFormatDepth'
+import { useCircleLayer } from '../../composables/useCircleLayer';
+import { getSensorTimeseries } from '../../composables/useGetSensorTimeseries'
+
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
+import { no } from 'vuetify/locale';
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
@@ -78,6 +83,8 @@ const footerHeight = '200px';
 const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, number]];
 
 const mouseCoords = ref<{ lng: number | null, lat: number | null }>({ lng: null, lat: null });
+
+const sensorData = ref<{time:string, value: number}[]>([])
 
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 
@@ -102,14 +109,21 @@ onMounted(async () => {
     });
     console.log(map);
 
+    // Test fetching sensor timeseries
+    const res = await getSensorTimeseries()
+    sensorData.value = res
+
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
         map?.on('mousemove', (e) => {
             mouseCoords.value.lng = e.lngLat.lng.toFixed(4) as unknown as number;
             mouseCoords.value.lat = e.lngLat.lat.toFixed(4) as unknown as number;
         });
-        addStations().catch((e) => console.warn('addStations failed:', e));
+        init().catch((e) => console.warn('init failed:', e));
+        addSensors().catch((e) => console.warn('addSensors failed:', e));
     });
+
+    
 })
 
 onBeforeUnmount(() => {
@@ -166,7 +180,6 @@ onBeforeUnmount(() => {
 
 // Watcher: add/update/remove overlay when selected variable or depth changes
 watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth], async ([v, depth]) => {
-    console.log('Watcher [var, depth] triggered:', v, depth);
     if (!map) return;
 
     if (!v) { removePngOverlay(); return; }
@@ -225,29 +238,6 @@ watch(() => mainStore.selected_variable.dt, async (newDt) => {
 });
 
 ///////////////////////////////////  MEDTHODS  ///////////////////////////////////
-
-async function getVariables() {
-    try {
-        const r = await axios.get(`${apiBaseUrl}/variables`);
-        const data = r.data;
-
-        // Convert datetimes from string to moment objects
-        data.forEach((v: any) => {
-            v.dts = v.dts.map((dtstr: string) => moment.utc(dtstr));
-        });
-
-        mainStore.setVariables(data);
-        console.log(data);
-
-        if (data.length > 0) {
-            const dts = data[0].dts
-            mainStore.setSelectedVariable(data[0].var, dts[dts.length - 1], 5.5);
-        }
-    } catch (e) {
-        console.error('Failed to fetch variables:', e);
-    }
-}
-
 async function getMetadata() {
     try {
         const varId = mainStore.selected_variable.var;
@@ -261,7 +251,7 @@ async function getMetadata() {
     }
 }
 
-async function addStations() {
+async function init() {
     if (!map) return;
 
     getVariables()
@@ -343,6 +333,68 @@ async function addStations() {
     // No click handler registered until an overlay is added by selecting a variable.
 }
 
+async function getVariables() {
+    try {
+        const r = await axios.get(`${apiBaseUrl}/variables`);
+        const data = r.data;
+
+        // Convert datetimes from string to moment objects
+        data.forEach((v: any) => {
+            v.dts = v.dts.map((dtstr: string) => moment.utc(dtstr));
+        });
+
+        mainStore.setVariables(data);
+        console.log(data);
+
+        if (data.length > 0) {
+            const dts = data[0].dts
+            const precision = data[0].precision;
+            const depth = data[0].depths && data[0].depths.length > 0 ? data[0].depths[0] : 0.5;
+            mainStore.setSelectedVariable(data[0].var, dts[dts.length - 1], depth, precision);
+        }
+    } catch (e) {
+        console.error('Failed to fetch variables:', e);
+    }
+}
+
+async function addSensors() {
+    const sensors = await getSensors();
+    console.log('sensors: ', sensors);
+
+    const features = sensors.map((s: any) => ({
+        type: 'Feature',
+        geometry: {
+            type: 'Point',
+            coordinates: [s.longitude, s.latitude]
+        },
+        properties: {
+            name: s.name,
+            depths: s.depths,
+            variables: s.variables
+        }
+    }));
+    const geojson: FeatureCollection<Geometry, GeoJsonProperties> = {
+        type: 'FeatureCollection',
+        features: features
+    };
+
+    const circle = useCircleLayer(() => map);
+    circle.addCircleLayer({ sourceId: 'stations', layerId: 'stations-circles', radius: 6, color: '#FFD700' });
+    circle.updateData(geojson);
+    // circle.on('mouseenter', (e) => { /* ... */ });
+}
+
+async function getSensors() {
+    try {
+        const r = await axios.get(`${apiBaseUrl}/sensors`);
+        const data = r.data;
+        return data;
+    } catch (e) {
+        console.error('Failed to fetch sensors:', e);
+        return [];
+    }
+}
+
 // Add / update / remove PNG overlay for a given public PNG path
 async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
     if (!map) throw new Error('map not initialized');
@@ -350,6 +402,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     const varId = mainStore.selected_variable.var;
     const dt = mainStore.selected_variable.dt?.format('YYYY-MM-DDTHHmmss') || '';
     const depth = formatDepth(mainStore.selected_variable.depth);
+    console.log(mainStore.selected_variable.depth, depth);
 
     const pngPath = `${apiBaseUrl}/png/${varId}/${dt}/${depth}`;
 
@@ -379,7 +432,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
     // Get packing params from metadata, default to 0.1 precision and 0 base if missing
     // Note: base might be equal to vmin if it was dynamic
-    const precision = mainStore.variables.find(v => v.var === varId)?.precision ?? 0.1;
+    const precision = mainStore.variables.find(v => v.var === varId).precision;
     const base = 0
 
     const color_stops = [
@@ -531,7 +584,16 @@ function plotTimeseriesFromApi(varName: string | null, times: string[], values: 
 
     // Determine time range in local timezone
     if (!localTimes || localTimes.length === 0) {
-        globalChart.setOption({ series: [{ name: varName || 'value', type: 'line', showSymbol: false, data: [] }] });
+        globalChart.setOption({
+            series: [
+                {
+                    name: varName || 'value',
+                    type: 'line',
+                    showSymbol: false,
+                    smooth: true,
+                    data: []
+                }]
+        });
         return;
     }
     const startLocal = moment.tz(localTimes[0], tz).clone();
@@ -605,6 +667,8 @@ function plotTimeseriesFromApi(varName: string | null, times: string[], values: 
             type: 'line',
             showSymbol: false,
             data: seriesData,
+            smooth: true,
+            lineStyle: { width: 4 },
             markLine: selectedXLocal ? {
                 silent: true,
                 symbol: 'none',
@@ -683,6 +747,8 @@ function onToggleLayer(variable: string) {
         mainStore.setSelectedVariable(variable, mainStore.selected_variable.dt, mainStore.selected_variable.depth);
     }
 }
+
+
 </script>
 
 <style scoped>

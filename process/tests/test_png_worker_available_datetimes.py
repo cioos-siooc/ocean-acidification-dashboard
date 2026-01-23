@@ -26,7 +26,7 @@ def test_process_png_updates_available_datetimes(mock_nc2, tmp_path):
     # then for SELECT available_datetimes (return None)
     cur.fetchone.side_effect = [(True,), (None,)]
 
-    row = {'id': 2, 'file_path_sublevel': str(p), 'variable': 'dissolved_oxygen', 'start_time': datetime(2026,1,5,0,30), 'dataset_id': 7}
+    row = {'id': 2, 'file_path': str(p), 'variable': 'dissolved_oxygen', 'start_time': datetime(2026,1,5,0,30), 'dataset_id': 7}
 
     ok = process_png(conn, row, dry_run=False)
     assert ok is True

@@ -33,4 +33,4 @@ def test_requeue_exec(monkeypatch):
     cnt = requeue_failed(conn, dataset=None, date=None, variable=None, dry_run=False)
     assert cnt == 3
     # ensure the update was called
-    assert any('UPDATE nc_files SET status_dl=' in str(call) for call in cur.execute.call_args_list)
+    assert any("UPDATE nc_jobs SET status='pending_download'" in str(call) for call in cur.execute.call_args_list)

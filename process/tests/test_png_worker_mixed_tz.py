@@ -26,7 +26,7 @@ def test_process_png_handles_mixed_naive_and_aware(mock_nc2, tmp_path):
     # first cursor calls: pg_try_advisory_lock -> (True,), then SELECT available_datetimes -> ( [existing_naive], )
     cur.fetchone.side_effect = [(True,), ([existing_naive],)]
 
-    row = {'id': 2, 'file_path_sublevel': str(p), 'variable': 'dissolved_oxygen', 'start_time': None, 'dataset_id': 7}
+    row = {'id': 2, 'file_path': str(p), 'variable': 'dissolved_oxygen', 'start_time': None, 'dataset_id': 7}
 
     ok = process_png(conn, row, dry_run=False, simulate=True)
     assert ok is True

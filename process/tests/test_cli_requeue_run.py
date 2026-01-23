@@ -20,10 +20,10 @@ def test_run_forwards_requeue_with_date(monkeypatch):
     monkeypatch.setattr('dl2pkg.downloader.requeue_failed', fake_requeue_failed)
     monkeypatch.setattr('dl2pkg.cli.do_download', lambda *a, **k: calls.setdefault('download', True))
 
-    cli.main(['run', '--dataset', 'foo', '--date', '2026-01-05', '--requeue-failed'])
+    cli.main(['run', '--date', '2026-01-05', '--requeue-failed'])
 
     assert 'requeue' in calls
-    assert calls['requeue'] == (True, 'foo', '2026-01-05', None, False)
+    assert calls['requeue'] == (True, None, '2026-01-05', None, False)
     assert calls.get('download') is True
 
 
@@ -43,8 +43,8 @@ def test_run_forwards_requeue_without_date(monkeypatch):
     monkeypatch.setattr('dl2pkg.downloader.requeue_failed', fake_requeue_failed)
     monkeypatch.setattr('dl2pkg.cli.do_download', lambda *a, **k: calls.setdefault('download', True))
 
-    cli.main(['run', '--dataset', 'foo', '--requeue-failed'])
+    cli.main(['run', '--requeue-failed'])
 
     assert 'requeue' in calls
-    assert calls['requeue'] == (True, 'foo', None, None, False)
+    assert calls['requeue'] == (True, None, None, None, False)
     assert calls.get('download') is True

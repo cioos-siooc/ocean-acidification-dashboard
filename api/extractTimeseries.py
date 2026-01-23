@@ -191,6 +191,28 @@ def extract_timeseries(
 
     files = sorted(glob(os.path.join(data_dir, var, "*.nc")))
 
+    # Limit to last 3 available days to keep this query efficient. Extract date tokens
+    # (YYYYMMDD or YYYYMMDDT####) from filenames and select only files matching the
+    # most recent three distinct dates found.
+    if files:
+        date_tokens = []
+        for fp in files:
+            bn = os.path.basename(fp)
+            m = re.search(r"(\d{8})T\d{4}", bn)
+            if m:
+                date_tokens.append(m.group(1))
+                continue
+            m2 = re.search(r"(\d{8})", bn)
+            if m2:
+                date_tokens.append(m2.group(1))
+        if date_tokens:
+            from datetime import datetime as _dt
+            unique_dates = sorted({_dt.strptime(t, "%Y%m%d").date() for t in date_tokens})
+            n = 5
+            last_n = unique_dates[-n:]
+            last_tokens = {d.strftime("%Y%m%d") for d in last_n}
+            files = [f for f in files if any(tok in os.path.basename(f) for tok in last_tokens)]
+
     # iterate files and extract
     times_list: List[pd.DatetimeIndex] = []
     values_list: List[np.ndarray] = []

@@ -22,12 +22,16 @@ import { formatDepth } from '../../composables/useFormatDepth'
 
 const mainStore = useMainStore()
 
-const depths = ref<number[]>([])
+// const depths = ref<number[]>([])
 const index = ref(0)
 
 // Derived display of current depth
+const selectedVariable = computed(() => mainStore.selected_variable.var)
+const depths = computed(() => mainStore.variables.find(v => v.var === selectedVariable.value)?.depths ?? [])
 const currentDepth = computed(() => depths.value[index.value] ?? null)
 const currentDepthDisplay = computed(() => currentDepth.value === null ? '-' : `${formatDepth(currentDepth.value)}`)
+
+
 
 // Watch selected variable changes to fetch metadata (depths)
 watch(() => mainStore.selected_variable.var, async (newVar) => {
