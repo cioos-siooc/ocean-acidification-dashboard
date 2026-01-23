@@ -10,13 +10,7 @@
         <v-footer class="ma-0 pa-0" :style="{ maxHeight: `${footerHeight}` }">
             <!-- <div ref="globalChartContainer" class="w-100" :style="{ height: `calc(${footerHeight} - 20px)` }"></div> -->
             <v-container minWidth="100%" class="ma-0 pa-0">
-                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)` }">
-                    <div ref="globalChartContainer" style="width: 100%; height: 100%;"></div>
-                </v-row>
                 <v-row class="ma-0 pa-0" style="height:20px; background-color: #ccc;">
-                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
-                        <span class="footer-text" style="font-weight: bold;">SELECTED</span>
-                    </v-col>
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ var2name(selectedVariable.var) }}</span>
                     </v-col>
@@ -30,6 +24,10 @@
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ mouseCoords.lat }} , {{ mouseCoords.lng }}</span>
                     </v-col>
+                </v-row>
+
+                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)` }">
+                    <div ref="globalChartContainer" style="width: 100%; height: 100%;"></div>
                 </v-row>
             </v-container>
 
@@ -83,7 +81,13 @@ const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, 
 
 const mouseCoords = ref<{ lng: number | null, lat: number | null }>({ lng: null, lat: null });
 
-const sensorData = ref<{time:string, value: number}[]>([])
+const sensorData = ref<{ time: string, value: number }[]>([])
+
+// Flags to coordinate initial click: mapLoaded becomes true when map 'load' fires;
+// selectedReady becomes true when initial variables/selectedVariable are set.
+const mapLoaded = ref(false);
+const selectedReady = ref(false);
+let didInitClick = false;
 
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 
@@ -118,7 +122,7 @@ onMounted(async () => {
         addSensors().catch((e) => console.warn('addSensors failed:', e));
     });
 
-    
+
 })
 
 onBeforeUnmount(() => {
@@ -182,6 +186,8 @@ watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth]
         await getMetadata();
         await updatePngOverlay();
 
+        mapLoaded.value = true;
+
         // If the user previously clicked a point, refresh the timeseries chart for the new var/depth
         if (lastClicked.value) {
             try {
@@ -198,12 +204,7 @@ watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth]
                         try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
                         tsRequestController = new AbortController();
 
-                        const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: varId, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
-                        const json = r.data;
-                        if (json && Array.isArray(json.time) && Array.isArray(json.value)) {
-                            const vname = mainStore.variables.find(x => x.var === varId)?.name || varId;
-                            plotTimeseriesFromApi(vname, json.time, json.value, lat, lon);
-                        }
+                        getTimeseriesFromApi(lat, lon);
                     } catch (e) {
                         if (e && e.code === 'ERR_CANCELED') return; // aborted
                         console.warn('Failed to refresh timeseries after var/depth change', e);
@@ -214,7 +215,8 @@ watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth]
             } catch (e) {
                 console.warn('Failed to schedule timeseries refresh after var/depth change', e);
             }
-        }
+        } else
+            maybeInitClick();
     } catch (e) {
         console.error('Failed to load PNG for variable', v, e);
         removePngOverlay();
@@ -342,13 +344,49 @@ async function getVariables() {
         console.log(data);
 
         if (data.length > 0) {
-            const dts = data[0].dts
-            const precision = data[0].precision;
-            const depth = data[0].depths && data[0].depths.length > 0 ? data[0].depths[0] : 0.5;
-            mainStore.setSelectedVariable(data[0].var, dts[dts.length - 1], depth, precision);
+            const varId = 'temperature';
+            const dts = data.find((v: any) => v.var === varId)?.dts;
+            const precision = data.find((v: any) => v.var === varId)?.precision || 0.1;
+            const depth = data.find((v: any) => v.var === varId)?.depths && data.find((v: any) => v.var === varId)?.depths.length > 0 ? data.find((v: any) => v.var === varId)?.depths[0] : 0.5;
+            mainStore.setSelectedVariable(varId, dts[dts.length - 1], depth, precision);
         }
+
+        selectedReady.value = true;
+        maybeInitClick();
     } catch (e) {
         console.error('Failed to fetch variables:', e);
+    }
+}
+
+function maybeInitClick() {
+    console.log('maybeInitClick:', { mapLoaded: mapLoaded.value, selectedReady: selectedReady.value, didInitClick });
+    // Call initClick only once both the map has finished loading and the selected variable has been initialized
+    if (mapLoaded.value && selectedReady.value && !didInitClick) {
+        didInitClick = true;
+        initClick(49.2, -123.5); // Center of the map
+    }
+}
+
+function initClick(lat: number, lon: number) {
+    if (!map) return;
+
+    lastClicked.value = { lat, lon };
+
+    // Abort any in-flight timeseries requests and create a new controller
+    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
+    tsRequestController = new AbortController();
+
+    // trigger map click to load initial timeseries
+    map.fire('click', { lngLat: { lat, lng: lon } });
+
+    // getTimeseriesFromApi(lat, lon);
+}
+
+async function getTimeseriesFromApi(lat: number, lon: number) {
+    const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
+    const json = r.data;
+    if (json && Array.isArray(json.time) && Array.isArray(json.value)) {
+        plotTimeseriesFromApi(json.time, json.value, lat, lon);
     }
 }
 
@@ -516,13 +554,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
         // POST to the API and expect {time: [...], value: [...]} in response
         try {
-            console.log({ var: mainStore.selected_variable.var, lat: lat, lon: lng, depth: mainStore.selected_variable.depth });
-            const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat: lat, lon: lng, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
-            console.log(r);
-
-            const json = r.data;
-            if (!json || !Array.isArray(json.time) || !Array.isArray(json.value)) throw new Error('Invalid API response');
-            plotTimeseriesFromApi(vname, json.time, json.value, lat, lng);
+            await getTimeseriesFromApi(lat, lng);
         } catch (err) {
             if (err && err.code === 'ERR_CANCELED') {
                 // request was aborted; ignore
@@ -566,7 +598,7 @@ function removePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
 }
 
 // Plot timeseries returned from the API into the footer chart
-function plotTimeseriesFromApi(varName: string | null, times: string[], values: number[], lat?: number, lon?: number) {
+function plotTimeseriesFromApi(times: string[], values: number[], lat?: number, lon?: number) {
     if (!globalChart) return;
     const tz = 'America/Vancouver';
 
@@ -582,7 +614,7 @@ function plotTimeseriesFromApi(varName: string | null, times: string[], values: 
         globalChart.setOption({
             series: [
                 {
-                    name: varName || 'value',
+                    name: mainStore.selected_variable.var || 'value',
                     type: 'line',
                     showSymbol: false,
                     smooth: true,
@@ -658,7 +690,7 @@ function plotTimeseriesFromApi(varName: string | null, times: string[], values: 
             }
         },
         series: [{
-            name: varName || 'value',
+            name: mainStore.selected_variable.var || 'value',
             type: 'line',
             showSymbol: false,
             data: seriesData,
