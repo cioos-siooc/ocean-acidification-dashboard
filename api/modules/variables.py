@@ -8,7 +8,8 @@ from typing import List, Dict
 
 
 def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> List[Dict]:
-    query = "SELECT variable, available_datetimes, min, max, depths_image, precision FROM erddap_variables;"
+    # Include `colormap` column so clients know which colormap to use for each variable
+    query = "SELECT variable, available_datetimes, min, max, depths_image, precision, colormap FROM erddap_variables;"
     
     try:
         import psycopg2
@@ -41,6 +42,7 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
                     "max": max,
                     "depths": depths,
                     "precision": precision,
+                    "colormap": row.get("colormap")
                 })
         return variables
     finally:

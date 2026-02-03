@@ -30,6 +30,8 @@ import re
 import numpy as np
 import xarray as xr
 import pandas as pd
+import threading
+from lock_manager import io_lock as _io_lock
 
 # Reuse same DB helper patterns as extractProfile
 try:
@@ -223,9 +225,10 @@ def extract_timeseries(
     depth_dim = None
     for fp in files:
         try:
-            sample_ds = xr.open_dataset(fp)
-            var_sample = find_variable(sample_ds, var)
-            depth_dim = find_depth_dim(var_sample)
+            with _io_lock:
+                sample_ds = xr.open_dataset(fp)
+                var_sample = find_variable(sample_ds, var)
+                depth_dim = find_depth_dim(var_sample)
             break
         except Exception as e:
             if verbose:
@@ -277,55 +280,56 @@ def extract_timeseries(
 
     for fp in files:
         try:
-            with xr.open_dataset(fp) as dsf:
-                try:
-                    varf = find_variable(dsf, var)
-                except KeyError:
-                    if verbose:
-                        print(f"Skipping {fp}: variable {var} not present")
-                    continue
+            with _io_lock:
+                with xr.open_dataset(fp) as dsf:
+                    try:
+                        varf = find_variable(dsf, var)
+                    except KeyError:
+                        if verbose:
+                            print(f"Skipping {fp}: variable {var} not present")
+                        continue
 
-                tdim = None
-                for d in varf.dims:
-                    if d.lower() in TIME_CANDIDATES:
-                        tdim = d
-                        break
-                if tdim is None:
-                    if verbose:
-                        print(f"Skipping {fp}: no time dimension found")
-                    continue
+                    tdim = None
+                    for d in varf.dims:
+                        if d.lower() in TIME_CANDIDATES:
+                            tdim = d
+                            break
+                    if tdim is None:
+                        if verbose:
+                            print(f"Skipping {fp}: no time dimension found")
+                        continue
 
-                try:
-                    idxs_local, times_local = pick_time_slice(dsf, tdim, None, None)
-                except Exception as exc:
-                    if verbose:
-                        print(f"Skipping {fp}: pick_time_slice failed: {exc}")
-                    continue
+                    try:
+                        idxs_local, times_local = pick_time_slice(dsf, tdim, None, None)
+                    except Exception as exc:
+                        if verbose:
+                            print(f"Skipping {fp}: pick_time_slice failed: {exc}")
+                        continue
 
-                if len(idxs_local) == 0:
-                    if verbose:
-                        print(f"Skipping {fp}: no timestamps in requested range")
-                    continue
+                    if len(idxs_local) == 0:
+                        if verbose:
+                            print(f"Skipping {fp}: no timestamps in requested range")
+                        continue
 
-                sel = {tdim: idxs_local, y_dim: yi, x_dim: xi}
-                if depth_dim is not None and depth_sel is not None:
-                    sel[depth_dim] = depth_sel
+                    sel = {tdim: idxs_local, y_dim: yi, x_dim: xi}
+                    if depth_dim is not None and depth_sel is not None:
+                        sel[depth_dim] = depth_sel
 
-                try:
-                    sub = varf.isel(sel)
-                except Exception as exc:
-                    if verbose:
-                        print(f"Skipping {fp}: failed to index variable with selection {sel}: {exc}")
-                    continue
+                    try:
+                        sub = varf.isel(sel)
+                    except Exception as exc:
+                        if verbose:
+                            print(f"Skipping {fp}: failed to index variable with selection {sel}: {exc}")
+                        continue
 
-                if tdim not in sub.dims and sub.ndim != 1:
-                    if verbose:
-                        print(f"Skipping {fp}: unexpected selection result; expected 1D time series")
-                    continue
+                    if tdim not in sub.dims and sub.ndim != 1:
+                        if verbose:
+                            print(f"Skipping {fp}: unexpected selection result; expected 1D time series")
+                        continue
 
-                vals = np.asarray(sub.values, dtype=float)
-                times_list.append(pd.to_datetime(times_local))
-                values_list.append(vals)
+                    vals = np.asarray(sub.values, dtype=float)
+                    times_list.append(pd.to_datetime(times_local).copy())
+                    values_list.append(vals)
         except Exception as e:
             if verbose:
                 print(f"Skipping {fp}: failed to open/process file: {e}")
