@@ -3,9 +3,9 @@
         <!-- Top: Map -->
         <div ref="mapContainer" class="flex-grow-1 map-container">
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
-                <ColorBarSelect v-if="mainStore.variables.length" :variables="mainStore.variables"
-                    v-model="selectedVarLocal" :stops="selectedColormap?.stops" :colormaps="Object.values(colormaps)" v-model:colormap="selectedColormapName"
-                    v-model:min="selectedMin" v-model:max="selectedMax" />
+            <ColorBarSelect v-if="mainStore.variables.length" :variables="mainStore.variables"
+                v-model="selectedVarLocal" :stops="selectedColormap?.stops" :colormaps="Object.values(colormaps)"
+                v-model:colormap="selectedColormapName" v-model:min="selectedMin" v-model:max="selectedMax" />
             <DepthSlider />
         </div>
 
@@ -27,24 +27,27 @@
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ mouseCoords.lat }} , {{ mouseCoords.lng }}</span>
                     </v-col>
+                </v-row>
 
-                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
-                        <v-btn icon :disabled="!lastClicked" @click="dialogOpen = true">
-                            <v-icon>mdi-chart-line</v-icon>
+                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)` }"
+                    style="position: relative;">
+                    <TimeControls :timestamps="model_timestamps" :currentDt="mainStore.selected_variable.dt"
+                        @update:dt="onTimeControlDt" />
+
+                    <div ref="globalChartContainer" style="width: calc( 100% - 24px ); height: 100%;"></div>
+
+                    <div class="py-3"
+                        style="position: absolute; width:24px; height: 100%; bottom: 0px; right: 0px; text-align:center; background: #eee;">
+                        <v-btn title="Long-term climatology" flat size="20px" :disabled="!lastClicked" icon color="primary" @click="dialogOpen = true">
+                            <v-icon size="14px">mdi-chart-line</v-icon>
                         </v-btn>
-                    </v-col>
-                </v-row>    
-
-                <!-- Dialog component for detailed chart -->
-                <EchartsLineDialog v-model="dialogOpen" :coord="lastClicked" :variable="selectedVariable.var" :depth="selectedVariable.depth"/>
-                
-
-                <TimeControls :timestamps="model_timestamps" :currentDt="mainStore.selected_variable.dt" @update:dt="onTimeControlDt" />
-
-                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px - 34px)` }">
-                    <div ref="globalChartContainer" style="width: 100%; height: 100%;"></div>
+                    </div>
                 </v-row>
             </v-container>
+
+            <!-- Dialog component for monthly chart -->
+            <EchartsLineDialog v-model="dialogOpen" :coord="lastClicked" :variable="selectedVariable.var"
+                :depth="selectedVariable.depth" />
 
         </v-footer>
         <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
@@ -74,7 +77,7 @@ import { formatDepth } from '../../composables/useFormatDepth'
 import { useCircleLayer } from '../../composables/useCircleLayer';
 import useStationsInteraction from '../../composables/useStationsInteraction';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
-import EchartsLineDialog from '../components/EchartsLineDialog.vue' 
+import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
