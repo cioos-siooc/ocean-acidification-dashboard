@@ -1,14 +1,10 @@
-"""PNG worker: runs nc2tile on NetCDF files and updates nc_files.status_png.
-
-This worker now operates directly on downloaded NetCDF files (nc_files.file_path) and will
-fallback to `file_path_sublevel` for backwards compatibility with existing sublevel files."""
+"""PNG worker: runs nc2tile on NetCDF files and updates nc_jobs status."""
 import logging
 import os
 import traceback
 from typing import Optional
 
 from .db import get_db_conn
-from .sublevel import find_pending_sublevels
 import nc2tile
 
 logger = logging.getLogger("dl2.png")
@@ -152,7 +148,7 @@ def get_variable_depths_image(conn, variable_id: int) -> Optional[list]:
                 pass
     raise RuntimeError(f"Invalid depths_image for variable_id={variable_id}")
 
-def process_image(conn, row, dry_run: bool = False, workers: int | None = None, simulate: bool = False):
+def process_image(conn, row, workers: int | None = None):
     row_id = row['row_id']
     # Prefer the canonical path column `nc_path` in the new table, but accept legacy keys
     src = row.get('nc_path')
@@ -181,20 +177,14 @@ def process_image(conn, row, dry_run: bool = False, workers: int | None = None, 
         with conn.cursor() as cur:
             cur.execute("UPDATE nc_jobs SET status='imaging', last_attempt=NOW() WHERE id=%s", (row_id,))
         conn.commit()
-        if dry_run:
-            logger.info("dry-run: would call nc2tile on %s", src)
-            return True
-
         precision = get_variable_precision(conn, variable_id)
         # depths_image = get_variable_depths_image(conn, variable_id)
         depth_indices = [0,5,20,24,26,30,34,38]
 
-        # call nc2tile programmatically, optionally passing --workers and --simulate
+        # call nc2tile programmatically, optionally passing --workers
         args = ["--data", src, "--vars", variable, "--precision", str(precision), "--depth-indices", ','.join(str(i) for i in depth_indices)]
         if workers is not None:
             args.extend(["--workers", str(int(workers))])
-        if simulate:
-            args.append("--simulate")
         processed_times = None
         try:
             processed_times = nc2tile.main(args)
@@ -297,10 +287,10 @@ def process_image(conn, row, dry_run: bool = False, workers: int | None = None, 
         conn.commit()
 
 
-def process_pending_png(conn, limit: int = 5, dry_run: bool = False, workers: int | None = None, simulate: bool = False):
+def process_pending_png(conn, limit: int = 5, workers: int | None = None):
     pendings = find_pending_image(conn)
     if not pendings:
         logger.info("No pending image jobs")
         return
     for row in pendings:
-        process_image(conn, row, dry_run=dry_run, workers=workers, simulate=simulate)
+        process_image(conn, row, workers=workers)

@@ -27,7 +27,17 @@
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ mouseCoords.lat }} , {{ mouseCoords.lng }}</span>
                     </v-col>
-                </v-row>
+
+                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
+                        <v-btn icon :disabled="!lastClicked" @click="dialogOpen = true">
+                            <v-icon>mdi-chart-line</v-icon>
+                        </v-btn>
+                    </v-col>
+                </v-row>    
+
+                <!-- Dialog component for detailed chart -->
+                <EchartsLineDialog v-model="dialogOpen" :coord="lastClicked" :variable="selectedVariable.var" :depth="selectedVariable.depth"/>
+                
 
                 <TimeControls :timestamps="model_timestamps" :currentDt="mainStore.selected_variable.dt" @update:dt="onTimeControlDt" />
 
@@ -64,6 +74,7 @@ import { formatDepth } from '../../composables/useFormatDepth'
 import { useCircleLayer } from '../../composables/useCircleLayer';
 import useStationsInteraction from '../../composables/useStationsInteraction';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
+import EchartsLineDialog from '../components/EchartsLineDialog.vue' 
 
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
@@ -109,6 +120,9 @@ const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, 
 const mouseCoords = ref<{ lng: number | null, lat: number | null }>({ lng: null, lat: null });
 
 const sensorData = ref<{ time: string, value: number }[]>([])
+
+// Dialog for detailed timeseries
+const dialogOpen = ref(false);
 
 // Flags to coordinate initial click: mapLoaded becomes true when map 'load' fires;
 // selectedReady becomes true when initial variables/selectedVariable are set.
@@ -518,8 +532,7 @@ async function getClimateTimeseries(lat: number, lon: number) {
     const now = moment().utc();
     return axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
         lat,
-        lon,
-        dt: now.format('YYYY-MM-DDTHHmmss')
+        lon
     });
 
     // try {

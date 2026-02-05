@@ -38,6 +38,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 import xarray as xr
 from scipy.interpolate import griddata
+from scipy.spatial import Delaunay, cKDTree
 from PIL import Image
 
 # DB access for curvilinear grid
@@ -51,6 +52,8 @@ except Exception:
 
 # module-level cache for grid loaded from DB
 GRID_CACHE = None
+GRID_CACHE_PATH = os.getenv("GRID_CACHE_PATH", "/tmp/oa_grid_cache.npz")
+INTERP_CACHE = {}
 
 import logging
 
@@ -76,6 +79,27 @@ def get_db_conn():
     return psycopg2.connect(host=host, port=port, dbname=db, user=user, password=pw)
 
 
+def _load_grid_cache(path: str) -> Tuple[np.ndarray, np.ndarray] | None:
+    try:
+        if os.path.exists(path):
+            data = np.load(path)
+            lon = data.get('lon')
+            lat = data.get('lat')
+            if lon is not None and lat is not None:
+                return lon, lat
+    except Exception:
+        logger.exception("Failed to load grid cache from %s", path)
+    return None
+
+
+def _write_grid_cache(path: str, lon: np.ndarray, lat: np.ndarray) -> None:
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        np.savez_compressed(path, lon=lon, lat=lat)
+    except Exception:
+        logger.exception("Failed to write grid cache to %s", path)
+
+
 def get_grid_from_db(table: str = 'grid') -> Tuple[np.ndarray, np.ndarray]:
     """Load curvilinear grid lon/lat arrays from Postgres table named `table`.
 
@@ -85,6 +109,12 @@ def get_grid_from_db(table: str = 'grid') -> Tuple[np.ndarray, np.ndarray]:
     """
     global GRID_CACHE
     if GRID_CACHE is not None:
+        return GRID_CACHE
+
+    cached = _load_grid_cache(GRID_CACHE_PATH)
+    if cached is not None:
+        GRID_CACHE = cached
+        logger.info("Loaded grid from cache %s", GRID_CACHE_PATH)
         return GRID_CACHE
 
     conn = get_db_conn()
@@ -115,8 +145,51 @@ def get_grid_from_db(table: str = 'grid') -> Tuple[np.ndarray, np.ndarray]:
         lat[i, j] = float(r['lat'])
 
     GRID_CACHE = (lon, lat)
-    logger.info("Worker loaded grid from DB table 'grid'")
+    _write_grid_cache(GRID_CACHE_PATH, lon, lat)
+    logger.info("Worker loaded grid from DB table 'grid' and cached to %s", GRID_CACHE_PATH)
     return GRID_CACHE
+
+
+class _PrecomputedLinearInterpolator:
+    def __init__(self, pts_src: np.ndarray, tgt_pts: np.ndarray):
+        self.tri = Delaunay(pts_src)
+        simplices = self.tri.find_simplex(tgt_pts)
+        self.valid = simplices >= 0
+        self.vertices = np.where(self.valid[:, None], self.tri.simplices[simplices], 0)
+        X = self.tri.transform[simplices, :2]
+        Y = tgt_pts - self.tri.transform[simplices, 2]
+        b = np.einsum('ijk,ik->ij', X, Y)
+        w = np.c_[b, 1 - b.sum(axis=1)]
+        self.weights = np.where(self.valid[:, None], w, 0.0)
+
+    def apply(self, vals_src: np.ndarray) -> np.ndarray:
+        vals = vals_src[self.vertices]
+        out = (vals * self.weights).sum(axis=1)
+        out[~self.valid] = np.nan
+        return out
+
+
+class _PrecomputedNearestInterpolator:
+    def __init__(self, pts_src: np.ndarray, tgt_pts: np.ndarray):
+        self.kdtree = cKDTree(pts_src)
+        _, self.idx = self.kdtree.query(tgt_pts, k=1)
+
+    def apply(self, vals_src: np.ndarray) -> np.ndarray:
+        return vals_src[self.idx]
+
+
+def _get_interpolator(method: str, pts_src: np.ndarray, tgt_pts: np.ndarray, grid_sig: Tuple) -> object | None:
+    key = (method, grid_sig, pts_src.shape[0], tgt_pts.shape[0])
+    if key in INTERP_CACHE:
+        return INTERP_CACHE[key]
+    if method == "linear":
+        interp = _PrecomputedLinearInterpolator(pts_src, tgt_pts)
+    elif method == "nearest":
+        interp = _PrecomputedNearestInterpolator(pts_src, tgt_pts)
+    else:
+        return None
+    INTERP_CACHE[key] = interp
+    return interp
 
 
 def compute_mercator_grid_bounds(lon: np.ndarray, lat: np.ndarray) -> Tuple[float, float, float, float]:
@@ -222,17 +295,11 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
         method,
         clip,
         verbose,
-        simulate,
         pack_precision,
     ) = task
 
     # Open dataset in worker process
     ds_data = xr.open_dataset(ds_data_path)
-
-    # If we're simulating, return early without doing heavy work
-    if simulate:
-        ds_data.close()
-        return None, t_str
 
     # Load curvilinear grid from DB (no fallback). This will raise if DB not available.
     # get_grid_from_db logs a message only on the first load per process to avoid repeated DB hits.
@@ -323,20 +390,29 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
         tgt_lon, tgt_lat = transformer.transform(xx_merc.ravel(), yy_merc.ravel())
         tgt_pts = np.column_stack((tgt_lon, tgt_lat))
 
+        grid_sig = (
+            lon_src.shape,
+            float(np.nanmin(lon_src)),
+            float(np.nanmax(lon_src)),
+            float(np.nanmin(lat_src)),
+            float(np.nanmax(lat_src)),
+            int(w),
+            int(h),
+        )
+        interp_engine = _get_interpolator(method, pts_src_full, tgt_pts, grid_sig)
+
         # Interpolate mask using the same method as data to ensure boundaries match
         mask_src_f = src_valid_flat.astype(float)
         try:
-            # Use requested method (linear/cubic) for mask to get smooth 0.5 contours
-            mask_tgt_flat = griddata(pts_src_full, mask_src_f, tgt_pts, method=method, fill_value=0.0)
-            
-            # If method is linear/cubic, griddata allows fill_value but might return NaNs outside hull?
-            # griddata(method='linear') respects fill_value if provided in recent scipy, but safer to nan_to_num 
-            # just in case it returns NaNs for extrapolation.
+            if interp_engine is not None:
+                mask_tgt_flat = interp_engine.apply(mask_src_f)
+            else:
+                mask_tgt_flat = griddata(pts_src_full, mask_src_f, tgt_pts, method=method, fill_value=0.0)
+
             mask_tgt_flat = np.nan_to_num(mask_tgt_flat, nan=0.0)
-            
             mask_tgt_bool = (mask_tgt_flat.reshape(xx_merc.shape) >= 0.5)
         except Exception:
-            # fallback to nearest if the chosen method fails (e.g. slight triangulation issues)
+            # fallback to nearest if the chosen method fails
             try:
                 mask_tgt_flat = griddata(pts_src_full, mask_src_f, tgt_pts, method='nearest', fill_value=0.0)
                 mask_tgt_bool = (mask_tgt_flat.reshape(xx_merc.shape) >= 0.5)
@@ -344,10 +420,15 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
                 mask_tgt_bool = np.zeros_like(xx_merc, dtype=bool)
 
         # Interpolate data using only valid source points (and coords that are finite)
-        pts_valid = pts_src_full[src_valid_flat]
-        vals_valid = tslice_vals.ravel()[coord_valid][src_valid_flat]
+        vals_full = tslice_vals.ravel()[coord_valid].astype(float)
+        vals_full[~src_valid_flat] = np.nan
+        vals_valid = vals_full[src_valid_flat]
         try:
-            interp_flat = griddata(pts_valid, vals_valid, tgt_pts, method=method, fill_value=np.nan)
+            if interp_engine is not None:
+                interp_flat = interp_engine.apply(vals_full)
+            else:
+                pts_valid = pts_src_full[src_valid_flat]
+                interp_flat = griddata(pts_valid, vals_valid, tgt_pts, method=method, fill_value=np.nan)
             interp = interp_flat.reshape(xx_merc.shape)
         except Exception:
             interp = np.full_like(xx_merc, np.nan, dtype=float)
@@ -402,8 +483,7 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
 
     # Pack values into RGB channels at fixed precision using base=0.0.
     # Use the capped array (if applicable) so values outside absolute bounds are clipped prior to packing.
-    if not simulate:
-        write_png_packed(interp_capped, alpha, out_png, precision=pack_precision, base=0.0)
+    write_png_packed(interp_capped, alpha, out_png, precision=pack_precision, base=0.0)
     # per-datetime sidecar files are not written anymore; we use the per-variable meta.json
     # for bounds and packing metadata instead (fixed vmin/vmax and fixed bounds apply).
     if verbose:
@@ -414,8 +494,6 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
 
     ds_data.close()
 
-    if simulate:
-        return None, t_str
     return out_png, t_str
 
 
@@ -570,7 +648,6 @@ def process_variable(
     global_scale: bool = True,
     verbose: bool = True,
     workers: int = 1,
-    simulate: bool = False,
     pack_precision: float = 0.1,
 ):
     # Load curvilinear grid from DB table 'grid'. Fail hard if unavailable.
@@ -693,7 +770,6 @@ def process_variable(
                 method,
                 clip_percentile,
                 verbose,
-                simulate,
                 pack_precision,
             ))
 
@@ -754,7 +830,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--precision", type=float, default=0.1, help="Precision for PNG packing (default: 0.1)")
     p.add_argument("--depth-indices", required=True, help="Comma-separated depth indices to process.")
     p.add_argument("--quiet", action="store_true", help="Less verbose")
-    p.add_argument("--simulate", action="store_true", help="Simulate PNG generation; don't write PNG/sidecar files, but return processed datetimes")
     return p.parse_args(argv)
 
 
@@ -798,7 +873,6 @@ def main(argv: Optional[list[str]] = None) -> list[int]:
             global_scale=not args.no_global_scale,
             verbose=not args.quiet,
             workers=workers,
-            simulate=args.simulate,
             pack_precision=args.precision,
         )
         if processed:

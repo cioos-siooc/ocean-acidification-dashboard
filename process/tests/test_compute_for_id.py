@@ -24,6 +24,6 @@ def test_compute_for_id_calls_compute(monkeypatch):
         return True
     monkeypatch.setattr('dl2pkg.compute.compute_for_row', fake_compute_for_row)
 
-    res = compute_for_id(conn, 42, workers=1, base_dir='/tmp', dry_run=False)
+    res = compute_for_id(conn, 42, workers=1, base_dir='/tmp')
     assert res is True
     assert called['ok'] is True

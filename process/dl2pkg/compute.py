@@ -1,13 +1,13 @@
-"""Compute worker: picks up nc_files rows with status_dl='pending_compute', runs carbonate computation,
-and updates nc_files rows for computed variables to status_dl='computed' and schedules PNG generation (status_png='pending').
+"""Compute worker: picks up nc_jobs rows with status='pending_compute', runs carbonate computation,
+and updates nc_jobs rows for computed variables to status='success_compute'.
 
 Minimal approach implemented:
 - Find pending_compute rows
-- For each, try to acquire pg advisory lock, set status_dl='running_compute'
-- Invoke `process/calc_carbon_grid_shm_memmap.py --date YYYYMMDD --mode memmap --workers N --overwrite` to compute (memmap mode uses disk-backed memmaps and is lower RAM)
-- Determine expected output filenames (replace variable name in DIC filename) and verify they exist
-- Update computed rows with file metadata and set status_dl='computed', status_sublevel='pending'
-- On failure set status_dl='failed' and log
+- For each, set status='computing'
+- Invoke `process/calc_carbon_grid_shm_memmap.py --date YYYYMMDD --mode memmap --workers N --overwrite`
+- Determine expected output filenames and verify they exist
+- Update computed rows with file metadata and set status='success_compute'
+- On failure set status='failed_compute' and log
 """
 
 from __future__ import annotations
@@ -61,19 +61,7 @@ def get_compute_variables(conn) -> List[str]:
 def compute_for_group(
     conn, start_time, end_time, workers=3, base_dir=None
 ):
-    """
-    """
-    # with conn.cursor() as cur:
-    #     cur.execute("SELECT pg_try_advisory_lock(%s)", (lock_id,))
-    #     locked = cur.fetchone()[0]
-    #     if not locked:
-    #         logger.info(
-    #             "Skipping compute for %s->%s because lock %s not acquired",
-    #             start_time,
-    #             end_time,
-    #             lock_id,
-    #         )
-    #         return False
+    """Run carbonate compute for a single time range and update nc_jobs rows."""
 
 
     try:
@@ -135,7 +123,7 @@ def compute_for_group(
 
         # Expected outputs: replace 'dissolved_inorganic_carbon' with target names in filename
         compute_vars = get_compute_variables(conn)
-        
+
         for var_id, var_name in compute_vars:
             # out_fname = dic_filename.replace("dissolved_inorganic_carbon", var_name)
             out_fname = f"{var_name}_{start_time.strftime('%Y%m%dT%H%M')}_{end_time.strftime('%Y%m%dT%H%M')}.nc"
@@ -156,9 +144,8 @@ def compute_for_group(
                     h.update(chunk)
             checksum = h.hexdigest()
 
-            # Update the existing pending_compute row for this computed variable with metadata and mark computed + schedule sublevel
+            # Update the existing pending_compute row for this computed variable with metadata and mark computed
             with conn.cursor() as cur3:
-                # Use a single UPDATE joining erddap_variables to avoid extra SELECTs and fetches; optionally scope by dataset_id
                 cur3.execute(
                     "UPDATE nc_jobs SET nc_path=%s, checksum=%s, status='success_compute' WHERE start_time=%s AND end_time=%s AND variable_id=%s",
                     (out_path, checksum, start_time, end_time, var_id),
@@ -174,13 +161,9 @@ def compute_for_group(
         # mark group's computed rows as failed
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE nc_jobs SET status='failed_compute', last_error=%s, attempts = attempts+1, last_attempt = NOW() WHERE id = ANY(%s)",
-                (str(e), ids),
+                "UPDATE nc_jobs SET status='failed_compute', attempts = attempts+1, last_attempt = NOW() WHERE start_time=%s AND end_time=%s AND status='computing'",
+                (start_time, end_time),
             )
-            conn.commit()
-        # release lock
-        with conn.cursor() as cur:
-            cur.execute("SELECT pg_advisory_unlock(%s)", (lock_id,))
             conn.commit()
         return False
 
@@ -241,11 +224,11 @@ def compute_for_row(conn, row, workers=2, base_dir=None):
         return False
 
     return compute_for_group(
-        conn, start_time, end_time, ids, workers=workers, base_dir=base_dir
+        conn, start_time, end_time, workers=workers, base_dir=base_dir
     )
 
 
-def compute_for_id(conn, nid, workers=2, base_dir=None, dry_run=False):
+def compute_for_id(conn, nid, workers=2, base_dir=None):
     """Compute for a single nc_files id (per-file compute).
     This will resolve the dataset_id/start_time/end_time for the provided id and run the group compute,
     which computes all three variables at once (pyco2sys returns all outputs together).
@@ -270,16 +253,6 @@ def compute_for_id(conn, nid, workers=2, base_dir=None, dry_run=False):
         start_time = r[2]
         end_time = r[3]
 
-    if dry_run:
-        logger.info(
-            "Dry-run: would compute for nc_files id %s (dataset=%s %s->%s)",
-            nid,
-            ds_id,
-            start_time,
-            end_time,
-        )
-        return True
-
     # Delegate to compute_for_row (tests expect compute_for_row to be invoked)
     try:
         return compute_for_row(conn, r, workers=workers, base_dir=base_dir)
@@ -289,7 +262,7 @@ def compute_for_id(conn, nid, workers=2, base_dir=None, dry_run=False):
 
 
 def process_pending_compute(
-    conn=None, dry_run=False, workers=2, limit=10, base_dir=None
+    conn=None, workers=2, limit=10, base_dir=None
 ):
     if conn is None:
         conn = get_db_conn()
@@ -298,9 +271,6 @@ def process_pending_compute(
         logger.info(
             "No pending compute groups (need ph_total, omega_arag, omega_cal all pending)"
         )
-        return
-    if dry_run:
-        logger.info("Would compute for groups: %s", groups)
         return
     for group in groups:
         try:
@@ -326,13 +296,11 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--base-dir", default=os.getenv("DATA_DIR", "/opt/data/nc"))
-    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     conn = get_db_conn()
     process_pending_compute(
         conn,
-        dry_run=args.dry_run,
         workers=args.workers,
         limit=args.limit,
         base_dir=args.base_dir,

@@ -74,7 +74,7 @@ def ensure_pending_nc_file(conn, ds_id, variable, start_time, end_time, force=Fa
                 INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, status)
                 VALUES (%s,%s,%s,%s,'pending_download')
                 ON CONFLICT (dataset_id, variable_id, start_time, end_time)
-                DO UPDATE SET status = 'pending_download', attempts = 0, last_error = NULL
+                DO UPDATE SET status = 'pending_download', attempts = 0
                 RETURNING id
                 """,
                 (ds_id, var_id, start_time, end_time),
@@ -99,7 +99,7 @@ def ensure_pending_nc_file(conn, ds_id, variable, start_time, end_time, force=Fa
             return None
 
 
-def create_rows_for_date(conn, ds_id, variables, date_str, force=False, dry_run=False):
+def create_rows_for_date(conn, ds_id, variables, date_str, force=False):
     """Create pending nc_files rows for a given YYYY-MM-DD (UTC) for each variable in variables.
     start = YYYY-MM-DDT00:30Z, end = YYYY-MM-DDT23:30Z
     """
@@ -110,14 +110,10 @@ def create_rows_for_date(conn, ds_id, variables, date_str, force=False, dry_run=
     start_dt = __import__('datetime').datetime(day.year, day.month, day.day, 0, 30, tzinfo=__import__('datetime').timezone.utc)
     end_dt = __import__('datetime').datetime(day.year, day.month, day.day, 23, 30, tzinfo=__import__('datetime').timezone.utc)
 
-    logger.info('Creating rows for date %s -> %s for variables: %s (force=%s, dry_run=%s)', start_dt, end_dt, variables, force, dry_run)
+    logger.info('Creating rows for date %s -> %s for variables: %s (force=%s)', start_dt, end_dt, variables, force)
     created_any = False
     for variable in variables:
         ensure_variable(conn, ds_id, variable)
-        if dry_run:
-            logger.info('dry-run: would create pending row for %s %s->%s', variable, start_dt, end_dt)
-            created_any = True
-            continue
         rid = ensure_pending_nc_file(conn, ds_id, variable, start_dt, end_dt, force=force, meta={'created_by': 'dl2_date'})
         if rid:
             logger.info('Inserted pending nc_jobs for %s %s->%s (id=%s)', variable, start_dt, end_dt, rid)

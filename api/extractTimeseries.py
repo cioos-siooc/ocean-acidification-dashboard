@@ -154,12 +154,14 @@ def extract_timeseries(
     db_name: str = "oa",
     db_table: str = "grid",
     verbose: bool = False,
+    recent_days: Optional[int] = 5,
 ) -> Tuple[pd.Series, pd.Series]:
-    """Extract a time series across all available files and return pandas Series (time, value).
+    """Extract a time series across available files and return pandas Series (time, value).
 
-    Note: There is no longer a `from_dt`/`to_dt` filter — the function will
-    scan all NetCDF files matching the naming pattern for the requested
-    variable and return the concatenated, deduplicated, sorted timeseries.
+    By default the function only considers files from the last `recent_days` days
+    (to keep queries efficient). Set `recent_days=None` to include all available files
+    (useful for monthly/climatology extraction).
+
     Exceptions are raised on errors; caller should catch and handle them.
     """
     if db_dsn is None and not db_host:
@@ -192,28 +194,41 @@ def extract_timeseries(
         raise RuntimeError(f"Data directory not found: {data_dir}")
 
     files = sorted(glob(os.path.join(data_dir, var, "*.nc")))
+    if verbose:
+        print(f"DEBUG: Found {len(files)} candidate files for variable '{var}' in '{data_dir}'")
+        if files:
+            print("DEBUG: Sample files:", files[:5])
 
-    # Limit to last 3 available days to keep this query efficient. Extract date tokens
-    # (YYYYMMDD or YYYYMMDDT####) from filenames and select only files matching the
-    # most recent three distinct dates found.
-    if files:
-        date_tokens = []
+    # Optionally limit to recent files to keep this query efficient. If `recent_days` is
+    # None then do not filter and include all matching files (useful for climatology/monthly).
+    date_pattern = re.compile(r"(\d{8})(T\d{4})?\.nc$")
+    if recent_days is None:
+        if verbose:
+            print(f"Not filtering files by date (recent_days=None). Considering {len(files)} candidate files")
+    else:
+        recent_files = []
+        # Use date-only comparison to avoid tz-aware vs tz-naive issues
+        now = pd.Timestamp.utcnow()
+        cutoff_date = (now - pd.Timedelta(days=int(recent_days))).date()
         for fp in files:
-            bn = os.path.basename(fp)
-            m = re.search(r"(\d{8})T\d{4}", bn)
-            if m:
-                date_tokens.append(m.group(1))
+            m = date_pattern.search(fp)
+            if not m:
+                if verbose:
+                    print(f"Skipping file with unrecognized name format: {fp}")
                 continue
-            m2 = re.search(r"(\d{8})", bn)
-            if m2:
-                date_tokens.append(m2.group(1))
-        if date_tokens:
-            from datetime import datetime as _dt
-            unique_dates = sorted({_dt.strptime(t, "%Y%m%d").date() for t in date_tokens})
-            n = 5
-            last_n = unique_dates[-n:]
-            last_tokens = {d.strftime("%Y%m%d") for d in last_n}
-            files = [f for f in files if any(tok in os.path.basename(f) for tok in last_tokens)]
+            datestr = m.group(1)
+            try:
+                file_dt = pd.to_datetime(datestr, format="%Y%m%d").date()
+            except Exception:
+                if verbose:
+                    print(f"Skipping file with invalid date in name: {fp}")
+                continue
+            if file_dt >= cutoff_date:
+                recent_files.append(fp)
+        files = recent_files
+        if verbose:
+            print(f"Found {len(files)} files for variable '{var}' in data directory '{data_dir}' since {cutoff_date}")
+
 
     # iterate files and extract
     times_list: List[pd.DatetimeIndex] = []
@@ -251,7 +266,12 @@ def extract_timeseries(
         except Exception:
             pass
         conn = None
-        raise RuntimeError("Could not open any NetCDF files to inspect variable and depth dimension")
+        # Provide more diagnostics in error so logs show what was attempted
+        sample_paths = files[:5] if files else []
+        raise RuntimeError(
+            f"Could not open any NetCDF files to inspect variable and depth dimension; "
+            f"files_found={len(files)}, sample_paths={sample_paths}"
+        )
 
     # Determine which depth index to select based on the requested depth value
     if depth_dim is not None:

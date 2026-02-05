@@ -2,10 +2,9 @@
 """Create `colormaps` table and populate with cmocean colormaps.
 
 Usage:
-  python process/scripts/dbColormap.py [--sample N] [--dry-run] [--recreate]
+    python process/scripts/dbColormap.py [--sample N] [--recreate]
 
 - --sample N: number of color samples per colormap (default 32)
-- --dry-run: do not write to DB, just print SQL / previews
 - --recreate: drop table if exists and recreate
 
 Requirements:
@@ -111,7 +110,6 @@ def get_db_conn():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--sample', type=int, default=32, help='samples per colormap')
-    parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--recreate', action='store_true', help='drop and recreate table')
     args = parser.parse_args()
 
@@ -129,15 +127,6 @@ def main():
             rows.append((name, f'cmocean:{name}', json.dumps(stops), 'linear', 'normalized', json.dumps(meta)))
         except Exception as e:
             print(f'  Skipping {name}: {e}')
-
-    if args.dry_run:
-        print('\nDRY-RUN: SQL to create table:\n')
-        print(make_table_sql())
-        print('\nPrepared inserts (first 3):')
-        for r in rows[:3]:
-            print(r)
-        print('\nTotal colormaps prepared:', len(rows))
-        return
 
     # write to DB
     conn = get_db_conn()

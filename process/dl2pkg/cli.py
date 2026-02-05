@@ -13,8 +13,15 @@ from .downloader import do_download
 logger = logging.getLogger("dl2.cli")
 
 
-def do_check(conn, erddap_base, dataset_id, init_days=1, dry_run=True, variables=None):
-    das_text = fetch_das(erddap_base, dataset_id)
+def _normalize_base_url(base_url: str, erddap_base: str) -> str:
+    if base_url.startswith("http://") or base_url.startswith("https://"):
+        return base_url
+    return f"{erddap_base.rstrip('/')}/griddap/{base_url}"
+
+
+def do_check(conn, erddap_base, base_url, init_days=1, variables=None):
+    base_url = _normalize_base_url(base_url, erddap_base)
+    das_text = fetch_das(base_url)
     time_cov, actual_max = parse_das_for_times(das_text)
     remote_max = time_cov or actual_max
     if remote_max is None:
@@ -31,7 +38,7 @@ def do_check(conn, erddap_base, dataset_id, init_days=1, dry_run=True, variables
 
     ds_id = upsert_dataset(
         conn,
-        dataset_id,
+        base_url,
         title=title,
         last_remote_time=remote_max,
         meta={"das_parsed": True},
@@ -112,14 +119,23 @@ def do_check(conn, erddap_base, dataset_id, init_days=1, dry_run=True, variables
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "cmd", choices=["check", "download", "run", "sublevel", "check_image", "image", "compute"]
+        "cmd",
+        choices=[
+            "check",
+            "download",
+            "run",
+            "check_image",
+            "image",
+            "compute",
+            "liveocean_download",
+            "liveocean_process",
+        ],
     )
     parser.add_argument(
         "--erddap-base",
         default=os.getenv("ERDDAP_BASE", "https://salishsea.eos.ubc.ca/erddap"),
     )
     parser.add_argument("--init-days", type=int, default=1)
-    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument(
         "--date",
@@ -139,11 +155,10 @@ def main(argv=None):
     )
     # optional worker args
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument(
-        "--simulate",
-        action="store_true",
-        help="Simulate PNG generation (no files written)",
-    )
+    parser.add_argument("--liveocean-url", default=os.getenv("LIVE_OCEAN_URL", "https://s3.kopah.uw.edu/liveocean-share/f2026.02.04/layers.nc"))
+    parser.add_argument("--liveocean-input", default=os.getenv("LIVE_OCEAN_INPUT", "/opt/data/nc/liveOcean/layers.nc"))
+    parser.add_argument("--liveocean-out", default=os.getenv("LIVE_OCEAN_OUT", "/opt/data/nc"))
+    parser.add_argument("--liveocean-date", help="UTC date for the Live Ocean run (YYYY-MM-DD)")
     # packing precision is fixed at 0.1 (no CLI flag)
     args = parser.parse_args(argv)
 
@@ -165,9 +180,9 @@ def main(argv=None):
         # If a specific date is provided, create rows for that date for all variables
         if args.date:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, dataset_id FROM erddap_datasets ORDER BY id")
+                cur.execute("SELECT id, base_url FROM erddap_datasets ORDER BY id")
                 rows = cur.fetchall()
-            for ds_id, dataset_id in rows:
+            for ds_id, _base_url in rows:
                 vars_list = []
                 with conn.cursor() as cur:
                     cur.execute(
@@ -182,7 +197,6 @@ def main(argv=None):
                         vars_list,
                         args.date,
                         force=args.force,
-                        dry_run=args.dry_run,
                     )
             
             create_compute_rows_for_group(conn, args.date)
@@ -190,16 +204,15 @@ def main(argv=None):
 
         # Default: iterate datasets in DB and process variables marked as 'download'
         with conn.cursor() as cur:
-            cur.execute("SELECT id, dataset_id FROM erddap_datasets ORDER BY id")
+            cur.execute("SELECT id, base_url FROM erddap_datasets ORDER BY id")
             rows = cur.fetchall()
-        for ds_id, dataset_id in rows:
+        for ds_id, base_url in rows:
             # variables filtered inside do_check if not provided
             do_check(
                 conn,
                 args.erddap_base,
-                dataset_id,
+                base_url,
                 init_days=args.init_days,
-                dry_run=args.dry_run,
             )
         return
 
@@ -207,9 +220,9 @@ def main(argv=None):
         # If a specific date is provided, create rows for that date for all datasets
         if args.date:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, dataset_id FROM erddap_datasets ORDER BY id")
+                cur.execute("SELECT id, base_url FROM erddap_datasets ORDER BY id")
                 rows = cur.fetchall()
-            for ds_id, dataset_id in rows:
+            for ds_id, _base_url in rows:
                 # get variables of type 'download' for this dataset
                 with conn.cursor() as cur:
                     cur.execute(
@@ -226,7 +239,6 @@ def main(argv=None):
                         vars_list,
                         args.date,
                         force=args.force,
-                        dry_run=args.dry_run,
                     )
             
             create_compute_rows_for_group(conn, args.date)
@@ -239,9 +251,8 @@ def main(argv=None):
                     dataset=None,
                     date=args.date,
                     variable=args.variable,
-                    dry_run=args.dry_run,
                 )
-            do_download(conn, args.erddap_base, dry_run=args.dry_run, limit=args.limit)
+            do_download(conn, args.erddap_base, limit=args.limit)
             return
 
         # Default: build rows for date or run downloads for all datasets
@@ -253,18 +264,17 @@ def main(argv=None):
                 dataset=None,
                 date=args.date,
                 variable=args.variable,
-                dry_run=args.dry_run,
             )
-        do_download(conn, args.erddap_base, dry_run=args.dry_run, limit=args.limit)
+        do_download(conn, args.erddap_base, limit=args.limit)
         return
 
     if args.cmd == "run":
         # If a specific date is provided, create rows for that date for all datasets and run downloads
         if args.date:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, dataset_id FROM erddap_datasets ORDER BY id")
+                cur.execute("SELECT id, base_url FROM erddap_datasets ORDER BY id")
                 rows = cur.fetchall()
-            for ds_id, dataset_id in rows:
+            for ds_id, _base_url in rows:
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT variable FROM erddap_variables WHERE dataset_id=%s AND type='download'",
@@ -280,7 +290,6 @@ def main(argv=None):
                         vars_list,
                         args.date,
                         force=args.force,
-                        dry_run=args.dry_run,
                     )
             # forward --requeue-failed to download
             if args.requeue_failed:
@@ -291,23 +300,21 @@ def main(argv=None):
                     dataset=None,
                     date=args.date,
                     variable=args.variable,
-                    dry_run=args.dry_run,
                 )
-            do_download(conn, args.erddap_base, dry_run=args.dry_run, limit=args.limit)
+            do_download(conn, args.erddap_base, limit=args.limit)
             return
 
         # Default: do check and download for all datasets/variables type='download'
         with conn.cursor() as cur:
-            cur.execute("SELECT id, dataset_id FROM erddap_datasets ORDER BY id")
+            cur.execute("SELECT id, base_url FROM erddap_datasets ORDER BY id")
             rows = cur.fetchall()
-        for ds_id, dataset_id in rows:
+        for ds_id, base_url in rows:
             # do_check will query variables of type 'download' if variables not provided
             do_check(
                 conn,
                 args.erddap_base,
-                dataset_id,
+                base_url,
                 init_days=args.init_days,
-                dry_run=args.dry_run,
             )
         if args.requeue_failed:
             from .downloader import requeue_failed
@@ -317,17 +324,8 @@ def main(argv=None):
                 dataset=None,
                 date=args.date,
                 variable=args.variable,
-                dry_run=args.dry_run,
             )
-        do_download(conn, args.erddap_base, dry_run=args.dry_run, limit=args.limit)
-        return
-
-    if args.cmd == "sublevel":
-        # run sublevel worker
-        from .sublevel import process_pending_sublevels
-
-        for _ in range(args.workers):
-            process_pending_sublevels(conn, dry_run=args.dry_run, limit=args.limit)
+        do_download(conn, args.erddap_base, limit=args.limit)
         return
 
     if args.cmd == "check_image":
@@ -342,10 +340,8 @@ def main(argv=None):
 
         process_pending_png(
             conn,
-            dry_run=args.dry_run,
             limit=args.limit,
             workers=args.workers,
-            simulate=args.simulate,
         )
         return
 
@@ -358,33 +354,40 @@ def main(argv=None):
             from .compute import compute_for_id
 
             logger.info("Running per-file compute for nc_jobs id %s", args.id)
-            if args.dry_run:
-                # just simulate
-                compute_for_id(
-                    conn,
-                    args.id,
-                    workers=args.workers,
-                    base_dir=os.getenv("DATA_DIR", "/opt/data/nc"),
-                    dry_run=True,
-                )
-            else:
-                compute_for_id(
-                    conn,
-                    args.id,
-                    workers=args.workers,
-                    base_dir=os.getenv("DATA_DIR", "/opt/data/nc"),
-                    dry_run=False,
-                )
+            compute_for_id(
+                conn,
+                args.id,
+                workers=args.workers,
+                base_dir=os.getenv("DATA_DIR", "/opt/data/nc"),
+            )
             return
 
         # Run pending compute jobs (process nc_jobs rows with status='pending_compute')
         process_pending_compute(
             conn,
-            dry_run=args.dry_run,
             workers=args.workers,
             limit=args.limit,
             base_dir=os.getenv("DATA_DIR", "/opt/data/nc"),
         )
+        return
+
+    if args.cmd == "liveocean_download":
+        from .live_ocean import download_live_ocean, today_utc_date
+
+        run_date = args.liveocean_date or today_utc_date()
+        download_live_ocean(
+            conn,
+            run_date=run_date,
+            url=args.liveocean_url,
+            input_path=args.liveocean_input,
+            out_dir=args.liveocean_out,
+        )
+        return
+
+    if args.cmd == "liveocean_process":
+        from .live_ocean import process_pending_live_ocean
+
+        process_pending_live_ocean(conn, limit=args.limit)
         return
 
 

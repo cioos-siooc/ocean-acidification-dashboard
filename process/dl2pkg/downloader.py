@@ -21,11 +21,10 @@ def find_pending_rows(conn, limit=10):
         return results
 
 
-def requeue_failed(conn, dataset=None, date=None, variable=None, dry_run=False):
+def requeue_failed(conn, dataset=None, date=None, variable=None):
     """Reset failed download rows to pending.
 
     If dataset/date/variable are provided, restrict the update accordingly.
-    If dry_run=True, return the count without performing the update.
     """
     clauses = ["status='failed_download'"]
     params = []
@@ -64,11 +63,7 @@ def requeue_failed(conn, dataset=None, date=None, variable=None, dry_run=False):
     with conn.cursor() as cur:
         cur.execute(sql_count, tuple(params))
         cnt = cur.fetchone()[0]
-    if dry_run:
-        logger.info("Dry-run: would requeue %d failed rows", cnt)
-        return cnt
-
-    sql_update = f"UPDATE nc_jobs SET status='pending_download', attempts=0, last_error=NULL WHERE {where}"
+    sql_update = f"UPDATE nc_jobs SET status='pending_download', attempts=0 WHERE {where}"
     with conn.cursor() as cur:
         cur.execute(sql_update, tuple(params))
     conn.commit()
@@ -77,6 +72,7 @@ def requeue_failed(conn, dataset=None, date=None, variable=None, dry_run=False):
 
 
 import os
+import json
 import requests
 import tempfile
 import hashlib
@@ -85,12 +81,30 @@ from datetime import timezone
 from .das import fetch_das
 from psycopg2.extras import Json
 
+CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "configs.json"))
 
-def build_griddap_url(erddap_base, dataset_id, variable, start_iso, end_iso, das_text=None):
+
+def load_configs(config_path: str | None = None) -> dict:
+    path = config_path or CONFIG_PATH
+    try:
+        with open(path, "r") as fh:
+            return json.load(fh)
+    except Exception:
+        logger.exception("Failed to load configs from %s", path)
+        return {}
+
+
+def build_griddap_url(base_url, variable, start_iso, end_iso, das_text=None):
     """Construct a griddap URL, attempting to include index ranges for depth/gridY/gridX when available from the DAS.
     Format: {variable}[(start):1:(end)][(depth_min):1:(depth_max)][(gridY_min):1:(gridY_max)][(gridX_min):1:(gridX_max)]
     """
-    base = f"{erddap_base.rstrip('/')}/griddap/{dataset_id}.nc?"
+    base = base_url.rstrip('/')
+    if base.endswith('.das'):
+        base = base[:-4]
+    if base.endswith('.nc'):
+        base = base[:-3]
+    if not base.endswith('.nc?'):
+        base = f"{base}.nc?"
     time_slice = f"{variable}[({start_iso}):1:({end_iso})]"
 
     range_suffix = ""
@@ -143,33 +157,32 @@ def _compress_netcdf_file(in_path: str, compression: dict) -> None:
     os.replace(tmp_out, in_path)
 
 
-def download_nc(conn, row, erddap_base, dry_run=False):
+def download_nc(conn, row, erddap_base):
     nid = row["id"] if isinstance(row, dict) else row['id']
     ds_id = row["dataset_id"] if isinstance(row, dict) else row['dataset_id']
     variable = row["variable"] if isinstance(row, dict) else row['variable']
     start_time = row["start_time"] if isinstance(row, dict) else row['start_time']
     end_time = row["end_time"] if isinstance(row, dict) else row['end_time']
 
-    # fetch dataset_id string from erddap_datasets
+    # fetch base_url from erddap_datasets
     with conn.cursor() as cur:
-        cur.execute("SELECT dataset_id FROM erddap_datasets WHERE id=%s", (ds_id,))
-        dataset_id = cur.fetchone()[0]
+        cur.execute("SELECT base_url FROM erddap_datasets WHERE id=%s", (ds_id,))
+        base_url = cur.fetchone()[0]
+
+    if not base_url.startswith("http://") and not base_url.startswith("https://"):
+        base_url = f"{erddap_base.rstrip('/')}/griddap/{base_url}"
 
     das_text = None
     try:
-        das_text = fetch_das(erddap_base, dataset_id)
+        das_text = fetch_das(base_url)
     except Exception:
         pass
 
     start_iso = start_time.isoformat().replace("+00:00", "Z")
     end_iso = end_time.isoformat().replace("+00:00", "Z")
-    url = build_griddap_url(erddap_base, dataset_id, variable, start_iso, end_iso, das_text)
+    url = build_griddap_url(base_url, variable, start_iso, end_iso, das_text)
 
     logger.info("Downloading %s -> %s", url, variable)
-    if dry_run:
-        logger.info("dry-run: would download %s", url)
-        return True
-
     tmpfd, tmpfn = tempfile.mkstemp(suffix=".nc.part")
     os.close(tmpfd)
     try:
@@ -193,7 +206,6 @@ def download_nc(conn, row, erddap_base, dry_run=False):
         shutil.move(tmpfn, final_path)
 
         # Optionally compress the downloaded file based on global config
-        from .sublevel import load_configs
         cfg = load_configs()
         comp = cfg.get('compression') if isinstance(cfg, dict) else None
         if comp and comp.get('apply_to_downloads'):
@@ -230,8 +242,8 @@ def download_nc(conn, row, erddap_base, dry_run=False):
         logger.exception("Download failed for %s", url)
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE nc_jobs SET status='failed_download', last_error=%s, attempts = attempts+1, last_attempt = NOW() WHERE id=%s",
-                (str(e), nid),
+                "UPDATE nc_jobs SET status='failed_download', attempts = attempts+1, last_attempt = NOW() WHERE id=%s",
+                (nid,),
             )
         conn.commit()
         try:
@@ -241,7 +253,7 @@ def download_nc(conn, row, erddap_base, dry_run=False):
         return False
 
 
-def do_download(conn, erddap_base, dry_run=False, limit=5):
+def do_download(conn, erddap_base, limit=5):
     pending = find_pending_rows(conn, limit=limit)
     if not pending:
         logger.info("No pending files")
@@ -259,7 +271,7 @@ def do_download(conn, erddap_base, dry_run=False, limit=5):
             logger.info("Skipping pending id %s because lock not acquired", row["id"])
             continue
         try:
-            success = download_nc(conn, row, erddap_base, dry_run=dry_run)
+            success = download_nc(conn, row, erddap_base)
             with conn.cursor() as cur:
                 cur.execute("SELECT pg_advisory_unlock(%s)", (row["id"],))
             if not success:
@@ -274,8 +286,8 @@ def do_download(conn, erddap_base, dry_run=False, limit=5):
             logger.exception("Error processing pending id %s", row["id"])
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE nc_files SET status='failed_download', last_error=%s, attempts = attempts+1, last_attempt = NOW() WHERE id=%s",
-                    (str(e), row["id"]),
+                    "UPDATE nc_jobs SET status='failed_download', attempts = attempts+1, last_attempt = NOW() WHERE id=%s",
+                    (row["id"],),
                 )
             conn.commit()
             with conn.cursor() as cur:

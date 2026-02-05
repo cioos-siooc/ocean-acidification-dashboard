@@ -34,9 +34,13 @@ def parse_das_for_times(das_text):
     return time_cov, actual_max
 
 
-def fetch_das(erddap_base, dataset_id, timeout=30):
+def fetch_das(base_url, timeout=30):
     import requests
-    url = f"{erddap_base.rstrip('/')}/griddap/{dataset_id}.das"
+    base = base_url.rstrip('/')
+    if base.endswith('.das'):
+        url = base
+    else:
+        url = f"{base}.das"
     r = requests.get(url, timeout=timeout)
     r.raise_for_status()
     return r.text

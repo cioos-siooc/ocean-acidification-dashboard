@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Benchmark timeseries extraction performance.
 
-Compares extract_timeseries run time and resource usage (wall time, CPU time, RSS) when
-extracting a point timeseries from:
-  - full original NC files: DATA_DIR/{var}/*.nc
-  - sublevel NC files:     DATA_DIR/sublevels/{var}/*.sub.nc (or *.nc)
+Measures extract_timeseries run time and resource usage (wall time, CPU time, RSS) when
+extracting a point timeseries from full original NC files: DATA_DIR/{var}/*.nc
 
 The script creates a temporary directory with symlinks to the subset of files corresponding
 to the *last N distinct dates* found in the filenames (configurable with --days) and then
@@ -53,12 +51,9 @@ except Exception:
     psutil = None
 
 
-def select_recent_files(base_dir: str, var: str, days: int, use_sublevels: bool) -> List[str]:
+def select_recent_files(base_dir: str, var: str, days: int) -> List[str]:
     """Return list of file paths for the last `days` distinct date tokens found in filenames."""
-    if use_sublevels:
-        d0 = os.path.join(base_dir, 'sublevels', var)
-    else:
-        d0 = os.path.join(base_dir, var)
+    d0 = os.path.join(base_dir, var)
     if not os.path.isdir(d0):
         return []
     files = sorted(glob(os.path.join(d0, "*.nc")))
@@ -138,10 +133,9 @@ def measure(func, *args, **kwargs):
     }
 
 
-def run_single_extract_with_symlinked_dir(mode: str, base_dir: str, var: str, days: int, extra_args: dict) -> dict:
-    """Prepare symlink subset for mode (full/sublevel) and call extract_timeseries to benchmark it."""
-    use_sublevels = (mode == 'sublevel')
-    selected = select_recent_files(base_dir, var, days, use_sublevels)
+def run_single_extract_with_symlinked_dir(base_dir: str, var: str, days: int, extra_args: dict) -> dict:
+    """Prepare symlink subset and call extract_timeseries to benchmark it."""
+    selected = select_recent_files(base_dir, var, days)
     if not selected:
         raise RuntimeError(f"No files found for mode={mode} var={var} in {base_dir}")
     tmpdir = make_symlink_subset(selected, var)
@@ -150,7 +144,7 @@ def run_single_extract_with_symlinked_dir(mode: str, base_dir: str, var: str, da
         kwargs = {**extra_args, 'data_dir': tmpdir}
         out = measure(extract_timeseries, **kwargs)
         out['n_files'] = len(selected)
-        out['mode'] = mode
+        out['mode'] = 'full'
         out['tmpdir'] = tmpdir
         return out
     finally:
@@ -158,11 +152,7 @@ def run_single_extract_with_symlinked_dir(mode: str, base_dir: str, var: str, da
 
 
 def run_bench(args):
-    modes = ['full']
-    if args.compare_sublevels:
-        modes.append('sublevel')
-
-    results = {m: [] for m in modes}
+    results = {'full': []}
 
     extra = {
         'var': args.var,
@@ -235,33 +225,31 @@ def run_bench(args):
             return df.time, df.value
 
         # replace extract function used by measure with local wrapper when row/col provided
-        for m in modes:
-            for i in range(args.repeats):
-                selected = select_recent_files(args.data_dir, args.var, args.days, use_sublevels=(m == 'sublevel'))
-                if not selected:
-                    print(f"No files for mode={m}, var={args.var}")
-                    continue
-                tmpdir = make_symlink_subset(selected, args.var)
-                try:
-                    res = measure(local_extract, tmpdir, args.var, args.row, args.col, args.depth)
-                    res.update({'mode': m, 'n_files': len(selected)})
-                    results[m].append(res)
-                    print(f"Mode={m} run {i+1}/{args.repeats}: wall={res['wall']:.3f}s cpu={res['cpu']:.3f}s rss={res['rss']/1024:.1f}KB")
-                finally:
-                    shutil.rmtree(tmpdir, ignore_errors=True)
+        for i in range(args.repeats):
+            selected = select_recent_files(args.data_dir, args.var, args.days)
+            if not selected:
+                print(f"No files for var={args.var}")
+                continue
+            tmpdir = make_symlink_subset(selected, args.var)
+            try:
+                res = measure(local_extract, tmpdir, args.var, args.row, args.col, args.depth)
+                res.update({'mode': 'full', 'n_files': len(selected)})
+                results['full'].append(res)
+                print(f"Mode=full run {i+1}/{args.repeats}: wall={res['wall']:.3f}s cpu={res['cpu']:.3f}s rss={res['rss']/1024:.1f}KB")
+            finally:
+                shutil.rmtree(tmpdir, ignore_errors=True)
     else:
         # DB-backed extract_timeseries runs (lat/lon provided)
-        for m in modes:
-            for i in range(args.repeats):
-                try:
-                    out = run_single_extract_with_symlinked_dir(m, args.data_dir, args.var, args.days, extra)
-                    results[m].append(out)
-                    if out['ok']:
-                        print(f"Mode={m} run {i+1}/{args.repeats}: wall={out['wall']:.3f}s cpu={out['cpu']:.3f}s rss={out['rss']/1024:.1f}KB (files={out['n_files']})")
-                    else:
-                        print(f"Mode={m} run {i+1}/{args.repeats}: FAILED: {out['result']}")
-                except Exception as e:
-                    print(f"Mode={m} run {i+1}/{args.repeats}: FAILED SETUP: {e}")
+        for i in range(args.repeats):
+            try:
+                out = run_single_extract_with_symlinked_dir(args.data_dir, args.var, args.days, extra)
+                results['full'].append(out)
+                if out['ok']:
+                    print(f"Mode=full run {i+1}/{args.repeats}: wall={out['wall']:.3f}s cpu={out['cpu']:.3f}s rss={out['rss']/1024:.1f}KB (files={out['n_files']})")
+                else:
+                    print(f"Mode=full run {i+1}/{args.repeats}: FAILED: {out['result']}")
+            except Exception as e:
+                print(f"Mode=full run {i+1}/{args.repeats}: FAILED SETUP: {e}")
 
     # Summarize
     print("\n=== Summary ===")
@@ -283,7 +271,7 @@ def run_bench(args):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Benchmark timeseries extraction (full vs sublevels)")
+    p = argparse.ArgumentParser(description="Benchmark timeseries extraction (full files)")
     p.add_argument("--var", required=True)
     group = p.add_mutually_exclusive_group()
     group.add_argument("--lat", type=float)
@@ -294,7 +282,6 @@ def main(argv=None):
     p.add_argument("--data-dir", default=os.environ.get('DATA_DIR', '/opt/data/nc'))
     p.add_argument("--days", type=int, default=5, help="How many distinct recent dates to include")
     p.add_argument("--repeats", type=int, default=3)
-    p.add_argument("--compare-sublevels", action='store_true', help="Also benchmark sublevel files in data_dir/sublevels/{var}")
 
     # DB connection (used when lat/lon provided and row/col absent)
     p.add_argument("--db-dsn", default=None)

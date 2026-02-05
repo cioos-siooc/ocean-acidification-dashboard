@@ -37,12 +37,13 @@ def get_dataset(file_path):
                 _ds_cache = xr.open_dataset(file_path)
     return _ds_cache
 
-def extract_climate_timeseries(lat, lon, target_dt_str):
+def extract_climate_timeseries(lat, lon):
     """
-    Extracts a 10-day climatology window around target_dt_str.
+    Extracts a 10-day climatology window around current UTC time.
     Returns a list of dictionaries.
     """
     # Configuration
+    target_dt_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
     file_path = "/opt/data/nc/SalishSeaCast/climate/temperature/depth_0p5.nc"
     variables = ['mean', 'median', 'q1', 'q3', 'min', 'max']
     
@@ -108,8 +109,8 @@ def extract_climate_timeseries(lat, lon, target_dt_str):
     start_window = target_dt - timedelta(days=5)
     end_window = target_dt + timedelta(days=5)
     
-    # Generate all hourly timestamps in the range
-    hourly_range = pd.date_range(start=start_window, end=end_window, freq='H')
+    # Generate all hourly timestamps in the range (use lowercase 'h' for compatibility)
+    hourly_range = pd.date_range(start=start_window, end=end_window, freq='h')
     
     t_dim = 'virtual_time' if 'virtual_time' in ds_pixel.dims else 'time'
     results = []

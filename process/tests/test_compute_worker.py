@@ -37,7 +37,7 @@ def test_process_pending_compute_runs_subprocess_and_updates(monkeypatch, tmp_pa
     # First SELECT pg_try_advisory_lock -> True (lock id will be min(ids) == 123)
     # Next SELECT for dic filename -> return (dic_filename, dic_path)
     cur.fetchone.side_effect = [(True,), ('dissolved_inorganic_carbon_20260115T0030_20260115T2330.nc', str(base_dir / 'dissolved_inorganic_carbon' / 'dummy.nc'))]
-    process_pending_compute(conn, dry_run=False, workers=1, limit=10, base_dir=str(base_dir))
+    process_pending_compute(conn, workers=1, limit=10, base_dir=str(base_dir))
 
     # Ensure we updated computed rows (we expect an UPDATE call marking success_compute)
     assert any("status='success_compute'" in str(c) for c in cur.execute.call_args_list)

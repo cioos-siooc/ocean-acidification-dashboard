@@ -280,12 +280,11 @@ class climate_timeseriesRequest(BaseModel):
     lat: float
     lon: float
     # depth: float
-    dt: str
 
 @app.post("/extract_climateTimeseries")
 async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
     # Reject requests if we are already at concurrency limit
-    logger.info(f"START extract_climateTimeseries: {request.lat}, {request.lon}, {request.dt}")
+    logger.info(f"START extract_climateTimeseries: {request.lat}, {request.lon}")
     try:
         # Wait up to 10 seconds to acquire the semaphore
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
@@ -296,10 +295,9 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
     try:
         lat = request.lat
         lon = request.lon
-        dt = request.dt
         
         # Run the synchronous extraction in a threadpool to keep the event loop free
-        result = await run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon, target_dt_str=dt)
+        result = await run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon)
         if result is None:
             logger.error("Extraction returned None")
             raise HTTPException(status_code=500, detail="Extraction failed")
@@ -308,6 +306,44 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
         return result
     except Exception as exc:
         logger.exception("extract_climate_timeseries failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        _extract_semaphore.release()
+
+#######################################
+
+class monthlyClimRequest(BaseModel):
+    variable: str
+    lat: float
+    lon: float
+    depth: float
+
+@app.post("/getMonthlyClimatologyAtCoord")
+async def fn_get_monthly_climatology(request: monthlyClimRequest):
+    logger.info(f"START getMonthlyClimatologyAtCoord: {request.variable}, {request.lat}, {request.lon}, depth={request.depth}")
+    try:
+        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
+    except (asyncio.TimeoutError, Exception):
+        logger.warning("Semaphore timeout in getMonthlyClimatologyAtCoord")
+        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
+
+    try:
+        from modules.monthly_climatology import get_monthly_climatology_at_coord
+        result = await run_in_threadpool(
+            get_monthly_climatology_at_coord,
+            lat=request.lat,
+            lon=request.lon,
+            depth=request.depth,
+            variable=request.variable,
+            # Let module pick data root default and DB environment vars
+        )
+        logger.info(f"FINISH getMonthlyClimatologyAtCoord: {request.variable}, {request.lat}, {request.lon}, depth={request.depth}")
+        return result
+    except FileNotFoundError as fnf:
+        logger.exception("monthly climatology file not found")
+        raise HTTPException(status_code=404, detail=str(fnf))
+    except Exception as exc:
+        logger.exception("get_monthly_climatology_at_coord failed")
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         _extract_semaphore.release()

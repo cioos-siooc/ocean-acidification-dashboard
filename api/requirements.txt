@@ -5,3 +5,6 @@ psycopg2-binary>=2.9.11
 uvicorn>=0.40.0
 xarray>=2025.12.0
 netCDF4>=1.6.4
+# required by xarray.open_mfdataset when used with parallel=True
+dask[complete]>=2024.0.0
+distributed>=2024.0.0
