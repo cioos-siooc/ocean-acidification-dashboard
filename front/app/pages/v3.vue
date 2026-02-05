@@ -2,7 +2,10 @@
     <div class="d-flex flex-column h-screen overflow-hidden">
         <!-- Top: Map -->
         <div ref="mapContainer" class="flex-grow-1 map-container">
-            <Layers @toggleLayer="onToggleLayer" />
+            <!-- <Layers @toggleLayer="onToggleLayer" /> -->
+            <ColorBarSelect v-if="mainStore.variables.length" :variables="mainStore.variables"
+                v-model="selectedVarLocal" :stops="selectedColormap?.stops" :colormaps="Object.values(colormaps)"
+                v-model:colormap="selectedColormapName" v-model:min="selectedMin" v-model:max="selectedMax" />
             <DepthSlider />
         </div>
 
@@ -10,13 +13,7 @@
         <v-footer class="ma-0 pa-0" :style="{ maxHeight: `${footerHeight}` }">
             <!-- <div ref="globalChartContainer" class="w-100" :style="{ height: `calc(${footerHeight} - 20px)` }"></div> -->
             <v-container minWidth="100%" class="ma-0 pa-0">
-                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)` }">
-                    <div ref="globalChartContainer" style="width: 100%; height: 100%;"></div>
-                </v-row>
                 <v-row class="ma-0 pa-0" style="height:20px; background-color: #ccc;">
-                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
-                        <span class="footer-text" style="font-weight: bold;">SELECTED</span>
-                    </v-col>
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ var2name(selectedVariable.var) }}</span>
                     </v-col>
@@ -31,7 +28,26 @@
                         <span class="footer-text">{{ mouseCoords.lat }} , {{ mouseCoords.lng }}</span>
                     </v-col>
                 </v-row>
+
+                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)` }"
+                    style="position: relative;">
+                    <TimeControls :timestamps="model_timestamps" :currentDt="mainStore.selected_variable.dt"
+                        @update:dt="onTimeControlDt" />
+
+                    <div ref="globalChartContainer" style="width: calc( 100% - 24px ); height: calc(100% - 32px);"></div>
+
+                    <div class="py-3"
+                        style="position: absolute; width:24px; height: 100%; bottom: 0px; right: 0px; text-align:center; background: #eee;">
+                        <v-btn title="Long-term climatology" flat size="20px" :disabled="!lastClicked" icon color="primary" @click="dialogOpen = true">
+                            <v-icon size="14px">mdi-chart-line</v-icon>
+                        </v-btn>
+                    </div>
+                </v-row>
             </v-container>
+
+            <!-- Dialog component for monthly chart -->
+            <EchartsLineDialog v-model="dialogOpen" :coord="lastClicked" :variable="selectedVariable.var"
+                :depth="selectedVariable.depth" />
 
         </v-footer>
         <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
@@ -50,38 +66,136 @@ import axios from 'axios'
 import moment from 'moment-timezone'
 import Layers from '../components/layers.vue'
 import DepthSlider from '../components/depth-slider.vue'
+import ColorBarSelect from '../components/ColorBarSelect.vue'
+import TimeControls from '../components/TimeControls.vue'
+import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 
 import { computeNightRanges } from '../../composables/useSunCalc'
 import { var2name } from '../../composables/useVar2Name'
 import { utc2pst } from '../../composables/useUTC2PST'
 import { formatDepth } from '../../composables/useFormatDepth'
+import { useCircleLayer } from '../../composables/useCircleLayer';
+import useStationsInteraction from '../../composables/useStationsInteraction';
+import getSensorTimeseries from '../../composables/useSensorTimeseries';
+import EchartsLineDialog from '../components/EchartsLineDialog.vue'
+
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
+import Scale from 'echarts/types/src/scale/Scale.js';
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
 const apiBaseUrl = config.public.apiBaseUrl
 
+// Colormaps cache
+const colormaps = ref<Record<string, any>>({});
+
+async function getColormaps() {
+    try {
+        const r = await axios.get(`${apiBaseUrl}/colormaps`);
+        const list = r.data;
+        const map: Record<string, any> = {};
+        for (const c of list) map[c.name] = c;
+        colormaps.value = map;
+        return map;
+    } catch (e) {
+        console.error('Failed to fetch colormaps:', e);
+        colormaps.value = {};
+        return {};
+    }
+}
+
 const mapContainer = ref<HTMLDivElement | null>(null);
 const globalChartContainer = ref<HTMLDivElement | null>(null);
 let map: mapboxgl.Map | null = null;
 let globalChart: echarts.ECharts | null = null;
-let __seriesTs: number[] = []; // Global cache for chart timestamps to support "click anywhere"
+let model_timestamps: number[] = []; // Global cache for chart timestamps to support "click anywhere"
 const meta = ref<any>(null);
 // remember last clicked point (lat/lon) so chart can be refreshed when var/depth changes
 const lastClicked = ref<{ lat: number; lon: number } | null>(null);
-const footerHeight = '200px';
+const footerHeight = '300px';
 
 // [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
 const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, number]];
 
 const mouseCoords = ref<{ lng: number | null, lat: number | null }>({ lng: null, lat: null });
 
+const sensorData = ref<{ time: string, value: number }[]>([])
+
+// Dialog for detailed timeseries
+const dialogOpen = ref(false);
+
+// Flags to coordinate initial click: mapLoaded becomes true when map 'load' fires;
+// selectedReady becomes true when initial variables/selectedVariable are set.
+const mapLoaded = ref(false);
+const selectedReady = ref(false);
+let didInitClick = false;
+
+const clicked_sensor_id = ref<number | null>(null);
+
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 
 const selectedVariable = computed(() => mainStore.selected_variable);
+
+// Two-way v-model helper for ColorBarSelect
+const selectedVarLocal = computed({
+    get: () => mainStore.selected_variable.var,
+    set: (v: string) => {
+        // keep current dt & depth when user selects a different variable
+        mainStore.setSelectedVariable(v, mainStore.selected_variable.dt, mainStore.selected_variable.depth);
+    }
+});
+
+// Selected colormap name chosen by user (overrides DB default when set)
+const selectedColormapName = ref<string | null>(null);
+
+// When variable changes, default the colormap selection to the DB value for that variable
+const selectedMin = ref<number | null>(null);
+const selectedMax = ref<number | null>(null);
+
+watch(() => selectedVarLocal.value, (nv) => {
+    const varMeta = mainStore.variables.find((v: any) => v.var === nv);
+    selectedColormapName.value = varMeta?.colormap ?? null;
+    // reset min/max to variable bounds unless they already exist
+    selectedMin.value = varMeta?.min ?? null;
+    selectedMax.value = varMeta?.max ?? null;
+}, { immediate: true });
+
+// when min/max change, update overlay
+watch([selectedMin, selectedMax], async () => {
+    if (!map || !mapLoaded.value) return;
+    try {
+        await updatePngOverlay();
+    } catch (e) {
+        console.warn('Failed to update overlay after min/max change', e);
+    }
+}, { immediate: false });
+
+const selectedColormap = computed(() => {
+    const name = selectedColormapName.value;
+    if (name) return colormaps.value[name] ?? null;
+    const varMeta = mainStore.variables.find((v: any) => v.var === selectedVarLocal.value);
+    if (!varMeta || !varMeta.colormap) return null;
+    return colormaps.value[varMeta.colormap] ?? null;
+});
+
+// Re-render overlay when selected colormap changes
+watch(() => selectedColormapName.value, async () => {
+    if (!map || !mapLoaded.value) return;
+    try {
+        await updatePngOverlay();
+    } catch (e) {
+        console.warn('Failed to update overlay after colormap change', e);
+    }
+});
+
+// Handler for time controls component
+function onTimeControlDt(dt: any) {
+    // dt is a moment object (UTC)
+    mainStore.setSelectedVariable(mainStore.selected_variable.var, dt, mainStore.selected_variable.depth);
+}
 
 ///////////////////////////////////  HOOKS  ///////////////////////////////////
 onMounted(async () => {
@@ -108,8 +222,12 @@ onMounted(async () => {
             mouseCoords.value.lng = e.lngLat.lng.toFixed(4) as unknown as number;
             mouseCoords.value.lat = e.lngLat.lat.toFixed(4) as unknown as number;
         });
-        addStations().catch((e) => console.warn('addStations failed:', e));
+        // Fetch colormaps and variables in parallel
+        Promise.all([getColormaps(), init()]).catch((e) => console.warn('init failed:', e));
+        addSensors().catch((e) => console.warn('addSensors failed:', e));
     });
+
+
 })
 
 onBeforeUnmount(() => {
@@ -138,6 +256,8 @@ onBeforeUnmount(() => {
             try { if (globalHandlers.onLegendSelectChanged && globalChart) globalChart.off('legendselectchanged', globalHandlers.onLegendSelectChanged); } catch (e) { }
             try { if (globalHandlers.onChartHighlight) delete (map as any).__globalChartHandlers.onChartHighlight; } catch (e) { }
         }
+        // detach station handlers if attached
+        try { const sd = (map as any).__stationsDetach; if (sd) sd(); } catch (e) { }
 
         // remove png overlay if present
         try { if (map.getLayer && map.getLayer('png-image-layer')) map.removeLayer('png-image-layer'); } catch (e) { }
@@ -166,13 +286,14 @@ onBeforeUnmount(() => {
 
 // Watcher: add/update/remove overlay when selected variable or depth changes
 watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth], async ([v, depth]) => {
-    console.log('Watcher [var, depth] triggered:', v, depth);
     if (!map) return;
 
     if (!v) { removePngOverlay(); return; }
     try {
         await getMetadata();
         await updatePngOverlay();
+
+        mapLoaded.value = true;
 
         // If the user previously clicked a point, refresh the timeseries chart for the new var/depth
         if (lastClicked.value) {
@@ -184,18 +305,12 @@ watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth]
                         const lat = lastClicked.value!.lat;
                         const lon = lastClicked.value!.lon;
                         const varId = mainStore.selected_variable.var;
-                        console.log('Refreshing timeseries for last clicked point due to var/depth change', { varId, lat, lon, depth: mainStore.selected_variable.depth });
 
                         // abort previous request if any
                         try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
                         tsRequestController = new AbortController();
 
-                        const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: varId, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
-                        const json = r.data;
-                        if (json && Array.isArray(json.time) && Array.isArray(json.value)) {
-                            const vname = mainStore.variables.find(x => x.var === varId)?.name || varId;
-                            plotTimeseriesFromApi(vname, json.time, json.value, lat, lon);
-                        }
+                        getTimeseriesPromises(lat, lon);
                     } catch (e) {
                         if (e && e.code === 'ERR_CANCELED') return; // aborted
                         console.warn('Failed to refresh timeseries after var/depth change', e);
@@ -206,7 +321,8 @@ watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth]
             } catch (e) {
                 console.warn('Failed to schedule timeseries refresh after var/depth change', e);
             }
-        }
+        } else
+            maybeInitClick();
     } catch (e) {
         console.error('Failed to load PNG for variable', v, e);
         removePngOverlay();
@@ -224,35 +340,15 @@ watch(() => mainStore.selected_variable.dt, async (newDt) => {
     }
 });
 
+watch(() => mainStore.selected_variable, () => {
+    console.log('selected_variable changed:', mainStore.selected_variable);
+}, { deep: true });
+
 ///////////////////////////////////  MEDTHODS  ///////////////////////////////////
-
-async function getVariables() {
-    try {
-        const r = await axios.get(`${apiBaseUrl}/variables`);
-        const data = r.data;
-
-        // Convert datetimes from string to moment objects
-        data.forEach((v: any) => {
-            v.dts = v.dts.map((dtstr: string) => moment.utc(dtstr));
-        });
-
-        mainStore.setVariables(data);
-        console.log(data);
-
-        if (data.length > 0) {
-            const dts = data[0].dts
-            mainStore.setSelectedVariable(data[0].var, dts[dts.length - 1], 5.5);
-        }
-    } catch (e) {
-        console.error('Failed to fetch variables:', e);
-    }
-}
-
 async function getMetadata() {
     try {
         const varId = mainStore.selected_variable.var;
         const metaPath = `${apiBaseUrl}/metadata/${varId}`;
-        console.log('metaPath: ', metaPath);
 
         const r = await axios.get(metaPath);
         meta.value = JSON.parse(r.data);
@@ -261,7 +357,7 @@ async function getMetadata() {
     }
 }
 
-async function addStations() {
+async function init() {
     if (!map) return;
 
     getVariables()
@@ -278,11 +374,29 @@ async function addStations() {
         tooltip: {
             trigger: 'axis'
         },
+        toolbox: {
+            feature: {
+                dataZoom: {
+                    yAxisIndex: 'none'
+                },
+                dataView: { readOnly: true },
+                saveAsImage: {}
+            }
+        },
+        legend: {
+            show: true,
+            orient: 'vertical',
+            left: 'left',
+            top: 'center',
+            itemWidth: 15,
+            itemHeight: 10,
+            textStyle: { fontSize: 10 }
+        },
         xAxis: {
             type: 'time'
         },
         yAxis: { type: 'value', min: 'dataMin', max: 'dataMax' },
-        grid: { left: 50, right: 30, top: 30, bottom: 30 },
+        grid: { left: 160, right: 30, top: 30, bottom: 30 },
         series: []
     };
     globalChart.setOption(option);
@@ -292,8 +406,8 @@ async function addStations() {
     try {
         let lastClickedX: string | number | null = null;
         globalChart.getZr().on('click', (evt: any) => {
-            console.log(globalChart, evt);
-            if (!globalChart || !__seriesTs.length) return;
+            if (!globalChart || !model_timestamps.length) return;
+            console.log('model_timestamps: ', model_timestamps);
 
             // ZRender coordinates for the click
             const px = evt.event.zrX;
@@ -301,34 +415,32 @@ async function addStations() {
 
             // Convert pixel point to chart coordinates (values)
             const converted = globalChart.convertFromPixel('grid', [px, py]);
-            console.log('converted: ', converted);
-
             if (!converted || converted[0] === undefined) return;
 
             const clickX = Number(converted[0]);
             console.log('clickX: ', clickX);
 
-            // Find nearest point in __seriesTs (assumed sorted timestamps)
+            // Find nearest point in __series_model (assumed sorted timestamps)
             // Binary search for efficiency
             let low = 0;
-            let high = __seriesTs.length - 1;
+            let high = model_timestamps.length - 1;
             let bestIdx = 0;
 
             while (low <= high) {
                 const mid = Math.floor((low + high) / 2);
-                if (Math.abs(__seriesTs[mid] - clickX) < Math.abs(__seriesTs[bestIdx] - clickX)) {
+                if (Math.abs(model_timestamps[mid] - clickX) < Math.abs(model_timestamps[bestIdx] - clickX)) {
                     bestIdx = mid;
                 }
-                if (__seriesTs[mid] < clickX) low = mid + 1;
-                else if (__seriesTs[mid] > clickX) high = mid - 1;
+                if (model_timestamps[mid] < clickX) low = mid + 1;
+                else if (model_timestamps[mid] > clickX) high = mid - 1;
                 else break;
             }
+            console.log('bestIdx: ', bestIdx);
 
-            const finalX = __seriesTs[bestIdx];
-
+            const finalX = model_timestamps[bestIdx];
+            console.log('finalX: ', finalX);
             if (finalX !== lastClickedX) {
                 lastClickedX = finalX;
-                console.log('ZR clicked nearest x:', finalX, 'moment:', moment(finalX).utc().format('YYYY-MM-DDTHHmmss'));
                 mainStore.setSelectedVariable(
                     mainStore.selected_variable.var,
                     moment.utc(finalX),
@@ -341,6 +453,194 @@ async function addStations() {
     }
 
     // No click handler registered until an overlay is added by selecting a variable.
+}
+
+async function getVariables() {
+    try {
+        const r = await axios.get(`${apiBaseUrl}/variables`);
+        const data = r.data;
+
+        // Convert datetimes from string to moment objects
+        data.forEach((v: any) => {
+            v.dts = v.dts.map((dtstr: string) => moment.utc(dtstr));
+        });
+
+        mainStore.setVariables(data);
+
+        if (data.length > 0) {
+            const varId = 'temperature';
+            const dts = data.find((v: any) => v.var === varId)?.dts;
+            const precision = data.find((v: any) => v.var === varId)?.precision || 0.1;
+            const depth = data.find((v: any) => v.var === varId)?.depths && data.find((v: any) => v.var === varId)?.depths.length > 0 ? data.find((v: any) => v.var === varId)?.depths[0] : 0.5;
+            mainStore.setSelectedVariable(varId, dts[dts.length - 1], depth, precision);
+        }
+
+        selectedReady.value = true;
+        maybeInitClick();
+    } catch (e) {
+        console.error('Failed to fetch variables:', e);
+    }
+}
+
+function maybeInitClick() {
+    // Call initClick only once both the map has finished loading and the selected variable has been initialized
+    if (mapLoaded.value && selectedReady.value && !didInitClick) {
+        didInitClick = true;
+        initClick(49.2, -123.5); // Center of the map
+    }
+}
+
+function initClick(lat: number, lon: number) {
+    if (!map) return;
+
+    lastClicked.value = { lat, lon };
+
+    // Abort any in-flight timeseries requests and create a new controller
+    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
+    tsRequestController = new AbortController();
+
+    // trigger map click to load initial timeseries
+    map.fire('click', { lngLat: { lat, lng: lon } });
+
+    // getTimeseriesFromApi(lat, lon);
+}
+
+
+async function getTimeseriesPromises(lat: number, lon: number) {
+    const promises = Promise.all([
+        getTimeseriesFromApi(lat, lon),
+        getClimateTimeseries(lat, lon),
+        getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var)
+    ]);
+
+    const d = await promises;
+    const model = d[0].data
+    const clim = d[1].data
+    const sensor = d[2]?.data || null;
+
+    plotTimeseries(model, clim, sensor);
+    clicked_sensor_id.value = null;
+}
+
+async function getTimeseriesFromApi(lat: number, lon: number) {
+    return axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
+    // const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
+    // const json = r.data;
+    // if (json && Array.isArray(json.time) && Array.isArray(json.value)) {
+    //     plotTimeseriesFromApi(json.time, json.value, lat, lon);
+    // }
+}
+
+async function getClimateTimeseries(lat: number, lon: number) {
+    const now = moment().utc();
+    return axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
+        lat,
+        lon
+    });
+
+    // try {
+    //     const now = moment().utc();
+    //     const response = await axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
+    //         lat,
+    //         lon,
+    //         dt: now.format('YYYY-MM-DDTHHmmss')
+    //     });
+    //     const date = JSON.parse(response.data)
+    // } catch (error) {
+    //     console.error("Error fetching climate data:", error);
+    // } finally {
+    // }
+};
+
+async function addSensors() {
+    const sensors = await getSensors();
+
+    const features = sensors.map((s: any) => ({
+        type: 'Feature',
+        geometry: {
+            type: 'Point',
+            coordinates: [s.longitude, s.latitude]
+        },
+        properties: {
+            id: s.id,
+            name: s.name,
+            depths: s.depths,
+            variables: s.variables,
+            active: s.active
+        }
+    }));
+    const geojson: FeatureCollection<Geometry, GeoJsonProperties> = {
+        type: 'FeatureCollection',
+        features: features
+    };
+
+    const circle = useCircleLayer(() => map);
+    // Color by `active` property: active -> yellow, inactive -> grey
+    circle.addCircleLayer({
+        sourceId: 'stations',
+        layerId: 'stations-circles',
+        radius: 6,
+        color: ['case', ['==', ['get', 'active'], true], '#FFD700', '#888888']
+    });
+    circle.updateData(geojson);
+
+    // Attach active-only click handlers via composable
+    try {
+        const stations = useStationsInteraction(() => map, async (sensor_id: number) => {
+            console.log('Station clicked, sensor_id:', sensor_id);
+            clicked_sensor_id.value = sensor_id;
+            // show marker
+            // try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
+            // const el = document.createElement('div'); el.style.width = '12px'; el.style.height = '12px'; el.style.borderRadius = '50%'; el.style.background = '#ff5722'; el.style.border = '2px solid white';
+            // const marker = new mapboxgl.Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
+            // (map as any).__clickMarker = marker;
+
+            // remember clicked point
+            // lastClicked.value = { lat, lon };
+
+            // Abort any in-flight timeseries requests and create new controller
+            // try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
+            // tsRequestController = new AbortController();
+
+            // try {
+            //     // fetch sensor telemetry and climate in parallel
+            //     const [modelResp, climResp] = await Promise.all([
+            //         getSensorTimeseries(sensor_id, selectedVariable.value.var),
+            //         getClimateTimeseries(lat, lon)
+            //     ]);
+
+            //     // modelResp expected: { time: [...], value: [...] }
+            //     const model = { data: modelResp };
+            //     const clim = climResp.data;
+
+            //     plotTimeseries(model.data, clim);
+            // } catch (err: any) {
+            //     if (err && err.code === 'ERR_CANCELED') return;
+            //     console.error('Failed to fetch sensor timeseries:', err);
+            // } finally {
+            //     tsRequestController = null;
+            // }
+        });
+
+        // attach and keep a reference for cleanup
+        const detachStations = stations.attach(circle);
+        (map as any).__stationsDetach = detachStations;
+    } catch (e) {
+        console.warn('Failed to attach station handlers:', e);
+    }
+    // circle.on('mouseenter', (e) => { /* ... */ });
+}
+
+
+async function getSensors() {
+    try {
+        const r = await axios.get(`${apiBaseUrl}/sensors`);
+        const data = r.data;
+        return data;
+    } catch (e) {
+        console.error('Failed to fetch sensors:', e);
+        return [];
+    }
 }
 
 // Add / update / remove PNG overlay for a given public PNG path
@@ -374,27 +674,47 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     //             0.5, '#0f0',
     //             0.75, '#fde725',
     //             1.0, '#f00'
-    const vmin = mainStore.variables.find(v => v.var === varId)?.min
-    const vmax = mainStore.variables.find(v => v.var === varId)?.max
+    const varMeta = mainStore.variables.find(v => v.var === varId);
+    const vmin_meta = varMeta?.min;
+    const vmax_meta = varMeta?.max;
+
+    const vmin = (selectedMin.value !== null && selectedMin.value !== undefined) ? selectedMin.value : vmin_meta;
+    const vmax = (selectedMax.value !== null && selectedMax.value !== undefined) ? selectedMax.value : vmax_meta;
 
     // Get packing params from metadata, default to 0.1 precision and 0 base if missing
     // Note: base might be equal to vmin if it was dynamic
-    const precision = mainStore.variables.find(v => v.var === varId)?.precision ?? 0.1;
+    const precision = mainStore.variables.find(v => v.var === varId).precision;
     const base = 0
 
-    const color_stops = [
-        [0.0, 'rgba(0, 0, 0, 1)'],
-        [0.001, '#440154'],
-        [0.25, '#00f'],
-        [0.5, '#0f0'],
-        [0.75, '#fde725'],
-        [1.0, '#f00']
-    ];
-    for (const stop of color_stops) {
-        const val_phys = vmin + stop[0] * (vmax - vmin);
-        // decode formula: q = (phys - base) / precision
-        const val_packed = (val_phys - base) / precision;
-        raster_values.push(val_packed, stop[1]);
+    // Use colormap if available, otherwise fall back to default ramp
+    const cmap = selectedColormap.value;
+    if (cmap && Array.isArray(cmap.stops) && cmap.stops.length > 0) {
+        for (const s of cmap.stops) {
+            const pos = s[0];
+            const color = s[1];
+            // pos may be normalized [0..1] or absolute depending on cmap.mode
+            let val_phys = pos;
+            if (!cmap.mode || cmap.mode === 'normalized') {
+                val_phys = vmin + pos * (vmax - vmin);
+            }
+            const val_packed = (val_phys - base) / precision;
+            raster_values.push(val_packed, color);
+        }
+    } else {
+        const color_stops = [
+            [0.0, 'rgba(0, 0, 0, 1)'],
+            [0.001, '#440154'],
+            [0.25, '#00f'],
+            [0.5, '#0f0'],
+            [0.75, '#fde725'],
+            [1.0, '#f00']
+        ];
+        for (const stop of color_stops) {
+            const val_phys = vmin + stop[0] * (vmax - vmin);
+            // decode formula: q = (phys - base) / precision
+            const val_packed = (val_phys - base) / precision;
+            raster_values.push(val_packed, stop[1]);
+        }
     }
 
     if (map.getSource(sourceId)) {
@@ -432,7 +752,6 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
             },
         }, 'country-boundaries');
     }
-    console.log(vmin, vmax, base, precision, raster_values);
 
     // save active overlay metadata on the map instance for access by click handler
     const overlayObj: any = { bounds: [lonmin, latmin, lonmax, latmax], coords, varId, depth: depth, pngPath, meta, clickHandler: null };
@@ -446,6 +765,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     // register a click handler that queries the API for a timeseries at the clicked coordinate
     const onMapClick = async (evt: any) => {
         const { lng, lat } = evt.lngLat;
+        console.log('Map clicked at:', lng, lat);
         const overlay = (map as any).__activePngOverlay;
         if (!overlay) return;
         const [lon0, lat0, lon1, lat1] = overlay.bounds;
@@ -468,13 +788,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
         // POST to the API and expect {time: [...], value: [...]} in response
         try {
-            console.log({ var: mainStore.selected_variable.var, lat: lat, lon: lng, depth: mainStore.selected_variable.depth });
-            const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat: lat, lon: lng, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
-            console.log(r);
-
-            const json = r.data;
-            if (!json || !Array.isArray(json.time) || !Array.isArray(json.value)) throw new Error('Invalid API response');
-            plotTimeseriesFromApi(vname, json.time, json.value, lat, lng);
+            await getTimeseriesPromises(lat, lng);
         } catch (err) {
             if (err && err.code === 'ERR_CANCELED') {
                 // request was aborted; ignore
@@ -489,19 +803,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     // register click handler
     overlayObj.clickHandler = onMapClick;
     map.on('click', onMapClick);
-
-    // Optionally zoom to the image bounds for visibility during testing
-    // try { map.fitBounds([[lonmin, latmin], [lonmax, latmax]], { padding: 40, duration: 800 }); } catch (e) { }
-    console.info(`Added PNG overlay ${pngPath} as source='${sourceId}', layer='${layerId}'`);
-
-    // Do not auto-initialize animator here; animation starts when Play pressed from footer controls
-    // We keep the static PNG overlay active by default.
 }
-
-// Called when component or overlay destroyed
-onBeforeUnmount(() => {
-
-});
 
 // NOTE: stopping animator on every change to `mainStore.selected_variable` caused the animator to stop
 // immediately after it updated the selected timestamp (dt). That logic is already handled by the
@@ -518,24 +820,52 @@ function removePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
 }
 
 // Plot timeseries returned from the API into the footer chart
-function plotTimeseriesFromApi(varName: string | null, times: string[], values: number[], lat?: number, lon?: number) {
+function plotTimeseries(modelData: any, climateData: any, sensorData: any | null) {
     if (!globalChart) return;
     const tz = 'America/Vancouver';
 
-    // Update global timestamp cache for the click handler
-    __seriesTs = (times || []).map(t => moment.utc(t).valueOf());
+    const lat = lastClicked.value?.lat;
+    const lon = lastClicked.value?.lon;
 
-    // Convert the incoming UTC times to Vancouver local times (strings with offset)
-    const localTimes = (times || []).map((t) => moment.utc(t).tz(tz).format());
-    const seriesData = localTimes.map((lt, i) => [lt, values[i]]);
+    // Update global timestamp cache for the click handler
+    model_timestamps = modelData.time.map((t: any) => moment.utc(t).valueOf());
+    const values = modelData.value;
+    const __series_model = model_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), values[i]]);
+
+    const climate_timestamps = climateData.map((row: any) => moment.utc(row.requested_date).valueOf());
+    const mean = climateData.map((row: any) => row.mean);
+    // const median = Object.values(climateData.median);
+    const q1 = climateData.map((row: any) => row.q1);
+    const q3Diff = climateData.map((row: any, idx: number) => row.q3 - q1[idx]);
+    const min = climateData.map((row: any) => row.min);
+    const maxDiff = climateData.map((row: any, idx: number) => row.max - min[idx]);
+
+    const __series_mean = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), mean[i]]);
+    const __series_q1 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q1[i]]);
+    const __series_q3 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q3Diff[i]]);
+    const __series_min = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), min[i]]);
+    const __series_max = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), maxDiff[i]]);
+
+    // Combine time_model_local and times_clim_local into a single array for x-axis range calculation
+    const combinedTimes_timestamp = [...model_timestamps, ...climate_timestamps].sort((a, b) => a - b)
 
     // Determine time range in local timezone
-    if (!localTimes || localTimes.length === 0) {
-        globalChart.setOption({ series: [{ name: varName || 'value', type: 'line', showSymbol: false, data: [] }] });
-        return;
-    }
-    const startLocal = moment.tz(localTimes[0], tz).clone();
-    const endLocal = moment.tz(localTimes[localTimes.length - 1], tz).clone();
+    // if (!localTimes || localTimes.length === 0) {
+    //     globalChart.setOption({
+    //         series: [
+    //             {
+    //                 name: mainStore.selected_variable.var || 'value',
+    //                 type: 'line',
+    //                 showSymbol: false,
+    //                 smooth: true,
+    //                 data: []
+    //             }]
+    //     });
+    //     return;
+    // }
+
+    const startLocal = moment.tz(combinedTimes_timestamp[0], tz).clone();
+    const endLocal = moment.tz(combinedTimes_timestamp[combinedTimes_timestamp.length - 1], tz).clone();
 
     // Compute night mark areas using SunCalc (sunrise/sunset) if lat/lon provided, otherwise fall back to fixed night windows
     let markAreaData: any[] = [];
@@ -572,6 +902,15 @@ function plotTimeseriesFromApi(varName: string | null, times: string[], values: 
 
     const option: any = {
         // title: { text: varName ? `Timeseries — ${varName}` : 'Timeseries', left: 'center' },
+        legend: {
+            show: true,
+            orient: 'vertical',
+            left: 'left',
+            top: 'center',
+            itemWidth: 15,
+            itemHeight: 10,
+            textStyle: { fontSize: 10 },
+        },
         tooltip: {
             trigger: 'axis', formatter: (params: any) => {
                 if (!Array.isArray(params)) return '';
@@ -586,6 +925,16 @@ function plotTimeseriesFromApi(varName: string | null, times: string[], values: 
                 return out;
             }
         },
+        toolbox: {
+            feature: {
+                dataZoom: {
+                    yAxisIndex: 'none'
+                },
+                dataView: { readOnly: true },
+                saveAsImage: {}
+            }
+        },
+        grid: { left: 160, right: 30, top: 30, bottom: 30 },
         xAxis: {
             type: 'time',
             axisLabel: {
@@ -594,33 +943,175 @@ function plotTimeseriesFromApi(varName: string | null, times: string[], values: 
         },
         yAxis: {
             type: 'value',
-            min: 'dataMin',
-            max: 'dataMax',
+            // min: 'dataMin',
+            // max: 'dataMax',
+            // scale: true,
+            // boundaryGap: ['5%', '5%'],
+            min: (value) => {
+                const padding = (value.max - value.min) * 0.1;
+                return (value.min - padding).toFixed(1);
+            },
+            max: (value) => {
+                const padding = (value.max - value.min) * 0.1;
+                return (value.max + padding).toFixed(1);
+            },
+            splitLine: {
+                show: false  // This removes the horizontal lines
+            },
             axisLabel: {
                 formatter: (value: any) => Number(value).toFixed()
             }
         },
-        series: [{
-            name: varName || 'value',
-            type: 'line',
-            showSymbol: false,
-            data: seriesData,
-            markLine: selectedXLocal ? {
-                silent: true,
+        series: [
+            {
+                name: "Day/Night",
+                type: 'line',
+                data: [],
+                markArea: {},
+                markLine: {
+                    symbol: ['none', 'none'],
+                    data: [
+                        //  Now line
+                        {
+                            xAxis: moment.tz(moment(), tz).format(),
+                            lineStyle: {
+                                color: '#3c3',
+                                width: 1,
+                                type: 'dashed'
+                            },
+                            label: {
+                                show: true,
+                                position: 'end',
+                                formatter: 'Now',
+                                backgroundColor: '#fff',
+                                padding: [2, 4],
+                                borderRadius: 2,
+                                borderWidth: 1,
+                                borderColor: '#3c3'
+                            },
+                        },
+                        // Selected time line
+                        {
+                            xAxis: selectedXLocal,
+                            lineStyle: { color: '#ff5722', width: 1, type: 'dashed' },
+                            label: {
+                                show: true,
+                                position: 'end',
+                                formatter: 'Map',
+                                backgroundColor: '#fff',
+                                padding: [2, 4],
+                                borderRadius: 2,
+                                borderWidth: 1,
+                                borderColor: '#ff5722'
+                            },
+                        }
+                    ]
+                },
+                showSymbol: false,
+            },
+            {
+                // Series for the base of the stack - no name so it's hidden in legend
+                type: 'line',
+                data: __series_min,
+                lineStyle: { opacity: 0 },
+                stack: 'minmax',
+                symbol: 'none'
+            },
+            {
+                name: 'Min-Max Range',
+                type: 'line',
+                data: __series_max,
+                lineStyle: { opacity: 0 },
+                areaStyle: {
+                    "color": "#3498DB",
+                    "opacity": 0.4
+                },
+                stack: 'minmax',
+                symbol: 'none'
+            },
+
+            {
+                // Series for the base of Q1nd stack - hidden in legend
+                type: 'line',
+                data: __series_q1,
+                stack: 'range',
+                lineStyle: { opacity: 0 },
+                symbol: 'none'
+            },
+            {
+                name: 'Interquartile Range',
+                type: 'line',
+                data: __series_q3,
+                stack: 'range',
+                lineStyle: { opacity: 0 },
+                areaStyle: {
+                    "color": "#3498DB",
+                    "opacity": 0.4
+                },
+                symbol: 'none'
+            },
+
+            {
+                name: 'Mean',
+                type: 'line',
+                data: __series_mean,
+                smooth: true,
+                lineStyle: {
+                    "color": "#3498DB",
+                    "opacity": 0.8,
+                    "width": 4
+                },
                 symbol: 'none',
-                lineStyle: { color: '#ff5722', width: 2, type: 'dashed' },
-                label: { show: false },
-                data: [{ xAxis: selectedXLocal }]
-            } : { data: [] }
-        }],
+            },
+
+            {
+                name: mainStore.selected_variable.var || 'value',
+                type: 'line',
+                showSymbol: false,
+                data: __series_model,
+                smooth: true,
+                lineStyle: {
+                    "width": 4,
+                    "color": "#E74C3C",
+                    "opacity": 0.8
+                },
+            }
+        ],
     };
+
+    const hasSensorData = sensorData && Array.isArray(sensorData.time) && sensorData.time.length > 0;
+    console.log('sensorData present:', hasSensorData);
+
+    if (hasSensorData) {
+        const sensor_timestamps = sensorData.time.map((t: any) => moment.utc(t).valueOf());
+        const sensor_values = sensorData.value;
+        const __series_sensor = sensor_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), sensor_values[i]]);
+
+        option.series.push({
+            name: 'Sensor Data',
+            type: 'line',
+            data: __series_sensor,
+            symbol: 'none',
+            lineStyle: {
+                "width": 2,
+                "color": "black",
+                "opacity": 0.8
+            },
+        });
+    } else {
+        // Remove sensor series if previously present
+        option.series = option.series.filter((s: any) => s.name !== 'Sensor Data');
+    }
+
+    console.log(option);
 
     // Add night mark areas if any
     if (markAreaData.length > 0) {
         (option.series[0] as any).markArea = { silent: true, itemStyle: { color: 'rgba(20,30,70,0.08)' }, data: markAreaData };
     }
 
-    globalChart.setOption(option);
+    // Use notMerge=true so removal of 'Sensor Data' is enforced (prevents stale series remaining)
+    globalChart.setOption(option, true);
     globalChart.resize();
 }
 
@@ -630,9 +1121,54 @@ try {
         if (!globalChart) return;
         const tz = 'America/Vancouver';
         const sel = newDt ? moment.utc(newDt).tz(tz).format() : null;
-        const data = sel ? [{ xAxis: sel }] : [];
+        console.log('sel: ', sel);
+        console.log("now", moment.tz(moment(), tz).format());
         try {
-            globalChart.setOption({ series: [{ markLine: { silent: true, symbol: 'none', lineStyle: { color: '#ff5722', width: 2 }, label: { show: false }, data } }] });
+            globalChart.setOption({
+                series: [
+                    {
+                        name: "Day/Night",
+                        markLine: {
+                            symbol: ['none', 'none'],
+                            data: [
+                                //  Now line
+                                {
+                                    xAxis: moment.tz(moment(), tz).format(),
+                                    lineStyle: {
+                                        color: '#3c3',
+                                        width: 1,
+                                        type: 'dashed'
+                                    },
+                                    label: {
+                                        show: true,
+                                        position: 'end',
+                                        formatter: 'Now',
+                                        backgroundColor: '#fff',
+                                        padding: [2, 4],
+                                        borderRadius: 2,
+                                        borderWidth: 1,
+                                        borderColor: '#3c3'
+                                    },
+                                },
+                                // Selected time line
+                                {
+                                    xAxis: sel,
+                                    lineStyle: { color: '#ff5722', width: 1, type: 'dashed' },
+                                    label: {
+                                        show: true,
+                                        position: 'end',
+                                        formatter: 'Map',
+                                        backgroundColor: '#fff',
+                                        padding: [2, 4],
+                                        borderRadius: 2,
+                                        borderWidth: 1,
+                                        borderColor: '#ff5722'
+                                    },
+                                }
+                            ]
+                        }
+                    }]
+            });
         } catch (e) {
             // ignore if chart has no series yet
         }
@@ -683,6 +1219,8 @@ function onToggleLayer(variable: string) {
         mainStore.setSelectedVariable(variable, mainStore.selected_variable.dt, mainStore.selected_variable.depth);
     }
 }
+
+
 </script>
 
 <style scoped>

@@ -1,0 +1,37 @@
+#!/bin/bash
+## Download daily from 2007-01-01 to 2026-01-01 via ERDDAP for a given variable
+
+export var=$1
+
+if [ -z "$var" ]; then
+    echo "Usage: $0 <variable>"
+    echo "Example: $0 temperature"
+    exit 1
+fi
+
+mkdir -p $var
+
+export START_DATE=2007-01-01
+export deltaDay=5
+
+function dl() {
+    i=$1
+    FROM_DATE=$(date -I -d "$START_DATE + $i days")
+    TO_DATE=$(date -I -d "$FROM_DATE + $deltaDay days - 1 day")
+    if [ -f "${var}/${var}_${FROM_DATE}_${TO_DATE}_zip.nc" ]; then
+        echo "${var}/${var}_${FROM_DATE}_${TO_DATE}_zip.nc already exists, skipping."
+        return
+    fi
+    echo "Downloading ${var} for ${FROM_DATE} to ${TO_DATE}..."
+    wget -O "${var}/${var}_${FROM_DATE}_${TO_DATE}.nc" "https://salishsea.eos.ubc.ca/erddap/griddap/ubcSSg3DPhysicsFields1hV21-11.nc?${var}%5B(${FROM_DATE}T00:30:00Z):1:(${TO_DATE}T23:30:00Z)%5D%5B(0.5000003):1:(10.5047655)%5D%5B(0.0):1:(897.0)%5D%5B(0.0):1:(397)%5D"
+    cdo -f nc4 -z zip_4 copy "${var}/${var}_${FROM_DATE}_${TO_DATE}.nc" "${var}/${var}_${FROM_DATE}_${TO_DATE}_zip.nc" && rm "${var}/${var}_${FROM_DATE}_${TO_DATE}.nc"
+}
+export -f dl
+
+
+# 2007-01-01 -> 2025-12-31 (6939 days)
+parallel -j 2 dl ::: $(seq 0 5 6938)
+
+
+# Merge all files into year-monthly files
+# cdo -f nc4 -z zip_4 splityearmon -mergetime *.nc ${var}_

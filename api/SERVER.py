@@ -7,15 +7,18 @@ from pydantic import BaseModel
 from typing import Optional
 import os
 import logging
-# import uuid
-# import pandas as pd
+import threading
+import asyncio
+from typing import Optional
+from starlette.concurrency import run_in_threadpool
 
 from extractTimeseries import extract_timeseries
-from threading import Semaphore
+from extract_climate_timeseries import extract_climate_timeseries
 
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
 MAX_CONCURRENT_EXTRACTS = int(os.getenv("MAX_CONCURRENT_EXTRACTS", "4"))
-_extract_semaphore = Semaphore(MAX_CONCURRENT_EXTRACTS)
+_extract_semaphore = asyncio.Semaphore(MAX_CONCURRENT_EXTRACTS)
+_io_lock = threading.Lock()
 # from calc import bin
 # from lib.bathymetry import BathymetryProcessor
 # from lib.database import TrajectoryDatabase
@@ -58,25 +61,20 @@ db_password = os.getenv("DB_PASSWORD", "postgres")
 #######################################
 
 @app.get("/")
-def read_root():
-    # db = TrajectoryDatabase(db_host, db_port, db_name, db_user, db_password)
-    # db.connect()
-    # db.create_tables()
-    # db.disconnect()
+async def read_root():
+    print("DEBUG: Root endpoint hit (async)")
     return {"message": "Hello from OAH API!"}
 
 #######################################
 
 @app.get("/variables")
-def get_variables():
+async def get_variables():
     """
     Return a list of variables with their min/max datetimes.
-    The SQL used can be customized via the VARS_QUERY environment variable.
-    Default query expects columns: var, dt and a table named `measurements`.
     """
     try:
         from modules.variables import get_variables as fetch_variables
-        variables = fetch_variables(db_host, db_port, db_name, db_user, db_password)
+        variables = await run_in_threadpool(fetch_variables, db_host, db_port, db_name, db_user, db_password)
         return variables
     except HTTPException:
         raise
@@ -84,18 +82,141 @@ def get_variables():
         logger.exception("get_variables failed")
         raise HTTPException(status_code=500, detail=str(exc))
 
+
+@app.get("/sensors")
+async def get_sensors():
+    """
+    Return a list of sensors with their metadata.
+    """
+    def _fetch():
+        import psycopg2
+        import psycopg2.extras
+        query = "SELECT id, name, latitude, longitude, depths, variables, device_config, active FROM sensors;"
+        conn = None
+        try:
+            conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password, connect_timeout=5)
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute(query)
+            rows = cur.fetchall()
+            cur.close()
+            
+            sensors = []
+            for row in rows:
+                sensors.append({
+                    "id": row.get("id"),
+                    "name": row.get("name"),
+                    "latitude": row.get("latitude"),
+                    "longitude": row.get("longitude"),
+                    "depths": row.get("depths"),
+                    "variables": row.get("variables"),
+                    "device_config": row.get("device_config"),
+                    "active": row.get("active"),
+                })
+            return sensors
+        finally:
+            if conn:
+                conn.close()
+
+    try:
+        return await run_in_threadpool(_fetch)
+    except Exception as exc:
+        logger.exception("get_sensors failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+#######################################
+
+@app.get('/colormaps')
+async def get_colormaps():
+    """Return all colormaps from the database."""
+    def _fetch():
+        import psycopg2
+        import psycopg2.extras
+        conn = None
+        try:
+            conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password, connect_timeout=5)
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("SELECT name, description, stops, type, mode, meta FROM colormaps ORDER BY name;")
+            rows = cur.fetchall()
+            cur.close()
+
+            out = []
+            for r in rows:
+                out.append({
+                    'name': r.get('name'),
+                    'description': r.get('description'),
+                    'stops': r.get('stops'),
+                    'type': r.get('type'),
+                    'mode': r.get('mode'),
+                    'meta': r.get('meta') or {}
+                })
+            return out
+        finally:
+            if conn:
+                conn.close()
+
+    try:
+        return await run_in_threadpool(_fetch)
+    except Exception as exc:
+        logger.exception('get_colormaps failed')
+        raise HTTPException(status_code=500, detail=str(exc))
+
+#######################################
+
+@app.get("/sensors/{sensor_id}/timeseries")
+async def get_sensor_timeseries(sensor_id: int, var: str, start: Optional[str] = None, end: Optional[str] = None, limit: Optional[int] = 10000):
+    """Return sensor telemetry for a given sensor id and variable.
+    Response: { time: [iso...], value: [float,...] }
+    """
+    def _fetch():
+        import psycopg2
+        import psycopg2.extras
+        conn = None
+        try:
+            conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password, connect_timeout=5)
+            cur = conn.cursor()
+            sql = "SELECT time, (measurements->>%s)::float AS value FROM sensors_data WHERE sensor_id=%s"
+            params = [var, sensor_id]
+            if start:
+                sql += " AND time >= %s"
+                params.append(start)
+            if end:
+                sql += " AND time <= %s"
+                params.append(end)
+            sql += " ORDER BY time ASC LIMIT %s"
+            params.append(limit)
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+            times = [r[0].isoformat() for r in rows]
+            vals = [None if r[1] is None else float(r[1]) for r in rows]
+            return {"time": times, "value": vals}
+        finally:
+            if conn:
+                conn.close()
+
+    try:
+        return await run_in_threadpool(_fetch)
+    except Exception as exc:
+        logger.exception("get_sensor_timeseries failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
 #######################################
 
 @app.get("/metadata/{var}")
-def get_metadata(var: str):
+async def get_metadata(var: str):
     safe_var = os.path.basename(var)
     path = os.path.join(PNG_ROOT, safe_var, "meta.json")
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="Metadata not found")
-    return JSONResponse(content=open(path).read())
+    
+    def _read():
+        with open(path) as f:
+            return f.read()
+            
+    content = await run_in_threadpool(_read)
+    return JSONResponse(content=content)
 
 @app.get("/png/{var}/{dt}/{depth}")
-def get_png(var: str, dt: str, depth: str):
+async def get_png(var: str, dt: str, depth: str):
     # Serve the PNG file for a specific variable, datetime, and depth with appropriate headers for caching
     safe_var = os.path.basename(var)
     safe_dt = os.path.basename(dt)
@@ -103,8 +224,12 @@ def get_png(var: str, dt: str, depth: str):
     path = os.path.join(PNG_ROOT, safe_var, safe_dt)
     filename = f"{safe_depth}.png"
     full_path = os.path.join(path, filename)
-    if not os.path.isfile(full_path):
+    
+    # os.path.isfile is fast but still better in a thread if the FS is slow
+    exists = await run_in_threadpool(os.path.isfile, full_path)
+    if not exists:
         raise HTTPException(status_code=404, detail="PNG not found")
+    
     headers = {
         "Cache-Control": "public, max-age=31536000, immutable",
         "Access-Control-Allow-Origin": "*",
@@ -123,9 +248,13 @@ class timeseriesRequest(BaseModel):
     depth: float
 
 @app.post("/extractTimeseries")
-def fn_extract_timeseries(request: timeseriesRequest):
-    # Reject requests if we are already at concurrency limit to protect the DB and FS
-    if not _extract_semaphore.acquire(blocking=False):
+async def fn_extract_timeseries(request: timeseriesRequest):
+    # Reject requests if we are already at concurrency limit
+    logger.info(f"START extractTimeseries: {request.var}, {request.lat}, {request.lon}")
+    try:
+        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
+    except (asyncio.TimeoutError, Exception):
+        logger.warning("Semaphore timeout in extractTimeseries")
         raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
 
     try:
@@ -135,10 +264,86 @@ def fn_extract_timeseries(request: timeseriesRequest):
         # use provided depth exactly (float value passed from frontend)
         depth = float(request.depth)
 
-        time, value = extract_timeseries(var=var, lat=lat, lon=lon, depth=depth)
+        time, value = await run_in_threadpool(extract_timeseries, var=var, lat=lat, lon=lon, depth=depth)
+        logger.info(f"FINISH extractTimeseries: {request.var}")
         return {"time": time.tolist(), "value": value.tolist()}
     except Exception as exc:
         logger.exception("extract_timeseries failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        _extract_semaphore.release()
+
+#######################################
+
+class climate_timeseriesRequest(BaseModel):
+    # var: str
+    lat: float
+    lon: float
+    # depth: float
+
+@app.post("/extract_climateTimeseries")
+async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
+    # Reject requests if we are already at concurrency limit
+    logger.info(f"START extract_climateTimeseries: {request.lat}, {request.lon}")
+    try:
+        # Wait up to 10 seconds to acquire the semaphore
+        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
+    except (asyncio.TimeoutError, Exception):
+        logger.warning("Semaphore timeout in extract_climateTimeseries")
+        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
+
+    try:
+        lat = request.lat
+        lon = request.lon
+        
+        # Run the synchronous extraction in a threadpool to keep the event loop free
+        result = await run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon)
+        if result is None:
+            logger.error("Extraction returned None")
+            raise HTTPException(status_code=500, detail="Extraction failed")
+            
+        logger.info(f"FINISH extract_climateTimeseries: {request.lat}, {request.lon}")
+        return result
+    except Exception as exc:
+        logger.exception("extract_climate_timeseries failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        _extract_semaphore.release()
+
+#######################################
+
+class monthlyClimRequest(BaseModel):
+    variable: str
+    lat: float
+    lon: float
+    depth: float
+
+@app.post("/getMonthlyClimatologyAtCoord")
+async def fn_get_monthly_climatology(request: monthlyClimRequest):
+    logger.info(f"START getMonthlyClimatologyAtCoord: {request.variable}, {request.lat}, {request.lon}, depth={request.depth}")
+    try:
+        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
+    except (asyncio.TimeoutError, Exception):
+        logger.warning("Semaphore timeout in getMonthlyClimatologyAtCoord")
+        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
+
+    try:
+        from modules.monthly_climatology import get_monthly_climatology_at_coord
+        result = await run_in_threadpool(
+            get_monthly_climatology_at_coord,
+            lat=request.lat,
+            lon=request.lon,
+            depth=request.depth,
+            variable=request.variable,
+            # Let module pick data root default and DB environment vars
+        )
+        logger.info(f"FINISH getMonthlyClimatologyAtCoord: {request.variable}, {request.lat}, {request.lon}, depth={request.depth}")
+        return result
+    except FileNotFoundError as fnf:
+        logger.exception("monthly climatology file not found")
+        raise HTTPException(status_code=404, detail=str(fnf))
+    except Exception as exc:
+        logger.exception("get_monthly_climatology_at_coord failed")
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         _extract_semaphore.release()

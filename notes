@@ -1,0 +1,12 @@
+BCSGA:
+- High res bathymetry
+- Total alkalinity nit needed?  Just pH
+- Allow downloading data, like ONC!
+- Ocean polution data is of interest
+- Percentile for fields to compare data
+    -- Show climatologies & maybe previous years for comparision on year selection (in case there was an event and mortality rised in the past, and now want to compare current values with that year)
+- Farmers have their own temperature sensors.  Allow them to add their sensors to the map?  Or help them to add in their own accounts?
+- tidal data and variation of other fields with respect to that
+
+
+
