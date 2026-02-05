@@ -34,7 +34,7 @@
                     <TimeControls :timestamps="model_timestamps" :currentDt="mainStore.selected_variable.dt"
                         @update:dt="onTimeControlDt" />
 
-                    <div ref="globalChartContainer" style="width: calc( 100% - 24px ); height: 100%;"></div>
+                    <div ref="globalChartContainer" style="width: calc( 100% - 24px ); height: calc(100% - 32px);"></div>
 
                     <div class="py-3"
                         style="position: absolute; width:24px; height: 100%; bottom: 0px; right: 0px; text-align:center; background: #eee;">
