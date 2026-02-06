@@ -10,13 +10,21 @@ set -euo pipefail
 # Parse arguments: accept flags in any order. Usage: ./scripts/db_restore.sh [PATH_TO_DUMP] [--fresh|-f]
 DUMP="./oa.dump"
 FRESH=false
+TABLES=""
 for arg in "$@"; do
   case "$arg" in
     --fresh|-f)
       FRESH=true
       ;;
+    --tables=*)
+      TABLES="${arg#--tables=}"
+      ;;
+    --tables)
+      echo "Error: please supply table list as --tables=tbl1,tbl2"
+      exit 1
+      ;;
     --help|-h)
-      echo "Usage: $0 [PATH_TO_DUMP] [--fresh|-f]"
+      echo "Usage: $0 [PATH_TO_DUMP] [--fresh|-f] [--tables=tbl1,tbl2,...]"
       exit 0
       ;;
     -*)
@@ -99,9 +107,22 @@ fi
 echo "Copying ${DUMP} into container '${DB_SERVICE}:${DB_DEST_PATH}'..."
 ${COMPOSE_CMD} cp "${DUMP}" "${DB_SERVICE}:${DB_DEST_PATH}"
 
+# If tables were requested, build -t arguments and set --clean so they are replaced
+TABLE_ARGS=""
+PG_RESTORE_CLEAN=""
+if [ -n "${TABLES}" ]; then
+  IFS=',' read -r -a _tables <<< "${TABLES}"
+  for t in "${_tables[@]}"; do
+    # Allow schema-qualified or bare names
+    TABLE_ARGS+=" -t ${t}"
+  done
+  PG_RESTORE_CLEAN="--clean"
+  echo "Restoring only tables: ${TABLES} (they will be dropped first)"
+fi
+
 # Restore with pg_restore (project dump is always a custom-format dump)
 echo "Restoring dump with pg_restore into database '${DB_NAME}'..."
-${COMPOSE_CMD} exec -T -u "${PG_USER}" "${DB_SERVICE}" pg_restore --no-owner --no-privileges -d "${DB_NAME}" -v "${DB_DEST_PATH}"
+${COMPOSE_CMD} exec -T -u "${PG_USER}" "${DB_SERVICE}" sh -lc "pg_restore --no-owner --no-privileges ${PG_RESTORE_CLEAN} ${TABLE_ARGS} -d \"${DB_NAME}\" -v \"${DB_DEST_PATH}\""
 
 # Cleanup remote dump
 echo "Cleaning up temporary dump on container..."

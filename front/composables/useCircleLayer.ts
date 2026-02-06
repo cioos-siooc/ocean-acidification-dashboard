@@ -40,7 +40,7 @@ export function useCircleLayer(getMap: () => any) {
     const paint: any = {
       'circle-radius': opts.radius ?? 6,
       'circle-color': opts.color ?? ['get', 'color'],
-      'circle-stroke-color': opts.stroke ?? '#0028ff ',
+      'circle-stroke-color': opts.stroke ?? '#333 ',
       'circle-stroke-width': opts.strokeWidth ?? 3,
       'circle-opacity': opts.opacity ?? 0.95,
     };

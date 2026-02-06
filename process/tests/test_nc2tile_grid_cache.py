@@ -1,4 +1,6 @@
 from unittest.mock import MagicMock
+import os
+import tempfile
 import nc2tile
 
 
@@ -28,8 +30,15 @@ def test_get_grid_from_db_caches(monkeypatch):
 
     monkeypatch.setattr(nc2tile, 'get_db_conn', fake_get_db_conn)
 
-    # clear any existing cache
+    # clear any existing cache and point cache path to a temp file
     nc2tile.GRID_CACHE = None
+    tmp_cache = os.path.join(tempfile.gettempdir(), "oa_grid_cache_test.npz")
+    try:
+        if os.path.exists(tmp_cache):
+            os.remove(tmp_cache)
+    except Exception:
+        pass
+    nc2tile.GRID_CACHE_PATH = tmp_cache
 
     g1 = nc2tile.get_grid_from_db('grid')
     g2 = nc2tile.get_grid_from_db('grid')

@@ -27,13 +27,23 @@ def ensure_schema(conn):
         # Ensure enum type nc_file_status exists; some Postgres setups don't support "CREATE TYPE IF NOT EXISTS"
         cur.execute("SELECT 1 FROM pg_type WHERE typname = 'nc_file_status'")
         if not cur.fetchone():
-            cur.execute("CREATE TYPE nc_file_status AS ENUM ('pending_download','processing_download','failed_download','success_download','pending_compute','processing_compute','failed_compute','success_compute','pending_image','processing_image','failed_image','success_image')")
+            cur.execute("CREATE TYPE nc_file_status AS ENUM ('pending_download','downloading','failed_download','success_download','pending_compute','computing','failed_compute','success_compute','pending_image','imaging','failed_image','success_image')")
+        else:
+            # Ensure new in-flight status values exist (idempotent)
+            cur.execute("ALTER TYPE nc_file_status ADD VALUE IF NOT EXISTS 'downloading'")
+            cur.execute("ALTER TYPE nc_file_status ADD VALUE IF NOT EXISTS 'computing'")
+            cur.execute("ALTER TYPE nc_file_status ADD VALUE IF NOT EXISTS 'imaging'")
+
+        # Live Ocean status enum
+        cur.execute("SELECT 1 FROM pg_type WHERE typname = 'live_ocean_status'")
+        if not cur.fetchone():
+            cur.execute("CREATE TYPE live_ocean_status AS ENUM ('downloading','pending_process','processing','success','failed_download','failed_process')")
 
         cur.execute(
             """
         CREATE TABLE IF NOT EXISTS erddap_datasets (
             id SERIAL PRIMARY KEY,
-            dataset_id TEXT UNIQUE NOT NULL,
+            base_url TEXT UNIQUE NOT NULL,
             title TEXT,
             last_checked_at TIMESTAMPTZ,
             last_remote_time TIMESTAMPTZ,
@@ -66,6 +76,19 @@ def ensure_schema(conn):
             last_attempt TIMESTAMPTZ
         );
 
+        CREATE TABLE IF NOT EXISTS live_ocean_runs (
+            id SERIAL PRIMARY KEY,
+            run_date DATE NOT NULL,
+            status live_ocean_status DEFAULT 'downloading',
+            input_path TEXT,
+            out_dir TEXT,
+            checksum TEXT,
+            attempts INT DEFAULT 0,
+            last_attempt TIMESTAMPTZ,
+            meta JSONB,
+            UNIQUE(run_date)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_nc_jobs_var_start ON nc_jobs(variable_id, start_time);
         -- create index on unified status column
         CREATE INDEX IF NOT EXISTS idx_nc_jobs_status ON nc_jobs(status);
@@ -76,6 +99,18 @@ def ensure_schema(conn):
         # Create the full and partial unique indexes (created separately to avoid parser issues)
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_jobs_dataset_variable_time ON nc_jobs (dataset_id, variable_id, start_time, end_time)")
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_jobs_null_dataset_variable_time ON nc_jobs (variable_id, start_time, end_time) WHERE dataset_id IS NULL")
+
+        # If older schema used dataset_id column name, rename to base_url
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='erddap_datasets' AND column_name='dataset_id'"
+        )
+        has_dataset_id = cur.fetchone() is not None
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='erddap_datasets' AND column_name='base_url'"
+        )
+        has_base_url = cur.fetchone() is not None
+        if has_dataset_id and not has_base_url:
+            cur.execute("ALTER TABLE erddap_datasets RENAME COLUMN dataset_id TO base_url")
 
         # Ensure erddap_variables has a column to store available datetimes per variable.
         # Prefer a native timestamptz[] column for efficient storage and querying.
@@ -123,11 +158,11 @@ def ensure_schema(conn):
     conn.commit()
 
 
-def upsert_dataset(conn, dataset_id, title=None, last_remote_time=None, meta=None):
+def upsert_dataset(conn, base_url, title=None, last_remote_time=None, meta=None):
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, last_remote_time FROM erddap_datasets WHERE dataset_id = %s",
-            (dataset_id,),
+            "SELECT id, last_remote_time FROM erddap_datasets WHERE base_url = %s",
+            (base_url,),
         )
         row = cur.fetchone()
         if row:
@@ -149,9 +184,9 @@ def upsert_dataset(conn, dataset_id, title=None, last_remote_time=None, meta=Non
                 )
         else:
             cur.execute(
-                "INSERT INTO erddap_datasets (dataset_id, title, last_checked_at, last_remote_time, meta) VALUES (%s,%s,NOW(),%s,%s) RETURNING id",
+                "INSERT INTO erddap_datasets (base_url, title, last_checked_at, last_remote_time, meta) VALUES (%s,%s,NOW(),%s,%s) RETURNING id",
                 (
-                    dataset_id,
+                    base_url,
                     title,
                     last_remote_time,
                     Json(meta) if meta is not None else None,
@@ -180,3 +215,10 @@ def ensure_variable(conn, ds_id, variable):
         )
         conn.commit()
         return cur.fetchone()[0]
+ 
+
+def get_dataset_meta(conn, id):
+    with conn.cursor() as cur:
+        cur.execute("SELECT meta FROM erddap_datasets WHERE id=%s", (id,))
+        row = cur.fetchone()
+        return row[0] if row else {}

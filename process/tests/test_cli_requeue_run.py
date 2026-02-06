@@ -13,8 +13,8 @@ def test_run_forwards_requeue_with_date(monkeypatch):
 
     calls = {}
 
-    def fake_requeue_failed(conn_arg, dataset=None, date=None, variable=None, dry_run=None):
-        calls['requeue'] = (conn_arg is conn, dataset, date, variable, dry_run)
+    def fake_requeue_failed(conn_arg, dataset=None, date=None, variable=None):
+        calls['requeue'] = (conn_arg is conn, dataset, date, variable)
         return 2
 
     monkeypatch.setattr('dl2pkg.downloader.requeue_failed', fake_requeue_failed)
@@ -23,7 +23,7 @@ def test_run_forwards_requeue_with_date(monkeypatch):
     cli.main(['run', '--date', '2026-01-05', '--requeue-failed'])
 
     assert 'requeue' in calls
-    assert calls['requeue'] == (True, None, '2026-01-05', None, False)
+    assert calls['requeue'] == (True, None, '2026-01-05', None)
     assert calls.get('download') is True
 
 
@@ -36,8 +36,8 @@ def test_run_forwards_requeue_without_date(monkeypatch):
 
     calls = {}
 
-    def fake_requeue_failed(conn_arg, dataset=None, date=None, variable=None, dry_run=None):
-        calls['requeue'] = (conn_arg is conn, dataset, date, variable, dry_run)
+    def fake_requeue_failed(conn_arg, dataset=None, date=None, variable=None):
+        calls['requeue'] = (conn_arg is conn, dataset, date, variable)
         return 5
 
     monkeypatch.setattr('dl2pkg.downloader.requeue_failed', fake_requeue_failed)
@@ -46,5 +46,5 @@ def test_run_forwards_requeue_without_date(monkeypatch):
     cli.main(['run', '--requeue-failed'])
 
     assert 'requeue' in calls
-    assert calls['requeue'] == (True, None, None, None, False)
+    assert calls['requeue'] == (True, None, None, None)
     assert calls.get('download') is True

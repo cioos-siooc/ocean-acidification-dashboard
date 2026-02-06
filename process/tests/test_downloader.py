@@ -25,7 +25,7 @@ class DummyResponse:
 
 
 def make_fake_conn():
-    # simple MagicMock-style conn that records execute calls and returns dataset_id when asked
+    # simple MagicMock-style conn that records execute calls and returns base_url when asked
     conn = MagicMock()
     cur = MagicMock()
 
@@ -37,9 +37,9 @@ def make_fake_conn():
 
     conn.cursor.side_effect = cursor_cm
 
-    # fetchone behavior: when first SELECT is for dataset_id, return ('TEST_DS',)
+    # fetchone behavior: when first SELECT is for base_url, return ('TEST_BASE',)
     def fake_fetchone():
-        return ("TEST_DS",)
+        return ("https://example/erddap/griddap/TEST_DS",)
 
     cur.fetchone.side_effect = fake_fetchone
     return conn, cur
@@ -55,7 +55,7 @@ def test_download_nc_success(mock_get, tmp_path):
 
     row = {"id": 1, "dataset_id": 1, "variable": "dissolved_oxygen", "start_time": datetime(2026,1,1,0,30,tzinfo=timezone.utc), "end_time": datetime(2026,1,1,23,30,tzinfo=timezone.utc)}
 
-    ok = download_nc(conn, row, "https://example.erddap.org", dry_run=False)
+    ok = download_nc(conn, row, "https://example.erddap.org")
     assert ok is True
 
     # ensure that we updated nc_jobs status to success_download
@@ -75,7 +75,7 @@ def test_download_nc_failure(mock_get, tmp_path):
 
     row = {"id": 2, "dataset_id": 1, "variable": "dissolved_oxygen", "start_time": datetime(2026,1,2,0,30,tzinfo=timezone.utc), "end_time": datetime(2026,1,2,23,30,tzinfo=timezone.utc)}
 
-    ok = download_nc(conn, row, "https://example.erddap.org", dry_run=False)
+    ok = download_nc(conn, row, "https://example.erddap.org")
     assert ok is False
 
     # ensure that we updated nc_jobs status to failed_download

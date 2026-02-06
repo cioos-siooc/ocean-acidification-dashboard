@@ -16,4 +16,4 @@ RUN uv sync --no-dev
 COPY . .
 
 # Entrypoint to allow arguments to be passed to MAIN.py
-# ENTRYPOINT ["python", "-Xfrozen_modules=off", "-m", "uv", "run", "dl.py"]
+# ENTRYPOINT ["python", "-Xfrozen_modules=off", "-m", "uv", "run", "MAIN.py"]
