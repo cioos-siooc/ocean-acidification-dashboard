@@ -970,6 +970,43 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     const selectedXLocal = mainStore.selected_variable.dt ? moment.utc(mainStore.selected_variable.dt).tz(tz).format() : null;
 
     // Build chart option with conditional inclusion of climate series
+    const axisDecimals = (() => {
+        const values: number[] = [];
+        const pushValues = (arr: any[] | undefined) => {
+            if (!Array.isArray(arr)) return;
+            for (const v of arr) {
+                const n = Number(v);
+                if (Number.isFinite(n)) values.push(n);
+            }
+        };
+
+        pushValues(modelData?.value);
+
+        if (Array.isArray(climateData)) {
+            for (const row of climateData) {
+                pushValues([row?.mean, row?.q1, row?.q3, row?.min, row?.max]);
+            }
+        }
+
+        if (sensorData && Array.isArray(sensorData.value)) {
+            pushValues(sensorData.value);
+        }
+
+        if (values.length === 0) return 0;
+        let min = values[0];
+        let max = values[0];
+        for (const v of values) {
+            if (v < min) min = v;
+            if (v > max) max = v;
+        }
+        const range = max - min;
+        if (!Number.isFinite(range)) return 0;
+        if (range < 1) return 3;
+        if (range < 5) return 2;
+        if (range < 10) return 1;
+        return 0;
+    })();
+
     const option: any = {
         // title: { text: varName ? `Timeseries — ${varName}` : 'Timeseries', left: 'center' },
         legend: {
@@ -1026,7 +1063,7 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
             min: 'dataMin',
             max: 'dataMax',
             splitLine: { show: false },
-            axisLabel: { formatter: (value: any) => Number(value).toFixed() }
+            axisLabel: { formatter: (value: any) => Number(value).toFixed(axisDecimals) }
         },
         series: []
     };
