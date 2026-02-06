@@ -43,16 +43,18 @@
                             color="primary" @click="dialogOpen = true">
                             <v-icon size="14px">mdi-chart-line</v-icon>
                         </v-btn>
-                        <v-btn :title="climatePlotsEnabled ? 'Disable climate plotting' : 'Enable climate plotting'" flat
-                            size="20px" icon :color="climatePlotsEnabled ? 'primary' : 'grey'"
+                        <v-btn :title="climatePlotsEnabled ? 'Disable climate plotting' : 'Enable climate plotting'"
+                            flat size="20px" icon :color="climatePlotsEnabled ? 'primary' : 'grey'"
                             @click="climatePlotsEnabled = !climatePlotsEnabled">
-                            <v-icon size="14px">{{ climatePlotsEnabled ? 'mdi-chart-areaspline' : 'mdi-chart-areaspline' }}</v-icon>
+                            <v-icon size="14px">{{ climatePlotsEnabled ? 'mdi-chart-areaspline' : 'mdi-chart-areaspline'
+                                }}</v-icon>
                         </v-btn>
 
                         <v-btn :title="sensorPlotsEnabled ? 'Disable sensor plotting' : 'Enable sensor plotting'" flat
                             size="20px" icon :color="sensorPlotsEnabled ? 'primary' : 'grey'"
                             @click="sensorPlotsEnabled = !sensorPlotsEnabled">
-                            <v-icon size="14px">{{ sensorPlotsEnabled ? 'mdi-thermometer' : 'mdi-thermometer-off' }}</v-icon>
+                            <v-icon size="14px">{{ sensorPlotsEnabled ? 'mdi-thermometer' : 'mdi-thermometer-off'
+                                }}</v-icon>
                         </v-btn>
                     </div>
                 </v-row>
@@ -70,14 +72,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, reactive, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import { useRuntimeConfig } from '#app';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as echarts from 'echarts'
 import axios from 'axios'
-import moment from 'moment-timezone'
-import Layers from '../components/layers.vue'
+import moment, { min } from 'moment-timezone'
 import DepthSlider from '../components/depth-slider.vue'
 import ColorBarSelect from '../components/ColorBarSelect.vue'
 import TimeControls from '../components/TimeControls.vue'
@@ -96,7 +97,6 @@ import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
-import Scale from 'echarts/types/src/scale/Scale.js';
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
@@ -152,6 +152,11 @@ const selectedReady = ref(false);
 let didInitClick = false;
 
 const clicked_sensor_id = ref<number | null>(null);
+
+/** 
+ * Number of days from now to fetch for climate timeseries. This is used both for the API request parameter and for computing the x-axis range of the chart (now +/- DFN days). The API will return all available data within that range, which may be less than DFN if the model run does not extend that far into the future.
+*/
+const DFN = 5; // days from now for climate timeseries
 
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 
@@ -237,8 +242,8 @@ onMounted(async () => {
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
         map?.on('mousemove', (e) => {
-            mouseCoords.value.lng = e.lngLat.lng.toFixed(4) as unknown as number;
-            mouseCoords.value.lat = e.lngLat.lat.toFixed(4) as unknown as number;
+            mouseCoords.value.lng = e.lngLat.lng;
+            mouseCoords.value.lat = e.lngLat.lat;
         });
         // Fetch colormaps and variables in parallel
         Promise.all([getColormaps(), init()]).catch((e) => console.warn('init failed:', e));
@@ -297,6 +302,10 @@ onBeforeUnmount(() => {
 
         if (svg && svg.parentNode) svg.parentNode.removeChild(svg);
         map.remove();
+    }
+
+    if (globalChart && zrClickHandler) {
+        try { globalChart.getZr().off('click', zrClickHandler); } catch (e) { }
     }
 });
 
@@ -378,7 +387,7 @@ async function getMetadata() {
 async function init() {
     if (!map) return;
 
-    getVariables()
+    getVariables();
 
     // For the new flow we don't use station points. Instead, we start with NO PNG overlay.
 
@@ -423,7 +432,7 @@ async function init() {
     // Clicks anywhere on the chart area (using global canvas coordinate conversion)
     try {
         let lastClickedX: string | number | null = null;
-        globalChart.getZr().on('click', (evt: any) => {
+        zrClickHandler = (evt: any) => {
             if (!globalChart || !model_timestamps.length) return;
             console.log('model_timestamps: ', model_timestamps);
 
@@ -465,7 +474,8 @@ async function init() {
                     mainStore.selected_variable.depth
                 );
             }
-        });
+        };
+        globalChart.getZr().on('click', zrClickHandler);
     } catch (e) {
         console.warn('Failed to attach ECharts hover listeners:', e);
     }
@@ -487,10 +497,13 @@ async function getVariables() {
 
         if (data.length > 0) {
             const varId = 'temperature';
-            const dts = data.find((v: any) => v.var === varId)?.dts;
-            const precision = data.find((v: any) => v.var === varId)?.precision || 0.1;
-            const depth = data.find((v: any) => v.var === varId)?.depths && data.find((v: any) => v.var === varId)?.depths.length > 0 ? data.find((v: any) => v.var === varId)?.depths[0] : 0.5;
-            mainStore.setSelectedVariable(varId, dts[dts.length - 1], depth, precision);
+            const varMeta = data.find((v: any) => v.var === varId);
+            const dts = varMeta?.dts ?? [];
+            const precision = varMeta?.precision || 0.1;
+            const depth = (varMeta?.depths && varMeta.depths.length > 0) ? varMeta.depths[0] : 0.5;
+            if (dts.length > 0) {
+                mainStore.setSelectedVariable(varId, dts[dts.length - 1], depth, precision);
+            }
         }
 
         selectedReady.value = true;
@@ -582,7 +595,8 @@ async function getClimateTimeseries(lat: number, lon: number) {
     const now = moment().utc();
     return axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
         lat,
-        lon
+        lon,
+        days: DFN
     });
 
     // try {
@@ -693,6 +707,7 @@ async function getSensors() {
 // Add / update / remove PNG overlay for a given public PNG path
 async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
     if (!map) throw new Error('map not initialized');
+    if (!meta.value || !meta.value.bounds) throw new Error('metadata not loaded');
 
     const varId = mainStore.selected_variable.var;
     const dt = mainStore.selected_variable.dt?.format('YYYY-MM-DDTHHmmss') || '';
@@ -730,7 +745,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
     // Get packing params from metadata, default to 0.1 precision and 0 base if missing
     // Note: base might be equal to vmin if it was dynamic
-    const precision = mainStore.variables.find(v => v.var === varId).precision;
+    const precision = mainStore.variables.find(v => v.var === varId)?.precision ?? 0.1;
     const base = 0
 
     // Use colormap if available, otherwise fall back to default ramp
@@ -823,9 +838,6 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
         const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
         (map as any).__clickMarker = marker;
 
-        // determine variable name
-        const vname = overlay.varName || inferVarNameFromPath(overlay.publicPngPath);
-
         // remember clicked point so subsequent var/depth changes can refresh the chart
         lastClicked.value = { lat, lon: lng };
 
@@ -880,22 +892,27 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     const __series_model = model_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), values[i]]);
 
     const climate_timestamps = Array.isArray(climateData) ? climateData.map((row: any) => moment.utc(row.requested_date).valueOf()) : [];
-    const mean = Array.isArray(climateData) ? climateData.map((row: any) => row.mean) : [];
+    // const mean = Array.isArray(climateData) ? climateData.map((row: any) => row.mean) : [];
     // const median = Object.values(climateData.median);
-    const q1 = Array.isArray(climateData) ? climateData.map((row: any) => row.q1) : [];
-    const q3 = Array.isArray(climateData) ? climateData.map((row: any) => row.q3) : [];
-    const q3Diff = (Array.isArray(climateData) && q1.length === q3.length) ? q3.map((v: any, idx: number) => v - q1[idx]) : [];
-    const min = Array.isArray(climateData) ? climateData.map((row: any) => row.min) : [];
-    const maxDiff = (Array.isArray(climateData) && min.length > 0) ? climateData.map((row: any, idx: number) => row.max - min[idx]) : [];
+    // const q1 = Array.isArray(climateData) ? climateData.map((row: any) => row.q1) : [];
+    // const q3 = Array.isArray(climateData) ? climateData.map((row: any) => row.q3) : [];
+    // const q3Diff = (Array.isArray(climateData) && q1.length === q3.length) ? q3.map((v: any, idx: number) => v - q1[idx]) : [];
+    // const min = Array.isArray(climateData) ? climateData.map((row: any) => row.min) : [];
+    // const maxDiff = (Array.isArray(climateData) && min.length > 0) ? climateData.map((row: any, idx: number) => row.max - min[idx]) : [];
 
-    const __series_mean = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), mean[i]]);
-    const __series_q1 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q1[i]]);
-    const __series_q3 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q3Diff[i]]);
-    const __series_min = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), min[i]]);
-    const __series_max = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), maxDiff[i]]);
+    // const __series_mean = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), mean[i]]);
+    // const __series_q1 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q1[i]]);
+    // const __series_q3 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q3Diff[i]]);
+    // const __series_min = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), min[i]]);
+    // const __series_max = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), maxDiff[i]]);
 
     // Combine time_model_local and times_clim_local into a single array for x-axis range calculation
-    const combinedTimes_timestamp = [...model_timestamps, ...climate_timestamps].sort((a, b) => a - b)
+    // const combinedTimes_timestamp = [...model_timestamps, ...climate_timestamps].sort((a, b) => a - b);
+    // if (combinedTimes_timestamp.length === 0) {
+    //     globalChart.setOption({ series: [] }, true);
+    //     globalChart.resize();
+    //     return;
+    // }
 
     // Determine time range in local timezone
     // if (!localTimes || localTimes.length === 0) {
@@ -912,8 +929,12 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     //     return;
     // }
 
-    const startLocal = moment.tz(combinedTimes_timestamp[0], tz).clone();
-    const endLocal = moment.tz(combinedTimes_timestamp[combinedTimes_timestamp.length - 1], tz).clone();
+    // const startLocal = moment.tz(combinedTimes_timestamp[0], tz).clone();
+    // const endLocal = moment.tz(combinedTimes_timestamp[combinedTimes_timestamp.length - 1], tz).clone();
+
+    //  Now +/- DFN days
+    const startLocal = moment.utc().tz(tz).subtract(DFN, 'days').clone();
+    const endLocal = moment.utc().tz(tz).add(DFN, 'days').clone();
 
     // Compute night mark areas using SunCalc (sunrise/sunset) if lat/lon provided, otherwise fall back to fixed night windows
     let markAreaData: any[] = [];
@@ -986,20 +1007,24 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
         grid: { left: 160, right: 30, top: 30, bottom: 30 },
         xAxis: {
             type: 'time',
+            min: startLocal.format(),
+            max: endLocal.format(),
             axisLabel: {
                 formatter: (value: any) => moment.parseZone(value).format('DD MMM, HH:mm')
             }
         },
         yAxis: {
             type: 'value',
-            min: (value) => {
-                const padding = (value.max - value.min) * 0.1;
-                return (value.min - padding).toFixed(1);
-            },
-            max: (value) => {
-                const padding = (value.max - value.min) * 0.1;
-                return (value.max + padding).toFixed(1);
-            },
+            // min: (value) => {
+            //     const padding = (value.max - value.min) * 0.1;
+            //     return (value.min - padding).toFixed(1);
+            // },
+            // max: (value) => {
+            //     const padding = (value.max - value.min) * 0.1;
+            //     return (value.max + padding).toFixed(1);
+            // },
+            min: 'dataMin',
+            max: 'dataMax',
             splitLine: { show: false },
             axisLabel: { formatter: (value: any) => Number(value).toFixed() }
         },
@@ -1163,48 +1188,10 @@ try {
     console.warn('Failed to attach selected timestamp watcher for chart marker:', e);
 }
 
-function inferVarNameFromPath(path: string) {
-    try { const parts = path.split('/').filter(Boolean); return parts[1] || null; } catch (e) { return null; }
-}
-
 // Abort controller for ongoing timeseries requests and debounce timer
 let tsRequestController: AbortController | null = null;
 let tsRefreshTimer: any = null;
-
-
-// async function loadData(url: string): Promise<{ hindcast: [number, number][], forecast: [number, number][] }> {
-async function loadData(url: string): Promise<[number, number][]> {
-    const data = await $fetch<any[]>(url);
-    const array: [number, number][] = [];
-    // const hindcast: [number, number][] = [];
-    // const forecast: [number, number][] = [];
-    // const now = Date.now();
-
-    for (const item of data) {
-        if (!item || item.time === undefined || item.ssh === undefined || item.ssh === null) continue;
-        const ts = new Date(item.time).getTime();
-        const ssh = typeof item.ssh === 'string' ? parseFloat(item.ssh) : item.ssh;
-        if (isNaN(ts) || isNaN(ssh)) continue;
-        // if (ts >= now) forecast.push([ts, ssh]); else hindcast.push([ts, ssh]);
-        array.push([ts, ssh]);
-    }
-
-    // hindcast.sort((a, b) => a[0] - b[0]);
-    // forecast.sort((a, b) => a[0] - b[0]);
-
-    // return { hindcast, forecast };
-
-    return array
-}
-
-function onToggleLayer(variable: string) {
-    // toggle: clicking the currently-selected variable will deselect it
-    if (mainStore.selected_variable.var === variable) {
-        mainStore.setSelectedVariable('', null, null);
-    } else {
-        mainStore.setSelectedVariable(variable, mainStore.selected_variable.dt, mainStore.selected_variable.depth);
-    }
-}
+let zrClickHandler: ((evt: any) => void) | null = null;
 
 
 </script>
@@ -1228,13 +1215,15 @@ function onToggleLayer(variable: string) {
 }
 
 .footer-text {
-    font-family: 'Courier New', Courier, monospace;
+    font-family: "Roboto Mono", monospace;
     font-size: 0.75rem;
-    vertical-align: middle;
+    vertical-align: text-bottom;
 }
 </style>
 
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
+
 .h-screen {
     height: 100vh;
 }
