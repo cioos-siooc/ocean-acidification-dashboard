@@ -34,12 +34,27 @@
                     <TimeControls :timestamps="model_timestamps" :currentDt="mainStore.selected_variable.dt"
                         @update:dt="onTimeControlDt" />
 
-                    <div ref="globalChartContainer" style="width: calc( 100% - 24px ); height: calc(100% - 32px);"></div>
+                    <div ref="globalChartContainer" style="width: calc( 100% - 24px ); height: calc(100% - 32px);">
+                    </div>
 
                     <div class="py-3"
-                        style="position: absolute; width:24px; height: 100%; bottom: 0px; right: 0px; text-align:center; background: #eee;">
-                        <v-btn title="Long-term climatology" flat size="20px" :disabled="!lastClicked" icon color="primary" @click="dialogOpen = true">
+                        style="position: absolute; width:40px; height: 100%; bottom: 0px; right: 0px; text-align:center; background: #eee; display:flex; flex-direction:column; align-items:center; gap:6px; padding-top:6px;">
+                        <v-btn title="Long-term climatology" flat size="20px" :disabled="!lastClicked" icon
+                            color="primary" @click="dialogOpen = true">
                             <v-icon size="14px">mdi-chart-line</v-icon>
+                        </v-btn>
+                        <v-btn :title="climatePlotsEnabled ? 'Disable climate plotting' : 'Enable climate plotting'"
+                            flat size="20px" icon :color="climatePlotsEnabled ? 'primary' : 'grey'"
+                            @click="climatePlotsEnabled = !climatePlotsEnabled">
+                            <v-icon size="14px">{{ climatePlotsEnabled ? 'mdi-chart-areaspline' : 'mdi-chart-areaspline'
+                                }}</v-icon>
+                        </v-btn>
+
+                        <v-btn :title="sensorPlotsEnabled ? 'Disable sensor plotting' : 'Enable sensor plotting'" flat
+                            size="20px" icon :color="sensorPlotsEnabled ? 'primary' : 'grey'"
+                            @click="sensorPlotsEnabled = !sensorPlotsEnabled">
+                            <v-icon size="14px">{{ sensorPlotsEnabled ? 'mdi-thermometer' : 'mdi-thermometer-off'
+                                }}</v-icon>
                         </v-btn>
                     </div>
                 </v-row>
@@ -57,14 +72,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, reactive, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import { useRuntimeConfig } from '#app';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as echarts from 'echarts'
 import axios from 'axios'
-import moment from 'moment-timezone'
-import Layers from '../components/layers.vue'
+import moment, { min } from 'moment-timezone'
 import DepthSlider from '../components/depth-slider.vue'
 import ColorBarSelect from '../components/ColorBarSelect.vue'
 import TimeControls from '../components/TimeControls.vue'
@@ -83,7 +97,6 @@ import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
-import Scale from 'echarts/types/src/scale/Scale.js';
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
@@ -124,6 +137,11 @@ const mouseCoords = ref<{ lng: number | null, lat: number | null }>({ lng: null,
 
 const sensorData = ref<{ time: string, value: number }[]>([])
 
+// Toggle to control whether sensor telemetry is fetched and plotted (map markers remain visible)
+const sensorPlotsEnabled = ref(false)
+// Toggle to control whether climate statistics are fetched and plotted (IQR/mean/min-max)
+const climatePlotsEnabled = ref(true)
+
 // Dialog for detailed timeseries
 const dialogOpen = ref(false);
 
@@ -134,6 +152,11 @@ const selectedReady = ref(false);
 let didInitClick = false;
 
 const clicked_sensor_id = ref<number | null>(null);
+
+/** 
+ * Number of days from now to fetch for climate timeseries. This is used both for the API request parameter and for computing the x-axis range of the chart (now +/- DFN days). The API will return all available data within that range, which may be less than DFN if the model run does not extend that far into the future.
+*/
+const DFN = 5; // days from now for climate timeseries
 
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 
@@ -219,8 +242,8 @@ onMounted(async () => {
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
         map?.on('mousemove', (e) => {
-            mouseCoords.value.lng = e.lngLat.lng.toFixed(4) as unknown as number;
-            mouseCoords.value.lat = e.lngLat.lat.toFixed(4) as unknown as number;
+            mouseCoords.value.lng = e.lngLat.lng;
+            mouseCoords.value.lat = e.lngLat.lat;
         });
         // Fetch colormaps and variables in parallel
         Promise.all([getColormaps(), init()]).catch((e) => console.warn('init failed:', e));
@@ -279,6 +302,10 @@ onBeforeUnmount(() => {
 
         if (svg && svg.parentNode) svg.parentNode.removeChild(svg);
         map.remove();
+    }
+
+    if (globalChart && zrClickHandler) {
+        try { globalChart.getZr().off('click', zrClickHandler); } catch (e) { }
     }
 });
 
@@ -360,7 +387,7 @@ async function getMetadata() {
 async function init() {
     if (!map) return;
 
-    getVariables()
+    getVariables();
 
     // For the new flow we don't use station points. Instead, we start with NO PNG overlay.
 
@@ -405,7 +432,7 @@ async function init() {
     // Clicks anywhere on the chart area (using global canvas coordinate conversion)
     try {
         let lastClickedX: string | number | null = null;
-        globalChart.getZr().on('click', (evt: any) => {
+        zrClickHandler = (evt: any) => {
             if (!globalChart || !model_timestamps.length) return;
             console.log('model_timestamps: ', model_timestamps);
 
@@ -447,7 +474,8 @@ async function init() {
                     mainStore.selected_variable.depth
                 );
             }
-        });
+        };
+        globalChart.getZr().on('click', zrClickHandler);
     } catch (e) {
         console.warn('Failed to attach ECharts hover listeners:', e);
     }
@@ -469,10 +497,13 @@ async function getVariables() {
 
         if (data.length > 0) {
             const varId = 'temperature';
-            const dts = data.find((v: any) => v.var === varId)?.dts;
-            const precision = data.find((v: any) => v.var === varId)?.precision || 0.1;
-            const depth = data.find((v: any) => v.var === varId)?.depths && data.find((v: any) => v.var === varId)?.depths.length > 0 ? data.find((v: any) => v.var === varId)?.depths[0] : 0.5;
-            mainStore.setSelectedVariable(varId, dts[dts.length - 1], depth, precision);
+            const varMeta = data.find((v: any) => v.var === varId);
+            const dts = varMeta?.dts ?? [];
+            const precision = varMeta?.precision || 0.1;
+            const depth = (varMeta?.depths && varMeta.depths.length > 0) ? varMeta.depths[0] : 0.5;
+            if (dts.length > 0) {
+                mainStore.setSelectedVariable(varId, dts[dts.length - 1], depth, precision);
+            }
         }
 
         selectedReady.value = true;
@@ -507,20 +538,49 @@ function initClick(lat: number, lon: number) {
 
 
 async function getTimeseriesPromises(lat: number, lon: number) {
-    const promises = Promise.all([
-        getTimeseriesFromApi(lat, lon),
-        getClimateTimeseries(lat, lon),
-        getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var)
-    ]);
+    // Build promises dynamically so climate and sensor timeseries can be skipped when disabled
+    const promisesArr: Promise<any>[] = [
+        getTimeseriesFromApi(lat, lon)
+    ];
 
-    const d = await promises;
+    // climate data (IQR/mean/min-max)
+    if (climatePlotsEnabled.value) {
+        promisesArr.push(getClimateTimeseries(lat, lon));
+    } else {
+        promisesArr.push(Promise.resolve(null));
+    }
+
+    // sensor data
+    if (sensorPlotsEnabled.value && clicked_sensor_id.value) {
+        promisesArr.push(getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var));
+    } else {
+        promisesArr.push(Promise.resolve(null));
+    }
+
+    const d = await Promise.all(promisesArr);
     const model = d[0].data
-    const clim = d[1].data
+    const clim = d[1]?.data || null;
     const sensor = d[2]?.data || null;
 
     plotTimeseries(model, clim, sensor);
     clicked_sensor_id.value = null;
 }
+
+// When toggling plotting options, refresh existing chart if a point is selected so the
+// change is visible immediately (does not affect map markers)
+watch(sensorPlotsEnabled, (nv) => {
+    if (!lastClicked.value) return;
+    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
+    tsRequestController = new AbortController();
+    getTimeseriesPromises(lastClicked.value.lat, lastClicked.value.lon).finally(() => { tsRequestController = null; });
+});
+
+watch(climatePlotsEnabled, (nv) => {
+    if (!lastClicked.value) return;
+    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
+    tsRequestController = new AbortController();
+    getTimeseriesPromises(lastClicked.value.lat, lastClicked.value.lon).finally(() => { tsRequestController = null; });
+});
 
 async function getTimeseriesFromApi(lat: number, lon: number) {
     return axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
@@ -535,7 +595,8 @@ async function getClimateTimeseries(lat: number, lon: number) {
     const now = moment().utc();
     return axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
         lat,
-        lon
+        lon,
+        days: DFN
     });
 
     // try {
@@ -646,6 +707,7 @@ async function getSensors() {
 // Add / update / remove PNG overlay for a given public PNG path
 async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
     if (!map) throw new Error('map not initialized');
+    if (!meta.value || !meta.value.bounds) throw new Error('metadata not loaded');
 
     const varId = mainStore.selected_variable.var;
     const dt = mainStore.selected_variable.dt?.format('YYYY-MM-DDTHHmmss') || '';
@@ -683,7 +745,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
     // Get packing params from metadata, default to 0.1 precision and 0 base if missing
     // Note: base might be equal to vmin if it was dynamic
-    const precision = mainStore.variables.find(v => v.var === varId).precision;
+    const precision = mainStore.variables.find(v => v.var === varId)?.precision ?? 0.1;
     const base = 0
 
     // Use colormap if available, otherwise fall back to default ramp
@@ -776,9 +838,6 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
         const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
         (map as any).__clickMarker = marker;
 
-        // determine variable name
-        const vname = overlay.varName || inferVarNameFromPath(overlay.publicPngPath);
-
         // remember clicked point so subsequent var/depth changes can refresh the chart
         lastClicked.value = { lat, lon: lng };
 
@@ -832,22 +891,28 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     const values = modelData.value;
     const __series_model = model_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), values[i]]);
 
-    const climate_timestamps = climateData.map((row: any) => moment.utc(row.requested_date).valueOf());
-    const mean = climateData.map((row: any) => row.mean);
+    const climate_timestamps = Array.isArray(climateData) ? climateData.map((row: any) => moment.utc(row.requested_date).valueOf()) : [];
+    // const mean = Array.isArray(climateData) ? climateData.map((row: any) => row.mean) : [];
     // const median = Object.values(climateData.median);
-    const q1 = climateData.map((row: any) => row.q1);
-    const q3Diff = climateData.map((row: any, idx: number) => row.q3 - q1[idx]);
-    const min = climateData.map((row: any) => row.min);
-    const maxDiff = climateData.map((row: any, idx: number) => row.max - min[idx]);
+    // const q1 = Array.isArray(climateData) ? climateData.map((row: any) => row.q1) : [];
+    // const q3 = Array.isArray(climateData) ? climateData.map((row: any) => row.q3) : [];
+    // const q3Diff = (Array.isArray(climateData) && q1.length === q3.length) ? q3.map((v: any, idx: number) => v - q1[idx]) : [];
+    // const min = Array.isArray(climateData) ? climateData.map((row: any) => row.min) : [];
+    // const maxDiff = (Array.isArray(climateData) && min.length > 0) ? climateData.map((row: any, idx: number) => row.max - min[idx]) : [];
 
-    const __series_mean = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), mean[i]]);
-    const __series_q1 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q1[i]]);
-    const __series_q3 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q3Diff[i]]);
-    const __series_min = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), min[i]]);
-    const __series_max = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), maxDiff[i]]);
+    // const __series_mean = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), mean[i]]);
+    // const __series_q1 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q1[i]]);
+    // const __series_q3 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q3Diff[i]]);
+    // const __series_min = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), min[i]]);
+    // const __series_max = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), maxDiff[i]]);
 
     // Combine time_model_local and times_clim_local into a single array for x-axis range calculation
-    const combinedTimes_timestamp = [...model_timestamps, ...climate_timestamps].sort((a, b) => a - b)
+    // const combinedTimes_timestamp = [...model_timestamps, ...climate_timestamps].sort((a, b) => a - b);
+    // if (combinedTimes_timestamp.length === 0) {
+    //     globalChart.setOption({ series: [] }, true);
+    //     globalChart.resize();
+    //     return;
+    // }
 
     // Determine time range in local timezone
     // if (!localTimes || localTimes.length === 0) {
@@ -864,8 +929,12 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     //     return;
     // }
 
-    const startLocal = moment.tz(combinedTimes_timestamp[0], tz).clone();
-    const endLocal = moment.tz(combinedTimes_timestamp[combinedTimes_timestamp.length - 1], tz).clone();
+    // const startLocal = moment.tz(combinedTimes_timestamp[0], tz).clone();
+    // const endLocal = moment.tz(combinedTimes_timestamp[combinedTimes_timestamp.length - 1], tz).clone();
+
+    //  Now +/- DFN days
+    const startLocal = moment.utc().tz(tz).subtract(DFN, 'days').clone();
+    const endLocal = moment.utc().tz(tz).add(DFN, 'days').clone();
 
     // Compute night mark areas using SunCalc (sunrise/sunset) if lat/lon provided, otherwise fall back to fixed night windows
     let markAreaData: any[] = [];
@@ -899,6 +968,44 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
 
     // selected time in chart timezone (to draw vertical marker)
     const selectedXLocal = mainStore.selected_variable.dt ? moment.utc(mainStore.selected_variable.dt).tz(tz).format() : null;
+
+    // Build chart option with conditional inclusion of climate series
+    const axisDecimals = (() => {
+        const values: number[] = [];
+        const pushValues = (arr: any[] | undefined) => {
+            if (!Array.isArray(arr)) return;
+            for (const v of arr) {
+                const n = Number(v);
+                if (Number.isFinite(n)) values.push(n);
+            }
+        };
+
+        pushValues(modelData?.value);
+
+        if (Array.isArray(climateData)) {
+            for (const row of climateData) {
+                pushValues([row?.mean, row?.q1, row?.q3, row?.min, row?.max]);
+            }
+        }
+
+        if (sensorData && Array.isArray(sensorData.value)) {
+            pushValues(sensorData.value);
+        }
+
+        if (values.length === 0) return 0;
+        let min = values[0];
+        let max = values[0];
+        for (const v of values) {
+            if (v < min) min = v;
+            if (v > max) max = v;
+        }
+        const range = max - min;
+        if (!Number.isFinite(range)) return 0;
+        if (range < 1) return 3;
+        if (range < 5) return 2;
+        if (range < 10) return 1;
+        return 0;
+    })();
 
     const option: any = {
         // title: { text: varName ? `Timeseries — ${varName}` : 'Timeseries', left: 'center' },
@@ -937,147 +1044,88 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
         grid: { left: 160, right: 30, top: 30, bottom: 30 },
         xAxis: {
             type: 'time',
+            min: startLocal.format(),
+            max: endLocal.format(),
             axisLabel: {
                 formatter: (value: any) => moment.parseZone(value).format('DD MMM, HH:mm')
             }
         },
         yAxis: {
             type: 'value',
-            // min: 'dataMin',
-            // max: 'dataMax',
-            // scale: true,
-            // boundaryGap: ['5%', '5%'],
-            min: (value) => {
-                const padding = (value.max - value.min) * 0.1;
-                return (value.min - padding).toFixed(1);
-            },
-            max: (value) => {
-                const padding = (value.max - value.min) * 0.1;
-                return (value.max + padding).toFixed(1);
-            },
-            splitLine: {
-                show: false  // This removes the horizontal lines
-            },
-            axisLabel: {
-                formatter: (value: any) => Number(value).toFixed()
-            }
+            // min: (value) => {
+            //     const padding = (value.max - value.min) * 0.1;
+            //     return (value.min - padding).toFixed(1);
+            // },
+            // max: (value) => {
+            //     const padding = (value.max - value.min) * 0.1;
+            //     return (value.max + padding).toFixed(1);
+            // },
+            min: 'dataMin',
+            max: 'dataMax',
+            splitLine: { show: false },
+            axisLabel: { formatter: (value: any) => Number(value).toFixed(axisDecimals) }
         },
-        series: [
-            {
-                name: "Day/Night",
-                type: 'line',
-                data: [],
-                markArea: {},
-                markLine: {
-                    symbol: ['none', 'none'],
-                    data: [
-                        //  Now line
-                        {
-                            xAxis: moment.tz(moment(), tz).format(),
-                            lineStyle: {
-                                color: '#3c3',
-                                width: 1,
-                                type: 'dashed'
-                            },
-                            label: {
-                                show: true,
-                                position: 'end',
-                                formatter: 'Now',
-                                backgroundColor: '#fff',
-                                padding: [2, 4],
-                                borderRadius: 2,
-                                borderWidth: 1,
-                                borderColor: '#3c3'
-                            },
-                        },
-                        // Selected time line
-                        {
-                            xAxis: selectedXLocal,
-                            lineStyle: { color: '#ff5722', width: 1, type: 'dashed' },
-                            label: {
-                                show: true,
-                                position: 'end',
-                                formatter: 'Map',
-                                backgroundColor: '#fff',
-                                padding: [2, 4],
-                                borderRadius: 2,
-                                borderWidth: 1,
-                                borderColor: '#ff5722'
-                            },
-                        }
-                    ]
-                },
-                showSymbol: false,
-            },
-            {
-                // Series for the base of the stack - no name so it's hidden in legend
-                type: 'line',
-                data: __series_min,
-                lineStyle: { opacity: 0 },
-                stack: 'minmax',
-                symbol: 'none'
-            },
-            {
-                name: 'Min-Max Range',
-                type: 'line',
-                data: __series_max,
-                lineStyle: { opacity: 0 },
-                areaStyle: {
-                    "color": "#3498DB",
-                    "opacity": 0.4
-                },
-                stack: 'minmax',
-                symbol: 'none'
-            },
-
-            {
-                // Series for the base of Q1nd stack - hidden in legend
-                type: 'line',
-                data: __series_q1,
-                stack: 'range',
-                lineStyle: { opacity: 0 },
-                symbol: 'none'
-            },
-            {
-                name: 'Interquartile Range',
-                type: 'line',
-                data: __series_q3,
-                stack: 'range',
-                lineStyle: { opacity: 0 },
-                areaStyle: {
-                    "color": "#3498DB",
-                    "opacity": 0.4
-                },
-                symbol: 'none'
-            },
-
-            {
-                name: 'Mean',
-                type: 'line',
-                data: __series_mean,
-                smooth: true,
-                lineStyle: {
-                    "color": "#3498DB",
-                    "opacity": 0.8,
-                    "width": 4
-                },
-                symbol: 'none',
-            },
-
-            {
-                name: mainStore.selected_variable.var || 'value',
-                type: 'line',
-                showSymbol: false,
-                data: __series_model,
-                smooth: true,
-                lineStyle: {
-                    "width": 4,
-                    "color": "#E74C3C",
-                    "opacity": 0.8
-                },
-            }
-        ],
+        series: []
     };
+
+    // Determine whether we have climate data to plot
+    const hasClimate = Array.isArray(climateData) && climateData.length > 0 && climatePlotsEnabled.value;
+
+    // Day/Night base series (always present)
+    const dayNightSeries: any = {
+        name: "Day/Night",
+        type: 'line',
+        data: [],
+        markArea: {},
+        markLine: {
+            symbol: ['none', 'none'],
+            data: [
+                {
+                    xAxis: moment.tz(moment(), tz).format(),
+                    lineStyle: { color: '#3c3', width: 1, type: 'dashed' },
+                    label: { show: true, position: 'end', formatter: 'Now', backgroundColor: '#fff', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: '#3c3' }
+                },
+                {
+                    xAxis: selectedXLocal,
+                    lineStyle: { color: '#ff5722', width: 1, type: 'dashed' },
+                    label: { show: true, position: 'end', formatter: 'Map', backgroundColor: '#fff', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: '#ff5722' }
+                }
+            ]
+        },
+        showSymbol: false
+    };
+
+    const seriesArr: any[] = [dayNightSeries];
+
+    // If climate present, compute series and push them
+    if (hasClimate) {
+        const climate_timestamps = climateData.map((row: any) => moment.utc(row.requested_date).valueOf());
+        const mean = climateData.map((row: any) => row.mean);
+        const q1 = climateData.map((row: any) => row.q1);
+        const q3 = climateData.map((row: any) => row.q3);
+        const min = climateData.map((row: any) => row.min);
+        const q3Diff = q3.map((v: any, idx: number) => v - q1[idx]);
+        const maxDiff = climateData.map((row: any, idx: number) => row.max - min[idx]);
+
+        const __series_mean = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), mean[i]]);
+        const __series_q1 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q1[i]]);
+        const __series_q3 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q3Diff[i]]);
+        const __series_min = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), min[i]]);
+        const __series_max = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), maxDiff[i]]);
+
+        // base hidden series for stacking
+        seriesArr.push({ type: 'line', data: __series_min, lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none' });
+        seriesArr.push({ name: 'Min-Max Range', type: 'line', data: __series_max, lineStyle: { opacity: 0 }, areaStyle: { color: '#3498DB', opacity: 0.4 }, stack: 'minmax', symbol: 'none' });
+        seriesArr.push({ type: 'line', data: __series_q1, stack: 'range', lineStyle: { opacity: 0 }, symbol: 'none' });
+        seriesArr.push({ name: 'Interquartile Range', type: 'line', data: __series_q3, stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: '#3498DB', opacity: 0.4 }, symbol: 'none' });
+        seriesArr.push({ name: 'Mean', type: 'line', data: __series_mean, smooth: true, lineStyle: { color: '#3498DB', opacity: 0.8, width: 4 }, symbol: 'none' });
+    }
+
+    // model series (reuse previously computed __series_model)
+    seriesArr.push({ name: mainStore.selected_variable.var || 'value', type: 'line', showSymbol: false, data: __series_model, smooth: true, lineStyle: { width: 4, color: '#E74C3C', opacity: 0.8 } });
+
+    // sensor series will be optionally added below
+    option.series = seriesArr;
 
     const hasSensorData = sensorData && Array.isArray(sensorData.time) && sensorData.time.length > 0;
     console.log('sensorData present:', hasSensorData);
@@ -1177,48 +1225,10 @@ try {
     console.warn('Failed to attach selected timestamp watcher for chart marker:', e);
 }
 
-function inferVarNameFromPath(path: string) {
-    try { const parts = path.split('/').filter(Boolean); return parts[1] || null; } catch (e) { return null; }
-}
-
 // Abort controller for ongoing timeseries requests and debounce timer
 let tsRequestController: AbortController | null = null;
 let tsRefreshTimer: any = null;
-
-
-// async function loadData(url: string): Promise<{ hindcast: [number, number][], forecast: [number, number][] }> {
-async function loadData(url: string): Promise<[number, number][]> {
-    const data = await $fetch<any[]>(url);
-    const array: [number, number][] = [];
-    // const hindcast: [number, number][] = [];
-    // const forecast: [number, number][] = [];
-    // const now = Date.now();
-
-    for (const item of data) {
-        if (!item || item.time === undefined || item.ssh === undefined || item.ssh === null) continue;
-        const ts = new Date(item.time).getTime();
-        const ssh = typeof item.ssh === 'string' ? parseFloat(item.ssh) : item.ssh;
-        if (isNaN(ts) || isNaN(ssh)) continue;
-        // if (ts >= now) forecast.push([ts, ssh]); else hindcast.push([ts, ssh]);
-        array.push([ts, ssh]);
-    }
-
-    // hindcast.sort((a, b) => a[0] - b[0]);
-    // forecast.sort((a, b) => a[0] - b[0]);
-
-    // return { hindcast, forecast };
-
-    return array
-}
-
-function onToggleLayer(variable: string) {
-    // toggle: clicking the currently-selected variable will deselect it
-    if (mainStore.selected_variable.var === variable) {
-        mainStore.setSelectedVariable('', null, null);
-    } else {
-        mainStore.setSelectedVariable(variable, mainStore.selected_variable.dt, mainStore.selected_variable.depth);
-    }
-}
+let zrClickHandler: ((evt: any) => void) | null = null;
 
 
 </script>
@@ -1242,13 +1252,15 @@ function onToggleLayer(variable: string) {
 }
 
 .footer-text {
-    font-family: 'Courier New', Courier, monospace;
+    font-family: "Roboto Mono", monospace;
     font-size: 0.75rem;
-    vertical-align: middle;
+    vertical-align: text-bottom;
 }
 </style>
 
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
+
 .h-screen {
     height: 100vh;
 }

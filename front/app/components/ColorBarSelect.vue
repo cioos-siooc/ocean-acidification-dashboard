@@ -62,14 +62,16 @@
     <v-row v-if="showSettings" class="ma-0 pa-0" style="place-items: center;">
       <!-- <v-col cols="5" class="ma-0 pa-0"> -->
         <v-number-input v-model.number="localMin" hide-details :reverse="false" controlVariant="stacked" label="Min"
-          :hideInput="false" density="compact" :inset="false" style="width: 30%;; scale:75%"></v-number-input>
+          :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
+          style="width: 30%;; scale:75%"></v-number-input>
       <!-- </v-col> -->
       <!-- <v-col cols="2" class="ma-0 pa-0"> -->
         <v-btn width="30%" size="x-small" color="grey" @click="resetToDefaults" :title="'Reset min/max to defaults'">Reset</v-btn>
       <!-- </v-col> -->
       <!-- <v-col cols="5" class="ma-0 pa-0"> -->
         <v-number-input v-model.number="localMax" hide-details :reverse="false" controlVariant="stacked" label="Max"
-          :hideInput="false" density="compact" :inset="false" style="width: 30%; scale:75%"></v-number-input>
+          :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
+          style="width: 30%; scale:75%"></v-number-input>
       <!-- </v-col> -->
     </v-row>
   </v-card>
