@@ -13,6 +13,7 @@ from typing import Optional
 from starlette.concurrency import run_in_threadpool
 
 from extractTimeseries import extract_timeseries
+from modules.extract_profile import extract_profile
 from extract_climate_timeseries import extract_climate_timeseries
 
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
@@ -344,6 +345,49 @@ async def fn_get_monthly_climatology(request: monthlyClimRequest):
         raise HTTPException(status_code=404, detail=str(fnf))
     except Exception as exc:
         logger.exception("get_monthly_climatology_at_coord failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        _extract_semaphore.release()
+
+#######################################
+
+class profileRequest(BaseModel):
+    lat: float
+    lon: float
+    dt: str
+    var: Optional[str] = None
+
+@app.post("/getProfile")
+async def fn_get_profile(request: profileRequest):
+    logger.info(f"START getProfile: {request.var}, {request.lat}, {request.lon}, {request.dt}")
+    try:
+        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
+    except (asyncio.TimeoutError, Exception):
+        logger.warning("Semaphore timeout in getProfile")
+        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
+
+    try:
+        var = request.var or "temperature"  # Default to temperature if not specified
+        lat = request.lat
+        lon = request.lon
+        dt = request.dt
+
+        profile = await run_in_threadpool(
+            extract_profile,
+            var=var,
+            lat=lat,
+            lon=lon,
+            dt=dt,
+            db_host=db_host,
+            db_port=db_port,
+            db_name=db_name,
+            db_user=db_user,
+            db_password=db_password,
+        )
+        logger.info(f"FINISH getProfile: {var}, {lat}, {lon}, {dt} - returned {len(profile)} points")
+        return profile
+    except Exception as exc:
+        logger.exception("extract_profile failed")
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         _extract_semaphore.release()

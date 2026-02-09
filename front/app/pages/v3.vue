@@ -7,7 +7,15 @@
                 v-model="selectedVarLocal" :stops="selectedColormap?.stops" :colormaps="Object.values(colormaps)"
                 v-model:colormap="selectedColormapName" v-model:min="selectedMin" v-model:max="selectedMax" />
             <DepthSlider />
+            <div class="map-drawer-toggle">
+                <v-btn size="24px" color="warning" class="ma-0 pa-0" @click="drawerOpen = !drawerOpen"
+                    :title="drawerOpen ? 'Hide variable details' : 'Show variable details'">
+                    <v-icon size="20px">mdi-chart-line</v-icon>
+                </v-btn>
+            </div>
         </div>
+
+        <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
 
         <!-- Bottom: Global Chart Footer -->
         <v-footer class="ma-0 pa-0" :style="{ maxHeight: `${footerHeight}` }">
@@ -82,6 +90,7 @@ import moment, { min } from 'moment-timezone'
 import DepthSlider from '../components/depth-slider.vue'
 import ColorBarSelect from '../components/ColorBarSelect.vue'
 import TimeControls from '../components/TimeControls.vue'
+import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 
 import { computeNightRanges } from '../../composables/useSunCalc'
@@ -126,6 +135,7 @@ let map: mapboxgl.Map | null = null;
 let globalChart: echarts.ECharts | null = null;
 let model_timestamps: number[] = []; // Global cache for chart timestamps to support "click anywhere"
 const meta = ref<any>(null);
+const drawerOpen = ref(false);
 // remember last clicked point (lat/lon) so chart can be refreshed when var/depth changes
 const lastClicked = ref<{ lat: number; lon: number } | null>(null);
 const footerHeight = '300px';
@@ -1034,10 +1044,6 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
         },
         toolbox: {
             feature: {
-                dataZoom: {
-                    yAxisIndex: 'none'
-                },
-                dataView: { readOnly: true },
                 saveAsImage: {}
             }
         },
@@ -1236,6 +1242,15 @@ let zrClickHandler: ((evt: any) => void) | null = null;
 <style scoped>
 .map-container {
     position: relative;
+}
+.map-drawer-toggle {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 2;
+    background: rgba(255, 255, 255, 0.85);
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 </style>
 
