@@ -1,21 +1,26 @@
 <template>
-    <div class="d-flex flex-column h-screen overflow-hidden">
+    <v-main>
+        <!-- <div class="d-flex flex-column h-screen overflow-hidden"> -->
         <!-- Top: Map -->
-        <div ref="mapContainer" class="flex-grow-1 map-container">
+        <div ref="mapContainer" class="flex-grow-1"
+            :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }">
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
             <ColorBarSelect v-if="mainStore.variables.length" :variables="mainStore.variables"
                 v-model="selectedVarLocal" :stops="selectedColormap?.stops" :colormaps="Object.values(colormaps)"
-                v-model:colormap="selectedColormapName" v-model:min="selectedMin" v-model:max="selectedMax" />
+                v-model:colormap="selectedColormapName" v-model:min="selectedMin" v-model:max="selectedMax"
+                class="selector" />
             <DepthSlider />
-            <div class="map-drawer-toggle">
+            <div class="map-drawer-toggle" :style="{ right: drawerOpen ? '312px' : '12px' }">
                 <v-btn size="24px" color="warning" class="ma-0 pa-0" @click="drawerOpen = !drawerOpen"
-                    :title="drawerOpen ? 'Hide variable details' : 'Show variable details'">
+                    title="Vertical Profile">
                     <v-icon size="20px">mdi-chart-line</v-icon>
                 </v-btn>
             </div>
+
+            <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
         </div>
 
-        <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
+
 
         <!-- Bottom: Global Chart Footer -->
         <v-footer class="ma-0 pa-0" :style="{ maxHeight: `${footerHeight}` }">
@@ -76,7 +81,8 @@
         <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
             <div ref="globalChartContainer" class="w-100 h-100"></div>
         </div> -->
-    </div>
+        <!-- </div> -->
+    </v-main>
 </template>
 
 <script setup lang="ts">
@@ -1240,13 +1246,9 @@ let zrClickHandler: ((evt: any) => void) | null = null;
 </script>
 
 <style scoped>
-.map-container {
-    position: relative;
-}
 .map-drawer-toggle {
     position: absolute;
     top: 12px;
-    right: 12px;
     z-index: 2;
     background: rgba(255, 255, 255, 0.85);
     border-radius: 8px;
@@ -1277,6 +1279,11 @@ let zrClickHandler: ((evt: any) => void) | null = null;
 @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
 
 .h-screen {
-    height: 100vh;
+    height: calc(100vh - 48px);
+}
+
+.selector {
+    top: 16px;
+    left: 16px;
 }
 </style>

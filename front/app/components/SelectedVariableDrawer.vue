@@ -1,6 +1,6 @@
 <template>
-    <v-navigation-drawer v-model="isOpen" location="right" width="300" class="pa-2 d-flex flex-column"
-        :style="{ maxHeight: `calc(100% - ${footerHeight})` }">
+    <v-navigation-drawer v-model="isOpen" location="right" width="300" class="pa-2" absolute persistent mobile :scrim="false"
+        style="height:100%; z-index:9999; top:0;">
         <v-row class="ma-0 pa-0" style="height: 20px;">
             <v-btn icon size="20px" color="error" flat @click="isOpen = false">
                 <v-icon size="16px">mdi-close</v-icon>
@@ -34,6 +34,7 @@ type SelectedPoint = {
 } | null;
 
 interface ProfileRequest {
+    var: string;
     lat: number;
     lon: number;
     dt: string;
@@ -99,10 +100,12 @@ const requestParams = computed<ProfileRequest | null>(() => {
     const lat = props.selectedPoint?.lat;
     const lon = props.selectedPoint?.lon;
     const dt = mainStore.selected_variable?.dt;
+    const variable = mainStore.selected_variable?.var;
     if (typeof lat !== 'number' || typeof lon !== 'number' || !dt) return null;
     const parsed = moment(dt);
     if (!parsed.isValid()) return null;
     return {
+        var: variable,
         lat,
         lon,
         dt: parsed.utc().format('YYYY-MM-DDTHHmmss')
@@ -277,8 +280,7 @@ async function fetchProfile(params: ProfileRequest) {
     const currentRequest = ++requestSequence;
 
     try {
-        const payload: Record<string, any> = { lat: params.lat, lon: params.lon, dt: params.dt };
-        if (mainStore.selected_variable?.var) payload.var = mainStore.selected_variable.var;
+        const payload: Record<string, any> = { var: params.var, lat: params.lat, lon: params.lon, dt: params.dt };
         const response = await axios.post(`${apiBaseUrl}/getProfile`, payload, { signal: currentController.signal });
         console.log('response: ', response);
 
