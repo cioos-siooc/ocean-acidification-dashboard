@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 
 from extractTimeseries import extract_timeseries
 from modules.extract_profile import extract_profile
+from modules.eval_extractor import extract_eval_data
 from extract_climate_timeseries import extract_climate_timeseries
 
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
@@ -391,6 +392,46 @@ async def fn_get_profile(request: profileRequest):
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         _extract_semaphore.release()
+
+#######################################
+
+class evalRequest(BaseModel):
+    sensor_id: int
+    variable: str
+    model: str
+
+@app.post("/getEval")
+async def fn_get_eval(request: evalRequest):
+    logger.info(f"START getEval: sensor_id={request.sensor_id}, variable={request.variable}, model={request.model}")
+    
+    eval_nc_path = "/opt/data/eval/Baynes_5m.nc"
+    
+    # Validate model parameter
+    valid_models = ["SSC", "LiveOcean"]
+    model = request.model.strip()  # Remove leading/trailing whitespace
+    if model not in valid_models:
+        raise HTTPException(status_code=400, detail=f"Invalid model: {model}. Must be one of {valid_models}")
+    
+    try:
+        result = await run_in_threadpool(
+            extract_eval_data,
+            nc_path=eval_nc_path,
+            variable=request.variable,
+            model=model,
+            sensor_id=request.sensor_id
+        )
+        
+        logger.info(f"FINISH getEval: {request.variable} - returned {len(result['time'])} timesteps for model={model}")
+        return result
+    except FileNotFoundError as e:
+        logger.error(f"Evaluation file not found: {e}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except (KeyError, ValueError) as e:
+        logger.error(f"Invalid request for getEval: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        logger.exception("extract_eval_data failed")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 #######################################
 

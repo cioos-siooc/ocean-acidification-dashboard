@@ -20,8 +20,6 @@
             <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
         </div>
 
-
-
         <!-- Bottom: Global Chart Footer -->
         <v-footer class="ma-0 pa-0" :style="{ maxHeight: `${footerHeight}` }">
             <!-- <div ref="globalChartContainer" class="w-100" :style="{ height: `calc(${footerHeight} - 20px)` }"></div> -->
