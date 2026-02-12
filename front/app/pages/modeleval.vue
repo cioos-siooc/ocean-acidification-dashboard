@@ -1,50 +1,53 @@
 <template>
     <v-main>
-        <!-- Header with Controls -->
-        <v-container class="pa-4 bg-light">
+        <v-navigation-drawer permanent width="300">
             <!-- Row 1: Sensor, Variable, Model, Load Button -->
-            <v-row align="center" class="mb-4">
-                <v-col cols="12" md="3">
-                    <v-select v-model="selectedSensorId" :items="sensorIds" label="Select Sensor ID" outlined dense
-                        @update:modelValue="onSelectionChange" />
-                </v-col>
-                <v-col cols="12" md="3">
-                    <v-select v-model="selectedVariable" :items="variables" label="Select Variable" outlined dense
-                        @update:modelValue="onSelectionChange" />
-                </v-col>
-                <v-col cols="12" md="2">
-                    <v-select v-model="selectedModel" :items="models" label="Select Model" outlined dense
-                        @update:modelValue="onSelectionChange" />
-                </v-col>
-                <v-col cols="12" md="4">
-                    <v-btn color="primary" @click="fetchEvalData" :loading="loading" block>
-                        Load Data
-                    </v-btn>
-                </v-col>
-            </v-row>
+            <v-card elevation="0" class="ma-4 pa-4">
+                <v-card-text>
+                    <v-row align="center" class="mb-4">
+                        <v-select v-model="selectedSensorId" :items="sensorIds" label="Select Sensor ID"
+                            density="compact" variant="outlined" hide-details @update:modelValue="onSelectionChange" />
+                    </v-row>
+                    <v-row align="center" class="mb-4">
+                        <v-select v-model="selectedVariable" :items="variables" label="Select Variable"
+                            density="compact" variant="outlined" hide-details @update:modelValue="onSelectionChange" />
+                    </v-row>
+                    <v-row align="center" class="mb-4">
+                        <v-select v-model="selectedModel" :items="models" label="Select Model" density="compact"
+                            variant="outlined" hide-details @update:modelValue="onSelectionChange" />
+                    </v-row>
+                    <v-row align="center" class="mb-4">
+                        <v-btn color="primary" @click="fetchEvalData" :loading="loading" block>
+                            Load Data
+                        </v-btn>
+                    </v-row>
 
-            <!-- Row 2: Date Range Selector -->
-            <v-row align="center" class="mb-4">
-                <v-col cols="12" sm="6" md="4">
-                    <v-menu v-model="fromDateMenu" :close-on-content-click="false" :disabled="isDatePickersDisabled">
-                        <template #activator="{ props }">
-                            <v-text-field :model-value="fromDateDisplay" label="From Date" variant="outlined" density="compact"
-                                readonly :disabled="isDatePickersDisabled" v-bind="props" />
-                        </template>
-                        <v-date-picker v-model="fromDate" :min="minDate" :max="toDate || maxDate" @update:modelValue="onDateChange" />
-                    </v-menu>
-                </v-col>
-                <v-col cols="12" sm="6" md="4">
-                    <v-menu v-model="toDateMenu" :close-on-content-click="false" :disabled="isDatePickersDisabled">
-                        <template #activator="{ props }">
-                            <v-text-field :model-value="toDateDisplay" label="To Date" variant="outlined" density="compact"
-                                readonly :disabled="isDatePickersDisabled" v-bind="props" />
-                        </template>
-                        <v-date-picker v-model="toDate" :min="fromDate || minDate" :max="maxDate" @update:modelValue="onDateChange" />
-                    </v-menu>
-                </v-col>
-            </v-row>
-        </v-container>
+                    <v-divider class="my-8" />
+
+                    <!-- Row 2: Date Range Selector -->
+                    <v-row align="center" class="mb-4">
+                        <v-menu v-model="fromDateMenu" :close-on-content-click="false"
+                            :disabled="isDatePickersDisabled">
+                            <template #activator="{ props }">
+                                <v-text-field :model-value="fromDateDisplay" label="From Date" variant="outlined" hide-details
+                                    density="compact" readonly :disabled="isDatePickersDisabled" v-bind="props" />
+                            </template>
+                            <v-date-picker v-model="fromDate" :min="minDate" :max="toDate || maxDate" @update:model-value="onDateChange" />
+                        </v-menu>
+                    </v-row>
+                    <v-row align="center" class="mb-4">
+                        <v-menu v-model="toDateMenu" :close-on-content-click="false" :disabled="isDatePickersDisabled">
+                            <template #activator="{ props }">
+                                <v-text-field :model-value="toDateDisplay" label="To Date" variant="outlined" hide-details
+                                    density="compact" readonly :disabled="isDatePickersDisabled" v-bind="props" />
+                            </template>
+                            <v-date-picker v-model="toDate" :min="fromDate || minDate" :max="maxDate" @update:model-value="onDateChange" />
+                        </v-menu>
+                    </v-row>
+                </v-card-text>
+            </v-card>
+        </v-navigation-drawer>
+
 
         <!-- Error Message -->
         <v-alert v-if="error" type="error" class="mx-4 mt-4">
@@ -52,7 +55,12 @@
         </v-alert>
 
         <!-- Time Series Chart Component -->
-        <EvalTimeseries v-if="data" :data="data" :selected-variable="selectedVariable" :start-time="startTimeFromDate" :end-time="endTimeFromDate" @update-date-range="onTimeseriesZoom" />
+        <EvalTimeseries v-if="data" :data="data" :selected-variable="selectedVariable" :start-time="startTimeFromDate"
+            :end-time="endTimeFromDate" @update-date-range="onTimeseriesZoom" />
+
+        <!-- Residual Chart Component -->
+        <EvalResidual v-if="data" :data="data" :selected-variable="selectedVariable" :start-time="startTimeFromDate"
+            :end-time="endTimeFromDate" @update-date-range="onTimeseriesZoom" />
 
         <!-- Scatter Chart Component -->
         <EvalScatter v-if="data" :data="data" :start-time="startTimeFromDate" :end-time="endTimeFromDate" />
@@ -66,18 +74,22 @@ import axios from 'axios'
 import { useRuntimeConfig } from '#app'
 import EvalTimeseries from '~/components/eval/timeseries.vue'
 import EvalScatter from '~/components/eval/scatter.vue'
+import EvalResidual from '~/components/eval/residual.vue'
 import { da } from 'vuetify/locale'
 
 // Configuration
 const apiBaseUrl = useRuntimeConfig().public.apiBaseUrl || 'http://localhost:3000'
 
 // Data & State
+const showDrawer = ref(true)
 const selectedSensorId = ref<number | null>(1)
 const selectedVariable = ref<string>('temperature')
 const selectedModel = ref<string>('SSC')
 const sensorIds = ref<number[]>([])
 const variables = ref<string[]>(['temperature', 'salinity', 'dissolved_oxygen', 'pCO2'])
-const models = ref<string[]>(['SSC', 'LiveOcean'])
+const models = ref<{ value: string; title: string }[]>(
+    [{ value: 'SSC', title: 'Salish Sea Cast' }, { value: 'LiveOcean', title: 'Live Ocean' }]
+)
 
 const loading = ref(false)
 const error = ref('')
@@ -173,7 +185,7 @@ async function fetchEvalData() {
             startTime.value = new Date(data.value.time[0]).getTime()
             endTime.value = new Date(data.value.time[len_time - 1]).getTime()
         }
-        
+
         // Reset date pickers to full data range when new data is loaded
         if (startTime.value) {
             fromDate.value = formatDateString(startTime.value)
@@ -211,7 +223,7 @@ function onDateChange() {
             fromDate.value = toDate.value
         }
     }
-    
+
     // Clear error on date change
     error.value = ''
     // Close menus after selection

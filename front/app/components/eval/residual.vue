@@ -2,7 +2,7 @@
     <v-container class="mt-4">
         <v-row>
             <v-col cols="12">
-                <div ref="timeseriesChart" style="width: 100%; height: 600px;"></div>
+                <div ref="residualChart" style="width: 100%; height: 600px;"></div>
             </v-col>
         </v-row>
     </v-container>
@@ -34,10 +34,10 @@ const emit = defineEmits<{
 }>()
 
 // Chart references
-const timeseriesChart = ref<HTMLElement | null>(null)
+const residualChart = ref<HTMLElement | null>(null)
 
 // Chart instance
-let tsChartInstance: echarts.ECharts | null = null
+let residualChartInstance: echarts.ECharts | null = null
 
 const tz = 'America/Vancouver'
 
@@ -65,56 +65,59 @@ function filterDataByTime(data: any, startTime: number | null, endTime: number |
 }
 
 /**
- * Refresh all charts when data or visibility changes
+ * Calculate residuals (sensor - model)
  */
-function refreshCharts() {
-    plotTimeseries()
+function calculateResiduals(displayData: any): (number | null)[] {
+    return displayData.sensor.map((sensorVal: any, i: number) => {
+        const modelVal = displayData.model[i]
+        // Return null if either value is null/undefined
+        if (sensorVal === null || sensorVal === undefined || modelVal === null || modelVal === undefined) {
+            return null
+        }
+        return sensorVal - modelVal
+    })
 }
 
 /**
- * Plot time series comparison
+ * Refresh chart when data or visibility changes
  */
-function plotTimeseries() {
-    if (!timeseriesChart.value) return
+function refreshCharts() {
+    plotResidual()
+}
+
+/**
+ * Plot residual time series
+ */
+function plotResidual() {
+    if (!residualChart.value) return
     if (!props.data) return
 
     // Filter data by time range
     const displayData = filterDataByTime(props.data, props.startTime, props.endTime)
 
-    const seriesData: any[] = []
+    // Calculate residuals
+    const residuals = calculateResiduals(displayData)
+    console.log('residuals: ', residuals);
+
     const threshold = 1000 // Threshold for downsampling
 
-        seriesData.push({
-            name: 'Sensor',
-            type: 'line',
-            data: displayData.sensor.map((d: any, i: number) => [moment.utc(displayData.time[i]).tz(tz).format(), d]).filter((d: any) => d[1] !== null),
-            smooth: true,
-            lineStyle: { width: 2, color: '#000', opacity: 0.75 },
-            showSymbol: false,
-            itemStyle: { color: '#000', opacity: 0.75 },
-            large: true,
-            largeThreshold: threshold,
-            sampling: 'lttb'
-        })
-
-        seriesData.push({
-            name: 'Model',
-            type: 'line',
-            data: displayData.model.map((d: any, i: number) => [moment.utc(displayData.time[i]).tz(tz).format(), d]).filter((d: any) => d[1] !== null),
-            smooth: true,
-            lineStyle: { width: 2, color: '#3498DB', opacity: 0.75 },
-            showSymbol: false,
-            itemStyle: { color: '#3498DB', opacity: 0.75 },
-            large: true,
-            largeThreshold: threshold,
-            sampling: 'lttb'
-        })
+    const seriesData = {
+        name: 'Residual (Sensor - Model)',
+        type: 'line',
+        data: residuals.map((d: any, i: number) => [moment.utc(displayData.time[i]).tz(tz).format(), d]).filter((d: any) => d[1] !== null),
+        smooth: true,
+        lineStyle: { width: 2, color: '#E74C3C', opacity: 0.7 },
+        symbol: 'none',
+        large: true,
+        largeThreshold: threshold,
+        sampling: 'lttb'
+    }
 
     const option = {
-        title: { text: `${props.selectedVariable} - Time Series` },
+        title: { text: `${props.selectedVariable} - Residuals (Sensor - Model)` },
         tooltip: { trigger: 'axis' },
         legend: { 
-            data: seriesData.map(s => s.name), 
+            data: ['Residual (Sensor - Model)'],
             orient: 'vertical',
             right: 10,
             top: 'middle'
@@ -126,20 +129,24 @@ function plotTimeseries() {
                 saveAsImage: {}
             }
         },
-        xAxis: { type: 'time', name: 'Date' },
-        yAxis: { type: 'value', min: 'dataMin', max: 'dataMax' },
-        series: seriesData,
+        xAxis: { type: 'time' },
+        yAxis: { 
+            type: 'value',
+            min: 'dataMin',
+            max: 'dataMax',
+        },
+        series: [seriesData],
         grid: { left: 60, right: 120, top: 60, bottom: 60 }
     }
 
-    if (!tsChartInstance) {
-        tsChartInstance = echarts.init(timeseriesChart.value as any)
+    if (!residualChartInstance) {
+        residualChartInstance = echarts.init(residualChart.value as any)
         // Listen for datazoom events to sync back to parent
-        tsChartInstance.on('datazoom', handleDataZoom)
+        residualChartInstance.on('datazoom', handleDataZoom)
         // Listen for restore events to reset date pickers
-        tsChartInstance.on('restore', handleRestore)
+        residualChartInstance.on('restore', handleRestore)
     }
-    tsChartInstance.setOption(option)
+    residualChartInstance.setOption(option)
 }
 
 /**
@@ -160,29 +167,24 @@ watch(() => [props.startTime, props.endTime], () => {
  * Handle datazoom event - convert zoomed range back to dates and emit to parent
  */
 function handleDataZoom(event: any) {
-    console.log(event);
     if (!props.data || !props.data.time || props.data.time.length === 0) return
-    console.log('1');
+
     // Get the filtered data that's currently displayed in the chart
     const displayData = filterDataByTime(props.data, props.startTime, props.endTime)
     if (!displayData || !displayData.time || displayData.time.length === 0) return
-    console.log('2');
-    // Get the start and end indices from the zoom event (percentages of filtered data)
-    const startIndex = Math.floor(event.start * displayData.time.length / 100)
-    const endIndex = Math.ceil(event.end * displayData.time.length / 100)
-    
-    // Get the dates from the filtered data at those indices
+
+    // Get the dates from the zoom event
     const fromDateStr = event.batch[0].startValue
     const toDateStr = event.batch[0].endValue
-    console.log(displayData.time, startIndex, endIndex, fromDateStr, toDateStr);
+
     // Validate that we have valid date strings
     if (!fromDateStr || !toDateStr) return
-    console.log('3');
+
     try {
         // Convert to YYYY-MM-DD format
         const fromDate = new Date(fromDateStr).toISOString().split('T')[0]
         const toDate = new Date(toDateStr).toISOString().split('T')[0]
-        
+
         // Emit to parent
         emit('update-date-range', { fromDate, toDate })
     } catch (e) {
@@ -195,16 +197,16 @@ function handleDataZoom(event: any) {
  */
 function handleRestore() {
     if (!props.data || !props.data.time || props.data.time.length === 0) return
-    
+
     try {
         // Get the full data range
         const fromDateStr = props.data.time[0]
         const toDateStr = props.data.time[props.data.time.length - 1]
-        
+
         // Convert to YYYY-MM-DD format
         const fromDate = new Date(fromDateStr).toISOString().split('T')[0]
         const toDate = new Date(toDateStr).toISOString().split('T')[0]
-        
+
         // Emit to parent
         emit('update-date-range', { fromDate, toDate })
     } catch (e) {
@@ -216,8 +218,8 @@ function handleRestore() {
  * Handle window resize
  */
 function handleResize() {
-    if (tsChartInstance) {
-        tsChartInstance.resize()
+    if (residualChartInstance) {
+        residualChartInstance.resize()
     }
 }
 
@@ -236,11 +238,11 @@ onMounted(() => {
  */
 onBeforeUnmount(() => {
     window.removeEventListener('resize', handleResize)
-    if (tsChartInstance) {
-        tsChartInstance.off('datazoom', handleDataZoom)
-        tsChartInstance.off('restore', handleRestore)
-        tsChartInstance.dispose()
-        tsChartInstance = null
+    if (residualChartInstance) {
+        residualChartInstance.off('datazoom', handleDataZoom)
+        residualChartInstance.off('restore', handleRestore)
+        residualChartInstance.dispose()
+        residualChartInstance = null
     }
 })
 </script>
