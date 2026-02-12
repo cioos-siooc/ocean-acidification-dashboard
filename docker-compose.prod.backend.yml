@@ -38,7 +38,7 @@ services:
 
   process:
     build: ./process
-    # profiles: ["tools"]
+    profiles: ["tools"]
     environment:
       - PGHOST=${DB_HOST:-db}
       - PGPORT=${DB_PORT:-5432}
