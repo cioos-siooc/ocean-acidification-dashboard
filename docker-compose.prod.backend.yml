@@ -10,7 +10,7 @@ services:
       # - ./trajectory_maps:/app/trajectory_maps
     environment:
       - DB_HOST=${DB_HOST:-db}
-      - DB_PORT=${DB_PORT:-5432}
+      - DB_PORT=5432 # default Postgres port inside the Docker network
       - DB_NAME=oa
       - DB_USER=postgres
       - DB_PASSWORD=postgres
@@ -41,7 +41,7 @@ services:
     profiles: ["tools"]
     environment:
       - PGHOST=${DB_HOST:-db}
-      - PGPORT=${DB_PORT:-5432}
+      - PGPORT=5432 # default Postgres port inside the Docker network
       - PGDATABASE=oa
       - PGUSER=postgres
       - PGPASSWORD=postgres
