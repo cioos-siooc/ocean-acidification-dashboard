@@ -1,0 +1,57 @@
+services:
+  api:
+    build: ./api
+    ports:
+      - "${API_PORT:-4000}:4000"
+    volumes:
+      - ./data:/opt/data
+      # - ./lib:/app/lib
+      # - ./bathymetry_images:/app/bathymetry_images
+      # - ./trajectory_maps:/app/trajectory_maps
+    environment:
+      - DB_HOST=${DB_HOST:-db}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=oa
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgis/postgis:16-master
+    environment:
+      - POSTGRES_DB=oa
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - oa_db:/var/lib/postgresql/data
+      # - ./DB:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  process:
+    build: ./process
+    # profiles: ["tools"]
+    environment:
+      - PGHOST=${DB_HOST:-db}
+      - PGPORT=${DB_PORT:-5432}
+      - PGDATABASE=oa
+      - PGUSER=postgres
+      - PGPASSWORD=postgres
+    volumes:
+      # - ./lib:/app/lib
+      - ./data:/opt/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  oa_db:
