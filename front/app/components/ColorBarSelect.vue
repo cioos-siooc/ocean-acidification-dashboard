@@ -100,7 +100,7 @@ const props = defineProps<{
 }>();
 
 const models = [
-  { var: 'SalishSeaCast', label: 'Salish Sea Cast' }
+  { var: 'SalishSeaCast', label: 'SalishSeaCast' }
 ];
 const selectedModel = ref(models[0].var);
 const showSettings = ref(false);
