@@ -278,10 +278,11 @@ async def fn_extract_timeseries(request: timeseriesRequest):
 #######################################
 
 class climate_timeseriesRequest(BaseModel):
-    # var: str
+    var: str
     lat: float
     lon: float
-    # depth: float
+    depth: str
+    dt: str
 
 @app.post("/extract_climateTimeseries")
 async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
@@ -297,9 +298,12 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
     try:
         lat = request.lat
         lon = request.lon
+        variable = request.var
+        depth = request.depth  # Pass depth as string (e.g., "0p5") since that's what the module expects for file naming
+        dt = request.dt  # Pass datetime string (ISO format) to the extraction function
         
         # Run the synchronous extraction in a threadpool to keep the event loop free
-        result = await run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon)
+        result = await run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon, variable=variable, depth=depth, dt=dt)
         if result is None:
             logger.error("Extraction returned None")
             raise HTTPException(status_code=500, detail="Extraction failed")

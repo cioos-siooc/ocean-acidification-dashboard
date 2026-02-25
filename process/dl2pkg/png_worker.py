@@ -3,6 +3,8 @@ import logging
 import os
 import traceback
 from typing import Optional
+import numpy as np
+import xarray as xr
 
 from .db import get_db_conn
 import nc2tile
@@ -148,6 +150,41 @@ def get_variable_depths_image(conn, variable_id: int) -> Optional[list]:
                 pass
     raise RuntimeError(f"Invalid depths_image for variable_id={variable_id}")
 
+
+def get_depth_indices_from_values(nc_path: str, desired_depths: list) -> list:
+    """Convert depth values to their indices in the NetCDF file's depth coordinate.
+    
+    Args:
+        nc_path: Path to the NetCDF file
+        desired_depths: List of depth values to find indices for
+    
+    Returns:
+        List of depth indices corresponding to the desired depth values
+    """
+    try:
+        with xr.open_dataset(nc_path) as ds:
+            # Try to find depth coordinate (common names: depth, z, level, etc.)
+            depth_coord = None
+            for coord_name in ['depth', 'z', 'level', 'altitude']:
+                if coord_name in ds.coords:
+                    depth_coord = ds.coords[coord_name].values
+                    break
+            
+            if depth_coord is None:
+                raise ValueError(f"Could not find depth coordinate in {nc_path}")
+            
+            indices = []
+            for desired_depth in desired_depths:
+                # Find the index of the closest depth value
+                idx = int(np.argmin(np.abs(depth_coord - desired_depth)))
+                indices.append(idx)
+            
+            logger.info("Mapped depths %s to indices %s", desired_depths, indices)
+            return indices
+    except Exception as e:
+        logger.error("Error converting depth values to indices: %s", e)
+        raise
+
 def process_image(conn, row, workers: int | None = None):
     row_id = row['row_id']
     # Prefer the canonical path column `nc_path` in the new table, but accept legacy keys
@@ -178,8 +215,10 @@ def process_image(conn, row, workers: int | None = None):
             cur.execute("UPDATE nc_jobs SET status='imaging', last_attempt=NOW() WHERE id=%s", (row_id,))
         conn.commit()
         precision = get_variable_precision(conn, variable_id)
-        # depths_image = get_variable_depths_image(conn, variable_id)
-        depth_indices = [0,5,20,24,26,30,34,38]
+        
+        # Get depths from database and convert to indices
+        desired_depths = get_variable_depths_image(conn, variable_id)
+        depth_indices = get_depth_indices_from_values(src, desired_depths)
 
         # call nc2tile programmatically, optionally passing --workers
         args = ["--data", src, "--vars", variable, "--precision", str(precision), "--depth-indices", ','.join(str(i) for i in depth_indices)]

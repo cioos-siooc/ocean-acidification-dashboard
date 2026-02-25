@@ -608,23 +608,12 @@ async function getTimeseriesFromApi(lat: number, lon: number) {
 async function getClimateTimeseries(lat: number, lon: number) {
     const now = moment().utc();
     return axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
+        var: mainStore.selected_variable.var,
         lat,
         lon,
-        days: DFN
+        depth: mainStore.selected_variable.depth,
+        dt: now.format('YYYY-MM-DDTHHmmss'),
     });
-
-    // try {
-    //     const now = moment().utc();
-    //     const response = await axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
-    //         lat,
-    //         lon,
-    //         dt: now.format('YYYY-MM-DDTHHmmss')
-    //     });
-    //     const date = JSON.parse(response.data)
-    // } catch (error) {
-    //     console.error("Error fetching climate data:", error);
-    // } finally {
-    // }
 };
 
 async function addSensors() {

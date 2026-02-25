@@ -28,7 +28,8 @@ def get_dataset(file_path):
         if _ds_cache is None:
             if not os.path.exists(file_path):
                 # Fallback for local testing if /opt/ is not mounted
-                local_path = os.path.join(os.getcwd(), "depth_0p5.nc")
+                local_basename = os.path.basename(file_path)
+                local_path = os.path.join(os.getcwd(), local_basename)
                 if os.path.exists(local_path):
                     file_path = local_path
                 else:
@@ -37,15 +38,27 @@ def get_dataset(file_path):
                 _ds_cache = xr.open_dataset(file_path)
     return _ds_cache
 
-def extract_climate_timeseries(lat, lon):
+def extract_climate_timeseries(lat, lon, variable, depth, dt):
     """
-    Extracts a 10-day climatology window around current UTC time.
-    Returns a list of dictionaries.
+    Extracts a 10-day climatology window (±5 days) around the given datetime.
+    
+    Args:
+        lat: Latitude coordinate
+        lon: Longitude coordinate
+        variable: Variable name (e.g., 'temperature', 'salinity')
+        depth: Depth value as string (e.g., '0p5', '1p0')
+        dt: Datetime string in ISO format (e.g., '2026-01-17T05:30:00') or None for current UTC time
+    
+    Returns:
+        A list of dictionaries.
     """
     # Configuration
-    target_dt_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
-    file_path = "/opt/data/nc/SalishSeaCast/climate/temperature/depth_0p5.nc"
-    variables = ['mean', 'median', 'q1', 'q3', 'min', 'max']
+    if dt is None:
+        target_dt_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+    else:
+        target_dt_str = dt
+    file_path = f"/opt/data/nc/SalishSeaCast/climate/{variable}_{depth}.nc"
+    climatology_variables = ['mean', 'median', 'q1', 'q3', 'min', 'max']
     
     db_config = {
         "host": os.getenv("DB_HOST", "db"),
@@ -93,7 +106,7 @@ def extract_climate_timeseries(lat, lon):
         # Use a lock because NetCDF4 backend is NOT thread-safe for simultaneous access to the same dataset object
         with _io_lock:
             # Check variable availability
-            found_vars = [v for v in variables if v in ds.data_vars]
+            found_vars = [v for v in climatology_variables if v in ds.data_vars]
             
             # Determine dimension names
             y_dim = 'gridY' if 'gridY' in ds.dims else 'y'
@@ -150,12 +163,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract 10-day climatology window.")
     parser.add_argument("--lat", type=float, required=True)
     parser.add_argument("--lon", type=float, required=True)
-    parser.add_argument("--date", type=str, required=True, help="ISO format e.g. 2026-01-17T05:30:00")
+    parser.add_argument("--variable", type=str, required=True, help="Variable name (e.g., 'temperature', 'salinity')")
+    parser.add_argument("--depth", type=str, required=True, help="Depth value (e.g., '0p5', '1p0')")
+    parser.add_argument("--date", type=str, help="ISO format datetime (e.g., 2026-01-17T05:30:00). If not provided, uses current UTC time.")
     
     args = parser.parse_args()
     
     start_time = time.perf_counter()
-    df = extract_climate_timeseries(args.lat, args.lon, args.date)
+    df = extract_climate_timeseries(args.lat, args.lon, args.variable, args.depth, args.date)
     elapsed = time.perf_counter() - start_time
     
     print(df)
