@@ -57,7 +57,7 @@ def extract_climate_timeseries(lat, lon, variable, depth, dt):
         target_dt_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
     else:
         target_dt_str = dt
-    file_path = f"/opt/data/nc/SalishSeaCast/climate/{variable}_{depth}.nc"
+    file_path = f"/opt/data/SSC/climatology/5d/{variable}/{variable}_{depth}.nc"
     climatology_variables = ['mean', 'median', 'q1', 'q3', 'min', 'max']
     
     db_config = {

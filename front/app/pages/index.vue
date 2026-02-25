@@ -552,31 +552,47 @@ function initClick(lat: number, lon: number) {
 
 
 async function getTimeseriesPromises(lat: number, lon: number) {
-    // Build promises dynamically so climate and sensor timeseries can be skipped when disabled
-    const promisesArr: Promise<any>[] = [
-        getTimeseriesFromApi(lat, lon)
-    ];
+    // Fetch each data source independently so failures don't block others
+    let modelResp = null;
+    let climResp = null;
+    let sensorResp = null;
 
-    // climate data (IQR/mean/min-max)
+    try {
+        modelResp = await getTimeseriesFromApi(lat, lon);
+    } catch (err: any) {
+        if (err?.code !== 'ERR_CANCELED') {
+            console.error('Failed to fetch model timeseries:', err);
+        }
+    }
+
     if (climatePlotsEnabled.value) {
-        promisesArr.push(getClimateTimeseries(lat, lon));
-    } else {
-        promisesArr.push(Promise.resolve(null));
+        try {
+            climResp = await getClimateTimeseries(lat, lon);
+        } catch (err: any) {
+            if (err?.code !== 'ERR_CANCELED') {
+                console.warn('Failed to fetch climate data (chart will show model only):', err);
+            }
+        }
     }
 
-    // sensor data
     if (sensorPlotsEnabled.value && clicked_sensor_id.value) {
-        promisesArr.push(getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var));
-    } else {
-        promisesArr.push(Promise.resolve(null));
+        try {
+            sensorResp = await getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var);
+        } catch (err: any) {
+            if (err?.code !== 'ERR_CANCELED') {
+                console.warn('Failed to fetch sensor data:', err);
+            }
+        }
     }
 
-    const d = await Promise.all(promisesArr);
-    const model = d[0].data
-    const clim = d[1]?.data || null;
-    const sensor = d[2]?.data || null;
+    const model = modelResp?.data || null;
+    const clim = climResp?.data || null;
+    const sensor = sensorResp?.data || null;
 
-    plotTimeseries(model, clim, sensor);
+    // Plot whatever data we successfully retrieved
+    if (model) {
+        plotTimeseries(model, clim, sensor);
+    }
     clicked_sensor_id.value = null;
 }
 

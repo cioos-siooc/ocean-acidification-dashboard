@@ -287,7 +287,7 @@ class climate_timeseriesRequest(BaseModel):
 @app.post("/extract_climateTimeseries")
 async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
     # Reject requests if we are already at concurrency limit
-    logger.info(f"START extract_climateTimeseries: {request.lat}, {request.lon}")
+    logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, dt={request.dt}")
     try:
         # Wait up to 10 seconds to acquire the semaphore
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
@@ -308,7 +308,7 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
             logger.error("Extraction returned None")
             raise HTTPException(status_code=500, detail="Extraction failed")
             
-        logger.info(f"FINISH extract_climateTimeseries: {request.lat}, {request.lon}")
+        logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, dt={request.dt}")
         return result
     except Exception as exc:
         logger.exception("extract_climate_timeseries failed")
