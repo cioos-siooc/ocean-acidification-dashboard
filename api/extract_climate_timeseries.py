@@ -47,15 +47,15 @@ except ImportError:
     sys.path.append(os.path.join(os.path.dirname(__file__), "."))
     from extractProfile import connect_db, query_nearest_rowcol
 
-# Global cache for the dataset
-_ds_cache = None
+# Global cache for datasets (keyed by file path)
+_ds_cache = {}
 _ds_lock = threading.Lock()
 
 def get_dataset(file_path):
     global _ds_cache
     with _ds_lock:
-        if _ds_cache is None:
-            logger.info("Dataset cache miss - opening file")
+        if file_path not in _ds_cache:
+            logger.info(f"Dataset cache miss for {file_path}")
             if not os.path.exists(file_path):
                 # Fallback for local testing if /opt/ is not mounted
                 local_basename = os.path.basename(file_path)
@@ -67,11 +67,11 @@ def get_dataset(file_path):
                     logger.error(f"File not found at {file_path} or local fallback")
                     return None
             with _io_lock:
-                _ds_cache = xr.open_dataset(file_path)
-                logger.info("Dataset cached for future use")
+                _ds_cache[file_path] = xr.open_dataset(file_path)
+                logger.info(f"Dataset cached for {file_path}")
         else:
-            logger.info("Dataset cache hit - using cached dataset")
-    return _ds_cache
+            logger.info(f"Dataset cache hit for {file_path}")
+    return _ds_cache[file_path]
 
 def extract_climate_timeseries(lat, lon, variable, depth, dt, log_level=logging.INFO):
     """
