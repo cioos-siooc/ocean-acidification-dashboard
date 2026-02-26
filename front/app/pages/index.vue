@@ -627,7 +627,7 @@ async function getClimateTimeseries(lat: number, lon: number) {
         var: mainStore.selected_variable.var,
         lat,
         lon,
-        depth: mainStore.selected_variable.depth,
+        depth: formatDepth(mainStore.selected_variable.depth),
         dt: now.format('YYYY-MM-DDTHHmmss'),
     });
 };

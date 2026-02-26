@@ -299,7 +299,7 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
         lat = request.lat
         lon = request.lon
         variable = request.var
-        depth = request.depth  # Pass depth as string (e.g., "0p5") since that's what the module expects for file naming
+        depth = request.depth.replace('.', 'p')  # Pass depth as string (e.g., "0p5") since that's what the module expects for file naming
         dt = request.dt  # Pass datetime string (ISO format) to the extraction function
         
         # Run the synchronous extraction in a threadpool to keep the event loop free
