@@ -8,8 +8,6 @@ import time
 import logging
 from datetime import datetime, timedelta
 import argparse
-import threading
-from lock_manager import io_lock as _io_lock
 
 # Configure logging
 def setup_logging(log_level=logging.INFO):
@@ -47,31 +45,25 @@ except ImportError:
     sys.path.append(os.path.join(os.path.dirname(__file__), "."))
     from extractProfile import connect_db, query_nearest_rowcol
 
-# Global cache for datasets (keyed by file path)
-_ds_cache = {}
-_ds_lock = threading.Lock()
-
 def get_dataset(file_path):
-    global _ds_cache
-    with _ds_lock:
-        if file_path not in _ds_cache:
-            logger.info(f"Dataset cache miss for {file_path}")
-            if not os.path.exists(file_path):
-                # Fallback for local testing if /opt/ is not mounted
-                local_basename = os.path.basename(file_path)
-                local_path = os.path.join(os.getcwd(), local_basename)
-                if os.path.exists(local_path):
-                    logger.info(f"Using local file instead: {local_path}")
-                    file_path = local_path
-                else:
-                    logger.error(f"File not found at {file_path} or local fallback")
-                    return None
-            with _io_lock:
-                _ds_cache[file_path] = xr.open_dataset(file_path)
-                logger.info(f"Dataset cached for {file_path}")
+    """Open and return NetCDF dataset. Each call opens its own file handle.
+    
+    This allows concurrent requests to work in parallel without blocking.
+    The OS will handle caching efficiently at the filesystem level.
+    """
+    if not os.path.exists(file_path):
+        # Fallback for local testing if /opt/ is not mounted
+        local_basename = os.path.basename(file_path)
+        local_path = os.path.join(os.getcwd(), local_basename)
+        if os.path.exists(local_path):
+            logger.info(f"Using local file instead: {local_path}")
+            file_path = local_path
         else:
-            logger.info(f"Dataset cache hit for {file_path}")
-    return _ds_cache[file_path]
+            logger.error(f"File not found at {file_path} or local fallback")
+            return None
+    
+    logger.info(f"Opening dataset: {file_path}")
+    return xr.open_dataset(file_path)
 
 def extract_climate_timeseries(lat, lon, variable, depth, dt, log_level=logging.INFO):
     """
@@ -175,20 +167,19 @@ def extract_climate_timeseries(lat, lon, variable, depth, dt, log_level=logging.
     extract_start = time_module.time()
     try:
         # Load one single pixel "tube" into memory (fast with 20x20 spatial chunking)
-        # Use a lock because NetCDF4 backend is NOT thread-safe for simultaneous access to the same dataset object
-        with _io_lock:
-            # Check variable availability
-            found_vars = [v for v in climatology_variables if v in ds.data_vars]
-            logger.debug(f"Available variables: {found_vars}")
-            
-            # Determine dimension names
-            y_dim = 'gridY' if 'gridY' in ds.dims else 'y'
-            x_dim = 'gridX' if 'gridX' in ds.dims else 'x'
-            logger.debug(f"Using dimensions: {y_dim}, {x_dim}")
-            
-            logger.info(f"Selecting pixel at [{yi}, {xi}] for all {len(found_vars)} variables")
-            ds_pixel = ds[found_vars].isel({y_dim: yi, x_dim: xi}).load()
-            
+        # Each request has its own file handle, so no lock needed - concurrent requests run in parallel
+        # Check variable availability
+        found_vars = [v for v in climatology_variables if v in ds.data_vars]
+        logger.debug(f"Available variables: {found_vars}")
+        
+        # Determine dimension names
+        y_dim = 'gridY' if 'gridY' in ds.dims else 'y'
+        x_dim = 'gridX' if 'gridX' in ds.dims else 'x'
+        logger.debug(f"Using dimensions: {y_dim}, {x_dim}")
+        
+        logger.info(f"Selecting pixel at [{yi}, {xi}] for all {len(found_vars)} variables")
+        ds_pixel = ds[found_vars].isel({y_dim: yi, x_dim: xi}).load()
+        
         extract_elapsed = time_module.time() - extract_start
         t_dim = 'virtual_time' if 'virtual_time' in ds_pixel.dims else 'time'
         n_time = len(ds_pixel[t_dim])
