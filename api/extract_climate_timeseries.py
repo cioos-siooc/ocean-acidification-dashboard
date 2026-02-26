@@ -16,19 +16,23 @@ def setup_logging(log_level=logging.INFO):
     """Configure logging with timestamps and formatting."""
     logger = logging.getLogger(__name__)
     logger.setLevel(log_level)
+    logger.propagate = False  # Prevent propagation to parent loggers
     
     # Remove existing handlers to avoid duplicates
-    logger.handlers.clear()
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
     
-    # Console handler with detailed format
-    ch = logging.StreamHandler()
-    ch.setLevel(log_level)
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)-8s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
+    # Only add if we don't already have a handler
+    if not logger.handlers:
+        # Console handler with detailed format
+        ch = logging.StreamHandler()
+        ch.setLevel(log_level)
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)-8s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        ch.setFormatter(formatter)
+        logger.addHandler(ch)
     
     return logger
 
