@@ -14,6 +14,7 @@ import xarray as xr
 import numpy as np
 from typing import Dict, List, Optional, Any
 import logging
+from nc_reader import open_nc_uncached, close_nc
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +46,10 @@ def extract_eval_data(
     if not nc_path or not nc_path.endswith('.nc'):
         raise ValueError(f"Invalid netCDF path: {nc_path}")
     
-    # Load the netCDF file
-    try:
-        ds = xr.open_dataset(nc_path)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"NetCDF file not found: {nc_path}")
-    except Exception as e:
-        raise ValueError(f"Failed to open netCDF file: {str(e)}")
+    # Load the netCDF file via centralised thread-safe reader
+    ds = open_nc_uncached(nc_path)
+    if ds is None:
+        raise FileNotFoundError(f"NetCDF file not found or could not be opened: {nc_path}")
     
     # Build expected variable names
     var_sensor = f"{variable}_sensor"
@@ -119,7 +117,7 @@ def extract_eval_data(
     model_data = extract_array(var_model)
     
     # Close the dataset
-    ds.close()
+    close_nc(ds)
     
     return {
         "time": time_list,

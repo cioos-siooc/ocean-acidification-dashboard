@@ -7,7 +7,6 @@ from pydantic import BaseModel
 from typing import Optional
 import os
 import logging
-import threading
 import asyncio
 from typing import Optional
 from starlette.concurrency import run_in_threadpool
@@ -20,7 +19,6 @@ from extract_climate_timeseries import extract_climate_timeseries
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
 MAX_CONCURRENT_EXTRACTS = int(os.getenv("MAX_CONCURRENT_EXTRACTS", "4"))
 _extract_semaphore = asyncio.Semaphore(MAX_CONCURRENT_EXTRACTS)
-_io_lock = threading.Lock()
 # from calc import bin
 # from lib.bathymetry import BathymetryProcessor
 # from lib.database import TrajectoryDatabase

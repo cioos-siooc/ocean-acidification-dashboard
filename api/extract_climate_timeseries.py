@@ -8,7 +8,6 @@ import time
 import logging
 from datetime import datetime, timedelta
 import argparse
-
 # Configure logging
 def setup_logging(log_level=logging.INFO):
     """Configure logging with timestamps and formatting."""
@@ -37,6 +36,9 @@ def setup_logging(log_level=logging.INFO):
 # Initialize logger
 logger = setup_logging()
 
+# Centralised, thread-safe NetCDF reader (single lock + LRU cache for the whole API)
+from nc_reader import open_nc
+
 # Try to import DB helpers from extractProfile (local to api/)
 try:
     from extractProfile import connect_db, query_nearest_rowcol
@@ -46,10 +48,11 @@ except ImportError:
     from extractProfile import connect_db, query_nearest_rowcol
 
 def get_dataset(file_path):
-    """Open and return NetCDF dataset. Each call opens its own file handle.
+    """Open and return NetCDF dataset via the centralised nc_reader.
     
-    This allows concurrent requests to work in parallel without blocking.
-    The OS will handle caching efficiently at the filesystem level.
+    Delegates to nc_reader.open_nc() which handles:
+    - Thread-safe HDF5 access (single process-wide lock)
+    - LRU caching with automatic eviction
     """
     if not os.path.exists(file_path):
         # Fallback for local testing if /opt/ is not mounted
@@ -62,8 +65,7 @@ def get_dataset(file_path):
             logger.error(f"File not found at {file_path} or local fallback")
             return None
     
-    logger.info(f"Opening dataset: {file_path}")
-    return xr.open_dataset(file_path)
+    return open_nc(file_path)
 
 def extract_climate_timeseries(lat, lon, variable, depth, dt, log_level=logging.INFO):
     """

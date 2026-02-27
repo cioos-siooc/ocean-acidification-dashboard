@@ -18,8 +18,7 @@ from typing import Optional, Tuple, List
 import numpy as np
 import xarray as xr
 import pandas as pd
-import threading
-from lock_manager import io_lock as _io_lock
+from nc_reader import open_nc_uncached, close_nc
 
 try:
     import psycopg2
@@ -203,20 +202,17 @@ def extract_profile(
 
     for fp in files:
         try:
-            with _io_lock:
-                sample_ds = xr.open_dataset(fp)
-                var_sample = find_variable(sample_ds, var)
-                depth_dim = find_depth_dim(var_sample)
-                time_dim = find_time_dim(var_sample)
+            sample_ds = open_nc_uncached(fp)
+            if sample_ds is None:
+                raise RuntimeError(f"open_nc_uncached returned None for {fp}")
+            var_sample = find_variable(sample_ds, var)
+            depth_dim = find_depth_dim(var_sample)
+            time_dim = find_time_dim(var_sample)
             break
         except Exception as e:
             if verbose:
                 print(f"Skipping sample file {fp}: {e}")
-            try:
-                if sample_ds is not None:
-                    sample_ds.close()
-            except Exception:
-                pass
+            close_nc(sample_ds)
             sample_ds = None
             var_sample = None
             continue
@@ -229,10 +225,7 @@ def extract_profile(
 
     # Get horizontal dimensions
     y_dim, x_dim = find_horiz_dims_by_shape(var_sample, nrows, ncols)
-    try:
-        sample_ds.close()
-    except Exception:
-        pass
+    close_nc(sample_ds)
 
     # If no depth dimension, we can't extract a profile
     if depth_dim is None:
@@ -242,9 +235,13 @@ def extract_profile(
     profile_data = []
 
     for fp in files:
+        ds = None
         try:
-            with _io_lock:
-                ds = xr.open_dataset(fp)
+            ds = open_nc_uncached(fp)
+            if ds is None:
+                if verbose:
+                    print(f"Skipping {fp}: could not open")
+                continue
             
             try:
                 # Check if this file contains the target time
@@ -299,10 +296,7 @@ def extract_profile(
                 break
 
             finally:
-                try:
-                    ds.close()
-                except Exception:
-                    pass
+                close_nc(ds)
 
         except Exception as e:
             if verbose:
