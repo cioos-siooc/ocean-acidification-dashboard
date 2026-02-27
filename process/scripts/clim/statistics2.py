@@ -180,6 +180,12 @@ for month in months_to_process:
     os.makedirs(stats_month_dir, exist_ok=True)
     stats_month_file = os.path.join(stats_month_dir, f"month_{month}.nc")
 
+    # Skip if month file already exists (resume capability after crash)
+    if os.path.exists(stats_month_file):
+        print(f"  Skipping month {month} (output file already exists)")
+        stats_month_files.append(stats_month_file)
+        continue
+
     virtual_times = ds_m.indexes['time'].map(lambda x: x.replace(year=2020))
     ds_m.coords['virtual_time'] = ('time', virtual_times)
 

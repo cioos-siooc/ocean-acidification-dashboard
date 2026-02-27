@@ -164,11 +164,22 @@ async def get_colormaps():
 
 #######################################
 
-@app.get("/sensors/{sensor_id}/timeseries")
-async def get_sensor_timeseries(sensor_id: int, var: str, start: Optional[str] = None, end: Optional[str] = None, limit: Optional[int] = 10000):
-    """Return sensor telemetry for a given sensor id and variable.
+class sensorTimeseriesRequest(BaseModel):
+    var: str
+    sensorId: int
+    datetime: str
+    
+@app.post("/sensorTimeseries")
+async def get_sensor_timeseries(request: sensorTimeseriesRequest):
+    """Return sensor telemetry for a given sensor id and variable and datetime.
     Response: { time: [iso...], value: [float,...] }
     """
+    var = request.var
+    sensor_id = request.sensorId
+    datetime = request.datetime
+    
+    limit = 1000  # Default limit for number of points to return; can be made configurable if needed
+    
     def _fetch():
         import psycopg2
         import psycopg2.extras
@@ -178,12 +189,13 @@ async def get_sensor_timeseries(sensor_id: int, var: str, start: Optional[str] =
             cur = conn.cursor()
             sql = "SELECT time, (measurements->>%s)::float AS value FROM sensors_data WHERE sensor_id=%s"
             params = [var, sensor_id]
-            if start:
-                sql += " AND time >= %s"
-                params.append(start)
-            if end:
-                sql += " AND time <= %s"
-                params.append(end)
+            
+            # +- 5 days around requested datetime to give some context, and limit to 1000 points to avoid huge responses. Frontend can page with different datetimes if needed to get more data.
+            start = f"{datetime}::timestamp - interval '5 days'"
+            end = f"{datetime}::timestamp + interval '5 days'"
+            sql += " AND time >= %s AND time <= %s"
+            params.extend([start, end])
+
             sql += " ORDER BY time ASC LIMIT %s"
             params.append(limit)
             cur.execute(sql, tuple(params))
