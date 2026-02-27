@@ -92,7 +92,7 @@ def open_nc(path: str) -> Optional[xr.Dataset]:
 
         logger.info("opening (cached): %s", os.path.basename(path))
         try:
-            ds = xr.open_dataset(path)
+            ds = xr.open_dataset(path, lock=False)
             _cache[path] = ds
             return ds
         except Exception:
@@ -122,7 +122,7 @@ def open_nc_uncached(path: str) -> Optional[xr.Dataset]:
     with _nc_lock:
         logger.info("opening (uncached): %s", os.path.basename(path))
         try:
-            return xr.open_dataset(path)
+            return xr.open_dataset(path, lock=False)
         except Exception:
             logger.exception("failed to open %s", path)
             return None
