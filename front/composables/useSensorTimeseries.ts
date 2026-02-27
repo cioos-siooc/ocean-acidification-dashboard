@@ -15,7 +15,7 @@ export async function getSensorTimeseries(sensorId: number|null, variable: strin
         sensorId: sensorId,
         datetime: new Date().toISOString()
     };
-    const url = `${apiBaseUrl}/sensorsTimeseries`;
+    const url = `${apiBaseUrl}/sensorTimeseries`;
     const r = await axios.post(url, payload);
     return r;
 }
