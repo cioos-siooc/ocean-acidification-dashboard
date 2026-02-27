@@ -165,7 +165,7 @@ async def get_colormaps():
 #######################################
 
 class sensorTimeseriesRequest(BaseModel):
-    var: str
+    variable: str
     sensorId: int
     datetime: str
     
@@ -174,11 +174,21 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
     """Return sensor telemetry for a given sensor id and variable and datetime.
     Response: { time: [iso...], value: [float,...] }
     """
-    var = request.var
-    sensor_id = request.sensorId
-    datetime = request.datetime
+    from datetime import datetime as dt, timedelta
     
-    limit = 1000  # Default limit for number of points to return; can be made configurable if needed
+    var = request.variable
+    sensor_id = request.sensorId
+    datetime_str = request.datetime
+    
+    # Parse the incoming ISO datetime and calculate ±5 day window
+    try:
+        # Handle both ISO format with Z and with +00:00
+        request_dt = dt.fromisoformat(datetime_str.replace('Z', '+00:00'))
+        start = request_dt - timedelta(days=5)
+        end = request_dt + timedelta(days=5)
+    except Exception as exc:
+        logger.exception(f"Failed to parse datetime '{datetime_str}'")
+        raise HTTPException(status_code=400, detail=f"Invalid datetime format: {exc}")
     
     def _fetch():
         import psycopg2
@@ -190,14 +200,11 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
             sql = "SELECT time, (measurements->>%s)::float AS value FROM sensors_data WHERE sensor_id=%s"
             params = [var, sensor_id]
             
-            # +- 5 days around requested datetime to give some context, and limit to 1000 points to avoid huge responses. Frontend can page with different datetimes if needed to get more data.
-            start = f"{datetime}::timestamp - interval '5 days'"
-            end = f"{datetime}::timestamp + interval '5 days'"
+            # ±5 days around requested datetime to give some context, limit to 1000 points to avoid huge responses
             sql += " AND time >= %s AND time <= %s"
-            params.extend([start, end])
+            params.extend([start.isoformat(), end.isoformat()])
 
-            sql += " ORDER BY time ASC LIMIT %s"
-            params.append(limit)
+            sql += " ORDER BY time ASC"
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
             times = [r[0].isoformat() for r in rows]
