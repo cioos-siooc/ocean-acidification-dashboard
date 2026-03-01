@@ -35,8 +35,10 @@ import xarray as xr
 logger = logging.getLogger(__name__)
 
 # ── Process-wide lock ──────────────────────────────────────────────────────
-# A single lock shared by every call site in the API process.
-_nc_lock = threading.Lock()
+# A single REENTRANT lock shared by every call site in the API process.
+# Must be RLock (not Lock) because xarray also acquires it internally
+# for data reads when we pass lock=_nc_lock to open_dataset().
+_nc_lock = threading.RLock()
 
 # ── LRU cache ──────────────────────────────────────────────────────────────
 _cache: OrderedDict[str, xr.Dataset] = OrderedDict()
@@ -92,7 +94,7 @@ def open_nc(path: str) -> Optional[xr.Dataset]:
 
         logger.info("opening (cached): %s", os.path.basename(path))
         try:
-            ds = xr.open_dataset(path, lock=False)
+            ds = xr.open_dataset(path, lock=_nc_lock)
             _cache[path] = ds
             return ds
         except Exception:
@@ -122,7 +124,7 @@ def open_nc_uncached(path: str) -> Optional[xr.Dataset]:
     with _nc_lock:
         logger.info("opening (uncached): %s", os.path.basename(path))
         try:
-            return xr.open_dataset(path, lock=False)
+            return xr.open_dataset(path, lock=_nc_lock)
         except Exception:
             logger.exception("failed to open %s", path)
             return None

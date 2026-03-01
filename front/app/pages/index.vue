@@ -54,19 +54,6 @@
                             color="primary" @click="dialogOpen = true">
                             <v-icon size="14px">mdi-chart-line</v-icon>
                         </v-btn>
-                        <v-btn :title="climatePlotsEnabled ? 'Disable climate plotting' : 'Enable climate plotting'"
-                            flat size="20px" icon :color="climatePlotsEnabled ? 'primary' : 'grey'"
-                            @click="climatePlotsEnabled = !climatePlotsEnabled">
-                            <v-icon size="14px">{{ climatePlotsEnabled ? 'mdi-chart-areaspline' : 'mdi-chart-areaspline'
-                                }}</v-icon>
-                        </v-btn>
-
-                        <v-btn :title="sensorPlotsEnabled ? 'Disable sensor plotting' : 'Enable sensor plotting'" flat
-                            size="20px" icon :color="sensorPlotsEnabled ? 'primary' : 'grey'"
-                            @click="sensorPlotsEnabled = !sensorPlotsEnabled">
-                            <v-icon size="14px">{{ sensorPlotsEnabled ? 'mdi-thermometer' : 'mdi-thermometer-off'
-                                }}</v-icon>
-                        </v-btn>
                     </div>
                 </v-row>
             </v-container>
@@ -150,11 +137,6 @@ const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, 
 const mouseCoords = ref<{ lng: number | null, lat: number | null }>({ lng: null, lat: null });
 
 const sensorData = ref<{ time: string, value: number }[]>([])
-
-// Toggle to control whether sensor telemetry is fetched and plotted (map markers remain visible)
-const sensorPlotsEnabled = ref(false)
-// Toggle to control whether climate statistics are fetched and plotted (IQR/mean/min-max)
-const climatePlotsEnabled = ref(true)
 
 // Dialog for detailed timeseries
 const dialogOpen = ref(false);
@@ -565,17 +547,15 @@ async function getTimeseriesPromises(lat: number, lon: number) {
         }
     }
 
-    if (climatePlotsEnabled.value) {
-        try {
-            climResp = await getClimateTimeseries(lat, lon);
-        } catch (err: any) {
-            if (err?.code !== 'ERR_CANCELED') {
-                console.warn('Failed to fetch climate data (chart will show model only):', err);
-            }
+    try {
+        climResp = await getClimateTimeseries(lat, lon);
+    } catch (err: any) {
+        if (err?.code !== 'ERR_CANCELED') {
+            console.warn('Failed to fetch climate data (chart will show model only):', err);
         }
     }
 
-    if (sensorPlotsEnabled.value && clicked_sensor_id.value) {
+    if (clicked_sensor_id.value) {
         try {
             sensorResp = await getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var);
         } catch (err: any) {
@@ -593,24 +573,7 @@ async function getTimeseriesPromises(lat: number, lon: number) {
     if (model) {
         plotTimeseries(model, clim, sensor);
     }
-    clicked_sensor_id.value = null;
 }
-
-// When toggling plotting options, refresh existing chart if a point is selected so the
-// change is visible immediately (does not affect map markers)
-watch(sensorPlotsEnabled, (nv) => {
-    if (!lastClicked.value) return;
-    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-    tsRequestController = new AbortController();
-    getTimeseriesPromises(lastClicked.value.lat, lastClicked.value.lon).finally(() => { tsRequestController = null; });
-});
-
-watch(climatePlotsEnabled, (nv) => {
-    if (!lastClicked.value) return;
-    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-    tsRequestController = new AbortController();
-    getTimeseriesPromises(lastClicked.value.lat, lastClicked.value.lon).finally(() => { tsRequestController = null; });
-});
 
 async function getTimeseriesFromApi(lat: number, lon: number) {
     return axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
@@ -669,6 +632,7 @@ async function addSensors() {
         const stations = useStationsInteraction(() => map, async (sensor_id: number) => {
             console.log('Station clicked, sensor_id:', sensor_id);
             clicked_sensor_id.value = sensor_id;
+            console.log(sensors, sensor_id, sensors.find((s: any) => s.id === sensor_id));
             // show marker
             // try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
             // const el = document.createElement('div'); el.style.width = '12px'; el.style.height = '12px'; el.style.borderRadius = '50%'; el.style.background = '#ff5722'; el.style.border = '2px solid white';
@@ -847,6 +811,15 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     const onMapClick = async (evt: any) => {
         const { lng, lat } = evt.lngLat;
         console.log('Map clicked at:', lng, lat);
+
+        // Check if click landed on a sensor feature
+        const features = map.queryRenderedFeatures(evt.point, { layers: ['stations-circles'] });
+
+        // Only clear sensor ID if we clicked empty map (not on a feature)
+        if (features.length === 0) {
+            clicked_sensor_id.value = null;
+        }
+
         const overlay = (map as any).__activePngOverlay;
         if (!overlay) return;
         const [lon0, lat0, lon1, lat1] = overlay.bounds;
@@ -1084,7 +1057,7 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     };
 
     // Determine whether we have climate data to plot
-    const hasClimate = Array.isArray(climateData) && climateData.length > 0 && climatePlotsEnabled.value;
+    const hasClimate = Array.isArray(climateData) && climateData.length > 0;
 
     // Day/Night base series (always present)
     const dayNightSeries: any = {
