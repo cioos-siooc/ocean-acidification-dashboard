@@ -7,18 +7,18 @@ from pydantic import BaseModel
 from typing import Optional
 import os
 import logging
-import threading
 import asyncio
 from typing import Optional
 from starlette.concurrency import run_in_threadpool
 
 from extractTimeseries import extract_timeseries
+from modules.extract_profile import extract_profile
+from modules.eval_extractor import extract_eval_data
 from extract_climate_timeseries import extract_climate_timeseries
 
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
 MAX_CONCURRENT_EXTRACTS = int(os.getenv("MAX_CONCURRENT_EXTRACTS", "4"))
 _extract_semaphore = asyncio.Semaphore(MAX_CONCURRENT_EXTRACTS)
-_io_lock = threading.Lock()
 # from calc import bin
 # from lib.bathymetry import BathymetryProcessor
 # from lib.database import TrajectoryDatabase
@@ -162,11 +162,32 @@ async def get_colormaps():
 
 #######################################
 
-@app.get("/sensors/{sensor_id}/timeseries")
-async def get_sensor_timeseries(sensor_id: int, var: str, start: Optional[str] = None, end: Optional[str] = None, limit: Optional[int] = 10000):
-    """Return sensor telemetry for a given sensor id and variable.
+class sensorTimeseriesRequest(BaseModel):
+    variable: str
+    sensorId: int
+    datetime: str
+    
+@app.post("/sensorTimeseries")
+async def get_sensor_timeseries(request: sensorTimeseriesRequest):
+    """Return sensor telemetry for a given sensor id and variable and datetime.
     Response: { time: [iso...], value: [float,...] }
     """
+    from datetime import datetime as dt, timedelta
+    
+    var = request.variable
+    sensor_id = request.sensorId
+    datetime_str = request.datetime
+    
+    # Parse the incoming ISO datetime and calculate ±5 day window
+    try:
+        # Handle both ISO format with Z and with +00:00
+        request_dt = dt.fromisoformat(datetime_str.replace('Z', '+00:00'))
+        start = request_dt - timedelta(days=5)
+        end = request_dt + timedelta(days=5)
+    except Exception as exc:
+        logger.exception(f"Failed to parse datetime '{datetime_str}'")
+        raise HTTPException(status_code=400, detail=f"Invalid datetime format: {exc}")
+    
     def _fetch():
         import psycopg2
         import psycopg2.extras
@@ -176,14 +197,12 @@ async def get_sensor_timeseries(sensor_id: int, var: str, start: Optional[str] =
             cur = conn.cursor()
             sql = "SELECT time, (measurements->>%s)::float AS value FROM sensors_data WHERE sensor_id=%s"
             params = [var, sensor_id]
-            if start:
-                sql += " AND time >= %s"
-                params.append(start)
-            if end:
-                sql += " AND time <= %s"
-                params.append(end)
-            sql += " ORDER BY time ASC LIMIT %s"
-            params.append(limit)
+            
+            # ±5 days around requested datetime to give some context, limit to 1000 points to avoid huge responses
+            sql += " AND time >= %s AND time <= %s"
+            params.extend([start.isoformat(), end.isoformat()])
+
+            sql += " ORDER BY time ASC"
             cur.execute(sql, tuple(params))
             rows = cur.fetchall()
             times = [r[0].isoformat() for r in rows]
@@ -276,15 +295,16 @@ async def fn_extract_timeseries(request: timeseriesRequest):
 #######################################
 
 class climate_timeseriesRequest(BaseModel):
-    # var: str
+    var: str
     lat: float
     lon: float
-    # depth: float
+    depth: str
+    dt: str
 
 @app.post("/extract_climateTimeseries")
 async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
     # Reject requests if we are already at concurrency limit
-    logger.info(f"START extract_climateTimeseries: {request.lat}, {request.lon}")
+    logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, dt={request.dt}")
     try:
         # Wait up to 10 seconds to acquire the semaphore
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
@@ -295,14 +315,17 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
     try:
         lat = request.lat
         lon = request.lon
+        variable = request.var
+        depth = request.depth.replace('.', 'p')  # Pass depth as string (e.g., "0p5") since that's what the module expects for file naming
+        dt = request.dt  # Pass datetime string (ISO format) to the extraction function
         
         # Run the synchronous extraction in a threadpool to keep the event loop free
-        result = await run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon)
+        result = await run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon, variable=variable, depth=depth, dt=dt)
         if result is None:
             logger.error("Extraction returned None")
             raise HTTPException(status_code=500, detail="Extraction failed")
             
-        logger.info(f"FINISH extract_climateTimeseries: {request.lat}, {request.lon}")
+        logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, dt={request.dt}")
         return result
     except Exception as exc:
         logger.exception("extract_climate_timeseries failed")
@@ -347,6 +370,89 @@ async def fn_get_monthly_climatology(request: monthlyClimRequest):
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         _extract_semaphore.release()
+
+#######################################
+
+class profileRequest(BaseModel):
+    lat: float
+    lon: float
+    dt: str
+    var: Optional[str] = None
+
+@app.post("/getProfile")
+async def fn_get_profile(request: profileRequest):
+    logger.info(f"START getProfile: {request.var}, {request.lat}, {request.lon}, {request.dt}")
+    try:
+        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
+    except (asyncio.TimeoutError, Exception):
+        logger.warning("Semaphore timeout in getProfile")
+        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
+
+    try:
+        var = request.var or "temperature"  # Default to temperature if not specified
+        lat = request.lat
+        lon = request.lon
+        dt = request.dt
+
+        profile = await run_in_threadpool(
+            extract_profile,
+            var=var,
+            lat=lat,
+            lon=lon,
+            dt=dt,
+            db_host=db_host,
+            db_port=db_port,
+            db_name=db_name,
+            db_user=db_user,
+            db_password=db_password,
+        )
+        logger.info(f"FINISH getProfile: {var}, {lat}, {lon}, {dt} - returned {len(profile)} points")
+        return profile
+    except Exception as exc:
+        logger.exception("extract_profile failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        _extract_semaphore.release()
+
+#######################################
+
+class evalRequest(BaseModel):
+    sensor_id: int
+    variable: str
+    model: str
+
+@app.post("/getEval")
+async def fn_get_eval(request: evalRequest):
+    logger.info(f"START getEval: sensor_id={request.sensor_id}, variable={request.variable}, model={request.model}")
+    
+    eval_nc_path = "/opt/data/eval/Baynes_5m.nc"
+    
+    # Validate model parameter
+    valid_models = ["SSC", "LiveOcean"]
+    model = request.model.strip()  # Remove leading/trailing whitespace
+    if model not in valid_models:
+        raise HTTPException(status_code=400, detail=f"Invalid model: {model}. Must be one of {valid_models}")
+    
+    try:
+        result = await run_in_threadpool(
+            extract_eval_data,
+            nc_path=eval_nc_path,
+            variable=request.variable,
+            model=model,
+            sensor_id=request.sensor_id
+        )
+        
+        logger.info(f"FINISH getEval: {request.variable} - returned {len(result['time'])} timesteps for model={model}")
+        return result
+    except FileNotFoundError as e:
+        logger.error(f"Evaluation file not found: {e}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except (KeyError, ValueError) as e:
+        logger.error(f"Invalid request for getEval: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        logger.exception("extract_eval_data failed")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 #######################################
 

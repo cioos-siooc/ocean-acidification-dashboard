@@ -1,22 +1,4 @@
 services:
-  front:
-    build:
-      context: ./front
-      target: ${FRONTEND_TARGET:-production}
-      args:
-        - NUXT_PUBLIC_API_BASE=https://oa.cioospacificlabs.ca/api
-    ports:
-      - "${FRONT_PORT:-3000}:3000"
-    volumes: []
-    environment:
-      - NUXT_PUBLIC_API_BASE=https://oa.cioospacificlabs.ca/api
-    depends_on:
-      - api
-    env_file:
-      - .env.prod
-    command: ${FRONTEND_COMMAND:-npm run start}
-    restart: unless-stopped
-
   api:
     build: ./api
     ports:
@@ -27,11 +9,11 @@ services:
       # - ./bathymetry_images:/app/bathymetry_images
       # - ./trajectory_maps:/app/trajectory_maps
     environment:
-      - DB_HOST=db
+      - DB_HOST=${DB_HOST:-db}
+      - DB_PORT=5432 # default Postgres port inside the Docker network
       - DB_NAME=oa
       - DB_USER=postgres
       - DB_PASSWORD=postgres
-      - HDF5_USE_FILE_LOCKING=FALSE
     depends_on:
       - db
     restart: unless-stopped
@@ -56,10 +38,10 @@ services:
 
   process:
     build: ./process
-    # profiles: ["tools"]
+    profiles: ["tools"]
     environment:
-      - PGHOST=db
-      - PGPORT=5432  # default Postgres port inside the Docker network
+      - PGHOST=${DB_HOST:-db}
+      - PGPORT=5432 # default Postgres port inside the Docker network
       - PGDATABASE=oa
       - PGUSER=postgres
       - PGPASSWORD=postgres
@@ -69,6 +51,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   oa_db:

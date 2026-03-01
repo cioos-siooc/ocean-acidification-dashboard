@@ -401,23 +401,17 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
         )
         interp_engine = _get_interpolator(method, pts_src_full, tgt_pts, grid_sig)
 
-        # Interpolate mask using the same method as data to ensure boundaries match
+        # Interpolate mask using nearest-neighbor to avoid blurry boundaries that create black borders
+        # (even though data is interpolated with linear/cubic, the mask must be discrete to maintain crisp alpha edges)
         mask_src_f = src_valid_flat.astype(float)
         try:
-            if interp_engine is not None:
-                mask_tgt_flat = interp_engine.apply(mask_src_f)
-            else:
-                mask_tgt_flat = griddata(pts_src_full, mask_src_f, tgt_pts, method=method, fill_value=0.0)
-
+            # Always use 'nearest' for mask to create hard alpha boundaries, not soft gradients
+            mask_tgt_flat = griddata(pts_src_full, mask_src_f, tgt_pts, method='nearest', fill_value=0.0)
             mask_tgt_flat = np.nan_to_num(mask_tgt_flat, nan=0.0)
             mask_tgt_bool = (mask_tgt_flat.reshape(xx_merc.shape) >= 0.5)
         except Exception:
-            # fallback to nearest if the chosen method fails
-            try:
-                mask_tgt_flat = griddata(pts_src_full, mask_src_f, tgt_pts, method='nearest', fill_value=0.0)
-                mask_tgt_bool = (mask_tgt_flat.reshape(xx_merc.shape) >= 0.5)
-            except Exception:
-                mask_tgt_bool = np.zeros_like(xx_merc, dtype=bool)
+            # Very unlikely to fail with nearest
+            mask_tgt_bool = np.zeros_like(xx_merc, dtype=bool)
 
         # Interpolate data using only valid source points (and coords that are finite)
         vals_full = tslice_vals.ravel()[coord_valid].astype(float)
@@ -456,8 +450,8 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
         vmin_local, vmax_local = vmin, vmax
 
     gray = scale_to_uint8(interp, vmin_local, vmax_local, clip_percentile=clip)
-    # alpha is derived from the interpolated source mask (transparent where data is invalid)
-    alpha = np.where(mask_tgt_bool, 255, 0).astype(np.uint8)
+    # Derive alpha directly from interpolated data to avoid boundary artifacts
+    alpha = np.where(np.isnan(interp) | (interp == 0), 0, 255).astype(np.uint8)
 
     # Apply erddap-provided absolute min/max caps to the interpolated values before packing to RGB.
     # Leave NaNs untouched (they will remain transparent in alpha).

@@ -1,12 +1,23 @@
 <template>
-    <div class="d-flex flex-column h-screen overflow-hidden">
+    <v-main>
+        <!-- <div class="d-flex flex-column h-screen overflow-hidden"> -->
         <!-- Top: Map -->
-        <div ref="mapContainer" class="flex-grow-1 map-container">
+        <div ref="mapContainer" class="flex-grow-1"
+            :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }">
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
             <ColorBarSelect v-if="mainStore.variables.length" :variables="mainStore.variables"
                 v-model="selectedVarLocal" :stops="selectedColormap?.stops" :colormaps="Object.values(colormaps)"
-                v-model:colormap="selectedColormapName" v-model:min="selectedMin" v-model:max="selectedMax" />
+                v-model:colormap="selectedColormapName" v-model:min="selectedMin" v-model:max="selectedMax"
+                class="selector" />
             <DepthSlider />
+            <div class="map-drawer-toggle" :style="{ right: drawerOpen ? '312px' : '12px' }">
+                <v-btn size="24px" color="warning" class="ma-0 pa-0" @click="drawerOpen = !drawerOpen"
+                    title="Vertical Profile">
+                    <v-icon size="20px">mdi-chart-line</v-icon>
+                </v-btn>
+            </div>
+
+            <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
         </div>
 
         <!-- Bottom: Global Chart Footer -->
@@ -43,19 +54,6 @@
                             color="primary" @click="dialogOpen = true">
                             <v-icon size="14px">mdi-chart-line</v-icon>
                         </v-btn>
-                        <v-btn :title="climatePlotsEnabled ? 'Disable climate plotting' : 'Enable climate plotting'"
-                            flat size="20px" icon :color="climatePlotsEnabled ? 'primary' : 'grey'"
-                            @click="climatePlotsEnabled = !climatePlotsEnabled">
-                            <v-icon size="14px">{{ climatePlotsEnabled ? 'mdi-chart-areaspline' : 'mdi-chart-areaspline'
-                                }}</v-icon>
-                        </v-btn>
-
-                        <v-btn :title="sensorPlotsEnabled ? 'Disable sensor plotting' : 'Enable sensor plotting'" flat
-                            size="20px" icon :color="sensorPlotsEnabled ? 'primary' : 'grey'"
-                            @click="sensorPlotsEnabled = !sensorPlotsEnabled">
-                            <v-icon size="14px">{{ sensorPlotsEnabled ? 'mdi-thermometer' : 'mdi-thermometer-off'
-                                }}</v-icon>
-                        </v-btn>
                     </div>
                 </v-row>
             </v-container>
@@ -68,7 +66,8 @@
         <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
             <div ref="globalChartContainer" class="w-100 h-100"></div>
         </div> -->
-    </div>
+        <!-- </div> -->
+    </v-main>
 </template>
 
 <script setup lang="ts">
@@ -82,6 +81,7 @@ import moment, { min } from 'moment-timezone'
 import DepthSlider from '../components/depth-slider.vue'
 import ColorBarSelect from '../components/ColorBarSelect.vue'
 import TimeControls from '../components/TimeControls.vue'
+import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 
 import { computeNightRanges } from '../../composables/useSunCalc'
@@ -126,6 +126,7 @@ let map: mapboxgl.Map | null = null;
 let globalChart: echarts.ECharts | null = null;
 let model_timestamps: number[] = []; // Global cache for chart timestamps to support "click anywhere"
 const meta = ref<any>(null);
+const drawerOpen = ref(false);
 // remember last clicked point (lat/lon) so chart can be refreshed when var/depth changes
 const lastClicked = ref<{ lat: number; lon: number } | null>(null);
 const footerHeight = '300px';
@@ -136,11 +137,6 @@ const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, 
 const mouseCoords = ref<{ lng: number | null, lat: number | null }>({ lng: null, lat: null });
 
 const sensorData = ref<{ time: string, value: number }[]>([])
-
-// Toggle to control whether sensor telemetry is fetched and plotted (map markers remain visible)
-const sensorPlotsEnabled = ref(false)
-// Toggle to control whether climate statistics are fetched and plotted (IQR/mean/min-max)
-const climatePlotsEnabled = ref(true)
 
 // Dialog for detailed timeseries
 const dialogOpen = ref(false);
@@ -538,49 +534,46 @@ function initClick(lat: number, lon: number) {
 
 
 async function getTimeseriesPromises(lat: number, lon: number) {
-    // Build promises dynamically so climate and sensor timeseries can be skipped when disabled
-    const promisesArr: Promise<any>[] = [
-        getTimeseriesFromApi(lat, lon)
-    ];
+    // Fetch each data source independently so failures don't block others
+    let modelResp = null;
+    let climResp = null;
+    let sensorResp = null;
 
-    // climate data (IQR/mean/min-max)
-    if (climatePlotsEnabled.value) {
-        promisesArr.push(getClimateTimeseries(lat, lon));
-    } else {
-        promisesArr.push(Promise.resolve(null));
+    try {
+        modelResp = await getTimeseriesFromApi(lat, lon);
+    } catch (err: any) {
+        if (err?.code !== 'ERR_CANCELED') {
+            console.error('Failed to fetch model timeseries:', err);
+        }
     }
 
-    // sensor data
-    if (sensorPlotsEnabled.value && clicked_sensor_id.value) {
-        promisesArr.push(getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var));
-    } else {
-        promisesArr.push(Promise.resolve(null));
+    try {
+        climResp = await getClimateTimeseries(lat, lon);
+    } catch (err: any) {
+        if (err?.code !== 'ERR_CANCELED') {
+            console.warn('Failed to fetch climate data (chart will show model only):', err);
+        }
     }
 
-    const d = await Promise.all(promisesArr);
-    const model = d[0].data
-    const clim = d[1]?.data || null;
-    const sensor = d[2]?.data || null;
+    if (clicked_sensor_id.value) {
+        try {
+            sensorResp = await getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var);
+        } catch (err: any) {
+            if (err?.code !== 'ERR_CANCELED') {
+                console.warn('Failed to fetch sensor data:', err);
+            }
+        }
+    }
 
-    plotTimeseries(model, clim, sensor);
-    clicked_sensor_id.value = null;
+    const model = modelResp?.data || null;
+    const clim = climResp?.data || null;
+    const sensor = sensorResp?.data || null;
+
+    // Plot whatever data we successfully retrieved
+    if (model) {
+        plotTimeseries(model, clim, sensor);
+    }
 }
-
-// When toggling plotting options, refresh existing chart if a point is selected so the
-// change is visible immediately (does not affect map markers)
-watch(sensorPlotsEnabled, (nv) => {
-    if (!lastClicked.value) return;
-    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-    tsRequestController = new AbortController();
-    getTimeseriesPromises(lastClicked.value.lat, lastClicked.value.lon).finally(() => { tsRequestController = null; });
-});
-
-watch(climatePlotsEnabled, (nv) => {
-    if (!lastClicked.value) return;
-    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-    tsRequestController = new AbortController();
-    getTimeseriesPromises(lastClicked.value.lat, lastClicked.value.lon).finally(() => { tsRequestController = null; });
-});
 
 async function getTimeseriesFromApi(lat: number, lon: number) {
     return axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
@@ -594,23 +587,12 @@ async function getTimeseriesFromApi(lat: number, lon: number) {
 async function getClimateTimeseries(lat: number, lon: number) {
     const now = moment().utc();
     return axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
+        var: mainStore.selected_variable.var,
         lat,
         lon,
-        days: DFN
+        depth: formatDepth(mainStore.selected_variable.depth),
+        dt: now.format('YYYY-MM-DDTHHmmss'),
     });
-
-    // try {
-    //     const now = moment().utc();
-    //     const response = await axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
-    //         lat,
-    //         lon,
-    //         dt: now.format('YYYY-MM-DDTHHmmss')
-    //     });
-    //     const date = JSON.parse(response.data)
-    // } catch (error) {
-    //     console.error("Error fetching climate data:", error);
-    // } finally {
-    // }
 };
 
 async function addSensors() {
@@ -650,6 +632,7 @@ async function addSensors() {
         const stations = useStationsInteraction(() => map, async (sensor_id: number) => {
             console.log('Station clicked, sensor_id:', sensor_id);
             clicked_sensor_id.value = sensor_id;
+            console.log(sensors, sensor_id, sensors.find((s: any) => s.id === sensor_id));
             // show marker
             // try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
             // const el = document.createElement('div'); el.style.width = '12px'; el.style.height = '12px'; el.style.borderRadius = '50%'; el.style.background = '#ff5722'; el.style.border = '2px solid white';
@@ -828,6 +811,15 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     const onMapClick = async (evt: any) => {
         const { lng, lat } = evt.lngLat;
         console.log('Map clicked at:', lng, lat);
+
+        // Check if click landed on a sensor feature
+        const features = map.queryRenderedFeatures(evt.point, { layers: ['stations-circles'] });
+
+        // Only clear sensor ID if we clicked empty map (not on a feature)
+        if (features.length === 0) {
+            clicked_sensor_id.value = null;
+        }
+
         const overlay = (map as any).__activePngOverlay;
         if (!overlay) return;
         const [lon0, lat0, lon1, lat1] = overlay.bounds;
@@ -1034,10 +1026,6 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
         },
         toolbox: {
             feature: {
-                dataZoom: {
-                    yAxisIndex: 'none'
-                },
-                dataView: { readOnly: true },
                 saveAsImage: {}
             }
         },
@@ -1069,7 +1057,7 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     };
 
     // Determine whether we have climate data to plot
-    const hasClimate = Array.isArray(climateData) && climateData.length > 0 && climatePlotsEnabled.value;
+    const hasClimate = Array.isArray(climateData) && climateData.length > 0;
 
     // Day/Night base series (always present)
     const dayNightSeries: any = {
@@ -1234,8 +1222,13 @@ let zrClickHandler: ((evt: any) => void) | null = null;
 </script>
 
 <style scoped>
-.map-container {
-    position: relative;
+.map-drawer-toggle {
+    position: absolute;
+    top: 12px;
+    z-index: 2;
+    background: rgba(255, 255, 255, 0.85);
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 </style>
 
@@ -1262,6 +1255,11 @@ let zrClickHandler: ((evt: any) => void) | null = null;
 @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
 
 .h-screen {
-    height: 100vh;
+    height: calc(100vh - 48px);
+}
+
+.selector {
+    top: 16px;
+    left: 16px;
 }
 </style>

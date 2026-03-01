@@ -16,6 +16,7 @@ from typing import Optional, Dict, Any
 import numpy as np
 import xarray as xr
 import pandas as pd
+from nc_reader import open_nc_uncached, close_nc
 
 # Import helpers from extractTimeseries
 from extractTimeseries import (
@@ -124,7 +125,11 @@ def get_monthly_climatology_at_coord(
     if not os.path.isfile(stats_path):
         raise FileNotFoundError(f"Monthly climatology file not found: {stats_path}")
 
-    with xr.open_dataset(stats_path) as ds:
+    ds = open_nc_uncached(stats_path)
+    if ds is None:
+        raise FileNotFoundError(f"Could not open monthly climatology file: {stats_path}")
+
+    try:
         # Stats dataset expected to have variables: mean, q1, q3, min, max and coordinate 'month'
         required = ["mean", "q1", "q3", "min", "max"]
         for r in required:
@@ -185,6 +190,8 @@ def get_monthly_climatology_at_coord(
 
         # Convert virtual_time to ISO strings if present
         vt_list = _to_iso_list(virtual_time) if virtual_time is not None else None
+    finally:
+        close_nc(ds)
 
     climatology = {
         'month': months.tolist() if hasattr(months, 'tolist') else list(months),

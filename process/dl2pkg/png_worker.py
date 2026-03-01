@@ -3,6 +3,8 @@ import logging
 import os
 import traceback
 from typing import Optional
+import numpy as np
+import xarray as xr
 
 from .db import get_db_conn
 import nc2tile
@@ -148,6 +150,41 @@ def get_variable_depths_image(conn, variable_id: int) -> Optional[list]:
                 pass
     raise RuntimeError(f"Invalid depths_image for variable_id={variable_id}")
 
+
+def get_depth_indices_from_values(nc_path: str, desired_depths: list) -> list:
+    """Convert depth values to their indices in the NetCDF file's depth coordinate.
+    
+    Args:
+        nc_path: Path to the NetCDF file
+        desired_depths: List of depth values to find indices for
+    
+    Returns:
+        List of depth indices corresponding to the desired depth values
+    """
+    try:
+        with xr.open_dataset(nc_path) as ds:
+            # Try to find depth coordinate (common names: depth, z, level, etc.)
+            depth_coord = None
+            for coord_name in ['depth', 'z', 'level', 'altitude']:
+                if coord_name in ds.coords:
+                    depth_coord = ds.coords[coord_name].values
+                    break
+            
+            if depth_coord is None:
+                raise ValueError(f"Could not find depth coordinate in {nc_path}")
+            
+            indices = []
+            for desired_depth in desired_depths:
+                # Find the index of the closest depth value
+                idx = int(np.argmin(np.abs(depth_coord - desired_depth)))
+                indices.append(idx)
+            
+            logger.info("Mapped depths %s to indices %s", desired_depths, indices)
+            return indices
+    except Exception as e:
+        logger.error("Error converting depth values to indices: %s", e)
+        raise
+
 def process_image(conn, row, workers: int | None = None):
     row_id = row['row_id']
     # Prefer the canonical path column `nc_path` in the new table, but accept legacy keys
@@ -178,8 +215,10 @@ def process_image(conn, row, workers: int | None = None):
             cur.execute("UPDATE nc_jobs SET status='imaging', last_attempt=NOW() WHERE id=%s", (row_id,))
         conn.commit()
         precision = get_variable_precision(conn, variable_id)
-        # depths_image = get_variable_depths_image(conn, variable_id)
-        depth_indices = [0,5,20,24,26,30,34,38]
+        
+        # Get depths from database and convert to indices
+        desired_depths = get_variable_depths_image(conn, variable_id)
+        depth_indices = get_depth_indices_from_values(src, desired_depths)
 
         # call nc2tile programmatically, optionally passing --workers
         args = ["--data", src, "--vars", variable, "--precision", str(precision), "--depth-indices", ','.join(str(i) for i in depth_indices)]
@@ -196,79 +235,8 @@ def process_image(conn, row, workers: int | None = None):
                 raise
         with conn.cursor() as cur:
             cur.execute("UPDATE nc_jobs SET status='success_image' WHERE id=%s", (row_id,))
+            
         conn.commit()
-
-        # If nc2tile returned processed datetimes, update erddap_variables.available_datetimes (timestamptz[] preferred)
-        # try:
-        #     from datetime import datetime, timezone
-        #     if processed_times:
-        #         def to_aware(x):
-        #             # normalize strings or datetimes to timezone-aware UTC datetimes
-        #             if isinstance(x, str):
-        #                 s = x.replace('Z', '+00:00') if x.endswith('Z') else x
-        #                 try:
-        #                     d = datetime.fromisoformat(s)
-        #                 except Exception:
-        #                     return None
-        #             elif isinstance(x, datetime):
-        #                 d = x
-        #             else:
-        #                 return None
-        #             if d.tzinfo is None:
-        #                 # assume UTC for naive datetimes
-        #                 d = d.replace(tzinfo=timezone.utc)
-        #             else:
-        #                 d = d.astimezone(timezone.utc)
-        #             return d
-
-        #         parsed = [to_aware(t) for t in processed_times]
-        #         parsed = [p for p in parsed if p is not None]
-
-        #         with conn.cursor() as cur:
-        #             # Table may have per-dataset variable rows; match by dataset_id and variable
-        #             cur.execute("SELECT available_datetimes FROM erddap_variables WHERE dataset_id=%s AND variable=%s FOR UPDATE", (dataset_id, variable))
-        #             r = cur.fetchone()
-        #             existing = r[0] if r else None
-        #             if existing is None:
-        #                 arr = parsed
-        #             else:
-        #                 try:
-        #                     existing_list = list(existing)
-        #                 except Exception:
-        #                     existing_list = []
-        #                 existing_norm = [to_aware(e) for e in existing_list]
-        #                 existing_norm = [e for e in existing_norm if e is not None]
-        #                 seen = {e.isoformat(): e for e in existing_norm}
-        #                 for p in parsed:
-        #                     if p.isoformat() not in seen:
-        #                         seen[p.isoformat()] = p
-        #                 # sort by absolute time (UTC)
-        #                 arr = sorted(seen.values(), key=lambda d: d.timestamp())
-        #             cur.execute("UPDATE erddap_variables SET available_datetimes=%s WHERE dataset_id=%s AND variable=%s", (arr, dataset_id, variable,))
-        #         conn.commit()
-        #     else:
-        #         # fallback behaviour: append the row start_time if no list returned
-        #         iso_dt = row['start_time']
-        #         if iso_dt and not isinstance(iso_dt, (str, bytes)):
-        #             with conn.cursor() as cur:
-        #                 cur.execute("SELECT available_datetimes FROM erddap_variables WHERE variable=%s FOR UPDATE", (variable,))
-        #                 r = cur.fetchone()
-        #                 existing = r[0] if r else None
-        #                 if existing is None:
-        #                     arr = [iso_dt]
-        #                 else:
-        #                     try:
-        #                         existing_list = list(existing)
-        #                     except Exception:
-        #                         existing_list = []
-        #                     seen = {e.isoformat() if hasattr(e, 'isoformat') else str(e): e for e in existing_list}
-        #                     if iso_dt.isoformat() not in seen:
-        #                         seen[iso_dt.isoformat()] = iso_dt
-        #                     arr = sorted(seen.values())
-        #                 cur.execute("UPDATE erddap_variables SET available_datetimes=%s WHERE variable=%s", (arr, variable,))
-        #             conn.commit()
-        # except Exception:
-        #     logger.exception("Failed to update erddap_variables.available_datetimes")
 
         logger.info("nc2tile processed %s", src)
         return True

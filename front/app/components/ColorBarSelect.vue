@@ -100,7 +100,7 @@ const props = defineProps<{
 }>();
 
 const models = [
-  { var: 'SalishSeaCast', label: 'Salish Sea Cast' }
+  { var: 'SalishSeaCast', label: 'SalishSeaCast' }
 ];
 const selectedModel = ref(models[0].var);
 const showSettings = ref(false);
@@ -240,8 +240,6 @@ const title = computed(() => `${label} ${currentMin.value} → ${currentMax.valu
 <style scoped>
 .colorbar {
   position: absolute;
-  left: 16px;
-  top: 16px;
   width: 220px;
   padding: 6px 8px;
   background: rgba(255, 255, 255, 0.9);
