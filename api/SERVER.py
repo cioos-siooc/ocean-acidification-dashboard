@@ -417,15 +417,15 @@ async def fn_get_profile(request: profileRequest):
 #######################################
 
 class evalRequest(BaseModel):
-    sensor_id: int
+    sensor: str
     variable: str
     model: str
 
 @app.post("/getEval")
 async def fn_get_eval(request: evalRequest):
-    logger.info(f"START getEval: sensor_id={request.sensor_id}, variable={request.variable}, model={request.model}")
+    logger.info(f"START getEval: sensor={request.sensor}, variable={request.variable}, model={request.model}")
     
-    eval_nc_path = "/opt/data/eval/Baynes_5m.nc"
+    eval_nc_path = f"/opt/data/eval/{request.sensor}.nc"
     
     # Validate model parameter
     valid_models = ["SSC", "LiveOcean"]
@@ -438,8 +438,7 @@ async def fn_get_eval(request: evalRequest):
             extract_eval_data,
             nc_path=eval_nc_path,
             variable=request.variable,
-            model=model,
-            sensor_id=request.sensor_id
+            model=model
         )
         
         logger.info(f"FINISH getEval: {request.variable} - returned {len(result['time'])} timesteps for model={model}")

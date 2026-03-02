@@ -22,8 +22,7 @@ logger = logging.getLogger(__name__)
 def extract_eval_data(
     nc_path: str,
     variable: str,
-    model: str,
-    sensor_id: Optional[int] = None
+    model: str
 ) -> Dict[str, Any]:
     """
     Extract evaluation data from a netCDF file.

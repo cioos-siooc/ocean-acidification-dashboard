@@ -5,7 +5,7 @@
             <v-card elevation="0" class="ma-4 pa-4">
                 <v-card-text>
                     <v-row align="center" class="mb-4">
-                        <v-select v-model="selectedSensorId" :items="sensorIds" label="Select Sensor ID"
+                        <v-select v-model="selectedSensor" :items="sensors" label="Select Sensor ID"
                             density="compact" variant="outlined" hide-details @update:modelValue="onSelectionChange" />
                     </v-row>
                     <v-row align="center" class="mb-4">
@@ -82,10 +82,12 @@ const apiBaseUrl = useRuntimeConfig().public.apiBaseUrl || 'http://localhost:300
 
 // Data & State
 const showDrawer = ref(true)
-const selectedSensorId = ref<number | null>(1)
+const selectedSensor = ref<string | null>('Baynes_20m')
 const selectedVariable = ref<string>('temperature')
 const selectedModel = ref<string>('SSC')
-const sensorIds = ref<number[]>([])
+const sensors = ref<string[]>([
+    "Baynes_20m", "Baynes_5m", "Central_Strait_Georgia", "Quadra"
+])
 const variables = ref<string[]>(['temperature', 'salinity', 'dissolved_oxygen', 'pCO2'])
 const models = ref<{ value: string; title: string }[]>(
     [{ value: 'SSC', title: 'SalishSeaCast' }, { value: 'LiveOcean', title: 'Live Ocean' }]
@@ -164,7 +166,7 @@ function dateStringToTimestamp(dateString: string): number | null {
 const startTimeFromDate = computed(() => dateStringToTimestamp(fromDate.value))
 const endTimeFromDate = computed(() => dateStringToTimestamp(toDate.value))
 async function fetchEvalData() {
-    if (!selectedSensorId.value || !selectedVariable.value) {
+    if (!selectedSensor.value || !selectedVariable.value) {
         error.value = 'Please select both sensor ID and variable'
         return
     }
@@ -174,7 +176,7 @@ async function fetchEvalData() {
 
     try {
         const response = await axios.post(`${apiBaseUrl}/getEval`, {
-            sensor_id: selectedSensorId.value,
+            sensor: selectedSensor.value,
             variable: selectedVariable.value,
             model: selectedModel.value
         })
@@ -246,8 +248,8 @@ function onTimeseriesZoom(event: { fromDate: string; toDate: string }) {
  */
 onMounted(async () => {
     try {
-        const response = await axios.get(`${apiBaseUrl}/sensors`)
-        sensorIds.value = response.data.map((s: any) => s.id)
+        // const response = await axios.get(`${apiBaseUrl}/sensors`)
+        // sensorIds.value = response.data.map((s: any) => s.id)
     } catch (err) {
         console.warn('Failed to fetch sensor IDs')
     }
