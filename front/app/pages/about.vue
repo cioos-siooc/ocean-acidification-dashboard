@@ -181,8 +181,8 @@
                     Contact Us
                 </v-card-title>
                 <v-card-text class="pa-6">
-                    <p>Please contact (<a href="mailto:yayla.sezginer@cioospacific.ca">Yayla Sezginer</a>) and (<a
-                            href="mailto:taimazb@oceannetworks.ca">Taimaz Bahadory</a>) with user experience
+                    <p>Please contact <a href="mailto:yayla.sezginer@cioospacific.ca">Yayla Sezginer</a> and <a
+                            href="mailto:taimazb@oceannetworks.ca">Taimaz Bahadory</a> with user experience
                         suggestions, general feedback, or datasets you would like to see incorporated into CHOKE.</p>
 
                 </v-card-text>
