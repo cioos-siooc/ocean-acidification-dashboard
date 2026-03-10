@@ -22,9 +22,9 @@ services:
     restart: always
     environment:
       DATABASE_URL: postgresql://umami:umami_pass@umami-db:5432/umami
-      APP_SECRET: $(openssl rand -hex 32) # You should replace this with a static random string
+      APP_SECRET: ${UMAMI_APP_SECRET:-please-change-this-to-a-random-32-char-string}
     ports:
-      - "3001:3000" # Maps Umami dashboard to port 3001
+      - "9013:3000"
     depends_on:
       umami-db:
         condition: service_healthy
