@@ -10,7 +10,39 @@ services:
     volumes: []
     environment:
       - NUXT_PUBLIC_API_BASE=${NUXT_PUBLIC_API_BASE:-https://oa.cioospacificlabs.ca/api}
+    depends_on:
+      - umami
     env_file:
       - .env.prod
     command: ${FRONTEND_COMMAND:-npm run start}
     restart: unless-stopped
+
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://umami:umami_pass@umami-db:5432/umami
+      APP_SECRET: $(openssl rand -hex 32) # You should replace this with a static random string
+    ports:
+      - "3001:3000" # Maps Umami dashboard to port 3001
+    depends_on:
+      umami-db:
+        condition: service_healthy
+
+  umami-db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: umami
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: umami_pass
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - umami-db-data:/var/lib/postgresql/data
+
+volumes:
+  umami-db-data:
