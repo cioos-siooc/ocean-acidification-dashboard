@@ -23,6 +23,7 @@ services:
     environment:
       DATABASE_URL: postgresql://umami:umami_pass@umami-db:5432/umami
       APP_SECRET: ${UMAMI_APP_SECRET:-please-change-this-to-a-random-32-char-string}
+      IGNORE_IP: ${UMAMI_IGNORE_IP:-}
     ports:
       - "9013:3000"
     depends_on:

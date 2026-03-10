@@ -1,5 +1,6 @@
 <template>
     <v-main>
+        <BetaDisclaimerDialog />
         <!-- <div class="d-flex flex-column h-screen overflow-hidden"> -->
         <!-- Top: Map -->
         <div ref="mapContainer" class="flex-grow-1"
@@ -82,6 +83,7 @@ import DepthSlider from '../components/depth-slider.vue'
 import ColorBarSelect from '../components/ColorBarSelect.vue'
 import TimeControls from '../components/TimeControls.vue'
 import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
+import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 
 import { computeNightRanges } from '../../composables/useSunCalc'
