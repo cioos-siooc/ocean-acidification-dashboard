@@ -2,17 +2,103 @@ services:
   front:
     build:
       target: development
+      context: ./front
+      args:
+        - NUXT_PUBLIC_API_BASE=http://localhost:9001
+    ports:
+      - "${FRONT_PORT:-3000}:3000"
     volumes:
       - ./front:/app
     environment:
       - NUXT_PUBLIC_API_BASE=http://localhost:9001
+    depends_on:
+      - api
+      - umami
     env_file:
       - .env.dev
     command: npm run dev
+    restart: unless-stopped
+
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://umami:umami_pass@umami-db:5432/umami
+      APP_SECRET: $(openssl rand -hex 32) # You should replace this with a static random string
+    ports:
+      - "3001:3000" # Maps Umami dashboard to port 3001
+    depends_on:
+      umami-db:
+        condition: service_healthy
+
+  # Add Umami Database
+  umami-db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: umami
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: umami_pass
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - umami-db-data:/var/lib/postgresql/data
+  
   api:
-    command: uvicorn SERVER:app --reload --host 0.0.0.0 --port 4000
+    build: ./api
     volumes:
       - ./api:/app
+      - ./data:/opt/data
+    ports:
+      - "${API_PORT:-4000}:4000"
+    environment:
+      - DB_HOST=db
+      - DB_NAME=oa
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - HDF5_USE_FILE_LOCKING=FALSE
+    depends_on:
+      - db
+    command: uvicorn SERVER:app --reload --host 0.0.0.0 --port 4000
+    restart: unless-stopped
+
+  db:
+    image: postgis/postgis:16-master
+    environment:
+      - POSTGRES_DB=oa
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - oa_db:/var/lib/postgresql/data
+      # - ./DB:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   process:
+    build: ./process
+    # profiles: ["tools"]
+    environment:
+      - PGHOST=db
+      - PGPORT=5432  # default Postgres port inside the Docker network
+      - PGDATABASE=oa
+      - PGUSER=postgres
+      - PGPASSWORD=postgres
     volumes:
       - ./process:/app
+      - ./data:/opt/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  oa_db:
+  umami-db-data:
