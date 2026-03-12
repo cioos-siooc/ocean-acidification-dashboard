@@ -223,7 +223,7 @@ def download_nc(conn, row, erddap_base):
         if comp and comp.get('apply_to_downloads'):
             try:
                 # Read temp file, write compressed to final location (single disk op)
-                fn = f"{variable}_{start_time.strftime('%Y-%m-%d')}.nc"
+                fn = f"{variable}_{start_time.strftime('%Y%m%d')}.nc"
                 final_path = os.path.join(out_dir, fn)
                 _write_compressed_netcdf(tmpfn, final_path, comp)
                 os.remove(tmpfn)
@@ -245,7 +245,7 @@ def download_nc(conn, row, erddap_base):
                 raise
         else:
             # No compression: just rename temp file to final
-            fn = f"{variable}_{start_time.strftime('%Y-%m-%d')}.nc"
+            fn = f"{variable}_{start_time.strftime('%Y%m%d')}.nc"
             final_path = os.path.join(out_dir, fn)
             shutil.move(tmpfn, final_path)
 
