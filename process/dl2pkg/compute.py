@@ -34,17 +34,35 @@ def find_pending_compute(conn, limit=10):
 
 
 def find_compute_groups(conn, limit=10):
-    """Return groups (start_time, end_time, ids_array) where all 5 variables for any unique start_time/end_time are success_download."""
+    """Return (start_time, end_time) tuples where:
+    1. All 5 required download variables are success_download or success_compute
+    2. At least one computed variable row has status='pending_compute'
+    
+    This ensures we only compute when there's work to do, not re-computing already completed groups.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT j.start_time, j.end_time
-            FROM nc_jobs j JOIN erddap_variables v ON v.id = j.variable_id
-            WHERE j.status='success_download'
-            GROUP BY j.start_time, j.end_time
-            HAVING COUNT(DISTINCT v.variable) = 5
+            SELECT DISTINCT j.start_time, j.end_time
+            FROM nc_jobs j
+            WHERE (j.status='pending_compute')
+            AND EXISTS (
+                -- Check that all 5 required download variables are either success_download or success_compute
+                SELECT 1 FROM nc_jobs j2
+                JOIN erddap_variables v ON j2.variable_id = v.id
+                WHERE j2.start_time = j.start_time
+                AND j2.end_time = j.end_time
+                AND v.type='download'
+                AND j2.status IN ('success_download', 'success_compute')
+                GROUP BY j2.start_time, j2.end_time
+                HAVING COUNT(DISTINCT v.variable) = (
+                    SELECT COUNT(*) FROM erddap_variables WHERE type='download'
+                )
+            )
             ORDER BY j.start_time
-        """
+            LIMIT %s
+            """,
+            (limit,),
         )
         return cur.fetchall()
 
