@@ -125,8 +125,8 @@ def compute_for_group(
         compute_vars = get_compute_variables(conn)
 
         for var_id, var_name in compute_vars:
-            # out_fname = dic_filename.replace("dissolved_inorganic_carbon", var_name)
-            out_fname = f"{var_name}_{start_time.strftime('%Y%m%dT%H%M')}_{end_time.strftime('%Y%m%dT%H%M')}.nc"
+            # Use consistent naming: {variable}_{date}.nc
+            out_fname = f"{var_name}_{start_time.strftime('%Y-%m-%d')}.nc"
             out_dir = os.path.join(
                 base_dir or os.getenv("DATA_DIR", "/opt/data/nc"), var_name
             )
