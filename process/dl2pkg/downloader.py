@@ -349,25 +349,41 @@ def maybe_create_compute_rows(conn, dataset_id, start_time, end_time):
             if cnt == 0:
                 logger.debug("Missing dependent variable %s for dataset %s", v, dataset_id)
                 return False
-        # All dependencies present: create pending_compute row
-        # Ensure a 'compute' variable exists and use its id; attempt INSERT RETURNING id first so tests can mock it easily
-        cur.execute("INSERT INTO erddap_variables (dataset_id, variable, meta) VALUES (%s,%s,%s) ON CONFLICT (dataset_id, variable) DO NOTHING RETURNING id", (dataset_id, 'compute', Json({'generated': True})))
-        r = cur.fetchone()
-        if r:
-            compute_var_id = r[0]
-        else:
-            cur.execute("SELECT id FROM erddap_variables WHERE dataset_id=%s AND variable=%s", (dataset_id, 'compute'))
-            compute_var_id = cur.fetchone()[0]
-
-        cur.execute(
-            "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, attempts) VALUES (%s, %s, %s, %s, 0) ON CONFLICT DO NOTHING",
-            (dataset_id, compute_var_id, start_time, end_time),
-        )
-        # Explicitly set status in a second statement so tests can assert on the SQL text
-        cur.execute(
-            "UPDATE nc_jobs SET status='pending_compute' WHERE dataset_id=%s AND variable_id=%s AND start_time=%s AND end_time=%s",
-            (dataset_id, compute_var_id, start_time, end_time),
-        )
+        
+        # All dependencies present: create pending_compute rows for each computed variable
+        # Get all compute variables (ph_total, omega_arag, omega_cal)
+        cur.execute("SELECT id, variable FROM erddap_variables WHERE type='compute'")
+        compute_vars = cur.fetchall()
+        
+        if not compute_vars:
+            logger.warning("No compute variables defined in erddap_variables")
+            return False
+        
+        rows_created = 0
+        for compute_var_id, compute_var_name in compute_vars:
+            cur.execute(
+                "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, attempts) VALUES (%s, %s, %s, %s, 0) ON CONFLICT DO NOTHING RETURNING id",
+                (dataset_id, compute_var_id, start_time, end_time),
+            )
+            r = cur.fetchone()
+            if r:
+                new_id = r[0]
+                # Set status to pending_compute
+                cur.execute(
+                    "UPDATE nc_jobs SET status='pending_compute' WHERE id=%s",
+                    (new_id,)
+                )
+                rows_created += 1
+                logger.info("Created pending compute row id=%s for %s", new_id, compute_var_name)
+            else:
+                # Row already exists, just ensure it's pending_compute
+                cur.execute(
+                    "UPDATE nc_jobs SET status='pending_compute' WHERE dataset_id=%s AND variable_id=%s AND start_time=%s AND end_time=%s",
+                    (dataset_id, compute_var_id, start_time, end_time),
+                )
+    
     conn.commit()
-    logger.info("Created pending compute row id=%s for dataset=%s", new_id, dataset_id)
-    return True
+    if rows_created > 0:
+        logger.info("Created %d pending compute rows for dataset=%s", rows_created, dataset_id)
+        return True
+    return False
