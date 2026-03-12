@@ -173,7 +173,11 @@ def main(argv=None):
     if args.cmd == "check_download":
         # Check ERDDAP for available data from last_downloaded_at to today
         # Create download rows for any dates with available data
+        # Also create pending_compute rows once all required download variables are available
         from datetime import datetime, timedelta, timezone as tz
+        from .detector import create_compute_rows_for_group
+        
+        tracked_dates = {}  # Track (dataset_id, date_str) combos we process
         
         with conn.cursor() as cur:
             cur.execute("SELECT id, base_url FROM erddap_datasets ORDER BY id")
@@ -204,6 +208,7 @@ def main(argv=None):
                     date_to_check = args.date
                     if last_dl is None or last_dl.astimezone(tz.utc).date() <= datetime.strptime(args.date, '%Y-%m-%d').date():
                         create_rows_for_date(conn, ds_id, [variable], date_to_check, force=args.force)
+                        tracked_dates[(ds_id, date_to_check)] = True
                         logger.info("Created rows for dataset %s variable %s on %s", ds_id, variable, date_to_check)
                 else:
                     # Check from last_downloaded_at to today
@@ -216,12 +221,22 @@ def main(argv=None):
                     curr_date = start_date.date()
                     
                     while curr_date <= end_date.date():
+                        date_str = curr_date.strftime('%Y-%m-%d')
                         create_rows_for_date(
                             conn, ds_id, [variable],
-                            curr_date.strftime('%Y-%m-%d'),
+                            date_str,
                             force=args.force
                         )
+                        tracked_dates[(ds_id, date_str)] = True
                         curr_date += timedelta(days=1)
+        
+        # Now that all download rows are created, create compute rows for completed date ranges
+        for (ds_id, date_str) in tracked_dates.keys():
+            try:
+                create_compute_rows_for_group(conn, date_str)
+                logger.info("Created compute rows for %s", date_str)
+            except Exception:
+                logger.exception("Failed to create compute rows for dataset %s date %s", ds_id, date_str)
         
         logger.info("check_download: Scheduling complete")
         return

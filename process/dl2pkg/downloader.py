@@ -303,12 +303,7 @@ def do_download(conn, erddap_base, limit=5, variable=None):
                 cur.execute("SELECT pg_advisory_unlock(%s)", (row["id"],))
             if not success:
                 logger.warning("Download failed for pending id %s", row["id"])
-            else:
-                # If download succeeded, potentially create compute rows (backfill/compute triggers)
-                try:
-                    maybe_create_compute_rows(conn, row['dataset_id'], row['start_time'], row['end_time'])
-                except Exception:
-                    logger.exception('maybe_create_compute_rows failed')
+            # Note: compute rows are now created upfront by check_download, not as a side effect here
         except Exception as e:
             logger.exception("Error processing pending id %s", row["id"])
             with conn.cursor() as cur:
@@ -321,69 +316,4 @@ def do_download(conn, erddap_base, limit=5, variable=None):
                 cur.execute("SELECT pg_advisory_unlock(%s)", (row["id"],))
 
 
-def maybe_create_compute_rows(conn, dataset_id, start_time, end_time):
-    """Create pending compute rows for a dataset/time-range if all dependent variables exist.
 
-    Returns True if rows were created, False otherwise.
-    """
-    logger.debug(
-        "Checking whether to create compute rows for dataset=%s %s - %s",
-        dataset_id,
-        start_time,
-        end_time,
-    )
-    # Required variables for compute: dissolved inorganic carbon, total alkalinity, temperature, salinity
-    required = [
-        "dissolved_inorganic_carbon",
-        "total_alkalinity",
-        "temperature",
-        "salinity",
-    ]
-    with conn.cursor() as cur:
-        for v in required:
-            cur.execute(
-                "SELECT COUNT(*) FROM erddap_variables WHERE dataset_id = %s AND variable = %s",
-                (dataset_id, v),
-            )
-            cnt = cur.fetchone()[0]
-            if cnt == 0:
-                logger.debug("Missing dependent variable %s for dataset %s", v, dataset_id)
-                return False
-        
-        # All dependencies present: create pending_compute rows for each computed variable
-        # Get all compute variables (ph_total, omega_arag, omega_cal)
-        cur.execute("SELECT id, variable FROM erddap_variables WHERE type='compute'")
-        compute_vars = cur.fetchall()
-        
-        if not compute_vars:
-            logger.warning("No compute variables defined in erddap_variables")
-            return False
-        
-        rows_created = 0
-        for compute_var_id, compute_var_name in compute_vars:
-            cur.execute(
-                "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, attempts) VALUES (%s, %s, %s, %s, 0) ON CONFLICT DO NOTHING RETURNING id",
-                (dataset_id, compute_var_id, start_time, end_time),
-            )
-            r = cur.fetchone()
-            if r:
-                new_id = r[0]
-                # Set status to pending_compute
-                cur.execute(
-                    "UPDATE nc_jobs SET status='pending_compute' WHERE id=%s",
-                    (new_id,)
-                )
-                rows_created += 1
-                logger.info("Created pending compute row id=%s for %s", new_id, compute_var_name)
-            else:
-                # Row already exists, just ensure it's pending_compute
-                cur.execute(
-                    "UPDATE nc_jobs SET status='pending_compute' WHERE dataset_id=%s AND variable_id=%s AND start_time=%s AND end_time=%s",
-                    (dataset_id, compute_var_id, start_time, end_time),
-                )
-    
-    conn.commit()
-    if rows_created > 0:
-        logger.info("Created %d pending compute rows for dataset=%s", rows_created, dataset_id)
-        return True
-    return False
