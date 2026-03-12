@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  compute-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oa-compute-gpu
+    image: oa-compute-gpu:latest
+    
+    # GPU allocation - ROCm
+    environment:
+      - HIP_VISIBLE_DEVICES=0
+      - ROCM_HOME=/opt/rocm
+    
+    # Mount GPU devices
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    
+    # Capabilities for GPU access
+    cap_add:
+      - SYS_PTRACE
+    
+    # Volume mounts for data - mounts parent dir to access input/output subdirs
+    volumes:
+      - ../data:/opt/data:rw
+    
+    # Keep it running with interactive shell
+    stdin_open: true
+    tty: true
+    
+    # Working directory inside container
+    working_dir: /app
+    
+    # Example command (override with --entrypoint and args as needed)
+    # entrypoint: ["python"]
+    # command: ["calc_carbon_gpu.py", "--date", "20260105", "--base-dir", "/opt/data/nc"]

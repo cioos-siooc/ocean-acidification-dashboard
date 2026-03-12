@@ -121,9 +121,8 @@ def main(argv=None):
     parser.add_argument(
         "cmd",
         choices=[
-            "check",
+            "check_download",
             "download",
-            "run",
             "check_image",
             "image",
             "compute",
@@ -148,11 +147,6 @@ def main(argv=None):
     )
     parser.add_argument("--variable", help="Optional: restrict to a single variable")
     parser.add_argument("--force", action="store_true")
-    parser.add_argument(
-        "--requeue-failed",
-        action="store_true",
-        help="Reset failed download rows to pending before starting downloads",
-    )
     # optional worker args
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--liveocean-url", default=os.getenv("LIVE_OCEAN_URL", "https://s3.kopah.uw.edu/liveocean-share/f2026.02.04/layers.nc"))
@@ -176,156 +170,71 @@ def main(argv=None):
     conn = get_db_conn()
     ensure_schema(conn)
 
-    if args.cmd == "check":
-        # If a specific date is provided, create rows for that date for all variables
-        if args.date:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, base_url FROM erddap_datasets ORDER BY id")
-                rows = cur.fetchall()
-            for ds_id, _base_url in rows:
-                vars_list = []
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT variable FROM erddap_variables WHERE dataset_id=%s AND type='download'",
-                        (ds_id,),
-                    )
-                    vars_list = [r[0] for r in cur.fetchall()]
-                if vars_list:
-                    create_rows_for_date(
-                        conn,
-                        ds_id,
-                        vars_list,
-                        args.date,
-                        force=args.force,
-                    )
-            
-            create_compute_rows_for_group(conn, args.date)
-            return
-
-        # Default: iterate datasets in DB and process variables marked as 'download'
+    if args.cmd == "check_download":
+        # Check ERDDAP for available data from last_downloaded_at to today
+        # Create download rows for any dates with available data
+        from datetime import datetime, timedelta, timezone as tz
+        
         with conn.cursor() as cur:
             cur.execute("SELECT id, base_url FROM erddap_datasets ORDER BY id")
-            rows = cur.fetchall()
-        for ds_id, base_url in rows:
-            # variables filtered inside do_check if not provided
-            do_check(
-                conn,
-                args.erddap_base,
-                base_url,
-                init_days=args.init_days,
-            )
+            datasets = cur.fetchall()
+        
+        for ds_id, base_url in datasets:
+            # Get all variables for this dataset marked for download
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, variable FROM erddap_variables WHERE dataset_id=%s AND type='download'",
+                    (ds_id,),
+                )
+                variables = cur.fetchall()
+            
+            for var_id, variable in variables:
+                # Get last_downloaded date
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT last_downloaded_at FROM erddap_variables WHERE id=%s",
+                        (var_id,),
+                    )
+                    r = cur.fetchone()
+                    last_dl = r[0] if r else None
+                
+                # Determine date range for check
+                if args.date:
+                    # Check specific date only
+                    date_to_check = args.date
+                    if last_dl is None or last_dl.astimezone(tz.utc).date() <= datetime.strptime(args.date, '%Y-%m-%d').date():
+                        create_rows_for_date(conn, ds_id, [variable], date_to_check, force=args.force)
+                        logger.info("Created rows for dataset %s variable %s on %s", ds_id, variable, date_to_check)
+                else:
+                    # Check from last_downloaded_at to today
+                    if not last_dl:
+                        start_date = datetime.now(tz.utc) - timedelta(days=args.init_days)
+                    else:
+                        start_date = (last_dl + timedelta(hours=1)).astimezone(tz.utc)
+                    
+                    end_date = datetime.now(tz.utc)
+                    curr_date = start_date.date()
+                    
+                    while curr_date <= end_date.date():
+                        create_rows_for_date(
+                            conn, ds_id, [variable],
+                            curr_date.strftime('%Y-%m-%d'),
+                            force=args.force
+                        )
+                        curr_date += timedelta(days=1)
+        
+        logger.info("check_download: Scheduling complete")
         return
 
     if args.cmd == "download":
-        # If a specific date is provided, create rows for that date for all datasets
-        if args.date:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, base_url FROM erddap_datasets ORDER BY id")
-                rows = cur.fetchall()
-            for ds_id, _base_url in rows:
-                # get variables of type 'download' for this dataset
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT variable FROM erddap_variables WHERE dataset_id=%s AND type='download'",
-                        (ds_id,),
-                    )
-                    vars_list = [r[0] for r in cur.fetchall()]
-                if args.variable:
-                    vars_list = [args.variable]
-                if vars_list:
-                    create_rows_for_date(
-                        conn,
-                        ds_id,
-                        vars_list,
-                        args.date,
-                        force=args.force,
-                    )
-            
-            create_compute_rows_for_group(conn, args.date)
-            
-            if args.requeue_failed:
-                from .downloader import requeue_failed
-
-                requeue_failed(
-                    conn,
-                    dataset=None,
-                    date=args.date,
-                    variable=args.variable,
-                )
-            do_download(conn, args.erddap_base, limit=args.limit)
-            return
-
-        # Default: build rows for date or run downloads for all datasets
-        if args.requeue_failed:
-            from .downloader import requeue_failed
-
-            requeue_failed(
-                conn,
-                dataset=None,
-                date=args.date,
-                variable=args.variable,
-            )
-        do_download(conn, args.erddap_base, limit=args.limit)
-        return
-
-    if args.cmd == "run":
-        # If a specific date is provided, create rows for that date for all datasets and run downloads
-        if args.date:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, base_url FROM erddap_datasets ORDER BY id")
-                rows = cur.fetchall()
-            for ds_id, _base_url in rows:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT variable FROM erddap_variables WHERE dataset_id=%s AND type='download'",
-                        (ds_id,),
-                    )
-                    vars_list = [r[0] for r in cur.fetchall()]
-                if args.variable:
-                    vars_list = [args.variable]
-                if vars_list:
-                    create_rows_for_date(
-                        conn,
-                        ds_id,
-                        vars_list,
-                        args.date,
-                        force=args.force,
-                    )
-            # forward --requeue-failed to download
-            if args.requeue_failed:
-                from .downloader import requeue_failed
-
-                requeue_failed(
-                    conn,
-                    dataset=None,
-                    date=args.date,
-                    variable=args.variable,
-                )
-            do_download(conn, args.erddap_base, limit=args.limit)
-            return
-
-        # Default: do check and download for all datasets/variables type='download'
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, base_url FROM erddap_datasets ORDER BY id")
-            rows = cur.fetchall()
-        for ds_id, base_url in rows:
-            # do_check will query variables of type 'download' if variables not provided
-            do_check(
-                conn,
-                args.erddap_base,
-                base_url,
-                init_days=args.init_days,
-            )
-        if args.requeue_failed:
-            from .downloader import requeue_failed
-
-            requeue_failed(
-                conn,
-                dataset=None,
-                date=args.date,
-                variable=args.variable,
-            )
-        do_download(conn, args.erddap_base, limit=args.limit)
+        # Download only: process pending_download rows
+        # Always requeue failed downloads first (retry stale failures)
+        from .downloader import requeue_failed
+        requeue_failed(conn, dataset=None, date=args.date, variable=args.variable)
+        
+        # Execute downloads for pending rows
+        do_download(conn, args.erddap_base, limit=args.limit, variable=args.variable)
+        logger.info("download: Processing complete")
         return
 
     if args.cmd == "check_image":

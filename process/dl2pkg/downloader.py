@@ -6,12 +6,29 @@ from .db import get_db_conn
 logger = logging.getLogger("dl2.downloader")
 
 
-def find_pending_rows(conn, limit=10):
+def find_pending_rows(conn, limit=10, variable=None):
+    clauses = ["j.status='pending_download'"]
+    params = [limit]
+    
+    if variable:
+        # Map variable name to ID
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM erddap_variables WHERE variable = %s", (variable,))
+            vrow = cur.fetchone()
+            if not vrow:
+                return []  # Variable doesn't exist
+            v_id = vrow[0]
+        clauses.append("j.variable_id = %s")
+        params.insert(0, v_id)  # Insert before limit
+    
+    where = " AND ".join(clauses)
+    sql = f"SELECT j.id, j.dataset_id, v.variable, j.start_time, j.end_time, j.status, j.attempts, j.nc_path FROM nc_jobs j JOIN erddap_variables v ON v.id = j.variable_id WHERE {where} ORDER BY j.start_time LIMIT %s"
+    
     with conn.cursor() as cur:
-        cur.execute(
-            "SELECT j.id, j.dataset_id, v.variable, j.start_time, j.end_time, j.status, j.attempts, j.nc_path FROM nc_jobs j JOIN erddap_variables v ON v.id = j.variable_id WHERE j.status='pending_download' ORDER BY j.start_time LIMIT %s",
-            (limit,),
-        )
+        # If variable filter is used, params = [v_id, limit]
+        # Otherwise params = [limit]
+        actual_params = tuple(params)
+        cur.execute(sql, actual_params)
         rows = cur.fetchall()
         results = []
         for r in rows:
@@ -134,10 +151,10 @@ def build_griddap_url(base_url, variable, start_iso, end_iso, das_text=None):
     return url
 
 
-def _compress_netcdf_file(in_path: str, compression: dict) -> None:
-    """Compress an existing NetCDF file in-place using xarray with the provided compression dict.
+def _write_compressed_netcdf(in_path: str, out_path: str, compression: dict) -> None:
+    """Read uncompressed NetCDF and write compressed version in single operation.
 
-    The function writes a temporary file and replaces the original.
+    Reads from in_path, applies compression encoding, writes to out_path.
     """
     import xarray as xr
 
@@ -151,10 +168,8 @@ def _compress_netcdf_file(in_path: str, compression: dict) -> None:
             if compression.get("shuffle"):
                 enc["shuffle"] = True
         encoding[v] = enc
-    tmp_out = in_path + ".cmp.nc"
-    ds.to_netcdf(tmp_out, encoding=encoding)
+    ds.to_netcdf(out_path, encoding=encoding)
     ds.close()
-    os.replace(tmp_out, in_path)
 
 
 def download_nc(conn, row, erddap_base):
@@ -201,17 +216,18 @@ def download_nc(conn, row, erddap_base):
         nc_root = os.getenv('NC_ROOT', '/opt/data/nc')
         out_dir = os.path.join(nc_root, variable)
         os.makedirs(out_dir, exist_ok=True)
-        fn = f"{variable}_{start_time.strftime('%Y%m%dT%H%M')}_{end_time.strftime('%Y%m%dT%H%M')}.nc"
-        final_path = os.path.join(out_dir, fn)
-        shutil.move(tmpfn, final_path)
-
-        # Optionally compress the downloaded file based on global config
+        
+        # Optionally compress during finalization based on global config
         cfg = load_configs()
         comp = cfg.get('compression') if isinstance(cfg, dict) else None
         if comp and comp.get('apply_to_downloads'):
             try:
-                _compress_netcdf_file(final_path, comp)
-                # recompute checksum and size
+                # Read temp file, write compressed to final location (single disk op)
+                fn = f"{variable}_{start_time.strftime('%Y-%m-%d')}.nc"
+                final_path = os.path.join(out_dir, fn)
+                _write_compressed_netcdf(tmpfn, final_path, comp)
+                os.remove(tmpfn)
+                # recompute checksum and size from compressed file
                 h2 = hashlib.sha256()
                 size = 0
                 with open(final_path, 'rb') as fh:
@@ -220,7 +236,18 @@ def download_nc(conn, row, erddap_base):
                         size += len(chunk)
                 checksum = h2.hexdigest()
             except Exception:
-                logger.exception('Failed to compress downloaded file %s', final_path)
+                logger.exception('Failed to compress and write file')
+                # Try to clean up temp file on error
+                try:
+                    os.remove(tmpfn)
+                except:
+                    pass
+                raise
+        else:
+            # No compression: just rename temp file to final
+            fn = f"{variable}_{start_time.strftime('%Y-%m-%d')}.nc"
+            final_path = os.path.join(out_dir, fn)
+            shutil.move(tmpfn, final_path)
 
         with conn.cursor() as cur:
             cur.execute(
@@ -253,8 +280,8 @@ def download_nc(conn, row, erddap_base):
         return False
 
 
-def do_download(conn, erddap_base, limit=5):
-    pending = find_pending_rows(conn, limit=limit)
+def do_download(conn, erddap_base, limit=5, variable=None):
+    pending = find_pending_rows(conn, limit=limit, variable=variable)
     if not pending:
         logger.info("No pending files")
         return

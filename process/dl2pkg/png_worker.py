@@ -42,29 +42,72 @@ def _promote_ready_groups_to_pending_image(conn, limit: int = 5):
 
 
 def check_image_ready_rows(conn):
-    """Check for rows that are ready for PNG generation (all downloads/computes successful)."""
+    """Check for rows that are ready for PNG generation.
+    
+    For each (start_time, end_time) combination, ensure ALL required variables 
+    (from erddap_variables where type='download') have at least one success_download 
+    or success_compute row for that period. Only then mark those rows as pending_image.
+    """
     with conn.cursor() as cur:
+        # Get all required variables (ones marked for download)
         cur.execute(
             """
-            SELECT start_time, end_time
-            FROM nc_jobs
-            GROUP BY start_time, end_time
-            HAVING COUNT(*) > 0 AND SUM(CASE WHEN status IN ('success_download','success_compute') THEN 1 ELSE 0 END) = COUNT(*)
-            """,
+            SELECT DISTINCT id FROM erddap_variables 
+            WHERE type='download'
+            ORDER BY id
+            """
         )
-        rows = cur.fetchall()
-
-        for r in rows:
-            st_dt, end_dt = r
-            # Update nc_jobs rows in this group to pending_image for rows where start_time/end_time match and status is success_download or success_compute
-            cur.execute(
-                """
-                UPDATE nc_jobs
-                SET status = 'pending_image', last_attempt = NULL, attempts = 0
-                WHERE start_time = %s AND end_time = %s AND status IN ('success_download','success_compute')
-                """,
-                (st_dt, end_dt),
-            )
+        required_var_ids = [row[0] for row in cur.fetchall()]
+        
+        if not required_var_ids:
+            logger.warning("No required variables (type='download') found in erddap_variables")
+            return
+        
+        logger.debug(f"Checking image readiness against {len(required_var_ids)} required variables")
+        
+        # Get all unique (start_time, end_time) combinations
+        cur.execute(
+            """
+            SELECT DISTINCT start_time, end_time
+            FROM nc_jobs
+            ORDER BY start_time DESC, end_time DESC
+            """
+        )
+        time_periods = cur.fetchall()
+        
+        for st_dt, end_dt in time_periods:
+            # Check if ALL required variables have at least one success row for this period
+            all_required_ready = True
+            for var_id in required_var_ids:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) FROM nc_jobs
+                    WHERE variable_id = %s AND start_time = %s AND end_time = %s
+                    AND status IN ('success_download', 'success_compute')
+                    """,
+                    (var_id, st_dt, end_dt)
+                )
+                success_count = cur.fetchone()[0]
+                if success_count == 0:
+                    all_required_ready = False
+                    logger.debug(f"Variable_id {var_id} not ready for period {st_dt} to {end_dt}")
+                    break
+            
+            # If all required variables are ready, mark all success rows for this period as pending_image
+            if all_required_ready:
+                cur.execute(
+                    """
+                    UPDATE nc_jobs
+                    SET status = 'pending_image', last_attempt = NULL, attempts = 0
+                    WHERE start_time = %s AND end_time = %s 
+                    AND status IN ('success_download', 'success_compute')
+                    """,
+                    (st_dt, end_dt)
+                )
+                rows_updated = cur.rowcount
+                if rows_updated > 0:
+                    logger.info(f"Marked {rows_updated} rows as pending_image for period {st_dt} to {end_dt}")
+        
         conn.commit()
 
 def find_pending_image(conn):
