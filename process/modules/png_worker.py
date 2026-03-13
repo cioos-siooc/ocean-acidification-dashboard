@@ -2,14 +2,44 @@
 import logging
 import os
 import traceback
+import time
 from typing import Optional
 import numpy as np
 import xarray as xr
+from psycopg2.errors import DeadlockDetected
 
 from .db import get_db_conn
 import nc2tile
 
 logger = logging.getLogger("dl2.png")
+
+
+def _update_nc_job_status_with_retry(conn, row_id: int, status: str, max_retries: int = 3):
+    """Update nc_jobs status with retry logic for deadlock handling.
+    
+    Args:
+        conn: Database connection
+        row_id: nc_jobs id to update
+        status: New status value
+        max_retries: Number of times to retry on deadlock
+    """
+    for attempt in range(max_retries):
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"UPDATE nc_jobs SET status='{status}' WHERE id=%s",
+                    (row_id,)
+                )
+            conn.commit()
+            return
+        except DeadlockDetected as e:
+            if attempt < max_retries - 1:
+                wait_time = (2 ** attempt) * 0.1  # Exponential backoff: 0.1s, 0.2s, 0.4s
+                logger.warning(f"Deadlock updating nc_jobs id {row_id}, retrying in {wait_time}s (attempt {attempt+1}/{max_retries})")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Failed to update nc_jobs id {row_id} after {max_retries} attempts: {e}")
+                raise
 
 
 def _promote_ready_groups_to_pending_image(conn, limit: int = 5):
@@ -287,10 +317,9 @@ def process_image(conn, row, workers: int | None = None):
                 processed_times = e.code
             elif e.code != 0:
                 raise
-        with conn.cursor() as cur:
-            cur.execute("UPDATE nc_jobs SET status='success_image' WHERE id=%s", (row_id,))
-            
-        conn.commit()
+        
+        # Use retry logic for the final status update to handle potential deadlocks
+        _update_nc_job_status_with_retry(conn, row_id, 'success_image')
 
         logger.info("nc2tile processed %s", src)
         return True
