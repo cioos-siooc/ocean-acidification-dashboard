@@ -1,4 +1,4 @@
-"""dl2pkg: small package for dl2 components.
+"""modules: small package for dl2 components.
 
 Modules:
 - db: database helpers and schema

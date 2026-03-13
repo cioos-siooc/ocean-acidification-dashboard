@@ -2,10 +2,10 @@
 """Legacy entrypoint wrapper for the dl2 package.
 
 This module provides a small, stable CLI entrypoint that delegates to
-`dl2pkg.cli`. Keep this file minimal to avoid duplicating logic.
+`modules.cli`. Keep this file minimal to avoid duplicating logic.
 """
 
-from dl2pkg.cli import main as package_main
+from modules.cli import main as package_main
 
 
 def main(argv=None):

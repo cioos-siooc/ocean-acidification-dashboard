@@ -37,7 +37,7 @@ The API acts as the bridge between the database/NetCDF files and the frontend, p
 The "engine" that transforms raw external data into precisely-tiled, color-corrected images and derived values.
 
 ### ERDDAP Ingestion & Management
-*   **Intelligent Fetching**: Logic in `dl2pkg/downloader.py` for ERDDAP downloads with automatic backfilling and compression.
+*   **Intelligent Fetching**: Logic in `modules/downloader.py` for ERDDAP downloads with automatic backfilling and compression.
 *   **State Tracking**: Database integration to track download status and manage re-queuing.
 
 ### Imaging & Tiling
