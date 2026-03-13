@@ -14,25 +14,69 @@ import nc2tile
 logger = logging.getLogger("dl2.png")
 
 
-def _update_nc_job_status_with_retry(conn, row_id: int, status: str, max_retries: int = 3):
+def _update_nc_job_status_with_retry(conn, row_id: int, status: str, update_last_attempt: bool = False, max_retries: int = 3):
     """Update nc_jobs status with retry logic for deadlock handling.
     
     Args:
         conn: Database connection
         row_id: nc_jobs id to update
         status: New status value
+        update_last_attempt: If True, also set last_attempt to NOW()
         max_retries: Number of times to retry on deadlock
     """
     for attempt in range(max_retries):
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"UPDATE nc_jobs SET status='{status}' WHERE id=%s",
-                    (row_id,)
-                )
+                if update_last_attempt:
+                    cur.execute(
+                        "UPDATE nc_jobs SET status=%s, last_attempt=NOW() WHERE id=%s",
+                        (status, row_id)
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE nc_jobs SET status=%s WHERE id=%s",
+                        (status, row_id)
+                    )
             conn.commit()
             return
         except DeadlockDetected as e:
+            conn.rollback()  # Rollback the failed transaction
+            if attempt < max_retries - 1:
+                wait_time = (2 ** attempt) * 0.1  # Exponential backoff: 0.1s, 0.2s, 0.4s
+                logger.warning(f"Deadlock updating nc_jobs id {row_id}, retrying in {wait_time}s (attempt {attempt+1}/{max_retries})")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Failed to update nc_jobs id {row_id} after {max_retries} attempts: {e}")
+                raise
+
+
+def _update_nc_job_with_retry(conn, row_id: int, status: str, increment_attempts: bool = False, max_retries: int = 3):
+    """Update nc_jobs status with optional attempt increment and last_attempt timestamp, with retry logic.
+    
+    Args:
+        conn: Database connection
+        row_id: nc_jobs id to update
+        status: New status value
+        increment_attempts: If True, increment attempts and set last_attempt to NOW()
+        max_retries: Number of times to retry on deadlock
+    """
+    for attempt in range(max_retries):
+        try:
+            with conn.cursor() as cur:
+                if increment_attempts:
+                    cur.execute(
+                        "UPDATE nc_jobs SET status=%s, attempts=attempts+1, last_attempt=NOW() WHERE id=%s",
+                        (status, row_id)
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE nc_jobs SET status=%s WHERE id=%s",
+                        (status, row_id)
+                    )
+            conn.commit()
+            return
+        except DeadlockDetected as e:
+            conn.rollback()  # Rollback the failed transaction
             if attempt < max_retries - 1:
                 wait_time = (2 ** attempt) * 0.1  # Exponential backoff: 0.1s, 0.2s, 0.4s
                 logger.warning(f"Deadlock updating nc_jobs id {row_id}, retrying in {wait_time}s (attempt {attempt+1}/{max_retries})")
@@ -277,9 +321,10 @@ def process_image(conn, row, workers: int | None = None):
     variable = get_variable_from_id(conn, variable_id)
 
     if not src or not os.path.exists(src):
-        with conn.cursor() as cur:
-            cur.execute("UPDATE nc_jobs SET status='failed_image', attempts=attempts+1, last_attempt=NOW() WHERE id=%s", (row_id,))
-        conn.commit()
+        try:
+            _update_nc_job_with_retry(conn, row_id, 'failed_image', increment_attempts=True)
+        except Exception as e:
+            logger.error(f"Failed to update status to failed_image for missing file: {e}")
         return False
 
     # try to acquire lock
@@ -295,9 +340,11 @@ def process_image(conn, row, workers: int | None = None):
         return False
 
     try:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE nc_jobs SET status='imaging', last_attempt=NOW() WHERE id=%s", (row_id,))
-        conn.commit()
+        try:
+            _update_nc_job_status_with_retry(conn, row_id, 'imaging', update_last_attempt=True)
+        except Exception as e:
+            logger.warning(f"Failed to update status to imaging: {e}")
+        
         precision = get_variable_precision(conn, variable_id)
         
         # Get depths from database and convert to indices
@@ -325,17 +372,19 @@ def process_image(conn, row, workers: int | None = None):
         return True
     except Exception as e:
         logger.exception("PNG generation failed for %s", src)
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE nc_jobs SET status='failed_image', attempts=attempts+1, last_attempt=NOW() WHERE id=%s",
-                (str(e), row_id,),
-            )
-        conn.commit()
+        try:
+            _update_nc_job_with_retry(conn, row_id, 'failed_image', increment_attempts=True)
+        except Exception as retry_error:
+            logger.error(f"Failed to update status to failed_image: {retry_error}")
         return False
     finally:
-        with conn.cursor() as cur:
-            cur.execute("SELECT pg_advisory_unlock(%s)", (row_id,))
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (row_id,))
+            conn.commit()
+        except Exception as e:
+            logger.warning(f"Failed to release advisory lock for row {row_id}: {e}")
+            conn.rollback()
 
 
 def process_pending_png(conn, limit: int = 5, workers: int | None = None):
