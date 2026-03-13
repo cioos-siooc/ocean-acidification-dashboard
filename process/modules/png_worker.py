@@ -88,13 +88,15 @@ def check_image_ready_rows(conn):
                     # Compute variables must be success_compute
                     status_check = ('success_compute',)
                 
+                # Build IN clause with proper placeholders
+                in_clause = ','.join(['%s'] * len(status_check))
                 cur.execute(
-                    """
+                    f"""
                     SELECT COUNT(*) FROM nc_jobs
                     WHERE variable_id = %s AND start_time = %s AND end_time = %s
-                    AND status = ANY(%s)
+                    AND status IN ({in_clause})
                     """,
-                    (var_id, st_dt, end_dt, list(status_check))
+                    (var_id, st_dt, end_dt) + status_check
                 )
                 success_count = cur.fetchone()[0]
                 if success_count == 0:
