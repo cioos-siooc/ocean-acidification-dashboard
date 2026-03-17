@@ -49,14 +49,14 @@ def find_compute_groups(conn, limit=10):
             AND EXISTS (
                 -- Check that all 5 required download variables are either success_download or success_compute
                 SELECT 1 FROM nc_jobs j2
-                JOIN erddap_variables v ON j2.variable_id = v.id
+                JOIN fields v ON j2.variable_id = v.id
                 WHERE j2.start_time = j.start_time
                 AND j2.end_time = j.end_time
                 AND v.type='download'
                 AND j2.status IN ('success_download', 'success_compute')
                 GROUP BY j2.start_time, j2.end_time
                 HAVING COUNT(DISTINCT v.variable) = (
-                    SELECT COUNT(*) FROM erddap_variables WHERE type='download'
+                    SELECT COUNT(*) FROM fields WHERE type='download'
                 )
             )
             ORDER BY j.start_time
@@ -68,10 +68,10 @@ def find_compute_groups(conn, limit=10):
 
 
 def get_compute_variables(conn) -> List[str]:
-    # Get the list of variable names and their id to compute from erddap_variables, column variable where type='compute'
+    # Get the list of variable names and their id to compute from fields, column variable where type='compute'
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, variable FROM erddap_variables WHERE type='compute'"
+            "SELECT id, variable FROM fields WHERE type='compute'"
         )
         return cur.fetchall()
 
@@ -126,9 +126,9 @@ def compute_for_group(
         import os
 
         # with conn.cursor() as cur2:
-        #     # Find the original DIC file path (nc_path) via join to erddap_variables
+        #     # Find the original DIC file path (nc_path) via join to fields
         #     cur2.execute(
-        #         "SELECT j.nc_path FROM nc_jobs j JOIN erddap_variables v ON v.id = j.variable_id WHERE j.start_time=%s AND j.end_time=%s AND v.variable=%s LIMIT 1",
+        #         "SELECT j.nc_path FROM nc_jobs j JOIN fields v ON v.id = j.variable_id WHERE j.start_time=%s AND j.end_time=%s AND v.variable=%s LIMIT 1",
         #         (start_time, end_time, "dissolved_inorganic_carbon"),
         #     )
         #     r = cur2.fetchone()
@@ -204,7 +204,7 @@ def compute_for_row(conn, row, workers=2, base_dir=None):
     # Find group ids for the dataset/time
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT array_agg(j.id ORDER BY j.id) FROM nc_jobs j JOIN erddap_variables v ON v.id = j.variable_id WHERE j.dataset_id=%s AND j.start_time=%s AND j.end_time=%s AND v.variable IN ('ph_total','omega_arag','omega_cal')",
+            "SELECT array_agg(j.id ORDER BY j.id) FROM nc_jobs j JOIN fields v ON v.id = j.variable_id WHERE j.dataset_id=%s AND j.start_time=%s AND j.end_time=%s AND v.variable IN ('ph_total','omega_arag','omega_cal')",
             (ds_id, start_time, end_time),
         )
         r2 = cur.fetchone()
@@ -226,13 +226,13 @@ def compute_for_row(conn, row, workers=2, base_dir=None):
             for cv in ("ph_total", "omega_arag", "omega_cal"):
                 # Insert dataset-scoped variable_id if available, otherwise fall back to global variable id
                 cur2.execute(
-                    "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, meta, status) VALUES (%s, COALESCE((SELECT id FROM erddap_variables WHERE dataset_id=%s AND variable=%s),(SELECT id FROM erddap_variables WHERE variable=%s LIMIT 1)), %s, %s, %s, 'pending_compute') ON CONFLICT DO NOTHING",
+                    "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, meta, status) VALUES (%s, COALESCE((SELECT id FROM fields WHERE dataset_id=%s AND variable=%s),(SELECT id FROM fields WHERE variable=%s LIMIT 1)), %s, %s, %s, 'pending_compute') ON CONFLICT DO NOTHING",
                     (ds_id, ds_id, cv, cv, start_time, end_time, meta),
                 )
             conn.commit()
         with conn.cursor() as cur3:
             cur3.execute(
-                "SELECT array_agg(j.id ORDER BY j.id) FROM nc_jobs j JOIN erddap_variables v ON v.id = j.variable_id WHERE j.dataset_id=%s AND j.start_time=%s AND j.end_time=%s AND v.variable IN ('ph_total','omega_arag','omega_cal')",
+                "SELECT array_agg(j.id ORDER BY j.id) FROM nc_jobs j JOIN fields v ON v.id = j.variable_id WHERE j.dataset_id=%s AND j.start_time=%s AND j.end_time=%s AND v.variable IN ('ph_total','omega_arag','omega_cal')",
                 (ds_id, start_time, end_time),
             )
             ids = cur3.fetchone()[0]

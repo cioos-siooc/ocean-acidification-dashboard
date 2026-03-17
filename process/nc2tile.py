@@ -666,7 +666,7 @@ def process_variable(
     else:
         vmin, vmax = None, None
 
-    # Try to fetch any absolute min/max values stored in erddap_variables for this variable.
+    # Try to fetch any absolute min/max values stored in fields for this variable.
     erddap_min = None
     erddap_max = None
     try:
@@ -674,7 +674,7 @@ def process_variable(
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT min, max FROM erddap_variables WHERE variable=%s LIMIT 1",
+                    "SELECT min, max FROM fields WHERE variable=%s LIMIT 1",
                     (varname,),
                 )
                 row = cur.fetchone()
@@ -743,7 +743,7 @@ def process_variable(
             
             depth = depths[int(didx)]
 
-            # include any absolute min/max stored in erddap_variables for this variable
+            # include any absolute min/max stored in fields for this variable
             tasks.append((
                 ds_data_path,
                 varname,

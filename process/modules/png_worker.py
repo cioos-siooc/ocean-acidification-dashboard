@@ -2,14 +2,88 @@
 import logging
 import os
 import traceback
+import time
 from typing import Optional
 import numpy as np
 import xarray as xr
+from psycopg2.errors import DeadlockDetected
 
 from .db import get_db_conn
 import nc2tile
 
 logger = logging.getLogger("dl2.png")
+
+
+def _update_nc_job_status_with_retry(conn, row_id: int, status: str, update_last_attempt: bool = False, max_retries: int = 3):
+    """Update nc_jobs status with retry logic for deadlock handling.
+    
+    Args:
+        conn: Database connection
+        row_id: nc_jobs id to update
+        status: New status value
+        update_last_attempt: If True, also set last_attempt to NOW()
+        max_retries: Number of times to retry on deadlock
+    """
+    for attempt in range(max_retries):
+        try:
+            with conn.cursor() as cur:
+                if update_last_attempt:
+                    cur.execute(
+                        "UPDATE nc_jobs SET status=%s, last_attempt=NOW() WHERE id=%s",
+                        (status, row_id)
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE nc_jobs SET status=%s WHERE id=%s",
+                        (status, row_id)
+                    )
+            conn.commit()
+            return
+        except DeadlockDetected as e:
+            conn.rollback()  # Rollback the failed transaction
+            if attempt < max_retries - 1:
+                wait_time = (2 ** attempt) * 0.1  # Exponential backoff: 0.1s, 0.2s, 0.4s
+                logger.warning(f"Deadlock updating nc_jobs id {row_id}, retrying in {wait_time}s (attempt {attempt+1}/{max_retries})")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Failed to update nc_jobs id {row_id} after {max_retries} attempts: {e}")
+                raise
+
+
+def _update_nc_job_with_retry(conn, row_id: int, status: str, increment_attempts: bool = False, max_retries: int = 3):
+    """Update nc_jobs status with optional attempt increment and last_attempt timestamp, with retry logic.
+    
+    Args:
+        conn: Database connection
+        row_id: nc_jobs id to update
+        status: New status value
+        increment_attempts: If True, increment attempts and set last_attempt to NOW()
+        max_retries: Number of times to retry on deadlock
+    """
+    for attempt in range(max_retries):
+        try:
+            with conn.cursor() as cur:
+                if increment_attempts:
+                    cur.execute(
+                        "UPDATE nc_jobs SET status=%s, attempts=attempts+1, last_attempt=NOW() WHERE id=%s",
+                        (status, row_id)
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE nc_jobs SET status=%s WHERE id=%s",
+                        (status, row_id)
+                    )
+            conn.commit()
+            return
+        except DeadlockDetected as e:
+            conn.rollback()  # Rollback the failed transaction
+            if attempt < max_retries - 1:
+                wait_time = (2 ** attempt) * 0.1  # Exponential backoff: 0.1s, 0.2s, 0.4s
+                logger.warning(f"Deadlock updating nc_jobs id {row_id}, retrying in {wait_time}s (attempt {attempt+1}/{max_retries})")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"Failed to update nc_jobs id {row_id} after {max_retries} attempts: {e}")
+                raise
 
 
 def _promote_ready_groups_to_pending_image(conn, limit: int = 5):
@@ -45,25 +119,27 @@ def check_image_ready_rows(conn):
     """Check for rows that are ready for PNG generation.
     
     For each (start_time, end_time) combination, ensure ALL required variables 
-    (from erddap_variables where type='download') have at least one success_download 
-    or success_compute row for that period. Only then mark those rows as pending_image.
+    (both type='download' AND type='compute') have appropriate success status:
+    - type='download' variables: must be success_download or success_compute
+    - type='compute' variables: must be success_compute
+    Only then mark those rows as pending_image.
     """
     with conn.cursor() as cur:
-        # Get all required variables (ones marked for download)
+        # Get all variables (download and compute types) with their type info
         cur.execute(
             """
-            SELECT DISTINCT id FROM erddap_variables 
-            WHERE type='download'
+            SELECT id, type FROM fields 
+            WHERE type IN ('download', 'compute')
             ORDER BY id
             """
         )
-        required_var_ids = [row[0] for row in cur.fetchall()]
+        required_vars = [(row[0], row[1]) for row in cur.fetchall()]
         
-        if not required_var_ids:
-            logger.warning("No required variables (type='download') found in erddap_variables")
+        if not required_vars:
+            logger.warning("No required variables (type='download' or type='compute') found in fields")
             return
         
-        logger.debug(f"Checking image readiness against {len(required_var_ids)} required variables")
+        logger.debug(f"Checking image readiness against {len(required_vars)} required variables")
         
         # Get all unique (start_time, end_time) combinations
         cur.execute(
@@ -76,21 +152,30 @@ def check_image_ready_rows(conn):
         time_periods = cur.fetchall()
         
         for st_dt, end_dt in time_periods:
-            # Check if ALL required variables have at least one success row for this period
+            # Check if ALL required variables have appropriate success status for this period
             all_required_ready = True
-            for var_id in required_var_ids:
+            for var_id, var_type in required_vars:
+                if var_type == 'download':
+                    # Download variables must be success_download or success_compute
+                    status_check = ('success_download', 'success_compute')
+                else:  # var_type == 'compute'
+                    # Compute variables must be success_compute
+                    status_check = ('success_compute',)
+                
+                # Build IN clause with proper placeholders
+                in_clause = ','.join(['%s'] * len(status_check))
                 cur.execute(
-                    """
+                    f"""
                     SELECT COUNT(*) FROM nc_jobs
                     WHERE variable_id = %s AND start_time = %s AND end_time = %s
-                    AND status IN ('success_download', 'success_compute')
+                    AND status IN ({in_clause})
                     """,
-                    (var_id, st_dt, end_dt)
+                    (var_id, st_dt, end_dt) + status_check
                 )
                 success_count = cur.fetchone()[0]
                 if success_count == 0:
                     all_required_ready = False
-                    logger.debug(f"Variable_id {var_id} not ready for period {st_dt} to {end_dt}")
+                    logger.debug(f"Variable_id {var_id} (type={var_type}) not ready for period {st_dt} to {end_dt}")
                     break
             
             # If all required variables are ready, mark all success rows for this period as pending_image
@@ -117,7 +202,7 @@ def find_pending_image(conn):
             """
             SELECT j.id, j.variable_id, j.start_time, j.end_time, j.nc_path, j.checksum
             FROM nc_jobs j
-            JOIN erddap_variables v ON j.variable_id = v.id
+            JOIN fields v ON j.variable_id = v.id
             WHERE j.status = 'pending_image'
             ORDER BY j.start_time
             """,
@@ -137,10 +222,10 @@ def find_pending_image(conn):
         
 
 def get_variable_from_id(conn, variable_id: int) -> str:
-    """Get variable name from erddap_variables.id."""
+    """Get variable name from fields.id."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT variable FROM erddap_variables WHERE id=%s",
+            "SELECT variable FROM fields WHERE id=%s",
             (variable_id,),
         )
         r = cur.fetchone()
@@ -150,10 +235,10 @@ def get_variable_from_id(conn, variable_id: int) -> str:
 
 
 def get_variable_precision(conn, variable_id: int) -> float:
-    """Get the precision setting for a variable from erddap_variables.precision."""
+    """Get the precision setting for a variable from fields.precision."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT precision FROM erddap_variables WHERE id=%s",
+            "SELECT precision FROM fields WHERE id=%s",
             (variable_id,),
         )
         r = cur.fetchone()
@@ -166,10 +251,10 @@ def get_variable_precision(conn, variable_id: int) -> float:
     raise RuntimeError(f"Invalid precision for variable_id={variable_id}")
 
 def get_variable_depths_image(conn, variable_id: int) -> Optional[list]:
-    """Get the depths setting for PNG generation from erddap_variables.depths_image."""
+    """Get the depths setting for PNG generation from fields.depths_image."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT depths_image FROM erddap_variables WHERE id=%s",
+            "SELECT depths_image FROM fields WHERE id=%s",
             (variable_id,),
         )
         r = cur.fetchone()
@@ -236,9 +321,10 @@ def process_image(conn, row, workers: int | None = None):
     variable = get_variable_from_id(conn, variable_id)
 
     if not src or not os.path.exists(src):
-        with conn.cursor() as cur:
-            cur.execute("UPDATE nc_jobs SET status='failed_image', attempts=attempts+1, last_attempt=NOW() WHERE id=%s", (row_id,))
-        conn.commit()
+        try:
+            _update_nc_job_with_retry(conn, row_id, 'failed_image', increment_attempts=True)
+        except Exception as e:
+            logger.error(f"Failed to update status to failed_image for missing file: {e}")
         return False
 
     # try to acquire lock
@@ -254,9 +340,11 @@ def process_image(conn, row, workers: int | None = None):
         return False
 
     try:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE nc_jobs SET status='imaging', last_attempt=NOW() WHERE id=%s", (row_id,))
-        conn.commit()
+        try:
+            _update_nc_job_status_with_retry(conn, row_id, 'imaging', update_last_attempt=True)
+        except Exception as e:
+            logger.warning(f"Failed to update status to imaging: {e}")
+        
         precision = get_variable_precision(conn, variable_id)
         
         # Get depths from database and convert to indices
@@ -276,26 +364,27 @@ def process_image(conn, row, workers: int | None = None):
                 processed_times = e.code
             elif e.code != 0:
                 raise
-        with conn.cursor() as cur:
-            cur.execute("UPDATE nc_jobs SET status='success_image' WHERE id=%s", (row_id,))
-            
-        conn.commit()
+        
+        # Use retry logic for the final status update to handle potential deadlocks
+        _update_nc_job_status_with_retry(conn, row_id, 'success_image')
 
         logger.info("nc2tile processed %s", src)
         return True
     except Exception as e:
         logger.exception("PNG generation failed for %s", src)
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE nc_jobs SET status='failed_image', attempts=attempts+1, last_attempt=NOW() WHERE id=%s",
-                (str(e), row_id,),
-            )
-        conn.commit()
+        try:
+            _update_nc_job_with_retry(conn, row_id, 'failed_image', increment_attempts=True)
+        except Exception as retry_error:
+            logger.error(f"Failed to update status to failed_image: {retry_error}")
         return False
     finally:
-        with conn.cursor() as cur:
-            cur.execute("SELECT pg_advisory_unlock(%s)", (row_id,))
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (row_id,))
+            conn.commit()
+        except Exception as e:
+            logger.warning(f"Failed to release advisory lock for row {row_id}: {e}")
+            conn.rollback()
 
 
 def process_pending_png(conn, limit: int = 5, workers: int | None = None):

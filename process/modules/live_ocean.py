@@ -83,18 +83,18 @@ def download_live_ocean(conn, run_date: str, url: str, input_path: str, out_dir:
 
 
 def process_pending_live_ocean(conn, limit: int = 1):
-    """Get Live Ocean row from erddap_datasets"""
+    """Get Live Ocean row from datasets"""
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id,base_url,meta FROM erddap_datasets
+            SELECT id,base_url,meta FROM datasets
             WHERE title='Live Ocean'
             LIMIT 1
             """
         )
         row = cur.fetchone()
         if not row:
-            raise RuntimeError("No Live Ocean dataset found in erddap_datasets")
+            raise RuntimeError("No Live Ocean dataset found in datasets")
         ds_id = row[0]
         dataset_base_url = row[1]
         existing_meta = row[2]
@@ -166,14 +166,14 @@ def process_pending_live_ocean(conn, limit: int = 1):
                     )
 
                     cur.execute(
-                        "UPDATE erddap_variables SET last_downloaded_at = GREATEST(COALESCE(last_downloaded_at, to_timestamp(0)), %s) WHERE id = %s",
+                        "UPDATE fields SET last_downloaded_at = GREATEST(COALESCE(last_downloaded_at, to_timestamp(0)), %s) WHERE id = %s",
                         (end_time, var_id),
                     )
 
                 latest_end = max([rec["end_time"] for rec in outputs]) if outputs else None
                 if latest_end is not None:
                     cur.execute(
-                        "UPDATE erddap_datasets SET last_downloaded_at = GREATEST(COALESCE(last_downloaded_at, to_timestamp(0)), %s) WHERE id = %s",
+                        "UPDATE datasets SET last_downloaded_at = GREATEST(COALESCE(last_downloaded_at, to_timestamp(0)), %s) WHERE id = %s",
                         (latest_end, ds_id),
                     )
 

@@ -9,7 +9,7 @@ from typing import List, Dict
 
 def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> List[Dict]:
     # Include `colormap` column so clients know which colormap to use for each variable
-    query = "SELECT variable, available_datetimes, min, max, depths_image, precision, colormap FROM erddap_variables;"
+    query = "SELECT variable, available_datetimes, min, max, depths_image, precision, colormap FROM fields;"
     
     try:
         import psycopg2

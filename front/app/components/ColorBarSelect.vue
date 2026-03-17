@@ -1,17 +1,43 @@
 <template>
   <v-card class="colorbar">
     <div class="label">
+
+      <v-select v-if="variableItems.length" v-model="selectedVarLocal" label="Variable" :items="variableItems"
+        item-title="label" item-value="var" density="compact" hide-details variant="outlined" class="my-4"
+        :menu-props="{ offsetX: true, right: true, location: 'right' }" style="width: 100%"></v-select>
+
       <v-select v-model="selectedModel" :items="models" label="Model" item-title="label" item-value="var"
         density="compact" hide-details variant="outlined" class="my-4"
         :menu-props="{ offsetX: true, right: true, location: 'right' }" style="width: 100%"></v-select>
 
 
-      <v-select v-if="options.length" v-model="selectedVarLocal" label="Variable" :items="options" item-title="label"
-        item-value="var" density="compact" hide-details variant="outlined" class="my-4"
-        :menu-props="{ offsetX: true, right: true, location: 'right' }" style="width: 100%"></v-select>
+      <div class="bar" :style="barStyle"></div>
+      <div class="ticks">
+        <div class="tick left">{{ currentMin }}</div>
+        <div class="tick center">{{ ((currentMin + currentMax) / 2).toFixed(1) }}</div>
+        <div class="tick right">{{ currentMax }}</div>
+      </div>
 
+      <v-card-actions class="ma-0 pa-0" style="min-height:24px">
+        <v-spacer></v-spacer>
+        <!-- Config button -->
+        <v-btn size="x-small" icon @click="showSettings = !showSettings"> <v-icon>mdi-cog</v-icon> </v-btn>
+      </v-card-actions>
 
+      <!-- <v-row class="mx-0 my-2" v-if="current">
+        <v-col cols="6">
+          <v-number-input v-model.number="localMin" :reverse="false" controlVariant="stacked" label=""
+            :hideInput="false" density="compact" :inset="false"></v-number-input>
+        </v-col>
+        <v-col cols="6">
+          <v-number-input v-model.number="localMax" :reverse="false" controlVariant="stacked" label=""
+            :hideInput="false" density="compact" :inset="false"></v-number-input>
+        </v-col>
+      </v-row> -->
 
+    </div>
+
+    <v-row v-if="showSettings" class="ma-0 pa-0" style="place-items: center;">
       <v-select v-if="(props.colormaps && props.colormaps.length)" v-model="selectedColormapLocal" label="Color map"
         :items="props.colormaps" item-title="name" item-value="name" density="compact" hide-details variant="outlined"
         class="my-4" close-on-click="false" :menu-props="{ offsetX: true, right: true, location: 'right' }"
@@ -33,45 +59,19 @@
 
       <div v-else class="label-text">{{ label }}</div>
 
-      <!-- <v-row class="mx-0 my-2" v-if="current">
-        <v-col cols="6">
-          <v-number-input v-model.number="localMin" :reverse="false" controlVariant="stacked" label=""
-            :hideInput="false" density="compact" :inset="false"></v-number-input>
-        </v-col>
-        <v-col cols="6">
-          <v-number-input v-model.number="localMax" :reverse="false" controlVariant="stacked" label=""
-            :hideInput="false" density="compact" :inset="false"></v-number-input>
-        </v-col>
-      </v-row> -->
-
-    </div>
-
-    <div class="bar" :style="barStyle"></div>
-    <div class="ticks">
-      <div class="tick left">{{ currentMin }}</div>
-      <div class="tick center">{{ ((currentMin + currentMax) / 2).toFixed(1) }}</div>
-      <div class="tick right">{{ currentMax }}</div>
-    </div>
-
-    <v-card-actions class="ma-0 pa-0" style="min-height:24px">
-      <v-spacer></v-spacer>
-      <!-- Config button -->
-      <v-btn size="x-small" icon @click="showSettings = !showSettings"> <v-icon>mdi-cog</v-icon> </v-btn>
-    </v-card-actions>
-
-    <v-row v-if="showSettings" class="ma-0 pa-0" style="place-items: center;">
       <!-- <v-col cols="5" class="ma-0 pa-0"> -->
-        <v-number-input v-model.number="localMin" hide-details :reverse="false" controlVariant="stacked" label="Min"
-          :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
-          style="width: 30%;; scale:75%"></v-number-input>
+      <v-number-input v-model.number="localMin" hide-details :reverse="false" controlVariant="stacked" label="Min"
+        :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
+        style="width: 30%;; scale:75%"></v-number-input>
       <!-- </v-col> -->
       <!-- <v-col cols="2" class="ma-0 pa-0"> -->
-        <v-btn width="30%" size="x-small" color="grey" @click="resetToDefaults" :title="'Reset min/max to defaults'">Reset</v-btn>
+      <v-btn width="30%" size="x-small" color="grey" @click="resetToDefaults"
+        :title="'Reset min/max to defaults'">Reset</v-btn>
       <!-- </v-col> -->
       <!-- <v-col cols="5" class="ma-0 pa-0"> -->
-        <v-number-input v-model.number="localMax" hide-details :reverse="false" controlVariant="stacked" label="Max"
-          :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
-          style="width: 30%; scale:75%"></v-number-input>
+      <v-number-input v-model.number="localMax" hide-details :reverse="false" controlVariant="stacked" label="Max"
+        :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
+        style="width: 30%; scale:75%"></v-number-input>
       <!-- </v-col> -->
     </v-row>
   </v-card>
@@ -111,10 +111,10 @@ const label = props.label ?? '';
 const variables = props.variables ?? [];
 const modelValue = toRef(props, 'modelValue');
 
-const options = computed(() => variables.map((v) => ({ var: v.var, label: var2name(v.var), min: v.min, max: v.max })));
+const variableItems = computed(() => variables.map((v) => ({ var: v.var, label: var2name(v.var), min: v.min, max: v.max })));
 
 const selectedVarLocal = computed({
-  get: () => modelValue.value ?? (options.value[0] ? options.value[0].var : ''),
+  get: () => modelValue.value ?? (variableItems.value[0] ? variableItems.value[0].var : ''),
   set: (v: string) => emit('update:modelValue', v),
 });
 
@@ -239,13 +239,13 @@ const title = computed(() => `${label} ${currentMin.value} → ${currentMax.valu
 
 <style scoped>
 .colorbar {
-  position: absolute;
-  width: 220px;
+  
+  
   padding: 6px 8px;
   background: rgba(255, 255, 255, 0.9);
   border-radius: 6px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-  z-index: 9998;
+
   font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue';
   font-size: 11px;
 }
@@ -297,6 +297,6 @@ const title = computed(() => `${label} ${currentMin.value} → ${currentMax.valu
 
 <style lang="css">
 .v-number-input__control {
-  width:14px;
+  width: 14px;
 }
 </style>

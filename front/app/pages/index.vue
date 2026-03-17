@@ -1,4 +1,19 @@
 <template>
+    <!-- <v-navigation-drawer expand-on-hover permanent rail>
+        <v-list>
+            <v-list-item prepend-avatar="https://randomuser.me/api/portraits/women/85.jpg"
+                subtitle="sandra_a88@gmailcom" title="Sandra Adams"></v-list-item>
+        </v-list>
+
+        <v-divider></v-divider>
+
+        <v-list density="compact" nav>
+            <v-list-item prepend-icon="mdi-folder" title="My Files" value="myfiles"></v-list-item>
+            <v-list-item prepend-icon="mdi-account-multiple" title="Shared with me" value="shared"></v-list-item>
+            <v-list-item prepend-icon="mdi-star" title="Starred" value="starred"></v-list-item>
+        </v-list>
+    </v-navigation-drawer> -->
+
     <v-main>
         <BetaDisclaimerDialog />
         <!-- <div class="d-flex flex-column h-screen overflow-hidden"> -->
@@ -6,11 +21,19 @@
         <div ref="mapContainer" class="flex-grow-1"
             :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }">
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
-            <ColorBarSelect v-if="mainStore.variables.length" :variables="mainStore.variables"
-                v-model="selectedVarLocal" :stops="selectedColormap?.stops" :colormaps="Object.values(colormaps)"
-                v-model:colormap="selectedColormapName" v-model:min="selectedMin" v-model:max="selectedMax"
-                class="selector" />
+
+            <div class="selector">
+                <ColorBarSelect v-if="mainStore.variables.length" :variables="mainStore.variables"
+                    v-model="selectedVarLocal" :stops="selectedColormap?.stops" :colormaps="Object.values(colormaps)"
+                    v-model:colormap="selectedColormapName" v-model:min="selectedMin" v-model:max="selectedMax" />
+
+                <Overlays class="my-2" />
+            </div>
+
             <DepthSlider />
+
+
+
             <div class="map-drawer-toggle" :style="{ right: drawerOpen ? '312px' : '12px' }">
                 <v-btn size="24px" color="warning" class="ma-0 pa-0" @click="drawerOpen = !drawerOpen"
                     title="Vertical Profile">
@@ -94,6 +117,7 @@ import { useCircleLayer } from '../../composables/useCircleLayer';
 import useStationsInteraction from '../../composables/useStationsInteraction';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
 import EchartsLineDialog from '../components/EchartsLineDialog.vue'
+import { useVectorTileLayer } from '../../composables/useVectorTileLayer';
 
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
@@ -169,6 +193,8 @@ const selectedVarLocal = computed({
     }
 });
 
+const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
+
 // Selected colormap name chosen by user (overrides DB default when set)
 const selectedColormapName = ref<string | null>(null);
 
@@ -232,6 +258,8 @@ onMounted(async () => {
         bounds,
         // zoom: 9.5,
         // pitch: 45,
+        minZoom: 7,
+        maxZoom: 14,
         antialias: true,
         preserveDrawingBuffer: true, // needed for exporting canvas
     });
@@ -368,6 +396,55 @@ watch(() => mainStore.selected_variable.dt, async (newDt) => {
 watch(() => mainStore.selected_variable, () => {
     console.log('selected_variable changed:', mainStore.selected_variable);
 }, { deep: true });
+
+watch(() => mainStore.showBathymetryContours, (show) => {
+    if (!map) return;
+    try {
+        if (show) {
+            if (!map.getSource('nonna'))
+                map?.addSource('nonna', {
+                    type: 'vector',
+                    tiles: [`${apiBaseUrl}/vector/{z}/{x}/{y}.pbf`],
+                });
+
+            map?.addLayer({
+                id: 'nonna-layer',
+                type: 'line',
+                source: 'nonna',
+                'source-layer': 'nonna', // name of the layer in the vector tile source
+                paint: {
+                    "line-color": "#ccc",
+                    "line-width": 1,
+                    "line-opacity": [
+                        "step",
+                        ["zoom"],
+                        [
+                            "case",
+                            ["==", ["%", ["to-number", ["get", "ELEV"]], 100], 0],
+                            1,
+                            0
+                        ],
+                        8,
+                        [
+                            "case",
+                            ["==", ["%", ["to-number", ["get", "ELEV"]], 50], 0],
+                            1,
+                            0
+                        ],
+                        12,
+                        1
+                    ]
+                }
+            });
+
+        } else {
+            if (map.getLayer('nonna-layer')) map.removeLayer('nonna-layer');
+            if (map.getSource('nonna')) map.removeSource('nonna');
+        }
+    } catch (e) {
+        console.warn('Failed to toggle bathymetry contours layer visibility:', e);
+    }
+}, { immediate: true });
 
 ///////////////////////////////////  MEDTHODS  ///////////////////////////////////
 async function getMetadata() {
@@ -1261,6 +1338,9 @@ let zrClickHandler: ((evt: any) => void) | null = null;
 }
 
 .selector {
+    position: absolute;
+    width: 220px;
+    z-index: 9998;
     top: 16px;
     left: 16px;
 }
