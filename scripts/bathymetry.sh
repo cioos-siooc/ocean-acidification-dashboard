@@ -35,3 +35,9 @@ ogrmerge.py -single -f GeoJSON -o merged_contours.geojson contour_*.geojson
 # Generate vector tiles with tippecanoe, using merged_contours.geojson as input, and output to tiles directory, with layer name "nonna", and zoom levels 0-12.
 # Use docker image metacollin/tippecanoe
 tippecanoe --layer=nonna -pC --minimum-zoom=0 --maximum-zoom=14 contour_*.geojson -e tiles
+
+
+######################################
+
+# Merge tiff files into a single file
+gdal_merge.py -o merged.tiff *.tiff

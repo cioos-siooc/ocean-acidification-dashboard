@@ -23,9 +23,7 @@
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
             <div class="selector">
-                <ColorBarSelect v-if="mainStore.variables.length" :variables="mainStore.variables"
-                    v-model="selectedVarLocal" :stops="selectedColormap?.stops" :colormaps="Object.values(colormaps)"
-                    v-model:colormap="selectedColormapName" v-model:min="selectedMin" v-model:max="selectedMax" />
+                <ColorBarSelect v-if="mainStore.variables.length" />
 
                 <Overlays class="my-2" />
             </div>
@@ -59,8 +57,12 @@
 
                     <v-spacer></v-spacer>
 
+                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">{{ zoom }}</v-col>
+
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
-                        <span class="footer-text">{{ mouseCoords.lat }} , {{ mouseCoords.lng }}</span>
+                        <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
+                        <span class="footer-text">{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
+                            }}</span>
                     </v-col>
                 </v-row>
 
@@ -101,7 +103,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as echarts from 'echarts'
 import axios from 'axios'
-import moment, { min } from 'moment-timezone'
+import moment from 'moment-timezone'
 import DepthSlider from '../components/depth-slider.vue'
 import ColorBarSelect from '../components/ColorBarSelect.vue'
 import TimeControls from '../components/TimeControls.vue'
@@ -117,7 +119,6 @@ import { useCircleLayer } from '../../composables/useCircleLayer';
 import useStationsInteraction from '../../composables/useStationsInteraction';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
 import EchartsLineDialog from '../components/EchartsLineDialog.vue'
-import { useVectorTileLayer } from '../../composables/useVectorTileLayer';
 
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
@@ -129,7 +130,7 @@ const config = useRuntimeConfig();
 const apiBaseUrl = config.public.apiBaseUrl
 
 // Colormaps cache
-const colormaps = ref<Record<string, any>>({});
+// const colormaps = ref<Record<string, any>>({});
 
 async function getColormaps() {
     try {
@@ -137,11 +138,12 @@ async function getColormaps() {
         const list = r.data;
         const map: Record<string, any> = {};
         for (const c of list) map[c.name] = c;
-        colormaps.value = map;
+        // colormaps.value = map;
+        mainStore.setColormaps(map);
         return map;
     } catch (e) {
         console.error('Failed to fetch colormaps:', e);
-        colormaps.value = {};
+        mainStore.setColormaps({});
         return {};
     }
 }
@@ -180,68 +182,43 @@ const clicked_sensor_id = ref<number | null>(null);
 */
 const DFN = 5; // days from now for climate timeseries
 
+const zoom = ref('');
+
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 
 const selectedVariable = computed(() => mainStore.selected_variable);
 
-// Two-way v-model helper for ColorBarSelect
-const selectedVarLocal = computed({
-    get: () => mainStore.selected_variable.var,
-    set: (v: string) => {
-        // keep current dt & depth when user selects a different variable
-        mainStore.setSelectedVariable(v, mainStore.selected_variable.dt, mainStore.selected_variable.depth);
-    }
-});
-
 const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
 
-// Selected colormap name chosen by user (overrides DB default when set)
-const selectedColormapName = ref<string | null>(null);
+const selectedColormap = computed(() => {
+    const name = mainStore.selected_variable.colormap;
+    if (name) return mainStore.colormaps[name] ?? null;
+    // Fallback to a default colormap (DB doesn't store colormap field)
+    return null;
+});
 
-// When variable changes, default the colormap selection to the DB value for that variable
-const selectedMin = ref<number | null>(null);
-const selectedMax = ref<number | null>(null);
-
-watch(() => selectedVarLocal.value, (nv) => {
-    const varMeta = mainStore.variables.find((v: any) => v.var === nv);
-    selectedColormapName.value = varMeta?.colormap ?? null;
-    // reset min/max to variable bounds unless they already exist
-    selectedMin.value = varMeta?.min ?? null;
-    selectedMax.value = varMeta?.max ?? null;
-}, { immediate: true });
-
-// when min/max change, update overlay
-watch([selectedMin, selectedMax], async () => {
+// When colormap, min, or max change in store, update overlay
+watch([
+    () => mainStore.selected_variable.colormap,
+    () => mainStore.selected_variable.colormapMin,
+    () => mainStore.selected_variable.colormapMax
+], async () => {
     if (!map || !mapLoaded.value) return;
-    try {
-        await updatePngOverlay();
-    } catch (e) {
-        console.warn('Failed to update overlay after min/max change', e);
+    if (mainStore.selected_variable.var === 'bathymetry') {
+        updateBathymetryTilesLayerColorization();
+    } else {
+        try {
+            await updatePngOverlay();
+        } catch (e) {
+            console.warn('Failed to update overlay after colormap/min/max change', e);
+        }
     }
 }, { immediate: false });
-
-const selectedColormap = computed(() => {
-    const name = selectedColormapName.value;
-    if (name) return colormaps.value[name] ?? null;
-    const varMeta = mainStore.variables.find((v: any) => v.var === selectedVarLocal.value);
-    if (!varMeta || !varMeta.colormap) return null;
-    return colormaps.value[varMeta.colormap] ?? null;
-});
-
-// Re-render overlay when selected colormap changes
-watch(() => selectedColormapName.value, async () => {
-    if (!map || !mapLoaded.value) return;
-    try {
-        await updatePngOverlay();
-    } catch (e) {
-        console.warn('Failed to update overlay after colormap change', e);
-    }
-});
 
 // Handler for time controls component
 function onTimeControlDt(dt: any) {
     // dt is a moment object (UTC)
-    mainStore.setSelectedVariable(mainStore.selected_variable.var, dt, mainStore.selected_variable.depth);
+    mainStore.updateSelectedVariable({ dt });
 }
 
 ///////////////////////////////////  HOOKS  ///////////////////////////////////
@@ -263,7 +240,7 @@ onMounted(async () => {
         antialias: true,
         preserveDrawingBuffer: true, // needed for exporting canvas
     });
-    console.log(map);
+    // console.log(map);
 
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
@@ -274,6 +251,11 @@ onMounted(async () => {
         // Fetch colormaps and variables in parallel
         Promise.all([getColormaps(), init()]).catch((e) => console.warn('init failed:', e));
         addSensors().catch((e) => console.warn('addSensors failed:', e));
+
+        map?.on('zoom', () => {
+            if (map) zoom.value = map.getZoom().toFixed(2);
+        });
+
     });
 
 
@@ -341,15 +323,26 @@ onBeforeUnmount(() => {
 watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth], async ([v, depth]) => {
     if (!map) return;
 
-    if (!v) { removePngOverlay(); return; }
+    if (!v) {
+        removePngOverlay();
+        removeBathymetryTilesLayer();
+        return;
+    }
+
     try {
-        await getMetadata();
-        await updatePngOverlay();
+        // Check if bathymetry is selected
+        if (v === 'bathymetry') {
+            removePngOverlay();
+            addBathymetryTilesLayer();
+        } else {
+            removeBathymetryTilesLayer();
+            await updatePngOverlay();
+        }
 
         mapLoaded.value = true;
 
         // If the user previously clicked a point, refresh the timeseries chart for the new var/depth
-        if (lastClicked.value) {
+        if (lastClicked.value && v !== 'bathymetry') {  // Skip API call for bathymetry
             try {
                 // debounce rapid var/depth changes to avoid hammering the API
                 if (tsRefreshTimer) clearTimeout(tsRefreshTimer);
@@ -394,7 +387,6 @@ watch(() => mainStore.selected_variable.dt, async (newDt) => {
 });
 
 watch(() => mainStore.selected_variable, () => {
-    console.log('selected_variable changed:', mainStore.selected_variable);
 }, { deep: true });
 
 watch(() => mainStore.showBathymetryContours, (show) => {
@@ -407,38 +399,101 @@ watch(() => mainStore.showBathymetryContours, (show) => {
                     tiles: [`${apiBaseUrl}/vector/{z}/{x}/{y}.pbf`],
                 });
 
+            // Contour lines
             map?.addLayer({
                 id: 'nonna-layer',
                 type: 'line',
                 source: 'nonna',
                 'source-layer': 'nonna', // name of the layer in the vector tile source
+                filter: [
+                    "step",
+                    ["zoom"],
+                    [
+                        "case",
+                        ["==", ["%", ["to-number", ["get", "ELEV"]], 100], 0],
+                        true,
+                        false
+                    ],
+                    8,
+                    [
+                        "case",
+                        ["==", ["%", ["to-number", ["get", "ELEV"]], 50], 0],
+                        true,
+                        false
+                    ],
+                    12,
+                    true
+                ],
                 paint: {
-                    "line-color": "#ccc",
+                    "line-color": "#999",
                     "line-width": 1,
-                    "line-opacity": [
-                        "step",
-                        ["zoom"],
-                        [
-                            "case",
-                            ["==", ["%", ["to-number", ["get", "ELEV"]], 100], 0],
-                            1,
-                            0
-                        ],
-                        8,
-                        [
-                            "case",
-                            ["==", ["%", ["to-number", ["get", "ELEV"]], 50], 0],
-                            1,
-                            0
-                        ],
-                        12,
-                        1
-                    ]
+                    // "line-opacity": [
+                    //     "step",
+                    //     ["zoom"],
+                    //     [
+                    //         "case",
+                    //         ["==", ["%", ["to-number", ["get", "ELEV"]], 100], 0],
+                    //         1,
+                    //         0
+                    //     ],
+                    //     8,
+                    //     [
+                    //         "case",
+                    //         ["==", ["%", ["to-number", ["get", "ELEV"]], 50], 0],
+                    //         1,
+                    //         0
+                    //     ],
+                    //     12,
+                    //     1
+                    // ]
+                }
+            });
+
+            // Labels for every 100m contour
+            map?.addLayer({
+                id: 'nonna-labels',
+                type: 'symbol',
+                source: 'nonna',
+                'source-layer': 'nonna',
+                // filter: ["==", ["%", ["to-number", ["get", "ELEV"]], 100], 0],
+                filter: [
+                    "step",
+                    ["zoom"],
+                    [
+                        "case",
+                        ["==", ["%", ["to-number", ["get", "ELEV"]], 100], 0],
+                        true,
+                        false
+                    ],
+                    8,
+                    [
+                        "case",
+                        ["==", ["%", ["to-number", ["get", "ELEV"]], 50], 0],
+                        true,
+                        false
+                    ],
+                    12,
+                    true
+                ],
+                layout: {
+                    "symbol-placement": "line",
+                    "text-field": ["to-string", ["get", "ELEV"]],
+                    // "text-font": ["Inter Regular"],
+                    "text-size": 12,
+                    "text-allow-overlap": true,
+                    // "symbol-spacing": 250
+                },
+                paint: {
+                    "text-color": "#ccc",
+                    "text-halo-color": "#333",
+                    "text-halo-width": 1,
+                    "text-halo-blur": 1
                 }
             });
 
         } else {
             if (map.getLayer('nonna-layer')) map.removeLayer('nonna-layer');
+            if (map.getLayer('nonna-labels')) map.removeLayer('nonna-labels');
             if (map.getSource('nonna')) map.removeSource('nonna');
         }
     } catch (e) {
@@ -509,7 +564,6 @@ async function init() {
         let lastClickedX: string | number | null = null;
         zrClickHandler = (evt: any) => {
             if (!globalChart || !model_timestamps.length) return;
-            console.log('model_timestamps: ', model_timestamps);
 
             // ZRender coordinates for the click
             const px = evt.event.zrX;
@@ -520,7 +574,6 @@ async function init() {
             if (!converted || converted[0] === undefined) return;
 
             const clickX = Number(converted[0]);
-            console.log('clickX: ', clickX);
 
             // Find nearest point in __series_model (assumed sorted timestamps)
             // Binary search for efficiency
@@ -537,17 +590,13 @@ async function init() {
                 else if (model_timestamps[mid] > clickX) high = mid - 1;
                 else break;
             }
-            console.log('bestIdx: ', bestIdx);
 
             const finalX = model_timestamps[bestIdx];
-            console.log('finalX: ', finalX);
             if (finalX !== lastClickedX) {
                 lastClickedX = finalX;
-                mainStore.setSelectedVariable(
-                    mainStore.selected_variable.var,
-                    moment.utc(finalX),
-                    mainStore.selected_variable.depth
-                );
+                mainStore.updateSelectedVariable({
+                    dt: moment.utc(finalX)
+                });
             }
         };
         globalChart.getZr().on('click', zrClickHandler);
@@ -569,15 +618,29 @@ async function getVariables() {
         });
 
         mainStore.setVariables(data);
+        console.log("Variables fetched:", data);
 
         if (data.length > 0) {
             const varId = 'temperature';
             const varMeta = data.find((v: any) => v.var === varId);
+            const source = varMeta?.source ?? '';
             const dts = varMeta?.dts ?? [];
             const precision = varMeta?.precision || 0.1;
             const depth = (varMeta?.depths && varMeta.depths.length > 0) ? varMeta.depths[0] : 0.5;
+            const colormap = varMeta?.colormap ?? null;
+            const colormapMin = varMeta?.colormapMin ?? null;
+            const colormapMax = varMeta?.colormapMax ?? null;
             if (dts.length > 0) {
-                mainStore.setSelectedVariable(varId, dts[dts.length - 1], depth, precision);
+                mainStore.updateSelectedVariable({
+                    var: varId,
+                    source: source,
+                    dt: dts[dts.length - 1],
+                    depth: depth,
+                    precision: precision,
+                    colormap: colormap,
+                    colormapMin: colormapMin,
+                    colormapMax: colormapMax
+                });
             }
         }
 
@@ -709,9 +772,7 @@ async function addSensors() {
     // Attach active-only click handlers via composable
     try {
         const stations = useStationsInteraction(() => map, async (sensor_id: number) => {
-            console.log('Station clicked, sensor_id:', sensor_id);
             clicked_sensor_id.value = sensor_id;
-            console.log(sensors, sensor_id, sensors.find((s: any) => s.id === sensor_id));
             // show marker
             // try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
             // const el = document.createElement('div'); el.style.width = '12px'; el.style.height = '12px'; el.style.borderRadius = '50%'; el.style.background = '#ff5722'; el.style.border = '2px solid white';
@@ -769,15 +830,15 @@ async function getSensors() {
 // Add / update / remove PNG overlay for a given public PNG path
 async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
     if (!map) throw new Error('map not initialized');
-    if (!meta.value || !meta.value.bounds) throw new Error('metadata not loaded');
+    // if (!meta.value || !meta.value.bounds) throw new Error('metadata not loaded');
 
     const varId = mainStore.selected_variable.var;
     const dt = mainStore.selected_variable.dt?.format('YYYY-MM-DDTHHmmss') || '';
     const depth = formatDepth(mainStore.selected_variable.depth);
-
     const pngPath = `${apiBaseUrl}/png/${varId}/${dt}/${depth}`;
 
-    const [lonmin, latmin, lonmax, latmax] = meta.value.bounds;
+    const varMeta = mainStore.variables.find(v => v.var === varId);
+    const [lonmin, latmin, lonmax, latmax] = varMeta.bounds;
     const coords = [
         [lonmin, latmax], // top-left
         [lonmax, latmax], // top-right
@@ -798,15 +859,12 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     //             0.5, '#0f0',
     //             0.75, '#fde725',
     //             1.0, '#f00'
-    const varMeta = mainStore.variables.find(v => v.var === varId);
-    const vmin_meta = varMeta?.min;
-    const vmax_meta = varMeta?.max;
 
-    const vmin = (selectedMin.value !== null && selectedMin.value !== undefined) ? selectedMin.value : vmin_meta;
-    const vmax = (selectedMax.value !== null && selectedMax.value !== undefined) ? selectedMax.value : vmax_meta;
+    const colormapMin = mainStore.selected_variable.colormapMin
+    const colormapMax = mainStore.selected_variable.colormapMax
 
     // Get packing params from metadata, default to 0.1 precision and 0 base if missing
-    // Note: base might be equal to vmin if it was dynamic
+    // Note: base might be equal to colormapMin if it was dynamic
     const precision = mainStore.variables.find(v => v.var === varId)?.precision ?? 0.1;
     const base = 0
 
@@ -819,7 +877,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
             // pos may be normalized [0..1] or absolute depending on cmap.mode
             let val_phys = pos;
             if (!cmap.mode || cmap.mode === 'normalized') {
-                val_phys = vmin + pos * (vmax - vmin);
+                val_phys = colormapMin + pos * (colormapMax - colormapMin);
             }
             const val_packed = (val_phys - base) / precision;
             raster_values.push(val_packed, color);
@@ -834,7 +892,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
             [1.0, '#f00']
         ];
         for (const stop of color_stops) {
-            const val_phys = vmin + stop[0] * (vmax - vmin);
+            const val_phys = colormapMin + stop[0] * (colormapMax - colormapMin);
             // decode formula: q = (phys - base) / precision
             const val_packed = (val_phys - base) / precision;
             raster_values.push(val_packed, stop[1]);
@@ -853,7 +911,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
             ['raster-value'],
             ...raster_values
         ]);
-        map.setPaintProperty(layerId, 'raster-color-range', [(vmin - base) / precision, (vmax - base) / precision]);
+        map.setPaintProperty(layerId, 'raster-color-range', [(colormapMin - base) / precision, (colormapMax - base) / precision]);
     }
     else {
         map.addSource(sourceId, { type: 'image', url: pngPath, coordinates: coords });
@@ -867,7 +925,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
                     ...raster_values
                 ],
                 // Range of the packed integer values
-                'raster-color-range': [(vmin - base) / precision, (vmax - base) / precision],
+                'raster-color-range': [(colormapMin - base) / precision, (colormapMax - base) / precision],
                 // Mix to recover the 24-bit integer from normalized RGB [0..1]
                 // R_int = R_norm * 255. Packed = R_int*65536 + G_int*256 + B_int
                 // Coeffs: [255*65536, 255*256, 255, 0] -> [16711680, 65280, 255, 0]
@@ -889,7 +947,6 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     // register a click handler that queries the API for a timeseries at the clicked coordinate
     const onMapClick = async (evt: any) => {
         const { lng, lat } = evt.lngLat;
-        console.log('Map clicked at:', lng, lat);
 
         // Check if click landed on a sensor feature
         const features = map.queryRenderedFeatures(evt.point, { layers: ['stations-circles'] });
@@ -947,6 +1004,165 @@ function removePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
     try { if (map.getLayer && map.getLayer(layerId)) map.removeLayer(layerId); } catch (e) { }
     try { if (map.getSource && map.getSource(sourceId)) map.removeSource(sourceId); } catch (e) { }
     try { delete (map as any).__activePngOverlay; } catch (e) { }
+}
+
+// Add bathymetry tiles layer based on raster tiles from backend
+function addBathymetryTilesLayer(sourceId = 'bathymetry-tiles', layerId = 'bathymetry-tiles-layer') {
+    if (!map) return;
+
+    try {
+        // Remove existing layer and source if they exist
+        if (map.getLayer && map.getLayer(layerId)) map.removeLayer(layerId);
+        if (map.getSource && map.getSource(sourceId)) map.removeSource(sourceId);
+
+        // Add raster tile source for bathymetry
+        map.addSource(sourceId, {
+            type: 'raster',
+            tiles: [`${apiBaseUrl}/raster_tiles/{z}/{x}/{y}.webp`],
+            tileSize: 256,
+        });
+
+        // Build colorization stops like PNG layer
+        const raster_values: any[] = [];
+        const colormapMin = selectedVariable.value.colormapMin;
+        const colormapMax = selectedVariable.value.colormapMax;
+        const precision = mainStore.variables.find(v => v.var === 'bathymetry')?.precision ?? 1;
+        const base = -3000;
+
+        // Use the reactive selectedColormap computed like PNG layer does
+        const cmap = selectedColormap.value;
+        if (cmap && Array.isArray(cmap.stops) && cmap.stops.length > 0) {
+            for (const s of cmap.stops) {
+                const pos = s[0];
+                const color = s[1];
+                let val_phys = pos;
+                if (!cmap.mode || cmap.mode === 'normalized') {
+                    val_phys = colormapMin + pos * (colormapMax - colormapMin);
+                }
+                const val_packed = (val_phys - base) / precision;
+                raster_values.push(val_packed, color);
+            }
+        } else {
+            const color_stops = [
+                [0.0, 'rgba(0, 0, 0, 1)'],
+                [0.001, '#440154'],
+                [0.25, '#00f'],
+                [0.5, '#0f0'],
+                [0.75, '#fde725'],
+                [1.0, '#f00']
+            ];
+            for (const stop of color_stops) {
+                const val_phys = colormapMin + stop[0] * (colormapMax - colormapMin);
+                const val_packed = (val_phys - base) / precision;
+                raster_values.push(val_packed, stop[1]);
+            }
+        }
+
+        // Add raster layer with colorization
+        // raster-color-mix decodes the packed 3-channel integer: idx = R*65536 + G*256 + B
+        // where idx = (depth - MIN_ORG) / STEP = depth + 3000
+        // This replaces Mapbox's default luminance formula which would produce wrong values.
+        map.addLayer({
+            id: layerId,
+            type: 'raster',
+            source: sourceId,
+            paint: {
+                'raster-opacity': 0.85,
+                'raster-color-mix': [16711680, 65280, 255, 0],
+                // 'raster-color-offset': 0,
+                'raster-color': [
+                    'interpolate',
+                    ['linear'],
+                    ['raster-value'],
+                    ...raster_values
+                ],
+                'raster-color-range': [(colormapMin - base) / precision, (colormapMax - base) / precision]
+            }
+        }, 'country-boundaries');
+
+        // Store metadata for cleanup
+        (map as any).__activeBathymetryLayer = {
+            sourceId,
+            layerId,
+        };
+    } catch (e) {
+        console.error('Error adding bathymetry tiles layer:', e);
+    }
+}
+
+// Update bathymetry tiles layer colorization
+function updateBathymetryTilesLayerColorization(layerId = 'bathymetry-tiles-layer') {
+    if (!map) return;
+
+    try {
+        if (!map.getLayer(layerId)) return;
+
+        const colormapMin = selectedVariable.value.colormapMin;
+        const colormapMax = selectedVariable.value.colormapMax;
+        const precision = mainStore.variables.find(v => v.var === 'bathymetry')?.precision ?? 1;
+        const base = -3000;
+
+        const raster_values: any[] = [];
+        // Use the reactive selectedColormap computed like PNG layer does
+        const cmap = selectedColormap.value;
+
+        if (cmap && Array.isArray(cmap.stops) && cmap.stops.length > 0) {
+            for (const s of cmap.stops) {
+                const pos = s[0];
+                const color = s[1];
+                let val_phys = pos;
+                if (!cmap.mode || cmap.mode === 'normalized') {
+                    val_phys = colormapMin + pos * (colormapMax - colormapMin);
+                }
+                const val_packed = (val_phys - base) / precision;
+                raster_values.push(val_packed, color);
+            }
+        } else {
+            const color_stops = [
+                [0.0, 'rgba(0, 0, 0, 1)'],
+                [0.001, '#440154'],
+                [0.25, '#00f'],
+                [0.5, '#0f0'],
+                [0.75, '#fde725'],
+                [1.0, '#f00']
+            ];
+            for (const stop of color_stops) {
+                const val_phys = colormapMin + stop[0] * (colormapMax - colormapMin);
+                const val_packed = (val_phys - base) / precision;
+                raster_values.push(val_packed, stop[1]);
+            }
+        }
+
+        map.setPaintProperty(layerId, 'raster-color-mix', [16711680, 65280, 255, 0]);
+        // map.setPaintProperty(layerId, 'raster-color-offset', 0);
+        map.setPaintProperty(layerId, 'raster-color', [
+            'interpolate',
+            ['linear'],
+            ['raster-value'],
+            ...raster_values
+        ]);
+        map.setPaintProperty(layerId, 'raster-color-range', [(colormapMin - base) / precision, (colormapMax - base) / precision]);
+    } catch (e) {
+        console.error('Error updating bathymetry tiles colorization:', e);
+    }
+}
+
+// Remove bathymetry tiles layer
+function removeBathymetryTilesLayer() {
+    if (!map) return;
+
+    try {
+        const bathy = (map as any).__activeBathymetryLayer;
+        if (!bathy) return;
+
+        const { sourceId = 'bathymetry-tiles', layerId = 'bathymetry-tiles-layer' } = bathy;
+
+        try { if (map.getLayer && map.getLayer(layerId)) map.removeLayer(layerId); } catch (e) { }
+        try { if (map.getSource && map.getSource(sourceId)) map.removeSource(sourceId); } catch (e) { }
+        try { delete (map as any).__activeBathymetryLayer; } catch (e) { }
+    } catch (e) {
+        console.error('Error removing bathymetry tiles layer:', e);
+    }
 }
 
 // Plot timeseries returned from the API into the footer chart
@@ -1195,7 +1411,6 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     option.series = seriesArr;
 
     const hasSensorData = sensorData && Array.isArray(sensorData.time) && sensorData.time.length > 0;
-    console.log('sensorData present:', hasSensorData);
 
     if (hasSensorData) {
         const sensor_timestamps = sensorData.time.map((t: any) => moment.utc(t).valueOf());
@@ -1218,8 +1433,6 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
         option.series = option.series.filter((s: any) => s.name !== 'Sensor Data');
     }
 
-    console.log(option);
-
     // Add night mark areas if any
     if (markAreaData.length > 0) {
         (option.series[0] as any).markArea = { silent: true, itemStyle: { color: 'rgba(20,30,70,0.08)' }, data: markAreaData };
@@ -1236,8 +1449,6 @@ try {
         if (!globalChart) return;
         const tz = 'America/Vancouver';
         const sel = newDt ? moment.utc(newDt).tz(tz).format() : null;
-        console.log('sel: ', sel);
-        console.log("now", moment.tz(moment(), tz).format());
         try {
             globalChart.setOption({
                 series: [

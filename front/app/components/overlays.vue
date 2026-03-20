@@ -7,6 +7,12 @@
       <iconsContour />
     </v-btn>
 
+    <v-btn icon size="x-small" flat 
+      @click="autorange"
+      title="Auto-range colorbar to data range">
+      <iconsAutorange />
+    </v-btn>
+
   </v-card>
 </template>
 
@@ -16,7 +22,15 @@ import { computed, toRef, ref, watch } from 'vue';
 import { useMainStore } from '../stores/main'
 const mainStore = useMainStore();
 
+const emit = defineEmits<{
+  (e: 'autorange'): void;
+}>();
+
 const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
+
+function autorange() {
+  emit('autorange');
+}
 
 </script>
 
