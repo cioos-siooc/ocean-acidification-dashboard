@@ -54,15 +54,17 @@
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ utc2pst(moment(selectedVariable.dt)) }}</span>
                     </v-col>
+                    <v-divider vertical class="mx-2"></v-divider>
+                    <v-col v-if="lastClicked" cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
+                        <span class="footer-text">{{ lastClicked?.lat.toFixed(5) }} , {{ lastClicked?.lng.toFixed(5) }}</span>
+                    </v-col>
 
                     <v-spacer></v-spacer>
-
-                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">{{ zoom }}</v-col>
 
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
                         <span class="footer-text">{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
-                            }}</span>
+                        }}</span>
                     </v-col>
                 </v-row>
 
@@ -156,7 +158,7 @@ let model_timestamps: number[] = []; // Global cache for chart timestamps to sup
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
 // remember last clicked point (lat/lon) so chart can be refreshed when var/depth changes
-const lastClicked = ref<{ lat: number; lon: number } | null>(null);
+const lastClicked = ref<{ lat: number; lng: number } | null>(null);
 const footerHeight = '300px';
 
 // [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
@@ -349,7 +351,7 @@ watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth]
                 tsRefreshTimer = setTimeout(async () => {
                     try {
                         const lat = lastClicked.value!.lat;
-                        const lon = lastClicked.value!.lon;
+                        const lon = lastClicked.value!.lng;
                         const varId = mainStore.selected_variable.var;
 
                         // abort previous request if any
@@ -659,17 +661,17 @@ function maybeInitClick() {
     }
 }
 
-function initClick(lat: number, lon: number) {
+function initClick(lat: number, lng: number) {
     if (!map) return;
 
-    lastClicked.value = { lat, lon };
+    lastClicked.value = { lat, lng };
 
     // Abort any in-flight timeseries requests and create a new controller
     try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
     tsRequestController = new AbortController();
 
     // trigger map click to load initial timeseries
-    map.fire('click', { lngLat: { lat, lng: lon } });
+    map.fire('click', { lngLat: { lat, lng } });
 
     // getTimeseriesFromApi(lat, lon);
 }
@@ -929,7 +931,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
                 // Mix to recover the 24-bit integer from normalized RGB [0..1]
                 // R_int = R_norm * 255. Packed = R_int*65536 + G_int*256 + B_int
                 // Coeffs: [255*65536, 255*256, 255, 0] -> [16711680, 65280, 255, 0]
-                'raster-color-mix': [256*256*255,256*255, 255, 0],
+                'raster-color-mix': [256 * 256 * 255, 256 * 255, 255, 0],
                 'raster-fade-duration': 0
             },
         }, 'country-boundaries');
@@ -967,7 +969,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
         (map as any).__clickMarker = marker;
 
         // remember clicked point so subsequent var/depth changes can refresh the chart
-        lastClicked.value = { lat, lon: lng };
+        lastClicked.value = { lat, lng };
 
         // Abort any in-flight timeseries requests and create a new controller
         try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
@@ -1142,9 +1144,9 @@ function updateBathymetryTilesLayerColorization(layerId = 'bathymetry-tiles-laye
 
         console.log("raster_vlues: ", raster_values);
         console.log("raster-color-range: ", raster_color_range);
-        
-        
-        
+
+
+
     } catch (e) {
         console.error('Error updating bathymetry tiles colorization:', e);
     }
@@ -1174,7 +1176,7 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     const tz = 'America/Vancouver';
 
     const lat = lastClicked.value?.lat;
-    const lon = lastClicked.value?.lon;
+    const lng = lastClicked.value?.lng;
 
     // Update global timestamp cache for the click handler
     model_timestamps = modelData.time.map((t: any) => moment.utc(t).valueOf());
