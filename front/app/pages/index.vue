@@ -614,11 +614,10 @@ async function getVariables() {
 
         // Convert datetimes from string to moment objects
         data.forEach((v: any) => {
-            v.dts = v.dts.map((dtstr: string) => moment.utc(dtstr));
+            v.dts = v.dts?.map((dtstr: string) => moment.utc(dtstr));
         });
 
         mainStore.setVariables(data);
-        console.log("Variables fetched:", data);
 
         if (data.length > 0) {
             const varId = 'temperature';
@@ -631,6 +630,7 @@ async function getVariables() {
             const colormapMin = varMeta?.colormapMin ?? null;
             const colormapMax = varMeta?.colormapMax ?? null;
             if (dts.length > 0) {
+                console.log(dts);
                 mainStore.updateSelectedVariable({
                     var: varId,
                     source: source,

@@ -3,25 +3,27 @@
 This module contains a single helper `get_variables` which executes the
 query and returns a list of dicts: {"var": ..., "from_dt": ..., "to_dt": ...}.
 """
-import os
 from typing import List, Dict
+import datetime
 
 
 def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> List[Dict]:
-    # Include `colormap`, `bounds`, and `source` columns so clients have full metadata
+    # Get metadata from fields table and unique datetimes from nc_jobs where status='success_image'
     query = """
         SELECT 
             f.variable, 
-            f.available_datetimes, 
             f.min, 
             f.max, 
             f.depths_image, 
             f.precision, 
             f.colormap,
             d.bounds,
-            d.source
+            d.source,
+            ARRAY_AGG(DISTINCT nj.start_time ORDER BY nj.start_time) as available_datetimes
         FROM fields f
-        LEFT JOIN datasets d ON f.dataset_id = d.id;
+        LEFT JOIN datasets d ON f.dataset_id = d.id
+        LEFT JOIN nc_jobs nj ON f.id = nj.variable_id AND nj.status = 'success_image'
+        GROUP BY f.id, f.variable, f.min, f.max, f.depths_image, f.precision, f.colormap, d.bounds, d.source;
     """
     
     try:
@@ -42,7 +44,25 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
         for row in rows:
             variable = row.get("variable")
             print(variable)
+            # Expand dates to hourly datetimes at half-hour marks (00:30 to 23:30)
             available_datetimes = row.get("available_datetimes")
+            if available_datetimes is not None:
+                try:
+                    expanded_datetimes = []
+                    for dt in available_datetimes:
+                        # Convert to date if it's a timestamp
+                        date = dt.date() if hasattr(dt, 'date') else dt
+                        # Create 24 hourly datetimes at half-hour marks
+                        for hour in range(24):
+                            hourly_dt = datetime.datetime.combine(
+                                date,
+                                datetime.time(hour=hour, minute=30)
+                            )
+                            expanded_datetimes.append(hourly_dt)
+                    available_datetimes = expanded_datetimes
+                except Exception as e:
+                    print(f"Error processing datetimes for variable {variable}: {e}")
+                    available_datetimes = None
             colormap_min = row.get("min")
             colormap_max = row.get("max")
             depths = row.get("depths_image")
