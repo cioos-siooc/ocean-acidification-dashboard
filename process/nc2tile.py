@@ -466,12 +466,12 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
     os.makedirs(png_dir, exist_ok=True)
 
     if d_val is None:
-        fname = 'time.png'
+        fname = 'time.webp'
     else:
         # round depth to 1 decimal and format like 0p5, 18p0, etc.
         depth_round = round(float(d_val), 1)
         depth_s = f"{depth_round:.1f}".replace('.', 'p').replace('-', 'm')
-        fname = f"{depth_s}.png"
+        fname = f"{depth_s}.webp"
 
     out_png = os.path.join(png_dir, fname)
 
@@ -555,7 +555,7 @@ def cap_to_range(arr: np.ndarray, vmin: Optional[float], vmax: Optional[float]) 
 
 
 def write_png_rgba(gray_u8: np.ndarray, alpha_mask: np.ndarray, outpath: str) -> None:
-    """Write 2D uint8 grayscale + alpha mask (0..255) to RGBA PNG using Pillow."""
+    """Write 2D uint8 grayscale + alpha mask (0..255) to RGBA WebP using Pillow (lossless)."""
     # gray_u8: HxW, alpha_mask: HxW uint8
     h, w = gray_u8.shape
     rgba = np.zeros((h, w, 4), dtype=np.uint8)
@@ -564,11 +564,11 @@ def write_png_rgba(gray_u8: np.ndarray, alpha_mask: np.ndarray, outpath: str) ->
     rgba[..., 2] = gray_u8
     rgba[..., 3] = alpha_mask
     img = Image.fromarray(rgba, mode="RGBA")
-    img.save(outpath, compress_level=1)
+    img.save(outpath, 'WEBP', lossless=True)
 
 
 def write_png_packed(float_arr: np.ndarray, alpha_mask: np.ndarray, outpath: str, precision: float = 0.1, base: float = 0.0) -> None:
-    """Pack float values into RGB channels using fixed-point quantization.
+    """Pack float values into RGB channels using fixed-point quantization (WebP lossless).
 
     - precision: the smallest distinguishable unit (e.g., 0.1)
     - base: the value that maps to 0 in packed representation (quant = round((val-base)/precision))
@@ -593,7 +593,7 @@ def write_png_packed(float_arr: np.ndarray, alpha_mask: np.ndarray, outpath: str
     rgba[..., 3] = alpha_mask
 
     img = Image.fromarray(rgba, mode="RGBA")
-    img.save(outpath, compress_level=1)
+    img.save(outpath, 'WEBP', lossless=True)
 
 
 

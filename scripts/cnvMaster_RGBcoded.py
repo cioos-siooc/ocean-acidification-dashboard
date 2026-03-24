@@ -156,7 +156,7 @@ def render_tile(z, tx, ty):
             img[mask] = existing[mask]
 
     cv2.imwrite(tile_path, img)
-    plot_tile(img)
+    # plot_tile(img)
 
 
 ###################################################################
