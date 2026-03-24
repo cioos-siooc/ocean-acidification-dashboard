@@ -51,7 +51,7 @@ services:
     build: ./api
     volumes:
       - ./api:/app
-      - ./data:/opt/data
+      - /mnt/data/:/opt/data
     ports:
       - "${API_PORT:-4000}:4000"
     environment:
@@ -94,7 +94,7 @@ services:
       - PGPASSWORD=postgres
     volumes:
       - ./process:/app
-      - ./data:/opt/data
+      # - ./data:/opt/data
     depends_on:
       db:
         condition: service_healthy
@@ -102,3 +102,4 @@ services:
 volumes:
   oa_db:
   umami-db-data:
+  # oa_data:

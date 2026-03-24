@@ -8,8 +8,21 @@ from typing import List, Dict
 
 
 def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> List[Dict]:
-    # Include `colormap` column so clients know which colormap to use for each variable
-    query = "SELECT variable, available_datetimes, min, max, depths_image, precision, colormap FROM erddap_variables;"
+    # Include `colormap`, `bounds`, and `source` columns so clients have full metadata
+    query = """
+        SELECT 
+            f.variable, 
+            f.available_datetimes, 
+            f.min, 
+            f.max, 
+            f.depths_image, 
+            f.precision, 
+            f.colormap,
+            d.bounds,
+            d.source
+        FROM fields f
+        LEFT JOIN datasets d ON f.dataset_id = d.id;
+    """
     
     try:
         import psycopg2
@@ -30,20 +43,22 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
             variable = row.get("variable")
             print(variable)
             available_datetimes = row.get("available_datetimes")
-            min = row.get("min")
-            max = row.get("max")
+            colormap_min = row.get("min")
+            colormap_max = row.get("max")
             depths = row.get("depths_image")
             precision = row.get("precision")
-            if available_datetimes and isinstance(available_datetimes, list) and len(available_datetimes) > 0:
-                variables.append({
-                    "var": variable,
-                    "dts": available_datetimes,
-                    "min": min,
-                    "max": max,
-                    "depths": depths,
-                    "precision": precision,
-                    "colormap": row.get("colormap")
-                })
+            # if available_datetimes and isinstance(available_datetimes, list) and len(available_datetimes) > 0:
+            variables.append({
+                "var": variable,
+                "dts": available_datetimes,
+                "colormapMin": colormap_min,
+                "colormapMax": colormap_max,
+                "depths": depths,
+                "precision": precision,
+                "colormap": row.get("colormap"),
+                "bounds": row.get("bounds"),
+                "source": row.get("source")
+            })
         return variables
     finally:
         if conn is not None:

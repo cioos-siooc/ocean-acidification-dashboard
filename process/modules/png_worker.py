@@ -128,7 +128,7 @@ def check_image_ready_rows(conn):
         # Get all variables (download and compute types) with their type info
         cur.execute(
             """
-            SELECT id, type FROM erddap_variables 
+            SELECT id, type FROM fields 
             WHERE type IN ('download', 'compute')
             ORDER BY id
             """
@@ -136,7 +136,7 @@ def check_image_ready_rows(conn):
         required_vars = [(row[0], row[1]) for row in cur.fetchall()]
         
         if not required_vars:
-            logger.warning("No required variables (type='download' or type='compute') found in erddap_variables")
+            logger.warning("No required variables (type='download' or type='compute') found in fields")
             return
         
         logger.debug(f"Checking image readiness against {len(required_vars)} required variables")
@@ -202,7 +202,7 @@ def find_pending_image(conn):
             """
             SELECT j.id, j.variable_id, j.start_time, j.end_time, j.nc_path, j.checksum
             FROM nc_jobs j
-            JOIN erddap_variables v ON j.variable_id = v.id
+            JOIN fields v ON j.variable_id = v.id
             WHERE j.status = 'pending_image'
             ORDER BY j.start_time
             """,
@@ -222,10 +222,10 @@ def find_pending_image(conn):
         
 
 def get_variable_from_id(conn, variable_id: int) -> str:
-    """Get variable name from erddap_variables.id."""
+    """Get variable name from fields.id."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT variable FROM erddap_variables WHERE id=%s",
+            "SELECT variable FROM fields WHERE id=%s",
             (variable_id,),
         )
         r = cur.fetchone()
@@ -235,10 +235,10 @@ def get_variable_from_id(conn, variable_id: int) -> str:
 
 
 def get_variable_precision(conn, variable_id: int) -> float:
-    """Get the precision setting for a variable from erddap_variables.precision."""
+    """Get the precision setting for a variable from fields.precision."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT precision FROM erddap_variables WHERE id=%s",
+            "SELECT precision FROM fields WHERE id=%s",
             (variable_id,),
         )
         r = cur.fetchone()
@@ -251,10 +251,10 @@ def get_variable_precision(conn, variable_id: int) -> float:
     raise RuntimeError(f"Invalid precision for variable_id={variable_id}")
 
 def get_variable_depths_image(conn, variable_id: int) -> Optional[list]:
-    """Get the depths setting for PNG generation from erddap_variables.depths_image."""
+    """Get the depths setting for PNG generation from fields.depths_image."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT depths_image FROM erddap_variables WHERE id=%s",
+            "SELECT depths_image FROM fields WHERE id=%s",
             (variable_id,),
         )
         r = cur.fetchone()

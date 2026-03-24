@@ -146,9 +146,7 @@ watch([requestParams, isOpen], ([params, open]) => {
 }, { immediate: true, flush: 'post' });
 
 function ensureChart() {
-    console.log(profileChart, chartContainer.value);
     if (profileChart || !chartContainer.value) return;
-    console.log('HERE');
     profileChart = echarts.init(chartContainer.value, undefined, { renderer: 'canvas' });
 }
 
@@ -159,7 +157,6 @@ function renderChart(points: ProfilePoint[]) {
 
     const sorted = [...points].sort((a, b) => a.depth - b.depth);
     const data = sorted.map((point) => [point.value, point.depth]);
-    console.log(data);
 
     const option = {
         tooltip: {
@@ -218,7 +215,6 @@ function renderChart(points: ProfilePoint[]) {
     profileChart.setOption(option, true);
 
     profileChart.resize();
-    console.log(option);
 }
 
 function normalizeProfileResponse(data: any): ProfilePoint[] {
@@ -282,7 +278,6 @@ async function fetchProfile(params: ProfileRequest) {
     try {
         const payload: Record<string, any> = { var: params.var, lat: params.lat, lon: params.lon, dt: params.dt };
         const response = await axios.post(`${apiBaseUrl}/getProfile`, payload, { signal: currentController.signal });
-        console.log('response: ', response);
 
         if (currentRequest !== requestSequence) return;
         const normalized = normalizeProfileResponse(response.data);

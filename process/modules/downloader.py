@@ -13,7 +13,7 @@ def find_pending_rows(conn, limit=10, variable=None):
     if variable:
         # Map variable name to ID
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM erddap_variables WHERE variable = %s", (variable,))
+            cur.execute("SELECT id FROM fields WHERE variable = %s", (variable,))
             vrow = cur.fetchone()
             if not vrow:
                 return []  # Variable doesn't exist
@@ -22,7 +22,7 @@ def find_pending_rows(conn, limit=10, variable=None):
         params.insert(0, v_id)  # Insert before limit
     
     where = " AND ".join(clauses)
-    sql = f"SELECT j.id, j.dataset_id, v.variable, j.start_time, j.end_time, j.status, j.attempts, j.nc_path FROM nc_jobs j JOIN erddap_variables v ON v.id = j.variable_id WHERE {where} ORDER BY j.start_time LIMIT %s"
+    sql = f"SELECT j.id, j.dataset_id, v.variable, j.start_time, j.end_time, j.status, j.attempts, j.nc_path FROM nc_jobs j JOIN fields v ON v.id = j.variable_id WHERE {where} ORDER BY j.start_time LIMIT %s"
     
     with conn.cursor() as cur:
         # If variable filter is used, params = [v_id, limit]
@@ -48,7 +48,7 @@ def requeue_failed(conn, dataset=None, date=None, variable=None):
     if dataset:
         # find dataset id
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM erddap_datasets WHERE dataset_id=%s", (dataset,))
+            cur.execute("SELECT id FROM datasets WHERE dataset_id=%s", (dataset,))
             r = cur.fetchone()
             if not r:
                 return 0
@@ -67,7 +67,7 @@ def requeue_failed(conn, dataset=None, date=None, variable=None):
     if variable:
         # Resolve variable name to variable_id
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM erddap_variables WHERE variable = %s", (variable,))
+            cur.execute("SELECT id FROM fields WHERE variable = %s", (variable,))
             vrow = cur.fetchone()
             if not vrow:
                 return 0
@@ -179,9 +179,9 @@ def download_nc(conn, row, erddap_base):
     start_time = row["start_time"] if isinstance(row, dict) else row['start_time']
     end_time = row["end_time"] if isinstance(row, dict) else row['end_time']
 
-    # fetch base_url from erddap_datasets
+    # fetch base_url from datasets
     with conn.cursor() as cur:
-        cur.execute("SELECT base_url FROM erddap_datasets WHERE id=%s", (ds_id,))
+        cur.execute("SELECT base_url FROM datasets WHERE id=%s", (ds_id,))
         base_url = cur.fetchone()[0]
 
     if not base_url.startswith("http://") and not base_url.startswith("https://"):
@@ -255,11 +255,11 @@ def download_nc(conn, row, erddap_base):
                 (final_path, checksum, nid),
             )
             cur.execute(
-                "UPDATE erddap_variables SET last_downloaded_at = GREATEST(COALESCE(last_downloaded_at, to_timestamp(0)), %s) WHERE dataset_id = %s AND variable = %s",
+                "UPDATE fields SET last_downloaded_at = GREATEST(COALESCE(last_downloaded_at, to_timestamp(0)), %s) WHERE dataset_id = %s AND variable = %s",
                 (end_time, ds_id, variable),
             )
             cur.execute(
-                "UPDATE erddap_datasets SET last_downloaded_at = GREATEST(COALESCE(last_downloaded_at, to_timestamp(0)), %s) WHERE id = %s",
+                "UPDATE datasets SET last_downloaded_at = GREATEST(COALESCE(last_downloaded_at, to_timestamp(0)), %s) WHERE id = %s",
                 (end_time, ds_id),
             )
         conn.commit()

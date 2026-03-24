@@ -3,20 +3,32 @@ import { defineStore } from 'pinia'
 
 export const useMainStore = defineStore('main', {
     state: () => ({
-        variables: [] as Array<{ var: string, dts: moment.Moment[], min: number, max: number, depths: number[], precision: number }>,
-        selected_variable: { var: '', dt: null as moment.Moment | null, depth: null as number | null, precision: null as number | null },
+        variables: [] as Array<{ var: string, source: string, dts: moment.Moment[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number }>,
+        selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null },
+        showBathymetryContours: false,
+        colormaps: {} as Record<string, any>
     }),
 
     actions: {
-        setVariables(vars: Array<{ var: string, dts: moment.Moment[], min: number, max: number, depths: number[], precision: number }>) {
+        setVariables(vars: Array<{ var: string, source: string, dts: moment.Moment[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number }>) {
             this.variables = vars;
         },
 
-        setSelectedVariable(varId: string, dt: moment.Moment | null, depth: number | null, precision: number | null) {
-            this.selected_variable.var = varId;
-            this.selected_variable.dt = dt;
-            this.selected_variable.depth = depth;
-            this.selected_variable.precision = precision;
+        updateSelectedVariable(partial: Partial<typeof this.selected_variable>) {
+            console.log("Updating selected variable with: ", partial, " current state: ", this.selected_variable);
+            // Use individual property assignment to ensure Pinia tracks mutations properly
+            for (const [key, value] of Object.entries(partial)) {
+                (this.selected_variable as any)[key] = value;
+            }
+            console.log("Updated selected variable: ", this.selected_variable);
+        },
+
+        setShowBathymetryContours(value: boolean) {
+            this.showBathymetryContours = value;
+        },
+
+        setColormaps(colormaps: Record<string, any>) {
+            this.colormaps = colormaps;
         }
     }
 })

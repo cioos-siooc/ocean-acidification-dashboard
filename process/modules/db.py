@@ -41,7 +41,7 @@ def ensure_schema(conn):
 
         cur.execute(
             """
-        CREATE TABLE IF NOT EXISTS erddap_datasets (
+        CREATE TABLE IF NOT EXISTS datasets (
             id SERIAL PRIMARY KEY,
             base_url TEXT UNIQUE NOT NULL,
             title TEXT,
@@ -50,9 +50,9 @@ def ensure_schema(conn):
             last_downloaded_at TIMESTAMPTZ,
             meta JSONB
         );
-        CREATE TABLE IF NOT EXISTS erddap_variables (
+        CREATE TABLE IF NOT EXISTS fields (
             id SERIAL PRIMARY KEY,
-            dataset_id INT REFERENCES erddap_datasets(id) ON DELETE SET NULL,
+            dataset_id INT REFERENCES datasets(id) ON DELETE SET NULL,
             variable TEXT NOT NULL,
             last_downloaded_at TIMESTAMPTZ,
             meta JSONB,
@@ -65,8 +65,8 @@ def ensure_schema(conn):
 
         CREATE TABLE IF NOT EXISTS nc_jobs (
             id SERIAL PRIMARY KEY,
-            dataset_id INT NOT NULL REFERENCES erddap_datasets(id) ON DELETE CASCADE,
-            variable_id INT NOT NULL REFERENCES erddap_variables(id) ON DELETE CASCADE,
+            dataset_id INT NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
+            variable_id INT NOT NULL REFERENCES fields(id) ON DELETE CASCADE,
             start_time TIMESTAMPTZ NOT NULL,
             end_time TIMESTAMPTZ NOT NULL,
             status nc_file_status DEFAULT 'pending_download',
@@ -102,54 +102,54 @@ def ensure_schema(conn):
 
         # If older schema used dataset_id column name, rename to base_url
         cur.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name='erddap_datasets' AND column_name='dataset_id'"
+            "SELECT column_name FROM information_schema.columns WHERE table_name='datasets' AND column_name='dataset_id'"
         )
         has_dataset_id = cur.fetchone() is not None
         cur.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name='erddap_datasets' AND column_name='base_url'"
+            "SELECT column_name FROM information_schema.columns WHERE table_name='datasets' AND column_name='base_url'"
         )
         has_base_url = cur.fetchone() is not None
         if has_dataset_id and not has_base_url:
-            cur.execute("ALTER TABLE erddap_datasets RENAME COLUMN dataset_id TO base_url")
+            cur.execute("ALTER TABLE datasets RENAME COLUMN dataset_id TO base_url")
 
-        # Ensure erddap_variables has a column to store available datetimes per variable.
+        # Ensure fields has a column to store available datetimes per variable.
         # Prefer a native timestamptz[] column for efficient storage and querying.
         # If an existing JSONB column is present, try to convert it safely.
-        cur.execute("SELECT data_type, udt_name FROM information_schema.columns WHERE table_name='erddap_variables' AND column_name='available_datetimes'")
+        cur.execute("SELECT data_type, udt_name FROM information_schema.columns WHERE table_name='fields' AND column_name='available_datetimes'")
         col = cur.fetchone()
         if not col:
-            cur.execute("ALTER TABLE erddap_variables ADD COLUMN available_datetimes timestamptz[] DEFAULT '{}'::timestamptz[]")
+            cur.execute("ALTER TABLE fields ADD COLUMN available_datetimes timestamptz[] DEFAULT '{}'::timestamptz[]")
         else:
             data_type, udt_name = col
             if data_type.lower() == 'jsonb':                # ensure 'type' column exists to indicate whether a variable is 'download' or 'compute'
-                cur.execute("ALTER TABLE erddap_variables ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'download'")
+                cur.execute("ALTER TABLE fields ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'download'")
             else:
                 # ensure 'type' column exists regardless
-                cur.execute("ALTER TABLE erddap_variables ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'download'")
+                cur.execute("ALTER TABLE fields ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'download'")
             if data_type.lower() == 'jsonb':                # Convert JSONB array of ISO strings to timestamptz[] in a new temporary column,
                 # then replace the original column to avoid data loss.
-                cur.execute("ALTER TABLE erddap_variables ADD COLUMN IF NOT EXISTS available_datetimes_ts timestamptz[] DEFAULT '{}'::timestamptz[]")
+                cur.execute("ALTER TABLE fields ADD COLUMN IF NOT EXISTS available_datetimes_ts timestamptz[] DEFAULT '{}'::timestamptz[]")
                 # Use jsonb_array_elements_text to extract strings and cast to timestamptz, aggregate distinct ordered list
                 cur.execute(
-                    "UPDATE erddap_variables SET available_datetimes_ts = (SELECT array_agg(DISTINCT (x::timestamptz) ORDER BY (x::timestamptz)) FROM jsonb_array_elements_text(available_datetimes) AS x WHERE available_datetimes IS NOT NULL)"
+                    "UPDATE fields SET available_datetimes_ts = (SELECT array_agg(DISTINCT (x::timestamptz) ORDER BY (x::timestamptz)) FROM jsonb_array_elements_text(available_datetimes) AS x WHERE available_datetimes IS NOT NULL)"
                 )
-                cur.execute("ALTER TABLE erddap_variables DROP COLUMN available_datetimes")
-                cur.execute("ALTER TABLE erddap_variables RENAME COLUMN available_datetimes_ts TO available_datetimes")
+                cur.execute("ALTER TABLE fields DROP COLUMN available_datetimes")
+                cur.execute("ALTER TABLE fields RENAME COLUMN available_datetimes_ts TO available_datetimes")
             elif data_type.lower() == 'array':
                 # already an array type; nothing to do
                 pass
             else:
                 # If it's some other type, try to change to timestamptz[] (may fail if incompatible values exist)
                 try:
-                    cur.execute("ALTER TABLE erddap_variables ALTER COLUMN available_datetimes TYPE timestamptz[] USING available_datetimes::timestamptz[]")
+                    cur.execute("ALTER TABLE fields ALTER COLUMN available_datetimes TYPE timestamptz[] USING available_datetimes::timestamptz[]")
                 except Exception:
                     # leave as-is; downstream code will handle JSONB as fallback
                     logger.exception('Could not convert available_datetimes column to timestamptz[]; leaving existing type')
         
-        # Ensure erddap_variables has a precision column for PNG packing (defaults to 0.1)
-        cur.execute("SELECT 1 FROM information_schema.columns WHERE table_name='erddap_variables' AND column_name='precision'")
+        # Ensure fields has a precision column for PNG packing (defaults to 0.1)
+        cur.execute("SELECT 1 FROM information_schema.columns WHERE table_name='fields' AND column_name='precision'")
         if not cur.fetchone():
-            cur.execute("ALTER TABLE erddap_variables ADD COLUMN precision FLOAT DEFAULT 0.1")
+            cur.execute("ALTER TABLE fields ADD COLUMN precision FLOAT DEFAULT 0.1")
 
         # No automatic migration of `nc_files` rows will be performed.
         # We create the `nc_jobs` table for new pipeline usage and leave the legacy
@@ -161,7 +161,7 @@ def ensure_schema(conn):
 def upsert_dataset(conn, base_url, title=None, last_remote_time=None, meta=None):
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, last_remote_time FROM erddap_datasets WHERE base_url = %s",
+            "SELECT id, last_remote_time FROM datasets WHERE base_url = %s",
             (base_url,),
         )
         row = cur.fetchone()
@@ -169,7 +169,7 @@ def upsert_dataset(conn, base_url, title=None, last_remote_time=None, meta=None)
             ds_id, prev_remote = row
             if last_remote_time and (not prev_remote or last_remote_time > prev_remote):
                 cur.execute(
-                    "UPDATE erddap_datasets SET last_remote_time = %s, last_checked_at = NOW(), title = COALESCE(%s, title), meta = COALESCE(%s, meta) WHERE id = %s",
+                    "UPDATE datasets SET last_remote_time = %s, last_checked_at = NOW(), title = COALESCE(%s, title), meta = COALESCE(%s, meta) WHERE id = %s",
                     (
                         last_remote_time,
                         title,
@@ -179,12 +179,12 @@ def upsert_dataset(conn, base_url, title=None, last_remote_time=None, meta=None)
                 )
             else:
                 cur.execute(
-                    "UPDATE erddap_datasets SET last_checked_at = NOW(), title = COALESCE(%s, title) WHERE id = %s",
+                    "UPDATE datasets SET last_checked_at = NOW(), title = COALESCE(%s, title) WHERE id = %s",
                     (title, ds_id),
                 )
         else:
             cur.execute(
-                "INSERT INTO erddap_datasets (base_url, title, last_checked_at, last_remote_time, meta) VALUES (%s,%s,NOW(),%s,%s) RETURNING id",
+                "INSERT INTO datasets (base_url, title, last_checked_at, last_remote_time, meta) VALUES (%s,%s,NOW(),%s,%s) RETURNING id",
                 (
                     base_url,
                     title,
@@ -203,14 +203,14 @@ def ensure_variable(conn, ds_id, variable):
     # treats NULLs as equal for comparison purposes.
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id FROM erddap_variables WHERE dataset_id IS NOT DISTINCT FROM %s AND variable=%s",
+            "SELECT id FROM fields WHERE dataset_id IS NOT DISTINCT FROM %s AND variable=%s",
             (ds_id, variable),
         )
         r = cur.fetchone()
         if r:
             return r[0]
         cur.execute(
-            "INSERT INTO erddap_variables (dataset_id, variable, meta) VALUES (%s,%s,%s) RETURNING id",
+            "INSERT INTO fields (dataset_id, variable, meta) VALUES (%s,%s,%s) RETURNING id",
             (ds_id, variable, Json({})),
         )
         conn.commit()
@@ -219,6 +219,6 @@ def ensure_variable(conn, ds_id, variable):
 
 def get_dataset_meta(conn, id):
     with conn.cursor() as cur:
-        cur.execute("SELECT meta FROM erddap_datasets WHERE id=%s", (id,))
+        cur.execute("SELECT meta FROM datasets WHERE id=%s", (id,))
         row = cur.fetchone()
         return row[0] if row else {}

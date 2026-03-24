@@ -230,46 +230,6 @@ def build_target_grid(minx: float, miny: float, maxx: float, maxy: float, max_di
     return xx, yy, w, h
 
 
-def reproject_and_interpolate(
-    lon_src: np.ndarray,
-    lat_src: np.ndarray,
-    vals_src: np.ndarray,
-    xx_merc: np.ndarray,
-    yy_merc: np.ndarray,
-    method: str = "linear",
-) -> np.ndarray:
-    """Interpolate vals_src (shape gridY x gridX) defined at lon_src/lat_src onto target mercator grid.
-
-    Steps:
-    - inverse-transform target mercator grid back to lon/lat
-    - use scipy.griddata to interpolate
-    """
-    if Transformer is None:
-        raise RuntimeError("pyproj is required")
-    # transformer: 3857 -> 4326
-    transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-    flat_x = xx_merc.ravel()
-    flat_y = yy_merc.ravel()
-    tgt_lon, tgt_lat = transformer.transform(flat_x, flat_y)
-
-    # Source points
-    pts_src = np.column_stack((lon_src.ravel(), lat_src.ravel()))
-    vals = vals_src.ravel()
-
-    # Mask invalid sources
-    mask = ~np.isnan(vals)
-    if mask.sum() == 0:
-        return np.full_like(xx_merc, np.nan, dtype=float)
-
-    pts_valid = pts_src[mask]
-    vals_valid = vals[mask]
-
-    # Interpolate; note this can be slow for large grids
-    tgt_pts = np.column_stack((tgt_lon, tgt_lat))
-    interpolated = griddata(pts_valid, vals_valid, tgt_pts, method=method, fill_value=np.nan)
-    return interpolated.reshape(xx_merc.shape)
-
-
 def _process_task(task: Tuple) -> Tuple[str, str]:
     """Worker function executed in a separate process.
 
@@ -466,12 +426,12 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
     os.makedirs(png_dir, exist_ok=True)
 
     if d_val is None:
-        fname = 'time.png'
+        fname = 'time.webp'
     else:
         # round depth to 1 decimal and format like 0p5, 18p0, etc.
         depth_round = round(float(d_val), 1)
         depth_s = f"{depth_round:.1f}".replace('.', 'p').replace('-', 'm')
-        fname = f"{depth_s}.png"
+        fname = f"{depth_s}.webp"
 
     out_png = os.path.join(png_dir, fname)
 
@@ -554,21 +514,8 @@ def cap_to_range(arr: np.ndarray, vmin: Optional[float], vmax: Optional[float]) 
     return a
 
 
-def write_png_rgba(gray_u8: np.ndarray, alpha_mask: np.ndarray, outpath: str) -> None:
-    """Write 2D uint8 grayscale + alpha mask (0..255) to RGBA PNG using Pillow."""
-    # gray_u8: HxW, alpha_mask: HxW uint8
-    h, w = gray_u8.shape
-    rgba = np.zeros((h, w, 4), dtype=np.uint8)
-    rgba[..., 0] = gray_u8
-    rgba[..., 1] = gray_u8
-    rgba[..., 2] = gray_u8
-    rgba[..., 3] = alpha_mask
-    img = Image.fromarray(rgba, mode="RGBA")
-    img.save(outpath, compress_level=1)
-
-
 def write_png_packed(float_arr: np.ndarray, alpha_mask: np.ndarray, outpath: str, precision: float = 0.1, base: float = 0.0) -> None:
-    """Pack float values into RGB channels using fixed-point quantization.
+    """Pack float values into RGB channels using fixed-point quantization (WebP lossless).
 
     - precision: the smallest distinguishable unit (e.g., 0.1)
     - base: the value that maps to 0 in packed representation (quant = round((val-base)/precision))
@@ -593,21 +540,9 @@ def write_png_packed(float_arr: np.ndarray, alpha_mask: np.ndarray, outpath: str
     rgba[..., 3] = alpha_mask
 
     img = Image.fromarray(rgba, mode="RGBA")
-    img.save(outpath, compress_level=1)
+    img.save(outpath, 'WEBP', lossless=True)
 
 
-
-
-def write_sidecar_json(outpath: str, lonmin: float, latmin: float, lonmax: float, latmax: float, depth: Optional[float] = None) -> None:
-    meta = {
-        "bounds": [float(lonmin), float(latmin), float(lonmax), float(latmax)],
-        "crs": "EPSG:4326",
-    }
-    if depth is not None:
-        # include depth information (numeric)
-        meta["depth"] = float(depth)
-    with open(outpath, "w") as fh:
-        json.dump(meta, fh)
 
 
 def compute_global_minmax_exclude_zero(ds_data: xr.Dataset, varname: str) -> Tuple[float, float]:
@@ -666,7 +601,7 @@ def process_variable(
     else:
         vmin, vmax = None, None
 
-    # Try to fetch any absolute min/max values stored in erddap_variables for this variable.
+    # Try to fetch any absolute min/max values stored in fields for this variable.
     erddap_min = None
     erddap_max = None
     try:
@@ -674,7 +609,7 @@ def process_variable(
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT min, max FROM erddap_variables WHERE variable=%s LIMIT 1",
+                    "SELECT min, max FROM fields WHERE variable=%s LIMIT 1",
                     (varname,),
                 )
                 row = cur.fetchone()
@@ -743,7 +678,7 @@ def process_variable(
             
             depth = depths[int(didx)]
 
-            # include any absolute min/max stored in erddap_variables for this variable
+            # include any absolute min/max stored in fields for this variable
             tasks.append((
                 ds_data_path,
                 varname,

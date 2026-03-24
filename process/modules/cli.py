@@ -49,7 +49,7 @@ def do_check(conn, erddap_base, base_url, init_days=1, variables=None):
     if variables is None:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT variable FROM erddap_variables WHERE dataset_id=%s AND type='download'",
+                "SELECT variable FROM fields WHERE dataset_id=%s AND type='download'",
                 (ds_id,),
             )
             variables = [r[0] for r in cur.fetchall()]
@@ -58,7 +58,7 @@ def do_check(conn, erddap_base, base_url, init_days=1, variables=None):
         var_row_id = ensure_variable(conn, ds_id, variable)
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT last_downloaded_at FROM erddap_variables WHERE id=%s",
+                "SELECT last_downloaded_at FROM fields WHERE id=%s",
                 (var_row_id,),
             )
             r = cur.fetchone()
@@ -180,14 +180,14 @@ def main(argv=None):
         tracked_dates = {}  # Track (dataset_id, date_str) combos we process
         
         with conn.cursor() as cur:
-            cur.execute("SELECT id, base_url FROM erddap_datasets ORDER BY id")
+            cur.execute("SELECT id, base_url FROM datasets ORDER BY id")
             datasets = cur.fetchall()
         
         for ds_id, base_url in datasets:
             # Get all variables for this dataset marked for download
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, variable FROM erddap_variables WHERE dataset_id=%s AND type='download'",
+                    "SELECT id, variable FROM fields WHERE dataset_id=%s AND type='download'",
                     (ds_id,),
                 )
                 variables = cur.fetchall()
@@ -196,7 +196,7 @@ def main(argv=None):
                 # Get last_downloaded date
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT last_downloaded_at FROM erddap_variables WHERE id=%s",
+                        "SELECT last_downloaded_at FROM fields WHERE id=%s",
                         (var_id,),
                     )
                     r = cur.fetchone()
