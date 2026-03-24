@@ -51,7 +51,7 @@ services:
     build: ./api
     volumes:
       - ./api:/app
-      - ./data/:/opt/data
+      - /mnt/data/:/opt/data
     ports:
       - "${API_PORT:-4000}:4000"
     environment:

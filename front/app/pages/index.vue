@@ -240,7 +240,7 @@ onMounted(async () => {
         antialias: true,
         preserveDrawingBuffer: true, // needed for exporting canvas
     });
-    // console.log(map);
+    console.log(map);
 
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
@@ -929,7 +929,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
                 // Mix to recover the 24-bit integer from normalized RGB [0..1]
                 // R_int = R_norm * 255. Packed = R_int*65536 + G_int*256 + B_int
                 // Coeffs: [255*65536, 255*256, 255, 0] -> [16711680, 65280, 255, 0]
-                'raster-color-mix': [16711680, 65280, 255, 0],
+                'raster-color-mix': [256*256*255,256*255, 255, 0],
                 'raster-fade-duration': 0
             },
         }, 'country-boundaries');
@@ -1019,7 +1019,7 @@ function addBathymetryTilesLayer(sourceId = 'bathymetry-tiles', layerId = 'bathy
         map.addSource(sourceId, {
             type: 'raster',
             tiles: [`${apiBaseUrl}/raster_tiles/{z}/{x}/{y}.webp`],
-            tileSize: 256,
+            tileSize: 512,
         });
 
         // Build colorization stops like PNG layer
@@ -1058,16 +1058,13 @@ function addBathymetryTilesLayer(sourceId = 'bathymetry-tiles', layerId = 'bathy
             }
         }
 
-        // Add raster layer with colorization
-        // raster-color-mix decodes the packed 3-channel integer: idx = R*65536 + G*256 + B
-        // where idx = (depth - MIN_ORG) / STEP = depth + 3000
-        // This replaces Mapbox's default luminance formula which would produce wrong values.
         map.addLayer({
             id: layerId,
             type: 'raster',
             source: sourceId,
             paint: {
-                'raster-opacity': 0.85,
+                // 'raster-opacity': 0.85,
+                // Decode packed 24-bit integer: value = (R*m0 + G*m1 + B*m2) / 255 = R*65536 + G*256 + B
                 'raster-color-mix': [16711680, 65280, 255, 0],
                 // 'raster-color-offset': 0,
                 'raster-color': [
@@ -1133,7 +1130,6 @@ function updateBathymetryTilesLayerColorization(layerId = 'bathymetry-tiles-laye
             }
         }
 
-        map.setPaintProperty(layerId, 'raster-color-mix', [16711680, 65280, 255, 0]);
         // map.setPaintProperty(layerId, 'raster-color-offset', 0);
         map.setPaintProperty(layerId, 'raster-color', [
             'interpolate',
@@ -1141,7 +1137,14 @@ function updateBathymetryTilesLayerColorization(layerId = 'bathymetry-tiles-laye
             ['raster-value'],
             ...raster_values
         ]);
-        map.setPaintProperty(layerId, 'raster-color-range', [(colormapMin - base) / precision, (colormapMax - base) / precision]);
+        const raster_color_range = [(colormapMin - base) / precision, (colormapMax - base) / precision]
+        map.setPaintProperty(layerId, 'raster-color-range', raster_color_range);
+
+        console.log("raster_vlues: ", raster_values);
+        console.log("raster-color-range: ", raster_color_range);
+        
+        
+        
     } catch (e) {
         console.error('Error updating bathymetry tiles colorization:', e);
     }

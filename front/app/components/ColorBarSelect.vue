@@ -129,14 +129,12 @@ const selectedVarName = computed({
     const colormapMin = matchingVar?.colormapMin ?? null;
     const colormapMax = matchingVar?.colormapMax ?? null;
     const precision = matchingVar?.precision ?? null;
-    console.log({ var: v, colormap, colormapMin, colormapMax, precision });
     mainStore.updateSelectedVariable({ var: v, colormap, colormapMin, colormapMax, precision });
   }
 });
 
 const colormapMin = computed({
   get() {
-    console.log(selectedVariable.value);
     return selectedVariable.value.colormapMin
   },
   set(v: number | null) { mainStore.updateSelectedVariable({ colormapMin: v }) }
@@ -156,7 +154,6 @@ const default_colormapMin = computed(() => variables.value.find(v => v.var === s
 const default_colormapMax = computed(() => variables.value.find(v => v.var === selectedVariable.value.var && v.source === selectedVariable.value.source)?.colormapMax ?? 1);
 
 const colormaps = computed(() => mainStore.colormaps);
-console.log(colormaps.value);
 const barStyle = computed(() => {
   const palette = colormaps.value[selectedColormap.value]?.stops
   const stops = palette?.map(s => `${s[1]} ${Math.round(s[0] * 100)}%`).join(', ');
@@ -181,7 +178,6 @@ function resetToDefaults() {
 function colormapStyle(item: any) {
   if (!item || !Array.isArray(item.raw.stops)) return {};
   const raw = item.raw;
-  console.log(raw);
   // Normalize stops (if absolute mode, convert to normalized 0..1 using current min/max)
   const stops = (raw.mode === 'absolute')
     ? (raw.stops || []).map((s: any) => {

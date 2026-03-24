@@ -18,7 +18,7 @@ import argparse
 
 TIFF_PATTERN = 'NONNA*.tiff'   # glob pattern for input GeoTIFF files
 OUTPUT_DIR   = 'raster_tiles'   # all files write here (flat mosaic tileset)
-MIN_ZOOM  = 7
+MIN_ZOOM  = 14
 MAX_ZOOM  = 14
 MIN_ORG   = -3000        # minimum encodable value
 STEP      = 1            # value precision / color-table step
@@ -107,6 +107,9 @@ def _init_worker(filepath):
 
 def render_tile(z, tx, ty):
     """Warp source file directly into tile bounds using rasterio (fast C path)."""
+    if (tx != 2577 or ty != 5639):
+        return  # TEMP: render only one tile for testing
+    
     mx_min, my_min, mx_max, my_max = _tile_mercator_bounds(z, tx, ty)
 
     dst_transform = from_bounds(mx_min, my_min, mx_max, my_max, TILE_SIZE, TILE_SIZE)
@@ -126,7 +129,7 @@ def render_tile(z, tx, ty):
         )
 
     vals[vals < MIN_ORG] = np.nan
-    vals[vals > 0]       = 0
+    vals[vals >= 0] = np.nan  # Mark land/above-sea-level as no data (transparent) instead of forcing to 0
 
     has_data = ~np.isnan(vals)
     if not has_data.any():
@@ -134,7 +137,7 @@ def render_tile(z, tx, ty):
 
     idx = np.where(
         has_data,
-        np.clip(((vals - MIN_ORG) / STEP).astype(int), 0, len(ALL_COLORS) - 1),
+        np.clip(((vals - MIN_ORG) / STEP).astype(int) + 1, 1, len(ALL_COLORS) - 1),
         0   # transparent for nodata
     )
 
@@ -153,6 +156,7 @@ def render_tile(z, tx, ty):
             img[mask] = existing[mask]
 
     cv2.imwrite(tile_path, img)
+    plot_tile(img)
 
 
 ###################################################################
@@ -208,6 +212,14 @@ def main(tiff_dir='.'):
             pool.starmap(render_tile, tile_args)
 
 
+def plot_tile(img):
+    import matplotlib.pyplot as plt
+    plt.imshow(img)
+    plt.title('Rendered Tile (BGRA)')
+    plt.axis('off')
+    plt.show()
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Convert GeoTIFF files to Web Mercator raster tiles')
     parser.add_argument(
@@ -217,3 +229,29 @@ if __name__ == '__main__':
     )
     args = parser.parse_args()
     main(tiff_dir=args.tiff_dir)
+
+
+
+###################################################################
+def decode_image_to_values(image_path):
+    """Decode a raster tile image back to depth values using the inverse of the encoding scheme.
+    """
+    import matplotlib.pyplot as plt
+    
+    img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    if img is None:
+        return None
+
+    # Decode the packed 24-bit integer values
+    vals = img[:, :, 2].astype(np.float32) * 65536 + img[:, :, 1].astype(np.float32) * 256 + img[:, :, 0].astype(np.float32)
+    # vals = vals / 255.0
+    print(vals)
+
+    # Convert back to physical values
+    base = -3000
+    vals = vals + base
+
+    plt.imshow(vals, cmap='viridis')
+    plt.colorbar(label='Depth (m)')
+    plt.title('Decoded Depth Values from Tile')
+    plt.show()
