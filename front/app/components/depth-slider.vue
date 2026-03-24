@@ -61,7 +61,7 @@ watch(() => mainStore.selected_variable.var, async (newVar) => {
 
 // When the slider index changes, update the selected variable depth in store
 function onIndexChange(v: number) {
-    mainStore.setSelectedVariable(mainStore.selected_variable.var, mainStore.selected_variable.dt, depths.value[v])
+    mainStore.updateSelectedVariable({ depth: depths.value[v] })
 }
 
 function nearestIndex(arr: number[], target: number) {
