@@ -25,7 +25,7 @@
             <div class="selector">
                 <ColorBarSelect v-if="mainStore.variables.length" />
 
-                <Overlays class="my-2" />
+                <Overlays class="my-2" @autorange="autorange" />
             </div>
 
             <DepthSlider />
@@ -56,7 +56,8 @@
                     </v-col>
                     <v-divider vertical class="mx-2"></v-divider>
                     <v-col v-if="lastClicked" cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
-                        <span class="footer-text">{{ lastClicked?.lat.toFixed(5) }} , {{ lastClicked?.lng.toFixed(5) }}</span>
+                        <span class="footer-text">{{ lastClicked?.lat.toFixed(5) }} , {{ lastClicked?.lng.toFixed(5)
+                            }}</span>
                     </v-col>
 
                     <v-spacer></v-spacer>
@@ -64,7 +65,7 @@
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
                         <span class="footer-text">{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
-                        }}</span>
+                            }}</span>
                     </v-col>
                 </v-row>
 
@@ -1446,6 +1447,71 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     // Use notMerge=true so removal of 'Sensor Data' is enforced (prevents stale series remaining)
     globalChart.setOption(option, true);
     globalChart.resize();
+}
+
+
+async function autorange(){
+    console.log('HIT AUTO RANGE');
+    if (!map || !mapLoaded.value) {
+        console.warn('Map not loaded yet');
+        return;
+    }
+
+    try {
+        const selectedVar = mainStore.selected_variable.var;
+        const selectedDt = mainStore.selected_variable.dt;
+        const selectedDepth = mainStore.selected_variable.depth;
+
+        if (!selectedVar || !selectedDt) {
+            console.warn('No variable or datetime selected');
+            return;
+        }
+
+        // Get the visible map bounds
+        const bounds = map.getBounds();
+        const north = bounds.getNorth();
+        const south = bounds.getSouth();
+        const east = bounds.getEast();
+        const west = bounds.getWest();
+
+        // Format datetime as ISO string
+        const dtStr = selectedDt.format('YYYY-MM-DDTHH:mm:ss');
+        
+        console.log(`Fetching min/max for ${selectedVar} at dt=${dtStr}, depth=${selectedDepth}, bounds=[${south},${west}]-[${north},${east}]`);
+
+        // Call the new getMinMax endpoint to extract min/max directly from the NC file
+        const response = await axios.post(`${apiBaseUrl}/getMinMax`, {
+            var: selectedVar,
+            dt: dtStr,
+            depth: selectedDepth,
+            north: north,
+            south: south,
+            east: east,
+            west: west
+        });
+
+        if (response.data && response.data.min !== null && response.data.max !== null) {
+            let minVal = response.data.min;
+            let maxVal = response.data.max;
+            
+            // Round using the precision from the selected variable
+            const precision = mainStore.selected_variable.precision || 0;
+            if (precision > 0) {
+                minVal = Math.round(minVal / precision) * precision;
+                maxVal = Math.round(maxVal / precision) * precision;
+            }
+            
+            console.log(`Updated colormap range: ${minVal} to ${maxVal} (precision: ${precision})`);
+            mainStore.updateSelectedVariable({
+                colormapMin: minVal,
+                colormapMax: maxVal
+            });
+        } else {
+            console.warn('No valid min/max values in response');
+        }
+    } catch (e) {
+        console.error('Error in autorange:', e);
+    }
 }
 
 // Watch selected timestamp and update vertical marker without replotting the series

@@ -15,6 +15,7 @@ from extractTimeseries import extract_timeseries
 from modules.extract_profile import extract_profile
 from modules.eval_extractor import extract_eval_data
 from extract_climate_timeseries import extract_climate_timeseries
+from extractMinMax import extract_minmax
 
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
 MAX_CONCURRENT_EXTRACTS = int(os.getenv("MAX_CONCURRENT_EXTRACTS", "4"))
@@ -26,7 +27,7 @@ _extract_semaphore = asyncio.Semaphore(MAX_CONCURRENT_EXTRACTS)
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -383,6 +384,70 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
         return result
     except Exception as exc:
         logger.exception("extract_climate_timeseries failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        _extract_semaphore.release()
+
+#######################################
+
+class minmaxRequest(BaseModel):
+    var: str
+    dt: str
+    depth: Optional[float] = None
+    north: Optional[float] = None
+    south: Optional[float] = None
+    east: Optional[float] = None
+    west: Optional[float] = None
+
+@app.post("/getMinMax")
+async def fn_get_minmax(request: minmaxRequest):
+    """Extract min and max values for a variable at a specific datetime and depth."""
+    logger.info(f"START getMinMax: {request.var}, dt={request.dt}, depth={request.depth}")
+    try:
+        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
+    except (asyncio.TimeoutError, Exception):
+        logger.warning("Semaphore timeout in getMinMax")
+        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
+
+    try:
+        from datetime import datetime
+        
+        var = request.var
+        depth = request.depth
+        dt_str = request.dt
+        
+        # Parse datetime string (ISO format: YYYY-MM-DDTHH:mm:ss)
+        dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+        
+        # Get data directory from environment
+        data_dir = os.getenv("NC_DATA_DIR", "/opt/data/nc")
+        
+        # Extract bounds if provided
+        north = request.north
+        south = request.south
+        east = request.east
+        west = request.west
+        
+        # Extract min/max with database connection for bounds mapping
+        min_val, max_val = await run_in_threadpool(extract_minmax, 
+            data_dir=data_dir, 
+            variable=var, 
+            dt=dt, 
+            depth=depth, 
+            north=north, 
+            south=south, 
+            east=east, 
+            west=west,
+            db_host=db_host,
+            db_port=db_port,
+            db_user=db_user,
+            db_password=db_password,
+            db_name=db_name)
+        
+        logger.info(f"FINISH getMinMax: {request.var}, range=[{min_val}, {max_val}]")
+        return {"min": min_val, "max": max_val}
+    except Exception as exc:
+        logger.exception("getMinMax failed")
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         _extract_semaphore.release()
