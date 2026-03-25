@@ -30,13 +30,13 @@ import { useMainStore } from '../stores/main';
 
 type SelectedPoint = {
     lat: number;
-    lon: number;
+    lng: number;
 } | null;
 
 interface ProfileRequest {
     var: string;
     lat: number;
-    lon: number;
+    lng: number;
     dt: string;
 }
 
@@ -98,16 +98,19 @@ const variableLabel = computed(() => var2name(mainStore.selected_variable.var ??
 
 const requestParams = computed<ProfileRequest | null>(() => {
     const lat = props.selectedPoint?.lat;
-    const lon = props.selectedPoint?.lon;
+    const lng = props.selectedPoint?.lng;
     const dt = mainStore.selected_variable?.dt;
     const variable = mainStore.selected_variable?.var;
-    if (typeof lat !== 'number' || typeof lon !== 'number' || !dt) return null;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || !dt) {
+        console.log("Missing parameters for profile request:", { lat, lng, dt });
+        return null;
+    }
     const parsed = moment(dt);
     if (!parsed.isValid()) return null;
     return {
         var: variable,
         lat,
-        lon,
+        lng,
         dt: parsed.utc().format('YYYY-MM-DDTHHmmss')
     };
 });
@@ -276,7 +279,7 @@ async function fetchProfile(params: ProfileRequest) {
     const currentRequest = ++requestSequence;
 
     try {
-        const payload: Record<string, any> = { var: params.var, lat: params.lat, lon: params.lon, dt: params.dt };
+        const payload: Record<string, any> = { var: params.var, lat: params.lat, lng: params.lng, dt: params.dt };
         const response = await axios.post(`${apiBaseUrl}/getProfile`, payload, { signal: currentController.signal });
 
         if (currentRequest !== requestSequence) return;

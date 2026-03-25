@@ -628,7 +628,7 @@ async function getVariables() {
             const source = varMeta?.source ?? '';
             const dts = varMeta?.dts ?? [];
             const precision = varMeta?.precision || 0.1;
-            const depth = (varMeta?.depths && varMeta.depths.length > 0) ? varMeta.depths[0] : 0.5;
+            const depth = (varMeta?.depths && varMeta.depths.length > 0) ? varMeta.depths[0].depth : 0.5;
             const colormap = varMeta?.colormap ?? null;
             const colormapMin = varMeta?.colormapMin ?? null;
             const colormapMax = varMeta?.colormapMax ?? null;

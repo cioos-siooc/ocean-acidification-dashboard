@@ -222,19 +222,19 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
 
 #######################################
 
-@app.get("/metadata/{var}")
-async def get_metadata(var: str):
-    safe_var = os.path.basename(var)
-    path = os.path.join(PNG_ROOT, safe_var, "meta.json")
-    if not os.path.isfile(path):
-        raise HTTPException(status_code=404, detail="Metadata not found")
+# @app.get("/metadata/{var}")
+# async def get_metadata(var: str):
+#     safe_var = os.path.basename(var)
+#     path = os.path.join(PNG_ROOT, safe_var, "meta.json")
+#     if not os.path.isfile(path):
+#         raise HTTPException(status_code=404, detail="Metadata not found")
     
-    def _read():
-        with open(path) as f:
-            return f.read()
+#     def _read():
+#         with open(path) as f:
+#             return f.read()
             
-    content = await run_in_threadpool(_read)
-    return JSONResponse(content=content)
+#     content = await run_in_threadpool(_read)
+#     return JSONResponse(content=content)
 
 @app.get("/png/{var}/{dt}/{depth}")
 async def get_png(var: str, dt: str, depth: str):
@@ -519,13 +519,13 @@ async def fn_get_monthly_climatology(request: monthlyClimRequest):
 
 class profileRequest(BaseModel):
     lat: float
-    lon: float
+    lng: float
     dt: str
     var: Optional[str] = None
 
 @app.post("/getProfile")
 async def fn_get_profile(request: profileRequest):
-    logger.info(f"START getProfile: {request.var}, {request.lat}, {request.lon}, {request.dt}")
+    logger.info(f"START getProfile: {request.var}, {request.lat}, {request.lng}, {request.dt}")
     try:
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
     except (asyncio.TimeoutError, Exception):
@@ -535,14 +535,14 @@ async def fn_get_profile(request: profileRequest):
     try:
         var = request.var or "temperature"  # Default to temperature if not specified
         lat = request.lat
-        lon = request.lon
+        lng = request.lng
         dt = request.dt
 
         profile = await run_in_threadpool(
             extract_profile,
             var=var,
             lat=lat,
-            lon=lon,
+            lng=lng,
             dt=dt,
             db_host=db_host,
             db_port=db_port,
@@ -550,7 +550,7 @@ async def fn_get_profile(request: profileRequest):
             db_user=db_user,
             db_password=db_password,
         )
-        logger.info(f"FINISH getProfile: {var}, {lat}, {lon}, {dt} - returned {len(profile)} points")
+        logger.info(f"FINISH getProfile: {var}, {lat}, {lng}, {dt} - returned {len(profile)} points")
         return profile
     except Exception as exc:
         logger.exception("extract_profile failed")

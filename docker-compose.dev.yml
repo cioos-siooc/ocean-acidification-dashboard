@@ -54,7 +54,7 @@ services:
     volumes:
       - ./api:/app
       - ./shared:/app/shared
-      - /mnt/data2/.:/opt/data
+      - /mnt/data/.:/opt/data
     ports:
       - "${API_PORT:-4000}:4000"
     environment:
@@ -99,7 +99,7 @@ services:
       - PGPASSWORD=postgres
     volumes:
       - ./process:/app
-      - /mnt/data/:/opt/data
+      - /mnt/data/.:/opt/data
     depends_on:
       db:
         condition: service_healthy

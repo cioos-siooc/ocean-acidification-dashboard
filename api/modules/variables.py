@@ -13,17 +13,17 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
         SELECT 
             f.variable, 
             f.min, 
-            f.max, 
-            f.depths_image, 
+            f.max,  
             f.precision, 
             f.colormap,
             d.bounds,
+            d.depths,
             d.source,
             ARRAY_AGG(DISTINCT nj.start_time ORDER BY nj.start_time) as available_datetimes
         FROM fields f
         LEFT JOIN datasets d ON f.dataset_id = d.id
         LEFT JOIN nc_jobs nj ON f.id = nj.variable_id AND nj.status = 'success_image'
-        GROUP BY f.id, f.variable, f.min, f.max, f.depths_image, f.precision, f.colormap, d.bounds, d.source;
+        GROUP BY f.id, f.variable, d.id, d.source;
     """
     
     try:
@@ -65,7 +65,7 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
                     available_datetimes = None
             colormap_min = row.get("min")
             colormap_max = row.get("max")
-            depths = row.get("depths_image")
+            depths = row.get("depths")
             precision = row.get("precision")
             # if available_datetimes and isinstance(available_datetimes, list) and len(available_datetimes) > 0:
             variables.append({
