@@ -7,9 +7,9 @@
       <iconsContour />
     </v-btn>
 
-    <v-btn icon size="x-small" flat :disabled="!selectedVariableName || selectedVariableName === 'bathymetry'"
-      @click="autorange"
-      title="Auto-range colorbar to data range">
+    <v-btn icon size="x-small" flat
+      :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled"
+      @click="autorange" title="Auto-range colorbar to data range">
       <iconsAutorange />
     </v-btn>
 
@@ -31,6 +31,7 @@ const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
 const selectedVariableName = computed(() => mainStore.selected_variable.var);
 
 function autorange() {
+  mainStore.setAutoRangeDisabled(true);
   emit('autorange');
 }
 

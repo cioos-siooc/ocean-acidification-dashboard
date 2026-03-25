@@ -6,9 +6,10 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 
 # Copy requirements and source code
-COPY requirements.txt ./
+COPY api/requirements.txt ./
 RUN uv pip install --system -r requirements.txt
-COPY . .
+COPY api . 
+COPY shared ./shared
 
 # Expose port
 EXPOSE 4000

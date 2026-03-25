@@ -57,7 +57,7 @@
                     <v-divider vertical class="mx-2"></v-divider>
                     <v-col v-if="lastClicked" cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ lastClicked?.lat.toFixed(5) }} , {{ lastClicked?.lng.toFixed(5)
-                            }}</span>
+                        }}</span>
                     </v-col>
 
                     <v-spacer></v-spacer>
@@ -65,7 +65,7 @@
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
                         <span class="footer-text">{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
-                            }}</span>
+                        }}</span>
                     </v-col>
                 </v-row>
 
@@ -1450,8 +1450,7 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
 }
 
 
-async function autorange(){
-    console.log('HIT AUTO RANGE');
+async function autorange() {
     if (!map || !mapLoaded.value) {
         console.warn('Map not loaded yet');
         return;
@@ -1476,8 +1475,6 @@ async function autorange(){
 
         // Format datetime as ISO string
         const dtStr = selectedDt.format('YYYY-MM-DDTHH:mm:ss');
-        
-        console.log(`Fetching min/max for ${selectedVar} at dt=${dtStr}, depth=${selectedDepth}, bounds=[${south},${west}]-[${north},${east}]`);
 
         // Call the new getMinMax endpoint to extract min/max directly from the NC file
         const response = await axios.post(`${apiBaseUrl}/getMinMax`, {
@@ -1493,15 +1490,14 @@ async function autorange(){
         if (response.data && response.data.min !== null && response.data.max !== null) {
             let minVal = response.data.min;
             let maxVal = response.data.max;
-            
+
             // Round using the precision from the selected variable
             const precision = mainStore.selected_variable.precision || 0;
             if (precision > 0) {
                 minVal = Math.round(minVal / precision) * precision;
                 maxVal = Math.round(maxVal / precision) * precision;
             }
-            
-            console.log(`Updated colormap range: ${minVal} to ${maxVal} (precision: ${precision})`);
+
             mainStore.updateSelectedVariable({
                 colormapMin: minVal,
                 colormapMax: maxVal
@@ -1511,6 +1507,8 @@ async function autorange(){
         }
     } catch (e) {
         console.error('Error in autorange:', e);
+    } finally {
+        mainStore.setAutoRangeDisabled(false);
     }
 }
 

@@ -1,0 +1,360 @@
+#!/usr/bin/env python3
+"""On-demand PNG generation utilities for the API.
+
+This module handles finding NC files, determining depth indices, and orchestrating
+PNG generation when requested through the /png endpoint.
+"""
+
+import os
+import logging
+from glob import glob
+from datetime import datetime
+from typing import Tuple
+
+import numpy as np
+import xarray as xr
+import pandas as pd
+import psycopg2
+import psycopg2.extras
+
+from shared.nc2tile import (
+    get_grid_from_db,
+    compute_mercator_grid_bounds,
+    build_target_grid,
+    _process_task,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def get_time_index_from_nc(nc_path: str, dt_requested: str) -> Tuple[int, str]:
+    """Find the closest time index in NC file for the requested datetime.
+    
+    Args:
+        nc_path: Path to the NetCDF file
+        dt_requested: ISO datetime string (e.g., '2026-03-24T23:30:00')
+    
+    Returns:
+        Tuple of (time_index, time_string_for_folder)
+        where time_string_for_folder is like '2026-03-24T233000' (no colons)
+    
+    Raises:
+        ValueError: If datetime format is invalid or time dimension not found
+    """
+    try:
+        # Parse requested datetime
+        dt_req = datetime.fromisoformat(dt_requested.replace('Z', '+00:00'))
+        
+        with xr.open_dataset(nc_path) as ds:
+            # Find time dimension
+            time_dim = None
+            for dim in ds.dims:
+                if 'time' in dim.lower():
+                    time_dim = dim
+                    break
+            
+            if time_dim is None:
+                raise ValueError(f"No time dimension found in {nc_path}")
+            
+            # Get time values and convert to datetime
+            times = ds[time_dim].values
+            times_dt = pd.to_datetime(times).to_pydatetime()
+            
+            # Find closest time index
+            time_diffs = np.array([abs((t - dt_req).total_seconds()) for t in times_dt])
+            closest_idx = int(np.argmin(time_diffs))
+            closest_time = times_dt[closest_idx]
+            
+            # Format time string like process_variable does (YYYY-MM-DDTHHMMSS no colons)
+            time_str = closest_time.strftime("%Y-%m-%dT%H%M%S")
+            
+            logger.info(f"Requested {dt_requested}, found closest time at index {closest_idx}: {closest_time}")
+            return closest_idx, time_str
+    
+    except Exception as e:
+        logger.error(f"Error finding time index in {nc_path}: {e}")
+        raise
+
+
+def get_depth_index_from_nc(nc_path: str, depth_value: float) -> int:
+    """Find the closest depth index in NC file for the given depth value.
+    
+    Args:
+        nc_path: Path to the NetCDF file
+        depth_value: Desired depth value (meters)
+    
+    Returns:
+        Index of the nearest depth coordinate in the NC file
+    
+    Raises:
+        Exception: If NC file cannot be read or no depth coordinate found
+    """
+    try:
+        with xr.open_dataset(nc_path) as ds:
+            # Find depth dimension
+            depth_coord = None
+            for coord_name in ('depth', 'z', 'lev', 'level', 'deptht', 'depthu', 'altitude'):
+                if coord_name in ds.coords:
+                    depth_coord = ds.coords[coord_name].values
+                    break
+            
+            if depth_coord is None:
+                # No depth coordinate found, assume 2D variable
+                logger.warning(f"No depth coordinate found in {nc_path}; using index 0")
+                return 0
+            
+            # Find nearest depth index
+            idx = int(np.argmin(np.abs(depth_coord - float(depth_value))))
+            return idx
+    except Exception as e:
+        logger.error(f"Error finding depth index in {nc_path}: {e}")
+        raise
+
+
+def get_variable_precision(var_name: str) -> float:
+    """Get precision value from fields table for a variable.
+    
+    Args:
+        var_name: Variable name to look up
+    
+    Returns:
+        Precision value from database, or 0.1 as default
+    """
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv('PGHOST', 'db'),
+            port=int(os.getenv('PGPORT', 5432)),
+            database=os.getenv('PGDATABASE', 'oa'),
+            user=os.getenv('PGUSER', 'postgres'),
+            password=os.getenv('PGPASSWORD', 'postgres')
+        )
+        try:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("SELECT precision FROM fields WHERE variable=%s LIMIT 1", (var_name,))
+            row = cur.fetchone()
+            if row:
+                precision = float(row['precision']) if row['precision'] else 0.1
+                logger.debug(f"Found precision={precision} for {var_name}")
+                return precision
+            logger.debug(f"No precision found for {var_name}; using default 0.1")
+            return 0.1  # default precision
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning(f"Error getting precision for {var_name}: {e}")
+        return 0.1
+
+
+def find_nc_file_for_date(data_dir: str, variable: str, dt_str: str) -> str:
+    """Find NC file for the given date in ISO format (YYYY-MM-DDTHH:MM:SS).
+    
+    Args:
+        data_dir: Root directory containing variable subdirectories
+        variable: Variable name (also the subdirectory name)
+        dt_str: ISO datetime string (e.g., '2026-03-25T12:30:00')
+    
+    Returns:
+        Full path to the NC file
+    
+    Raises:
+        ValueError: If datetime format is invalid
+        FileNotFoundError: If variable directory or NC files not found
+    """
+    try:
+        # Parse ISO datetime string to get just the date
+        dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+        date_str = dt.strftime("%Y%m%d")
+        logger.debug(f"Looking for {variable} on date {date_str}")
+    except Exception:
+        raise ValueError(f"Invalid datetime format: {dt_str}")
+    
+    var_dir = os.path.join(data_dir, variable)
+    
+    if not os.path.isdir(var_dir):
+        raise FileNotFoundError(f"Variable directory not found: {var_dir}")
+    
+    # Try exact date match
+    nc_path = os.path.join(var_dir, f"{variable}_{date_str}.nc")
+    if os.path.exists(nc_path):
+        logger.info(f"Found exact match: {nc_path}")
+        return nc_path
+    
+    # Fallback: find any NC file
+    pattern = os.path.join(var_dir, "*.nc")
+    files = sorted(glob(pattern))
+    
+    if not files:
+        raise FileNotFoundError(f"No NC files found for {variable} on {date_str}")
+    
+    # Return the most recent file
+    found_file = files[-1]
+    logger.info(f"No exact match; using most recent: {found_file}")
+    return found_file
+
+
+async def generate_png_for_variable(
+    var: str, dt: str, depth_value: float,
+    data_dir: str, png_root: str,
+    png_gen_semaphore
+) -> str:
+    """Generate PNG on-demand for a specific variable/datetime/depth.
+    
+    Generates ONLY the requested timestep (not all 24 hours in the day).
+    
+    Args:
+        var: Variable name (sanitized)
+        dt: ISO datetime string
+        depth_value: Depth value in meters
+        data_dir: Root directory for NC files
+        png_root: Root directory for PNG output
+        png_gen_semaphore: Asyncio semaphore to limit concurrent generation
+    
+    Returns:
+        Full path to the generated PNG file
+    
+    Raises:
+        Exception: If NC file not found, generation fails, or file not created
+    """
+    from starlette.concurrency import run_in_threadpool
+    
+    safe_var = os.path.basename(var)
+    safe_dt = os.path.basename(dt)
+    safe_depth = str(depth_value).replace('.', 'p')
+    
+    # Parse datetime to extract just the date for directory
+    try:
+        dt_obj = datetime.fromisoformat(dt.replace('Z', '+00:00'))
+        dt_folder = dt_obj.strftime("%Y-%m-%dT%H%M%S")  # e.g., 2026-03-24T233000
+    except Exception as e:
+        raise ValueError(f"Invalid datetime format: {dt}") from e
+    
+    png_dir = os.path.join(png_root, safe_var, dt_folder)
+    full_path = os.path.join(png_dir, f"{safe_depth}.webp")  # nc2tile outputs .webp
+    
+    # Check if already generated
+    if os.path.isfile(full_path):
+        logger.info(f"PNG already exists: {full_path}")
+        return full_path
+    
+    # Generate PNG in threadpool to avoid blocking
+    async with png_gen_semaphore:  # Limit concurrent generation
+        logger.info(f"Starting on-demand PNG generation for {safe_var}/{dt_folder}/{safe_depth}")
+        
+        # Find NC file
+        nc_path = await run_in_threadpool(find_nc_file_for_date, data_dir, safe_var, dt)
+        logger.info(f"Found NC file for {safe_var} on {dt}: {nc_path}")
+        
+        # Get time and depth indices
+        time_idx, time_str = await run_in_threadpool(get_time_index_from_nc, nc_path, dt)
+        logger.info(f"Datetime maps to time index {time_idx}; time_str={time_str}")
+        
+        depth_idx = await run_in_threadpool(get_depth_index_from_nc, nc_path, depth_value)
+        logger.info(f"Depth {depth_value}m maps to index {depth_idx}")
+        
+        # Get precision
+        precision = await run_in_threadpool(get_variable_precision, safe_var)
+        logger.info(f"Variable {safe_var} precision: {precision}")
+        
+        # Generate single PNG using low-level _process_task
+        try:
+            result = await run_in_threadpool(
+                _generate_single_png_task,
+                nc_path,
+                safe_var,
+                time_idx,
+                time_str,
+                depth_idx,
+                depth_value,
+                precision
+            )
+            logger.info(f"Generated PNG task result: {result}")
+        except Exception as e:
+            logger.error(f"Failed to generate PNG for {safe_var}/{dt}/{depth_value}: {e}")
+            raise
+    
+    # Verify file was created
+    if not os.path.isfile(full_path):
+        raise RuntimeError(f"PNG generation completed but file not found: {full_path}")
+    
+    logger.info(f"Successfully generated PNG: {full_path}")
+    return full_path
+
+
+def _generate_single_png_task(
+    nc_path: str,
+    varname: str, 
+    time_idx: int,
+    time_str: str,
+    depth_idx: int,
+    depth_val: float,
+    pack_precision: float
+) -> Tuple[str, str]:
+    """Generate a single PNG for one time × depth combination.
+    
+    This is a thin wrapper around _process_task that builds the task tuple.
+    """
+    import os
+    
+    # Load grid
+    lon_src, lat_src = get_grid_from_db('grid')
+    
+    # Compute mercator bounds
+    minx, miny, maxx, maxy = compute_mercator_grid_bounds(lon_src, lat_src)
+    xx_merc, yy_merc, w, h = build_target_grid(minx, miny, maxx, maxy, max_dim=2048)
+    
+    # Get min/max bounds from database (pre-computed, no expensive scan needed)
+    vmin = None
+    vmax = None
+    erddap_min = None
+    erddap_max = None
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv('PGHOST', 'db'),
+            port=int(os.getenv('PGPORT', 5432)),
+            database=os.getenv('PGDATABASE', 'oa'),
+            user=os.getenv('PGUSER', 'postgres'),
+            password=os.getenv('PGPASSWORD', 'postgres')
+        )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT min, max FROM fields WHERE variable=%s LIMIT 1",
+                    (varname,),
+                )
+                row = cur.fetchone()
+                if row:
+                    erddap_min, erddap_max = row[0], row[1]
+                    # Use database bounds for vmin/vmax (no file scanning needed)
+                    vmin, vmax = erddap_min, erddap_max
+                    logger.debug(f"Using database bounds for {varname}: vmin={vmin}, vmax={vmax}")
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.warning(f"Could not fetch bounds from database: {e}")
+    
+    # Build task tuple (matching _process_task signature)
+    task = (
+        nc_path,                    # ds_data_path
+        varname,                    # varname
+        int(time_idx),             # t_idx
+        str(time_str),             # t_str
+        depth_idx,                 # d_idx
+        float(depth_val),          # d_val
+        vmin,                      # vmin
+        vmax,                      # vmax
+        erddap_min,                # erddap_min
+        erddap_max,                # erddap_max
+        float(minx),               # minx
+        float(miny),               # miny
+        float(maxx),               # maxx
+        float(maxy),               # maxy
+        int(w),                    # w
+        int(h),                    # h
+        "linear",                  # method
+        None,                      # clip_percentile
+        True,                      # verbose
+        float(pack_precision),     # pack_precision
+    )
+    
+    # Call the low-level worker function
+    return _process_task(task)

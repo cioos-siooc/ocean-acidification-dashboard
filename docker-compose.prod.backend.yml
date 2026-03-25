@@ -1,6 +1,8 @@
 services:
   api:
-    build: ./api
+    build:
+      context: .
+      dockerfile: api/Dockerfile
     ports:
       - "${API_PORT:-4000}:4000"
     volumes:
@@ -37,7 +39,9 @@ services:
     restart: unless-stopped
 
   process:
-    build: ./process
+    build:
+      context: .
+      dockerfile: process/Dockerfile
     profiles: ["tools"]
     environment:
       - PGHOST=${DB_HOST:-db}

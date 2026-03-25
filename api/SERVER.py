@@ -16,14 +16,15 @@ from modules.extract_profile import extract_profile
 from modules.eval_extractor import extract_eval_data
 from extract_climate_timeseries import extract_climate_timeseries
 from extractMinMax import extract_minmax
+from pngGenerator import generate_png_for_variable
 
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
 MAX_CONCURRENT_EXTRACTS = int(os.getenv("MAX_CONCURRENT_EXTRACTS", "4"))
 _extract_semaphore = asyncio.Semaphore(MAX_CONCURRENT_EXTRACTS)
-# from calc import bin
-# from lib.bathymetry import BathymetryProcessor
-# from lib.database import TrajectoryDatabase
-# from lib.trajectory import TrajectoryExtractor
+
+# Limit concurrent PNG generation to avoid resource exhaustion
+MAX_CONCURRENT_PNG_GEN = int(os.getenv("MAX_CONCURRENT_PNG_GEN", "2"))
+_png_gen_semaphore = asyncio.Semaphore(MAX_CONCURRENT_PNG_GEN)
 
 # Configure logging
 logging.basicConfig(
@@ -237,28 +238,52 @@ async def get_metadata(var: str):
 
 @app.get("/png/{var}/{dt}/{depth}")
 async def get_png(var: str, dt: str, depth: str):
-    # Serve the PNG file for a specific variable, datetime, and depth with appropriate headers for caching
+    """Serve PNG for variable/datetime/depth, generating on-demand if needed."""
+    # Serve the PNG file for a specific variable, datetime, and depth
     safe_var = os.path.basename(var)
     safe_dt = os.path.basename(dt)
     safe_depth = depth.replace('.', 'p')
     path = os.path.join(PNG_ROOT, safe_var, safe_dt)
-    filename = f"{safe_depth}.png"
-    full_path = os.path.join(path, filename)
     
-    # os.path.isfile is fast but still better in a thread if the FS is slow
-    exists = await run_in_threadpool(os.path.isfile, full_path)
-    if not exists:
-        raise HTTPException(status_code=404, detail="PNG not found")
+    # Try both .webp (from on-demand generation) and .png (legacy)
+    for ext in ['.webp', '.png']:
+        filename = f"{safe_depth}{ext}"
+        full_path = os.path.join(path, filename)
+        
+        # os.path.isfile is fast but still better in a thread if the FS is slow
+        exists = await run_in_threadpool(os.path.isfile, full_path)
+        if exists:
+            headers = {
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+                "Vary": "Origin",
+                "ETag": f'"{full_path}-v1"',
+            }
+            media_type = "image/webp" if ext == '.webp' else "image/png"
+            return FileResponse(full_path, media_type=media_type, headers=headers)
     
-    headers = {
-        "Cache-Control": "public, max-age=31536000, immutable",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Access-Control-Allow-Headers": "*",
-        "Vary": "Origin",
-        "ETag": f'"{full_path}-v1"',
-    }
-    return FileResponse(full_path, media_type="image/png", headers=headers)
+    # File doesn't exist; try to generate it
+    try:
+        depth_value = float(depth)
+        data_dir = os.getenv('NC_DATA_DIR', '/opt/data/nc')
+        full_path = await generate_png_for_variable(
+            var, dt, depth_value, data_dir, PNG_ROOT, _png_gen_semaphore
+        )
+        
+        headers = {
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Vary": "Origin",
+            "ETag": f'"{full_path}-v1"',
+        }
+        return FileResponse(full_path, media_type="image/webp", headers=headers)
+    except Exception as e:
+        logger.error(f"Failed to generate or retrieve PNG for {var}/{dt}/{depth}: {e}")
+        raise HTTPException(status_code=404, detail=f"PNG not found and generation failed: {str(e)}")
 
 @app.get("/vector/{z}/{x}/{y}.pbf")
 async def get_vector(z: int, x: int, y: int):

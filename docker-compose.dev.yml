@@ -48,10 +48,13 @@ services:
   #     - umami-db-data:/var/lib/postgresql/data
   
   api:
-    build: ./api
+    build:
+      context: .
+      dockerfile: api/Dockerfile
     volumes:
       - ./api:/app
-      - /mnt/data/:/opt/data
+      - ./shared:/app/shared
+      - /mnt/data2/.:/opt/data
     ports:
       - "${API_PORT:-4000}:4000"
     environment:
@@ -84,7 +87,9 @@ services:
     restart: unless-stopped
 
   process:
-    build: ./process
+    build:
+      context: .
+      dockerfile: process/Dockerfile
     # profiles: ["tools"]
     environment:
       - PGHOST=db

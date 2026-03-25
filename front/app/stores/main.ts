@@ -6,7 +6,8 @@ export const useMainStore = defineStore('main', {
         variables: [] as Array<{ var: string, source: string, dts: moment.Moment[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number }>,
         selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null },
         showBathymetryContours: false,
-        colormaps: {} as Record<string, any>
+        colormaps: {} as Record<string, any>,
+        autoRangeDisabled: false,
     }),
 
     actions: {
@@ -29,6 +30,10 @@ export const useMainStore = defineStore('main', {
 
         setColormaps(colormaps: Record<string, any>) {
             this.colormaps = colormaps;
+        },
+
+        setAutoRangeDisabled(value: boolean) {
+            this.autoRangeDisabled = value;
         }
     }
 })
