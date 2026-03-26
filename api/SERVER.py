@@ -8,6 +8,7 @@ from typing import Optional
 import os
 import logging
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 from typing import Optional
 from starlette.concurrency import run_in_threadpool
 
@@ -22,9 +23,11 @@ from pngGenerator import generate_png_for_variable
 MAX_CONCURRENT_EXTRACTS = int(os.getenv("MAX_CONCURRENT_EXTRACTS", "4"))
 _extract_semaphore = asyncio.Semaphore(MAX_CONCURRENT_EXTRACTS)
 
-# Limit concurrent PNG generation to avoid resource exhaustion
-MAX_CONCURRENT_PNG_GEN = int(os.getenv("MAX_CONCURRENT_PNG_GEN", "2"))
-_png_gen_semaphore = asyncio.Semaphore(MAX_CONCURRENT_PNG_GEN)
+# PNG generation runs in a dedicated single-process executor so CPU-heavy
+# interpolation work never touches the shared anyio threadpool that serves
+# all other API endpoints.  One worker = one PNG at a time, no starvation.
+_png_executor = ProcessPoolExecutor(max_workers=1)
+_png_gen_semaphore = asyncio.Semaphore(1)
 
 # Configure logging
 logging.basicConfig(
@@ -269,7 +272,7 @@ async def get_png(var: str, dt: str, depth: str):
         depth_value = float(depth)
         data_dir = os.getenv('NC_DATA_DIR', '/opt/data/nc')
         full_path = await generate_png_for_variable(
-            var, dt, depth_value, data_dir, PNG_ROOT, _png_gen_semaphore
+            var, dt, depth_value, data_dir, PNG_ROOT, _png_gen_semaphore, _png_executor
         )
         
         headers = {

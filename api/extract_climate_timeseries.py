@@ -102,6 +102,12 @@ def extract_climate_timeseries(lat, lon, variable, depth, dt, log_level=logging.
     file_path = f"/opt/data/SSC/climatology/5d/{variable}/{variable}_{depth}.nc"
     climatology_variables = ['mean', 'median', 'q1', 'q3', 'min', 'max']
     
+    # Check if file exists first (fail fast before any heavy operations)
+    if not os.path.exists(file_path):
+        logger.error(f"Climatology file not found: {file_path}")
+        return None
+    logger.debug(f"✓ Climatology file exists: {file_path}")
+    
     db_config = {
         "host": os.getenv("DB_HOST", "db"),
         "port": int(os.getenv("DB_PORT", "5432")),

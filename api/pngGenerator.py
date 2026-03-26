@@ -195,88 +195,85 @@ def find_nc_file_for_date(data_dir: str, variable: str, dt_str: str) -> str:
 async def generate_png_for_variable(
     var: str, dt: str, depth_value: float,
     data_dir: str, png_root: str,
-    png_gen_semaphore
+    png_gen_semaphore,
+    executor=None,
 ) -> str:
     """Generate PNG on-demand for a specific variable/datetime/depth.
-    
-    Generates ONLY the requested timestep (not all 24 hours in the day).
-    
-    Args:
-        var: Variable name (sanitized)
-        dt: ISO datetime string
-        depth_value: Depth value in meters
-        data_dir: Root directory for NC files
-        png_root: Root directory for PNG output
-        png_gen_semaphore: Asyncio semaphore to limit concurrent generation
-    
-    Returns:
-        Full path to the generated PNG file
-    
-    Raises:
-        Exception: If NC file not found, generation fails, or file not created
+
+    The heavy CPU work (_generate_single_png_task) runs in `executor` when
+    provided (a ProcessPoolExecutor), so it never blocks the shared anyio
+    threadpool that all other API endpoints depend on.
     """
     from starlette.concurrency import run_in_threadpool
-    
+
     safe_var = os.path.basename(var)
-    safe_dt = os.path.basename(dt)
     safe_depth = str(depth_value).replace('.', 'p')
-    
-    # Parse datetime to extract just the date for directory
+
     try:
         dt_obj = datetime.fromisoformat(dt.replace('Z', '+00:00'))
-        dt_folder = dt_obj.strftime("%Y-%m-%dT%H%M%S")  # e.g., 2026-03-24T233000
+        dt_folder = dt_obj.strftime("%Y-%m-%dT%H%M%S")
     except Exception as e:
         raise ValueError(f"Invalid datetime format: {dt}") from e
-    
-    png_dir = os.path.join(png_root, safe_var, dt_folder)
-    full_path = os.path.join(png_dir, f"{safe_depth}.webp")  # nc2tile outputs .webp
-    
-    # Check if already generated
+
+    full_path = os.path.join(png_root, safe_var, dt_folder, f"{safe_depth}.webp")
+
     if os.path.isfile(full_path):
         logger.info(f"PNG already exists: {full_path}")
         return full_path
-    
-    # Generate PNG in threadpool to avoid blocking
-    async with png_gen_semaphore:  # Limit concurrent generation
-        logger.info(f"Starting on-demand PNG generation for {safe_var}/{dt_folder}/{safe_depth}")
-        
-        # Find NC file
-        nc_path = await run_in_threadpool(find_nc_file_for_date, data_dir, safe_var, dt)
-        logger.info(f"Found NC file for {safe_var} on {dt}: {nc_path}")
-        
-        # Get time and depth indices
-        time_idx, time_str = await run_in_threadpool(get_time_index_from_nc, nc_path, dt)
-        logger.info(f"Datetime maps to time index {time_idx}; time_str={time_str}")
-        
-        depth_idx = await run_in_threadpool(get_depth_index_from_nc, nc_path, depth_value)
-        logger.info(f"Depth {depth_value}m maps to index {depth_idx}")
-        
-        # Get precision
-        precision = await run_in_threadpool(get_variable_precision, safe_var)
-        logger.info(f"Variable {safe_var} precision: {precision}")
-        
-        # Generate single PNG using low-level _process_task
-        try:
-            result = await run_in_threadpool(
-                _generate_single_png_task,
-                nc_path,
-                safe_var,
-                time_idx,
-                time_str,
-                depth_idx,
-                depth_value,
-                precision
+
+    import asyncio
+    loop = asyncio.get_event_loop()
+
+    try:
+        async with png_gen_semaphore:
+            logger.info(f"Starting on-demand PNG generation for {safe_var}/{dt_folder}/{safe_depth}")
+
+            # Fast prep work: stays in shared threadpool (lightweight I/O + DB)
+            nc_path = await asyncio.wait_for(
+                run_in_threadpool(find_nc_file_for_date, data_dir, safe_var, dt),
+                timeout=10.0
             )
-            logger.info(f"Generated PNG task result: {result}")
-        except Exception as e:
-            logger.error(f"Failed to generate PNG for {safe_var}/{dt}/{depth_value}: {e}")
-            raise
-    
-    # Verify file was created
+            logger.info(f"NC file: {nc_path}")
+
+            time_idx, time_str = await asyncio.wait_for(
+                run_in_threadpool(get_time_index_from_nc, nc_path, dt),
+                timeout=10.0
+            )
+            depth_idx = await asyncio.wait_for(
+                run_in_threadpool(get_depth_index_from_nc, nc_path, depth_value),
+                timeout=10.0
+            )
+            precision = await asyncio.wait_for(
+                run_in_threadpool(get_variable_precision, safe_var),
+                timeout=10.0
+            )
+            logger.info(f"time_idx={time_idx}, depth_idx={depth_idx}, precision={precision}")
+
+            # Heavy CPU work: runs in dedicated ProcessPoolExecutor (isolated from threadpool)
+            logger.info("Dispatching PNG generation to dedicated process executor...")
+            try:
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        executor,
+                        _generate_single_png_task,
+                        nc_path, safe_var, time_idx, time_str,
+                        depth_idx, depth_value, precision,
+                    ),
+                    timeout=120.0
+                )
+                logger.info(f"PNG generation complete: {result}")
+            except asyncio.TimeoutError:
+                logger.error(f"PNG generation timed out for {safe_var}/{dt}/{depth_value}")
+                raise RuntimeError("PNG generation timed out")
+
+    except Exception as e:
+        logger.error(f"PNG generation failed for {safe_var}/{dt}/{depth_value}: {e}", exc_info=True)
+        raise
+
     if not os.path.isfile(full_path):
-        raise RuntimeError(f"PNG generation completed but file not found: {full_path}")
-    
-    logger.info(f"Successfully generated PNG: {full_path}")
+        raise RuntimeError(f"PNG generation finished but file not found: {full_path}")
+
+    logger.info(f"Successfully generated: {full_path}")
     return full_path
 
 
