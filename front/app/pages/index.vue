@@ -1369,10 +1369,12 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
 
     // Day/Night base series (always present)
     const dayNightSeries: any = {
-        name: "Day/Night",
+        name: 'Day/Night',
         type: 'line',
         data: [],
         markArea: {},
+        itemStyle: { color: colors.yellow.accent2 },
+        legendIcon: 'roundRect',
         markLine: {
             symbol: ['none', 'none'],
             data: [
@@ -1420,7 +1422,7 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     }
 
     // model series (reuse previously computed __series_model)
-    seriesArr.push({ name: mainStore.selected_variable.var || 'value', type: 'line', showSymbol: false, data: __series_model, smooth: true, lineStyle: { width: 4, color: '#E74C3C', opacity: 0.8 } });
+    seriesArr.push({ name: mainStore.selected_variable.var || 'value', type: 'line', showSymbol: false, data: __series_model, smooth: true, lineStyle: { width: 4, color: '#E74C3C', opacity: 0.8 }, itemStyle: { color: '#E74C3C' }, legendIcon: 'roundRect' });
 
     // sensor series will be optionally added below
     option.series = seriesArr;
@@ -1437,11 +1439,9 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
             type: 'line',
             data: __series_sensor,
             symbol: 'none',
-            lineStyle: {
-                "width": 2,
-                "color": "black",
-                "opacity": 0.8
-            },
+            lineStyle: { width: 2, color: '#AAAAAA', opacity: 0.8 },
+            itemStyle: { color: '#AAAAAA' },
+            legendIcon: 'roundRect'
         });
     } else {
         // Remove sensor series if previously present
