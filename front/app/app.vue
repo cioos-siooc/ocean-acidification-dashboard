@@ -1,5 +1,5 @@
 <template>
-  <v-app>
+  <v-app theme="dark">
     <v-app-bar density="compact" class="px-5" app>
       <NuxtLink to="/" class="logo-link">
         <img src="/OA_logo.png" alt="OA Logo" class="logo-icon" />

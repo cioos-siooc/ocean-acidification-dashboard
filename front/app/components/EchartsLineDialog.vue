@@ -18,6 +18,7 @@
 <script setup>
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import * as echarts from 'echarts';
+import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
 import axios from 'axios';
 
 const config = useRuntimeConfig();
@@ -52,6 +53,7 @@ const title = computed(() => {
 ///////////////////////////////////  LIFECYCLE  ///////////////////////////////////
 
 onMounted(async () => {
+    registerEchartsDarkTheme();
     // Do not init chart here — it may be hidden (dialog closed) and the element not ready.
     // Initialization is deferred until the dialog opens and the element has measurable size.
 });
@@ -87,7 +89,7 @@ async function ensureChartInit() {
     }
 
     if (!chartInstance) {
-        chartInstance = echarts.init(el);
+        chartInstance = echarts.init(el, 'dark');
     }
     try {
         chartInstance.resize();

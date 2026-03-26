@@ -16,6 +16,7 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
             f.max,  
             f.precision, 
             f.colormap,
+            f.unit,
             d.bounds,
             d.depths,
             d.source,
@@ -43,7 +44,6 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
         variables = []
         for row in rows:
             variable = row.get("variable")
-            print(variable)
             # Expand dates to hourly datetimes at half-hour marks (00:30 to 23:30)
             available_datetimes = row.get("available_datetimes")
             if available_datetimes is not None:
@@ -77,7 +77,8 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
                 "precision": precision,
                 "colormap": row.get("colormap"),
                 "bounds": row.get("bounds"),
-                "source": row.get("source")
+                "source": row.get("source"),
+                "unit": row.get("unit"),
             })
         return variables
     finally:

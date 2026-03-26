@@ -21,6 +21,7 @@ import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRuntimeConfig } from '#app';
 import axios from 'axios';
 import * as echarts from 'echarts';
+import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
 import type { PropType } from 'vue';
 import moment, { type MomentInput } from 'moment-timezone';
 import { var2name } from '../../composables/useVar2Name';
@@ -127,7 +128,8 @@ const chartResizeHandler = () => {
     profileChart?.resize();
 };
 
-onMounted(() => {
+onMounted(async () => {
+    registerEchartsDarkTheme();
     ensureChart();
     renderChart(profilePoints.value);
     window.addEventListener('resize', chartResizeHandler);
@@ -150,7 +152,7 @@ watch([requestParams, isOpen], ([params, open]) => {
 
 function ensureChart() {
     if (profileChart || !chartContainer.value) return;
-    profileChart = echarts.init(chartContainer.value, undefined, { renderer: 'canvas' });
+    profileChart = echarts.init(chartContainer.value, 'dark', { renderer: 'canvas' });
 }
 
 function renderChart(points: ProfilePoint[]) {

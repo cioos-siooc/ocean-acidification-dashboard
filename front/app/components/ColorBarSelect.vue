@@ -7,8 +7,44 @@
 
       <v-select v-model="selectedSource" :items="sourceItems" label="Source" item-title="label" item-value="source"
         :disabled="sourceItems.length === 0" density="compact" hide-details variant="outlined" class="my-4"
-        :menu-props="{ location: 'end' }" style="width: 100%"></v-select>
+        :menu-props="{ location: 'end' }" style="width: 100%">
+        <template #prepend-inner>
+          <v-btn icon size="12px" @click="showSourceInfo = !showSourceInfo" title="About this data source">
+            <v-icon size="12px">mdi-information-variant</v-icon>
+          </v-btn>
+        </template>
+      </v-select>
 
+      <v-select v-if="depths && depths.length > 0" v-model="selectedDepth" :items="depths" label="Depth" item-title="label" item-value="depth"
+        :disabled="!depths || depths.length === 0" density="compact" hide-details variant="outlined" class="my-4"
+        :menu-props="{ location: 'end' }" style="width: 100%">
+        <template #item="{ props, item }">
+          <v-list-item v-bind="props" :title="item.value.toFixed(1) + ' m'"
+            :style="{ color: item.raw.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">
+          </v-list-item>
+        </template>
+        <template #selection="{ item }">
+          <div class="colormap-selection">
+            <span :style="{ color: item.raw.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">{{
+              item.value.toFixed(1) }} m</span>
+          </div>
+        </template>
+        <template #prepend>
+          <v-btn icon size="12px" @click="deeper" title="Clear depth selection">
+            <v-icon size="10px">mdi-arrow-down</v-icon>
+          </v-btn>
+          <v-btn icon size="12px" @click="shallower" title="Clear depth selection">
+            <v-icon size="10px">mdi-arrow-up</v-icon>
+          </v-btn>
+        </template>
+        <!-- <template #append>
+          <v-btn icon size="12px" @click="shallower" title="Clear depth selection">
+            <v-icon size="10px">mdi-arrow-up</v-icon>
+          </v-btn>
+        </template> -->
+      </v-select>
+
+      <!-- COLORBAR -->
       <div class="bar" :style="barStyle"></div>
       <div class="ticks">
         <div class="tick left">{{ colormapMin }}</div>
@@ -23,8 +59,9 @@
     </div>
 
     <v-row v-if="showSettings" class="ma-0 pa-0" style="place-items: center;">
-      <v-select v-model="selectedColormap" label="Color map" :items="Object.entries(colormaps).map(([name, cmap]) => ({ name, raw: cmap }))" item-title="name" item-value="name"
-        density="compact" hide-details variant="outlined" class="my-4" close-on-click="false"
+      <v-select v-model="selectedColormap" label="Color map"
+        :items="Object.entries(colormaps).map(([name, cmap]) => ({ name, raw: cmap }))" item-title="name"
+        item-value="name" density="compact" hide-details variant="outlined" class="my-4" close-on-click="false"
         :menu-props="{ location: 'end' }" style="width: 100%; margin-top: 6px">
         <template #item="{ props, item }">
           <v-list-item v-bind="props" :title="undefined">
@@ -53,11 +90,20 @@
         style="width: 30%; scale:75%"></v-number-input>
     </v-row>
   </v-card>
+
+  <v-dialog v-model="showSourceInfo" max-width="50%">
+    <v-card class="pa-5">
+      <about-ssc v-if="selectedSource === 'SalishSeaCast'"></about-ssc>
+      <about-liveocean v-else-if="selectedSource === 'LiveOcean'"></about-liveocean>
+      <about-nonna v-else-if="selectedSource === 'NONNA'"></about-nonna>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup lang="ts">
 import { computed, toRef, ref, watch } from 'vue';
 import { var2name } from '../../composables/useVar2Name';
+import colors from 'vuetify/util/colors'
 
 import { useMainStore } from '../stores/main'
 const mainStore = useMainStore();
@@ -92,6 +138,7 @@ interface VarMeta {
 // ];
 // const selectedModel = ref(modelItems.value[0].var);
 const showSettings = ref(false);
+const showSourceInfo = ref(false);
 
 // const label = props.label ?? '';
 // const variables = props.variables ?? [];
@@ -162,6 +209,13 @@ const barStyle = computed(() => {
   };
 });
 
+const depths = computed(() => mainStore.variables.find(v => v.var === selectedVariable.value.var)?.depths);
+
+const selectedDepth = computed({
+  get() { return selectedVariable.value.depth },
+  set(v: number | null) { mainStore.updateSelectedVariable({ depth: v }) }
+})
+
 
 ///////////////////////////////////  WATCHERS  ///////////////////////////////////
 
@@ -198,6 +252,23 @@ function colormapStyle(item: any) {
     display: 'inline-block'
   };
 }
+
+function deeper() {
+  if (selectedDepth.value === null) return;
+  const currentIndex = depths.value.findIndex(d => d.depth === selectedDepth.value);
+  if (currentIndex < depths.value.length - 1) {
+    selectedDepth.value = depths.value[currentIndex + 1].depth;
+  }
+}
+
+function shallower() {
+  if (selectedDepth.value === null) return;
+  const currentIndex = depths.value.findIndex(d => d.depth === selectedDepth.value);
+  if (currentIndex > 0) {
+    selectedDepth.value = depths.value[currentIndex - 1].depth;
+  }
+}
+
 </script>
 
 
@@ -206,7 +277,7 @@ function colormapStyle(item: any) {
 
 
   padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.9);
+  /* background: rgba(255, 255, 255, 0.9); */
   border-radius: 6px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 
@@ -236,7 +307,7 @@ function colormapStyle(item: any) {
 }
 
 .tick {
-  color: #333;
+  color: #ccc;
 }
 
 .colormap-item {

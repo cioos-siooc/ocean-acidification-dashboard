@@ -28,9 +28,7 @@
                 <Overlays class="my-2" @autorange="autorange" />
             </div>
 
-            <DepthSlider />
-
-
+            <!-- <DepthSlider /> -->
 
             <div class="map-drawer-toggle" :style="{ right: drawerOpen ? '312px' : '12px' }">
                 <v-btn size="24px" color="warning" class="ma-0 pa-0" @click="drawerOpen = !drawerOpen"
@@ -57,7 +55,7 @@
                     <v-divider vertical class="mx-2"></v-divider>
                     <v-col v-if="lastClicked" cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ lastClicked?.lat.toFixed(5) }} , {{ lastClicked?.lng.toFixed(5)
-                        }}</span>
+                            }}</span>
                     </v-col>
 
                     <v-spacer></v-spacer>
@@ -65,7 +63,7 @@
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
                         <span class="footer-text">{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
-                        }}</span>
+                            }}</span>
                     </v-col>
                 </v-row>
 
@@ -78,7 +76,7 @@
                     </div>
 
                     <div class="py-3"
-                        style="position: absolute; width:40px; height: 100%; bottom: 0px; right: 0px; text-align:center; background: #eee; display:flex; flex-direction:column; align-items:center; gap:6px; padding-top:6px;">
+                        style="position: absolute; width:40px; height: 100%; bottom: 0px; right: 0px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:6px; padding-top:6px;">
                         <v-btn title="Long-term climatology" flat size="20px" :disabled="!lastClicked" icon
                             color="primary" @click="dialogOpen = true">
                             <v-icon size="14px">mdi-chart-line</v-icon>
@@ -105,6 +103,7 @@ import { useRuntimeConfig } from '#app';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as echarts from 'echarts'
+import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
 import axios from 'axios'
 import moment from 'moment-timezone'
 import DepthSlider from '../components/depth-slider.vue'
@@ -127,6 +126,7 @@ import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
+import colors from 'vuetify/util/colors';
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
@@ -156,6 +156,7 @@ const globalChartContainer = ref<HTMLDivElement | null>(null);
 let map: mapboxgl.Map | null = null;
 let globalChart: echarts.ECharts | null = null;
 let model_timestamps: number[] = []; // Global cache for chart timestamps to support "click anywhere"
+let _statsLegendHandler: ((params: any) => void) | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
 // remember last clicked point (lat/lon) so chart can be refreshed when var/depth changes
@@ -226,6 +227,7 @@ function onTimeControlDt(dt: any) {
 
 ///////////////////////////////////  HOOKS  ///////////////////////////////////
 onMounted(async () => {
+    registerEchartsDarkTheme();
     mapboxgl.accessToken = config.public.mapboxToken;
     if (!mapContainer.value) return;
 
@@ -527,7 +529,7 @@ async function init() {
     // initialize the chart now with an empty series
     try { if (globalChart) { globalChart.dispose(); globalChart = null; } } catch (e) { /* ignore */ }
     if (!globalChartContainer.value) return;
-    globalChart = echarts.init(globalChartContainer.value, undefined, { renderer: 'canvas' });
+    globalChart = echarts.init(globalChartContainer.value, 'dark', { renderer: 'canvas' });
 
     const option = {
         // title: { text: 'Timeseries', left: 'center' },
@@ -1231,9 +1233,13 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
 
     // Compute night mark areas using SunCalc (sunrise/sunset) if lat/lon provided, otherwise fall back to fixed night windows
     let markAreaData: any[] = [];
-    if (typeof lat === 'number' && typeof lon === 'number') {
-        const nights = computeNightRanges({ lat, lon, tz, startLocalIso: startLocal.format(), endLocalIso: endLocal.format() });
-        markAreaData = nights.map(([s, e]) => [{ xAxis: s }, { xAxis: e }]);
+    if (typeof lat === 'number' && typeof lng === 'number') {
+        const nights = computeNightRanges({ lat, lng, tz, startLocalIso: startLocal.format(), endLocalIso: endLocal.format() });
+        // markAreaData = nights.map(([s, e]) => [{ xAxis: s }, { xAxis: e }]);
+        for (let i = 0; i < nights.length - 1; i++) {
+            // add a mark area between the end of one night and the start of the next to visually separate days
+            markAreaData.push([{ xAxis: nights[i][1] }, { xAxis: nights[i + 1][0] }]);
+        }
     } else {
         // fallback to previous simple night windows
         const tmp: any[] = [];
@@ -1310,6 +1316,7 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
             itemWidth: 15,
             itemHeight: 10,
             textStyle: { fontSize: 10 },
+            icon: 'rect'
         },
         tooltip: {
             trigger: 'axis', formatter: (params: any) => {
@@ -1371,13 +1378,13 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
             data: [
                 {
                     xAxis: moment.tz(moment(), tz).format(),
-                    lineStyle: { color: '#3c3', width: 1, type: 'dashed' },
-                    label: { show: true, position: 'end', formatter: 'Now', backgroundColor: '#fff', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: '#3c3' }
+                    lineStyle: { color: colors.green.lighten2, width: 1, type: 'dashed' },
+                    label: { show: true, position: 'end', formatter: 'Now', color: colors.green.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.green.lighten2 }
                 },
                 {
                     xAxis: selectedXLocal,
-                    lineStyle: { color: '#ff5722', width: 1, type: 'dashed' },
-                    label: { show: true, position: 'end', formatter: 'Map', backgroundColor: '#fff', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: '#ff5722' }
+                    lineStyle: { color: colors.orange.lighten2, width: 1, type: 'dashed' },
+                    label: { show: true, position: 'end', formatter: 'Map', color: colors.orange.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.orange.lighten2 }
                 }
             ]
         },
@@ -1402,12 +1409,14 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
         const __series_min = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), min[i]]);
         const __series_max = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), maxDiff[i]]);
 
-        // base hidden series for stacking
-        seriesArr.push({ type: 'line', data: __series_min, lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none' });
-        seriesArr.push({ name: 'Min-Max Range', type: 'line', data: __series_max, lineStyle: { opacity: 0 }, areaStyle: { color: '#3498DB', opacity: 0.4 }, stack: 'minmax', symbol: 'none' });
-        seriesArr.push({ type: 'line', data: __series_q1, stack: 'range', lineStyle: { opacity: 0 }, symbol: 'none' });
-        seriesArr.push({ name: 'Interquartile Range', type: 'line', data: __series_q3, stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: '#3498DB', opacity: 0.4 }, symbol: 'none' });
-        seriesArr.push({ name: 'Mean', type: 'line', data: __series_mean, smooth: true, lineStyle: { color: '#3498DB', opacity: 0.8, width: 4 }, symbol: 'none' });
+        // base hidden series for stacking — all named with _ prefix so they're excluded from the legend UI
+        seriesArr.push({ name: '_stats_min_base', type: 'line', data: __series_min, lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none' });
+        seriesArr.push({ name: '_stats_max_range', type: 'line', data: __series_max, lineStyle: { opacity: 0 }, areaStyle: { color: '#3498DB', opacity: 0.4 }, stack: 'minmax', symbol: 'none' });
+        seriesArr.push({ name: '_stats_q1_base', type: 'line', data: __series_q1, stack: 'range', lineStyle: { opacity: 0 }, symbol: 'none' });
+        seriesArr.push({ name: '_stats_iqr', type: 'line', data: __series_q3, stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: '#3498DB', opacity: 0.4 }, symbol: 'none' });
+        seriesArr.push({ name: '_stats_mean', type: 'line', data: __series_mean, smooth: true, lineStyle: { color: '#3498DB', opacity: 0.8, width: 4 }, symbol: 'none' });
+        // Fake "Stats" series — empty data, exists only to provide the grouped legend entry
+        seriesArr.push({ name: 'Stats', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: '#3498DB', opacity: 0 }, itemStyle: { color: '#3498DB' } });
     }
 
     // model series (reuse previously computed __series_model)
@@ -1441,12 +1450,33 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
 
     // Add night mark areas if any
     if (markAreaData.length > 0) {
-        (option.series[0] as any).markArea = { silent: true, itemStyle: { color: 'rgba(20,30,70,0.08)' }, data: markAreaData };
+        (option.series[0] as any).markArea = { silent: true, itemStyle: { color: colors.yellow.accent2, opacity: 0.05 }, data: markAreaData };
     }
+
+    // Build explicit legend.data: show all named series except internal underscore-prefixed stats series
+    option.legend.data = (option.series as any[])
+        .filter((s: any) => s.name && !s.name.startsWith('_'))
+        .map((s: any) => s.name);
 
     // Use notMerge=true so removal of 'Sensor Data' is enforced (prevents stale series remaining)
     globalChart.setOption(option, true);
     globalChart.resize();
+
+    // Register grouped 'Stats' legend toggle — clicking it shows/hides all 5 internal stats series
+    const STATS_INTERNAL = ['_stats_min_base', '_stats_max_range', '_stats_q1_base', '_stats_iqr', '_stats_mean'];
+    if (_statsLegendHandler) globalChart.off('legendselectchanged', _statsLegendHandler);
+    if (hasClimate) {
+        _statsLegendHandler = (params: any) => {
+            if (params.name !== 'Stats') return;
+            const action = params.selected['Stats'] ? 'legendSelect' : 'legendUnSelect';
+            for (const name of STATS_INTERNAL) {
+                globalChart!.dispatchAction({ type: action, name });
+            }
+        };
+        globalChart.on('legendselectchanged', _statsLegendHandler);
+    } else {
+        _statsLegendHandler = null;
+    }
 }
 
 
@@ -1530,7 +1560,7 @@ try {
                                 {
                                     xAxis: moment.tz(moment(), tz).format(),
                                     lineStyle: {
-                                        color: '#3c3',
+                                        color: colors.green.lighten2,
                                         width: 1,
                                         type: 'dashed'
                                     },
@@ -1538,26 +1568,26 @@ try {
                                         show: true,
                                         position: 'end',
                                         formatter: 'Now',
-                                        backgroundColor: '#fff',
+                                        backgroundColor: '',
                                         padding: [2, 4],
                                         borderRadius: 2,
                                         borderWidth: 1,
-                                        borderColor: '#3c3'
+                                        borderColor: colors.green.lighten2
                                     },
                                 },
                                 // Selected time line
                                 {
                                     xAxis: sel,
-                                    lineStyle: { color: '#ff5722', width: 1, type: 'dashed' },
+                                    lineStyle: { color: colors.orange.lighten2, width: 1, type: 'dashed' },
                                     label: {
                                         show: true,
                                         position: 'end',
                                         formatter: 'Map',
-                                        backgroundColor: '#fff',
+                                        backgroundColor: '',
                                         padding: [2, 4],
                                         borderRadius: 2,
                                         borderWidth: 1,
-                                        borderColor: '#ff5722'
+                                        borderColor: colors.orange.lighten2
                                     },
                                 }
                             ]
@@ -1585,7 +1615,7 @@ let zrClickHandler: ((evt: any) => void) | null = null;
     position: absolute;
     top: 12px;
     z-index: 2;
-    background: rgba(255, 255, 255, 0.85);
+    /* background: rgba(255, 255, 255, 0.85); */
     border-radius: 8px;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
