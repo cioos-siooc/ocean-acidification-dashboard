@@ -25,17 +25,17 @@
             <div class="selector">
                 <ColorBarSelect v-if="mainStore.variables.length" />
 
-                <Overlays class="my-2" @autorange="autorange" />
+                <Overlays class="my-2" @autorange="autorange" @toggle-vertical-profile="drawerOpen = !drawerOpen" />
             </div>
 
             <!-- <DepthSlider /> -->
 
-            <div class="map-drawer-toggle" :style="{ right: drawerOpen ? '312px' : '12px' }">
+            <!-- <div class="map-drawer-toggle" :style="{ right: drawerOpen ? '312px' : '12px' }">
                 <v-btn size="24px" color="warning" class="ma-0 pa-0" @click="drawerOpen = !drawerOpen"
                     title="Vertical Profile">
                     <v-icon size="20px">mdi-chart-line</v-icon>
                 </v-btn>
-            </div>
+            </div> -->
 
             <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
 

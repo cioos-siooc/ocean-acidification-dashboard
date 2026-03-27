@@ -13,6 +13,10 @@
       <iconsAutorange />
     </v-btn>
 
+    <v-btn icon size="x-small" flat @click="toggleVerticalProfile" title="Vertical Profile">
+      <v-icon >mdi-chart-line</v-icon>
+    </v-btn>
+
   </v-card>
 </template>
 
@@ -24,6 +28,7 @@ const mainStore = useMainStore();
 
 const emit = defineEmits<{
   (e: 'autorange'): void;
+  (e: 'toggle-vertical-profile'): void;
 }>();
 
 const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
@@ -35,8 +40,9 @@ function autorange() {
   emit('autorange');
 }
 
-
-
+function toggleVerticalProfile() {
+  emit('toggle-vertical-profile');
+}
 </script>
 
 <style scoped>

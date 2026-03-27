@@ -47,9 +47,9 @@
       <!-- COLORBAR -->
       <div class="bar" :style="barStyle"></div>
       <div class="ticks">
-        <div class="tick left">{{ colormapMin }}</div>
-        <div class="tick center">{{ ((colormapMin + colormapMax) / 2).toFixed(1) }}</div>
-        <div class="tick right">{{ colormapMax }}</div>
+        <div class="tick left">{{ colormapMin?.toFixed(precisionDigits) }}</div>
+        <div class="tick center">{{ ((colormapMin + colormapMax) / 2)?.toFixed(precisionDigits) }}</div>
+        <div class="tick right">{{ colormapMax?.toFixed(precisionDigits) }}</div>
       </div>
 
       <v-card-actions class="ma-0 pa-0" style="min-height:24px">
@@ -109,14 +109,6 @@ import { useMainStore } from '../stores/main'
 const mainStore = useMainStore();
 
 ////////////////////////////////  TYPES  ///////////////////////////////////
-
-interface VarMeta {
-  var: string;
-  min?: number;
-  max?: number;
-  precision?: number;
-  source?: string;
-}
 
 // const props = defineProps<{
 //   label?: string;
@@ -179,6 +171,8 @@ const selectedVarName = computed({
     mainStore.updateSelectedVariable({ var: v, colormap, colormapMin, colormapMax, precision });
   }
 });
+
+const precisionDigits = computed(() =>  -Math.log10(selectedVariable.value.precision));
 
 const colormapMin = computed({
   get() {
