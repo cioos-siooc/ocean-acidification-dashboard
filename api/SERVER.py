@@ -96,7 +96,7 @@ async def get_sensors():
     def _fetch():
         import psycopg2
         import psycopg2.extras
-        query = "SELECT id, name, latitude, longitude, depths, variables, device_config, active FROM sensors;"
+        query = "SELECT id, name, latitude, longitude, depth, variables, device_config, active FROM sensors;"
         conn = None
         try:
             conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password, connect_timeout=5)
@@ -112,7 +112,7 @@ async def get_sensors():
                     "name": row.get("name"),
                     "latitude": row.get("latitude"),
                     "longitude": row.get("longitude"),
-                    "depths": row.get("depths"),
+                    "depth": row.get("depth"),
                     "variables": row.get("variables"),
                     "device_config": row.get("device_config"),
                     "active": row.get("active"),

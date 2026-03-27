@@ -754,7 +754,7 @@ async function addSensors() {
         properties: {
             id: s.id,
             name: s.name,
-            depths: s.depths,
+            depth: s.depth,
             variables: s.variables,
             active: s.active
         }
@@ -776,7 +776,16 @@ async function addSensors() {
 
     // Attach active-only click handlers via composable
     try {
-        const stations = useStationsInteraction(() => map, async (sensor_id: number) => {
+        const stations = useStationsInteraction(() => map, async (sensor_id: number, depth: number) => {
+            // Find the closest depth in depths and switch to that if not already there
+            const closestDepth = mainStore.variables.find((v: any) => v.var === selectedVariable.value.var)?.depths?.sort((a: any, b: any) => Math.abs(a.depth - depth) - Math.abs(b.depth - depth));
+            if (closestDepth && closestDepth.length > 0) {
+                const newDepth = closestDepth[0].depth;
+                if (newDepth !== selectedVariable.value.depth) {
+                    mainStore.updateSelectedVariable({ depth: newDepth });
+                }
+            }
+
             clicked_sensor_id.value = sensor_id;
             // show marker
             // try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }

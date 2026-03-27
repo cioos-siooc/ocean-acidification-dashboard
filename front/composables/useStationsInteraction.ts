@@ -4,7 +4,7 @@ export type CircleLayer = {
   on: (layerEvent: string, handler: (evt: any) => void) => (() => void) | undefined;
 };
 
-export function useStationsInteraction(getMap: () => any, onFetchTimeseries: (sensor_id: number) => void) {
+export function useStationsInteraction(getMap: () => any, onFetchTimeseries: (sensor_id: number, depth: number) => void) {
   let _detach: (() => void) | null = null;
 
   function _isActive(raw: any) {
@@ -20,6 +20,7 @@ export function useStationsInteraction(getMap: () => any, onFetchTimeseries: (se
       try {
         const feature = (evt.features && evt.features[0]) || null;
         const sensor_id = feature?.properties?.id;
+        const depth = feature?.properties?.depth;
         const lng = evt.lngLat?.lng ?? feature?.geometry?.coordinates?.[0];
         const lat = evt.lngLat?.lat ?? feature?.geometry?.coordinates?.[1];
         if (!feature || !sensor_id || lng === undefined || lat === undefined) return;
@@ -27,7 +28,7 @@ export function useStationsInteraction(getMap: () => any, onFetchTimeseries: (se
         if (!_isActive(rawActive)) return; // ignore inactive stations
 
         // Provide sensor id + coords to caller
-        onFetchTimeseries(sensor_id);
+        onFetchTimeseries(sensor_id, depth);
       } catch (e) {
         // swallow
       }
