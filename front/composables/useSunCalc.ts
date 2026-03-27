@@ -15,8 +15,8 @@ export function computeNightRanges(opts: {
   endLocalIso: string,
 }): NightRange[] {
   const { lat, lng, tz, startLocalIso, endLocalIso } = opts
-  const startLocal = moment.tz(startLocalIso, tz).clone();
-  const endLocal = moment.tz(endLocalIso, tz).clone();
+  const startLocal = moment.tz(startLocalIso, tz).clone().subtract(1, 'day'); // start a day early to capture night spanning start boundary
+  const endLocal = moment.tz(endLocalIso, tz).clone().add(1, 'day') // end a day late to capture night spanning end boundary
 
   // iterate from day before start to day after end to capture nights spanning boundaries
   let day = startLocal.clone().startOf('day').subtract(1, 'day')

@@ -38,13 +38,15 @@
             </div>
 
             <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
+
+            <v-snackbar-queue ref="snackbarQueue" v-model="snackMessages" :total-visible="3" closable contained></v-snackbar-queue>
         </div>
 
         <!-- Bottom: Global Chart Footer -->
         <v-footer class="ma-0 pa-0" :style="{ maxHeight: `${footerHeight}` }">
             <!-- <div ref="globalChartContainer" class="w-100" :style="{ height: `calc(${footerHeight} - 20px)` }"></div> -->
             <v-container minWidth="100%" class="ma-0 pa-0">
-                <v-row class="ma-0 pa-0" style="height:20px; background-color: #ccc;">
+                <v-row class="ma-0 pa-0" style="height:20px; ">
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ var2name(selectedVariable.var) }}</span>
                     </v-col>
@@ -55,7 +57,7 @@
                     <v-divider vertical class="mx-2"></v-divider>
                     <v-col v-if="lastClicked" cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ lastClicked?.lat.toFixed(5) }} , {{ lastClicked?.lng.toFixed(5)
-                            }}</span>
+                        }}</span>
                     </v-col>
 
                     <v-spacer></v-spacer>
@@ -63,7 +65,7 @@
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
                         <span class="footer-text">{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
-                            }}</span>
+                        }}</span>
                     </v-col>
                 </v-row>
 
@@ -94,6 +96,8 @@
             <div ref="globalChartContainer" class="w-100 h-100"></div>
         </div> -->
         <!-- </div> -->
+
+        
     </v-main>
 </template>
 
@@ -187,6 +191,8 @@ const clicked_sensor_id = ref<number | null>(null);
 const DFN = 5; // days from now for climate timeseries
 
 const zoom = ref('');
+
+const snackMessages = ref<object[]>([]);
 
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 
@@ -782,6 +788,7 @@ async function addSensors() {
             if (closestDepth && closestDepth.length > 0) {
                 const newDepth = closestDepth[0].depth;
                 if (newDepth !== selectedVariable.value.depth) {
+                    snackMessages.value.push({ color: 'warning', text: `Switched to closest available depth: ${formatDepth(newDepth)}` });
                     mainStore.updateSelectedVariable({ depth: newDepth });
                 }
             }

@@ -78,14 +78,14 @@
         </template>
       </v-select>
 
-      <v-number-input v-model.number="colormapMin" hide-details :reverse="false" controlVariant="stacked" label="Min"
+      <v-number-input v-model.number="colormapMin" hide-details :reverse="false" controlVariant="stacked" label="Min" variant="solo-filled" flat
         :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
         style="width: 30%; scale:75%"></v-number-input>
 
-      <v-btn width="30%" size="x-small" color="grey" @click="resetToDefaults"
+      <v-btn width="30%" size="x-small" flat @click="resetToDefaults" variant="outlined"
         :title="'Reset min/max to defaults'">Reset</v-btn>
 
-      <v-number-input v-model.number="colormapMax" hide-details :reverse="false" controlVariant="stacked" label="Max"
+      <v-number-input v-model.number="colormapMax" hide-details :reverse="false" controlVariant="stacked" label="Max" variant="solo-filled" flat
         :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
         style="width: 30%; scale:75%"></v-number-input>
     </v-row>
@@ -209,7 +209,7 @@ const barStyle = computed(() => {
   };
 });
 
-const depths = computed(() => mainStore.variables.find(v => v.var === selectedVariable.value.var)?.depths);
+const depths = computed(() => mainStore.variables.find(v => v.var === selectedVariable.value.var)?.depths.sort((a, b) => a.depth - b.depth) ?? []);
 
 const selectedDepth = computed({
   get() { return selectedVariable.value.depth },
