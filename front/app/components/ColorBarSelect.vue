@@ -15,9 +15,9 @@
         </template>
       </v-select>
 
-      <v-select v-if="depths && depths.length > 0" v-model="selectedDepth" :items="depths" label="Depth" item-title="label" item-value="depth"
-        :disabled="!depths || depths.length === 0" density="compact" hide-details variant="outlined" class="my-4"
-        :menu-props="{ location: 'end' }" style="width: 100%">
+      <v-select v-if="depths && depths.length > 0" v-model="selectedDepth" :items="depths" label="Depth"
+        item-title="label" item-value="depth" :disabled="!depths || depths.length === 0" density="compact" hide-details
+        variant="outlined" class="my-4" :menu-props="{ location: 'end' }" style="width: 100%">
         <template #item="{ props, item }">
           <v-list-item v-bind="props" :title="item.value.toFixed(1) + ' m'"
             :style="{ color: item.raw.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">
@@ -45,11 +45,16 @@
       </v-select>
 
       <!-- COLORBAR -->
-      <div class="bar" :style="barStyle"></div>
-      <div class="ticks">
-        <div class="tick left">{{ colormapMin?.toFixed(precisionDigits) }}</div>
-        <div class="tick center">{{ ((colormapMin + colormapMax) / 2)?.toFixed(precisionDigits) }}</div>
-        <div class="tick right">{{ colormapMax?.toFixed(precisionDigits) }}</div>
+      <div style="display: flex; align-items: flex-end; gap: 6px;">
+        <div style="flex: 1; min-width: 0;">
+          <div class="bar" :style="barStyle"></div>
+          <div class="ticks">
+            <div class="tick left">{{ colormapMin?.toFixed(precisionDigits) }}</div>
+            <div class="tick center">{{ ((colormapMin + colormapMax) / 2)?.toFixed(precisionDigits) }}</div>
+            <div class="tick right">{{ colormapMax?.toFixed(precisionDigits) }}</div>
+          </div>
+        </div>
+        <div style="flex: 0 0 auto; font-size: x-small; color: #aaa; padding-bottom: 2px;">{{ unit }}</div>
       </div>
 
       <v-card-actions class="ma-0 pa-0" style="min-height:24px">
@@ -78,15 +83,15 @@
         </template>
       </v-select>
 
-      <v-number-input v-model.number="colormapMin" hide-details :reverse="false" controlVariant="stacked" label="Min" variant="solo-filled" flat
-        :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
+      <v-number-input v-model.number="colormapMin" hide-details :reverse="false" controlVariant="stacked" label="Min"
+        variant="solo-filled" flat :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
         style="width: 30%; scale:75%"></v-number-input>
 
       <v-btn width="30%" size="x-small" flat @click="resetToDefaults" variant="outlined"
         :title="'Reset min/max to defaults'">Reset</v-btn>
 
-      <v-number-input v-model.number="colormapMax" hide-details :reverse="false" controlVariant="stacked" label="Max" variant="solo-filled" flat
-        :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
+      <v-number-input v-model.number="colormapMax" hide-details :reverse="false" controlVariant="stacked" label="Max"
+        variant="solo-filled" flat :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
         style="width: 30%; scale:75%"></v-number-input>
     </v-row>
   </v-card>
@@ -145,6 +150,7 @@ const showSourceInfo = ref(false);
 const variables = computed(() => mainStore.variables);
 const variableItems = computed(() => variables.value.map((v) => ({ var: v.var, label: var2name(v.var), colormapMin: v.colormapMin, colormapMax: v.colormapMax })));
 const selectedVariable = computed(() => mainStore.selected_variable);
+const unit = computed(() => variables.value.find(v => v.var === selectedVariable.value.var)?.unit ?? '');
 
 const sourceItems = computed(() => {
   const sources = variables.value.filter(v => v.var == selectedVariable.value.var).map(v => ({ source: v.source, label: v.source }));
@@ -172,7 +178,7 @@ const selectedVarName = computed({
   }
 });
 
-const precisionDigits = computed(() =>  -Math.log10(selectedVariable.value.precision));
+const precisionDigits = computed(() => -Math.log10(selectedVariable.value.precision));
 
 const colormapMin = computed({
   get() {
@@ -199,11 +205,11 @@ const barStyle = computed(() => {
   const palette = colormaps.value[selectedColormap.value]?.stops
   const stops = palette?.map(s => `${s[1]} ${Math.round(s[0] * 100)}%`).join(', ');
   return {
-    background: `linear-gradient(90deg, ${stops})`
+    background: `linear-gradient(90deg, ${stops})`,
   };
 });
 
-const depths = computed(() => mainStore.variables.find(v => v.var === selectedVariable.value.var)?.depths.sort((a, b) => a.depth - b.depth) ?? []);
+const depths = computed(() => mainStore.variables.find(v => v.var === selectedVariable.value.var)?.depths?.sort((a, b) => a.depth - b.depth) ?? []);
 
 const selectedDepth = computed({
   get() { return selectedVariable.value.depth },
