@@ -182,7 +182,7 @@ def find_pending_image(conn):
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT j.id, j.variable_id, j.start_time, j.end_time, j.nc_path, j.checksum
+            SELECT j.id, j.variable_id, j.start_time, j.end_time, j.nc_path
             FROM nc_jobs j
             JOIN fields v ON j.variable_id = v.id
             WHERE j.status = 'pending_image'
@@ -198,7 +198,6 @@ def find_pending_image(conn):
                 'start_time': r[2],
                 'end_time': r[3],
                 'nc_path': r[4],
-                'checksum': r[5],
             })
         return rows
         

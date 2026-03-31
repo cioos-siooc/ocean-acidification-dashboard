@@ -71,8 +71,7 @@
 
                 <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)` }"
                     style="position: relative;">
-                    <TimeControls :timestamps="model_timestamps" :currentDt="mainStore.selected_variable.dt"
-                        @update:dt="onTimeControlDt" />
+                    <TimeControls />
 
                     <div ref="globalChartContainer" style="width: calc( 100% - 24px ); height: calc(100% - 32px);">
                     </div>
@@ -226,10 +225,10 @@ watch([
 }, { immediate: false });
 
 // Handler for time controls component
-function onTimeControlDt(dt: any) {
-    // dt is a moment object (UTC)
-    mainStore.updateSelectedVariable({ dt });
-}
+// function onTimeControlDt(dt: any) {
+//     // dt is a moment object (UTC)
+//     mainStore.updateSelectedVariable({ dt });
+// }
 
 ///////////////////////////////////  HOOKS  ///////////////////////////////////
 onMounted(async () => {
@@ -605,6 +604,7 @@ async function init() {
             const finalX = model_timestamps[bestIdx];
             if (finalX !== lastClickedX) {
                 lastClickedX = finalX;
+                console.log('lastClickedX: ', lastClickedX);
                 mainStore.updateSelectedVariable({
                     dt: moment.utc(finalX)
                 });
@@ -623,9 +623,9 @@ async function getVariables() {
         const r = await axios.get(`${apiBaseUrl}/variables`);
         const data = r.data;
 
-        // Convert datetimes from string to moment objects
+        // Convert datetimes to epoch ms numbers (plain numbers avoid deep Vue proxy overhead)
         data.forEach((v: any) => {
-            v.dts = v.dts?.map((dtstr: string) => moment.utc(dtstr));
+            v.dts = v.dts?.map((dtstr: string) => moment.utc(dtstr).valueOf());
         });
 
         mainStore.setVariables(data);
@@ -645,7 +645,7 @@ async function getVariables() {
                 mainStore.updateSelectedVariable({
                     var: varId,
                     source: source,
-                    dt: dts[dts.length - 1],
+                    dt: moment.utc(dts[dts.length - 1]),
                     depth: depth,
                     precision: precision,
                     colormap: colormap,

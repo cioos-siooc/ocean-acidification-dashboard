@@ -92,7 +92,6 @@ import os
 import json
 import requests
 import tempfile
-import hashlib
 import shutil
 from datetime import timezone
 from .das import fetch_das
@@ -203,16 +202,11 @@ def download_nc(conn, row, erddap_base):
     try:
         with requests.get(url, stream=True, timeout=600) as r:
             r.raise_for_status()
-            h = hashlib.sha256()
-            size = 0
             with open(tmpfn, "wb") as fh:
                 for chunk in r.iter_content(8192):
                     if not chunk:
                         continue
                     fh.write(chunk)
-                    h.update(chunk)
-                    size += len(chunk)
-        checksum = h.hexdigest()
         nc_root = os.getenv('NC_ROOT', '/opt/data/nc')
         out_dir = os.path.join(nc_root, variable)
         os.makedirs(out_dir, exist_ok=True)
@@ -227,14 +221,6 @@ def download_nc(conn, row, erddap_base):
                 final_path = os.path.join(out_dir, fn)
                 _write_compressed_netcdf(tmpfn, final_path, comp)
                 os.remove(tmpfn)
-                # recompute checksum and size from compressed file
-                h2 = hashlib.sha256()
-                size = 0
-                with open(final_path, 'rb') as fh:
-                    for chunk in iter(lambda: fh.read(8192), b''):
-                        h2.update(chunk)
-                        size += len(chunk)
-                checksum = h2.hexdigest()
             except Exception:
                 logger.exception('Failed to compress and write file')
                 # Try to clean up temp file on error
@@ -251,8 +237,8 @@ def download_nc(conn, row, erddap_base):
 
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE nc_jobs SET status='success_download', nc_path=%s, checksum=%s, attempts = attempts+1, last_attempt = NOW() WHERE id=%s",
-                (final_path, checksum, nid),
+                "UPDATE nc_jobs SET status='success_download', nc_path=%s, attempts = attempts+1, last_attempt = NOW() WHERE id=%s",
+                (final_path, nid),
             )
             cur.execute(
                 "UPDATE fields SET last_downloaded_at = GREATEST(COALESCE(last_downloaded_at, to_timestamp(0)), %s) WHERE dataset_id = %s AND variable = %s",

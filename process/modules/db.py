@@ -77,7 +77,6 @@ def ensure_schema(conn):
             end_time TIMESTAMPTZ NOT NULL,
             status nc_file_status DEFAULT 'pending_download',
             nc_path TEXT,
-            checksum TEXT,
             attempts INT DEFAULT 0,
             last_attempt TIMESTAMPTZ
         );
@@ -88,7 +87,6 @@ def ensure_schema(conn):
             status live_ocean_status DEFAULT 'downloading',
             input_path TEXT,
             out_dir TEXT,
-            checksum TEXT,
             attempts INT DEFAULT 0,
             last_attempt TIMESTAMPTZ,
             meta JSONB,

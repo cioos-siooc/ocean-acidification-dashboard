@@ -14,7 +14,6 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-import hashlib
 from datetime import timezone
 from typing import List
 from psycopg2.extras import Json
@@ -152,19 +151,11 @@ def compute_for_group(
                 logger.error("Expected output file not found: %s", out_path)
                 raise RuntimeError("Expected output missing: %s" % out_path)
 
-            # compute size and checksum
-            # size = os.path.getsize(out_path)
-            h = hashlib.sha256()
-            with open(out_path, "rb") as fh:
-                for chunk in iter(lambda: fh.read(8192), b""):
-                    h.update(chunk)
-            checksum = h.hexdigest()
-
             # Update the existing pending_compute row for this computed variable with metadata and mark computed
             with conn.cursor() as cur3:
                 cur3.execute(
-                    "UPDATE nc_jobs SET nc_path=%s, checksum=%s, status='success_compute' WHERE start_time=%s AND end_time=%s AND variable_id=%s",
-                    (out_path, checksum, start_time, end_time, var_id),
+                    "UPDATE nc_jobs SET nc_path=%s, status='success_compute' WHERE start_time=%s AND end_time=%s AND variable_id=%s",
+                    (out_path, start_time, end_time, var_id),
                 )
                 conn.commit()
                 logger.info(

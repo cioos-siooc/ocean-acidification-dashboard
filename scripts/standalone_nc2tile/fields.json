@@ -1,0 +1,38 @@
+{
+  "omega_cal": {
+    "min": 0.0001,
+    "max": 6.5
+  },
+  "ph_total": {
+    "min": 7.0,
+    "max": 8.6
+  },
+  "omega_arag": {
+    "min": 0.0001,
+    "max": 4.0
+  },
+  "salinity": {
+    "min": 0.01,
+    "max": 35.0
+  },
+  "bathymetry": {
+    "min": -3000.0,
+    "max": 0.0
+  },
+  "dissolved_oxygen": {
+    "min": 0.1,
+    "max": 450.0
+  },
+  "total_alkalinity": {
+    "min": 500.0,
+    "max": 2500.0
+  },
+  "dissolved_inorganic_carbon": {
+    "min": 500.0,
+    "max": 2500.0
+  },
+  "temperature": {
+    "min": 0.01,
+    "max": 25.0
+  }
+}
