@@ -482,6 +482,8 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
 
     if d_val is None:
         fname = 'time.webp'
+    elif float(d_val) == -1.0:
+        fname = 'bottom.webp'
     else:
         # round depth to 1 decimal and format like 0p5, 18p0, etc.
         depth_round = round(float(d_val), 1)

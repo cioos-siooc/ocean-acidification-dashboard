@@ -99,7 +99,8 @@ services:
       - PGPASSWORD=postgres
     volumes:
       - ./process:/app
-      - /mnt/data:/opt/data
+      - ./shared:/app/shared
+      - ./data:/opt/data
     depends_on:
       db:
         condition: service_healthy

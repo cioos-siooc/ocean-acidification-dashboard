@@ -4,8 +4,8 @@
 import sys
 import os
 
-# Add parent directory to path so we can import shared
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Add /app to path so we can import shared (mounted at /app/shared in the container)
+sys.path.insert(0, os.path.dirname(__file__))
 
 # Import and re-export everything from shared
 from shared.nc2tile import (

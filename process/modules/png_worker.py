@@ -9,7 +9,6 @@ import xarray as xr
 from psycopg2.errors import DeadlockDetected
 
 from .db import get_db_conn
-import nc2tile
 
 logger = logging.getLogger("dl2.png")
 
@@ -87,7 +86,7 @@ def _update_nc_job_with_retry(conn, row_id: int, status: str, increment_attempts
 
 
 def _promote_ready_groups_to_pending_image(conn, limit: int = 5):
-    """Find (dataset_id, start_time, end_time) groups where ALL rows are in success_download or success_compute,
+    """Find (dataset_id, start_time, end_time) groups where ALL rows are in success_bottom,
     and promote rows in those groups to pending_image. Limit number of groups processed per call."""
     with conn.cursor() as cur:
         # Aggregate per group and pick groups where count == count_ok
@@ -95,17 +94,17 @@ def _promote_ready_groups_to_pending_image(conn, limit: int = 5):
             """
             WITH groups AS (
                 SELECT dataset_id, start_time, end_time, COUNT(*) AS total,
-                    SUM(CASE WHEN status IN ('success_download','success_compute') THEN 1 ELSE 0 END) AS ok
+                    SUM(CASE WHEN status = 'success_bottom' THEN 1 ELSE 0 END) AS ok
                 FROM nc_jobs
                 GROUP BY dataset_id, start_time, end_time
-                HAVING COUNT(*) > 0 AND SUM(CASE WHEN status IN ('success_download','success_compute') THEN 1 ELSE 0 END) = COUNT(*)
+                HAVING COUNT(*) > 0 AND SUM(CASE WHEN status = 'success_bottom' THEN 1 ELSE 0 END) = COUNT(*)
                 ORDER BY start_time
                 LIMIT %s
             )
             UPDATE nc_jobs f
             SET status = 'pending_image', last_attempt = NULL, attempts = 0
             FROM groups g
-            WHERE f.dataset_id = g.dataset_id AND f.start_time = g.start_time AND f.end_time = g.end_time AND f.status IN ('success_download','success_compute')
+            WHERE f.dataset_id = g.dataset_id AND f.start_time = g.start_time AND f.end_time = g.end_time AND f.status = 'success_bottom'
             RETURNING f.id
             """,
             (limit,),
@@ -117,31 +116,27 @@ def _promote_ready_groups_to_pending_image(conn, limit: int = 5):
 
 def check_image_ready_rows(conn):
     """Check for rows that are ready for PNG generation.
-    
-    For each (start_time, end_time) combination, ensure ALL required variables 
-    (both type='download' AND type='compute') have appropriate success status:
-    - type='download' variables: must be success_download or success_compute
-    - type='compute' variables: must be success_compute
-    Only then mark those rows as pending_image.
+
+    For each (start_time, end_time), all required variables (both download and
+    compute types) must be in ``success_bottom`` status.  Only then are all rows
+    for that period promoted to ``pending_image``.
     """
     with conn.cursor() as cur:
-        # Get all variables (download and compute types) with their type info
         cur.execute(
             """
-            SELECT id, type FROM fields 
+            SELECT id, type FROM fields
             WHERE type IN ('download', 'compute')
             ORDER BY id
             """
         )
         required_vars = [(row[0], row[1]) for row in cur.fetchall()]
-        
+
         if not required_vars:
             logger.warning("No required variables (type='download' or type='compute') found in fields")
             return
-        
+
         logger.debug(f"Checking image readiness against {len(required_vars)} required variables")
-        
-        # Get all unique (start_time, end_time) combinations
+
         cur.execute(
             """
             SELECT DISTINCT start_time, end_time
@@ -150,49 +145,36 @@ def check_image_ready_rows(conn):
             """
         )
         time_periods = cur.fetchall()
-        
+
         for st_dt, end_dt in time_periods:
-            # Check if ALL required variables have appropriate success status for this period
             all_required_ready = True
             for var_id, var_type in required_vars:
-                if var_type == 'download':
-                    # Download variables must be success_download or success_compute
-                    status_check = ('success_download', 'success_compute')
-                else:  # var_type == 'compute'
-                    # Compute variables must be success_compute
-                    status_check = ('success_compute',)
-                
-                # Build IN clause with proper placeholders
-                in_clause = ','.join(['%s'] * len(status_check))
                 cur.execute(
-                    f"""
+                    """
                     SELECT COUNT(*) FROM nc_jobs
                     WHERE variable_id = %s AND start_time = %s AND end_time = %s
-                    AND status IN ({in_clause})
+                    AND status = 'success_bottom'
                     """,
-                    (var_id, st_dt, end_dt) + status_check
+                    (var_id, st_dt, end_dt)
                 )
-                success_count = cur.fetchone()[0]
-                if success_count == 0:
+                if cur.fetchone()[0] == 0:
                     all_required_ready = False
-                    logger.debug(f"Variable_id {var_id} (type={var_type}) not ready for period {st_dt} to {end_dt}")
+                    logger.debug(f"Variable_id {var_id} (type={var_type}) not at success_bottom for period {st_dt} to {end_dt}")
                     break
-            
-            # If all required variables are ready, mark all success rows for this period as pending_image
+
             if all_required_ready:
                 cur.execute(
                     """
                     UPDATE nc_jobs
                     SET status = 'pending_image', last_attempt = NULL, attempts = 0
-                    WHERE start_time = %s AND end_time = %s 
-                    AND status IN ('success_download', 'success_compute')
+                    WHERE start_time = %s AND end_time = %s AND status = 'success_bottom'
                     """,
                     (st_dt, end_dt)
                 )
                 rows_updated = cur.rowcount
                 if rows_updated > 0:
                     logger.info(f"Marked {rows_updated} rows as pending_image for period {st_dt} to {end_dt}")
-        
+
         conn.commit()
 
 def find_pending_image(conn):
@@ -251,32 +233,37 @@ def get_variable_precision(conn, variable_id: int) -> float:
     raise RuntimeError(f"Invalid precision for variable_id={variable_id}")
 
 def get_variable_depths_image(conn, variable_id: int) -> Optional[list]:
-    """Get the depths setting for PNG generation from fields.depths_image."""
+    """Get the depth values that should be rendered as PNGs for a variable.
+
+    Reads from ``datasets.depths`` (a JSONB array of ``{value, hasImage}`` objects)
+    and returns only the values where ``hasImage`` is true.
+    """
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT depths_image FROM fields WHERE id=%s",
+            """
+            SELECT d.depths
+            FROM fields f
+            JOIN datasets d ON d.id = f.dataset_id
+            WHERE f.id = %s
+            """,
             (variable_id,),
         )
         r = cur.fetchone()
         if r and r[0] is not None:
             try:
-                depths = r[0]
-                if isinstance(depths, list):
-                    return depths
-                elif isinstance(depths, str):
-                    # try to parse as comma-separated values
-                    parts = [d.strip() for d in depths.split(',')]
-                    depth_vals = []
-                    for p in parts:
-                        try:
-                            depth_vals.append(float(p))
-                        except Exception:
-                            pass
-                    if depth_vals:
-                        return depth_vals
+                depths_arr = r[0]  # already a Python list of dicts via psycopg2 JSONB
+                if isinstance(depths_arr, list):
+                    values = [
+                        float(entry.get("value") or entry.get("depth"))
+                        for entry in depths_arr
+                        if entry.get("hasImage", True)
+                           and (entry.get("value") is not None or entry.get("depth") is not None)
+                    ]
+                    if values:
+                        return values
             except Exception:
                 pass
-    raise RuntimeError(f"Invalid depths_image for variable_id={variable_id}")
+    raise RuntimeError(f"No depths with hasImage=true found for variable_id={variable_id}")
 
 
 def get_depth_indices_from_values(nc_path: str, desired_depths: list) -> list:
@@ -347,24 +334,52 @@ def process_image(conn, row, workers: int | None = None):
         
         precision = get_variable_precision(conn, variable_id)
         
-        # Get depths from database and convert to indices
+        # Get depths from database — depth value -1 is a sentinel meaning "bottom layer file"
         desired_depths = get_variable_depths_image(conn, variable_id)
-        depth_indices = get_depth_indices_from_values(src, desired_depths)
+        has_bottom = -1.0 in desired_depths
+        real_depths = [d for d in desired_depths if d != -1.0]
 
-        # call nc2tile programmatically, optionally passing --workers
-        args = ["--data", src, "--vars", variable, "--precision", str(precision), "--depth-indices", ','.join(str(i) for i in depth_indices)]
-        if workers is not None:
-            args.extend(["--workers", str(int(workers))])
-        processed_times = None
-        try:
-            processed_times = nc2tile.main(args)
-        except SystemExit as e:
-            # nc2tile may call SystemExit when used as CLI; if it included a list of processed times as the exit code, use that
-            if isinstance(e.code, list):
-                processed_times = e.code
-            elif e.code != 0:
-                raise
-        
+        if real_depths:
+            depth_indices = get_depth_indices_from_values(src, real_depths)
+            args = ["--data", src, "--vars", variable, "--precision", str(precision), "--depth-indices", ','.join(str(i) for i in depth_indices)]
+            if workers is not None:
+                args.extend(["--workers", str(int(workers))])
+            processed_times = None
+            try:
+                import nc2tile  # lazy — not available outside the process container
+                processed_times = nc2tile.main(args)
+            except SystemExit as e:
+                if isinstance(e.code, list):
+                    processed_times = e.code
+                elif e.code != 0:
+                    raise
+
+        # Process companion bottom-layer file if depths include -1 sentinel or file exists alongside the main NC.
+        if has_bottom:
+            try:
+                from .bottom_layer_worker import _get_bottom_nc_path
+                bottom_src = _get_bottom_nc_path(src)
+                if os.path.exists(bottom_src):
+                    bottom_args = [
+                        "--data", bottom_src,
+                        "--vars", variable,        # same var name → output goes to png/{variable}/{t}/
+                        "--precision", str(precision),
+                        "--depth-indices", "0",    # depth coord in bottom file is -1.0 → writes bottom.webp
+                    ]
+                    if workers is not None:
+                        bottom_args.extend(["--workers", str(int(workers))])
+                    try:
+                        import nc2tile
+                        nc2tile.main(bottom_args)
+                    except SystemExit as e:
+                        if not isinstance(e.code, list) and e.code != 0:
+                            raise
+                    logger.info("nc2tile processed bottom companion: %s", bottom_src)
+                else:
+                    logger.warning("Bottom sentinel in depths but companion file not found: %s", bottom_src)
+            except Exception:
+                logger.warning("Bottom companion processing failed for %s (non-fatal)", src, exc_info=True)
+
         # Use retry logic for the final status update to handle potential deadlocks
         _update_nc_job_status_with_retry(conn, row_id, 'success_image')
 

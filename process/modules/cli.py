@@ -123,6 +123,7 @@ def main(argv=None):
         choices=[
             "check_download",
             "download",
+            "bottom_layer",
             "check_image",
             "image",
             "compute",
@@ -250,6 +251,17 @@ def main(argv=None):
         # Execute downloads for pending rows
         do_download(conn, args.erddap_base, limit=args.limit, variable=args.variable)
         logger.info("download: Processing complete")
+        return
+
+    if args.cmd == "bottom_layer":
+        from .bottom_layer_worker import process_pending_bottom
+
+        process_pending_bottom(
+            conn,
+            limit=args.limit,
+            base_dir=os.getenv("DATA_DIR", "/opt/data/nc"),
+        )
+        logger.info("bottom_layer: Processing complete")
         return
 
     if args.cmd == "check_image":

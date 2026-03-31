@@ -24,15 +24,20 @@ def get_db_conn():
 
 def ensure_schema(conn):
     with conn.cursor() as cur:
-        # Ensure enum type nc_file_status exists; some Postgres setups don't support "CREATE TYPE IF NOT EXISTS"
-        cur.execute("SELECT 1 FROM pg_type WHERE typname = 'nc_file_status'")
-        if not cur.fetchone():
+        # Determine which enum name(s) are in use (db may have been created with either/both names)
+        cur.execute("SELECT typname FROM pg_type WHERE typname IN ('nc_file_status', 'nc_job_status')")
+        existing_enums = [r[0] for r in cur.fetchall()]
+
+        if not existing_enums:
+            # Neither exists — create the canonical name
             cur.execute("CREATE TYPE nc_file_status AS ENUM ('pending_download','downloading','failed_download','success_download','pending_compute','computing','failed_compute','success_compute','pending_image','imaging','failed_image','success_image')")
-        else:
-            # Ensure new in-flight status values exist (idempotent)
-            cur.execute("ALTER TYPE nc_file_status ADD VALUE IF NOT EXISTS 'downloading'")
-            cur.execute("ALTER TYPE nc_file_status ADD VALUE IF NOT EXISTS 'computing'")
-            cur.execute("ALTER TYPE nc_file_status ADD VALUE IF NOT EXISTS 'imaging'")
+            existing_enums = ['nc_file_status']
+
+        # Add new values to all matching enum names (handles both nc_file_status and nc_job_status)
+        for enum_name in existing_enums:
+            for val in ('downloading', 'computing', 'imaging',
+                        'pending_bottom', 'bottoming', 'success_bottom', 'failed_bottom'):
+                cur.execute(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS %s", (val,))
 
         # Live Ocean status enum
         cur.execute("SELECT 1 FROM pg_type WHERE typname = 'live_ocean_status'")
@@ -48,6 +53,7 @@ def ensure_schema(conn):
             last_checked_at TIMESTAMPTZ,
             last_remote_time TIMESTAMPTZ,
             last_downloaded_at TIMESTAMPTZ,
+            depths JSONB DEFAULT NULL,
             meta JSONB
         );
         CREATE TABLE IF NOT EXISTS fields (
@@ -97,8 +103,18 @@ def ensure_schema(conn):
             -- (created separately to avoid multi-statement parsing issues)
             """)
         # Create the full and partial unique indexes (created separately to avoid parser issues)
-        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_jobs_dataset_variable_time ON nc_jobs (dataset_id, variable_id, start_time, end_time)")
-        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_jobs_null_dataset_variable_time ON nc_jobs (variable_id, start_time, end_time) WHERE dataset_id IS NULL")
+        # Wrapped in try/except: if duplicate rows already exist the index cannot be created,
+        # but we must not crash — the pipeline can still run without the unique constraint.
+        try:
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_jobs_dataset_variable_time ON nc_jobs (dataset_id, variable_id, start_time, end_time)")
+        except Exception:
+            conn.rollback()
+            logger.warning("Could not create unique index ux_nc_jobs_dataset_variable_time (duplicate rows exist); continuing without it")
+        try:
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_jobs_null_dataset_variable_time ON nc_jobs (variable_id, start_time, end_time) WHERE dataset_id IS NULL")
+        except Exception:
+            conn.rollback()
+            logger.warning("Could not create unique index ux_nc_jobs_null_dataset_variable_time (duplicate rows exist); continuing without it")
 
         # If older schema used dataset_id column name, rename to base_url
         cur.execute(
@@ -150,6 +166,9 @@ def ensure_schema(conn):
         cur.execute("SELECT 1 FROM information_schema.columns WHERE table_name='fields' AND column_name='precision'")
         if not cur.fetchone():
             cur.execute("ALTER TABLE fields ADD COLUMN precision FLOAT DEFAULT 0.1")
+
+        # Ensure datasets has a depths JSONB column (array of {value, hasImage} objects)
+        cur.execute("ALTER TABLE datasets ADD COLUMN IF NOT EXISTS depths JSONB DEFAULT NULL")
 
         # No automatic migration of `nc_files` rows will be performed.
         # We create the `nc_jobs` table for new pipeline usage and leave the legacy

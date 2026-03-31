@@ -180,8 +180,7 @@ def worker_shm_compute_time(shm_info):
             ph_slice[mask] = res.get('pH')
             ar_slice[mask] = res.get('saturation_aragonite')
             cal_slice[mask] = res.get('saturation_calcite')
-
-            # reshape and assign to the output shared mem arrays
+            del res  # free the 50+ output arrays immediately
             ph_arr[start:stop] = ph_slice.reshape((d_count, ny, nx))
             ar_arr[start:stop] = ar_slice.reshape((d_count, ny, nx))
             cal_arr[start:stop] = cal_slice.reshape((d_count, ny, nx))
@@ -269,6 +268,7 @@ def worker_memmap_compute_time(mem_info):
             ph_flat[mask] = res.get('pH')
             ar_flat[mask] = res.get('saturation_aragonite')
             cal_flat[mask] = res.get('saturation_calcite')
+            del res  # free the 50+ output arrays immediately — large memory spike otherwise
 
             dcount = stop - start
             ph_m[start:stop] = ph_flat.reshape((dcount, ny, nx))
@@ -761,6 +761,8 @@ def main():
         sys.exit(1)
 
     files = sorted(glob(os.path.join(dic_dir, '*.nc')))
+    # Exclude companion bottom-layer files — they must never be used as DIC source
+    files = [f for f in files if '_bottom_' not in os.path.basename(f)]
     if args.date:
         files = [f for f in files if args.date in os.path.basename(f)]
 
@@ -778,6 +780,7 @@ def main():
             token = m2.group(0) if m2 else (args.date if args.date else None)
         if token:
             candidates = glob(os.path.join(args.base_dir, '*', f'*{token}*.nc'))
+            candidates = [c for c in candidates if '_bottom_' not in os.path.basename(c)]
             found = {}
             for c in candidates:
                 if 'dissolved_inorganic_carbon' in c: found['DIC'] = c

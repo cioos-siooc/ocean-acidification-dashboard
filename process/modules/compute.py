@@ -35,10 +35,8 @@ def find_pending_compute(conn, limit=10):
 
 def find_compute_groups(conn, limit=10):
     """Return (start_time, end_time) tuples where:
-    1. All 5 required download variables are success_download or success_compute
+    1. All required download variables are in success_download state
     2. At least one computed variable row has status='pending_compute'
-    
-    This ensures we only compute when there's work to do, not re-computing already completed groups.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -47,13 +45,13 @@ def find_compute_groups(conn, limit=10):
             FROM nc_jobs j
             WHERE (j.status='pending_compute')
             AND EXISTS (
-                -- Check that all 5 required download variables are either success_download or success_compute
+                -- Check that all required download variables are success_download
                 SELECT 1 FROM nc_jobs j2
                 JOIN fields v ON j2.variable_id = v.id
                 WHERE j2.start_time = j.start_time
                 AND j2.end_time = j.end_time
                 AND v.type='download'
-                AND j2.status IN ('success_download', 'success_compute')
+                AND j2.status = 'success_download'
                 GROUP BY j2.start_time, j2.end_time
                 HAVING COUNT(DISTINCT v.variable) = (
                     SELECT COUNT(*) FROM fields WHERE type='download'
@@ -172,6 +170,7 @@ def compute_for_group(
                 logger.info(
                     "Marked %s %s->%s as success_compute", var_name, start_time, end_time
                 )
+
         return True
 
     except Exception as e:
@@ -284,6 +283,15 @@ def process_pending_compute(
 ):
     if conn is None:
         conn = get_db_conn()
+    # Reset rows stuck at 'computing' from a previously interrupted/killed run
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE nc_jobs SET status='pending_compute' WHERE status='computing'"
+        )
+        reset_count = cur.rowcount
+        conn.commit()
+    if reset_count:
+        logger.warning("Reset %d stuck 'computing' rows back to 'pending_compute'", reset_count)
     groups = find_compute_groups(conn, limit=limit)
     if not groups:
         logger.info(

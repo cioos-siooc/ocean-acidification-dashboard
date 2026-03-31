@@ -3,38 +3,36 @@
     <div class="label">
       <v-select v-model="selectedVarName" label="Field" :items="variableItems" :disabled="variableItems.length === 0"
         item-title="label" item-value="var" density="compact" hide-details variant="outlined" class="my-4"
-        :menu-props="{ location: 'end' }" style="width: 100%"></v-select>
+        :menu-props="{ location: 'end', offset: 10 }" style="width: 100%"></v-select>
 
       <v-select v-model="selectedSource" :items="sourceItems" label="Source" item-title="label" item-value="source"
         :disabled="sourceItems.length === 0" density="compact" hide-details variant="outlined" class="my-4"
-        :menu-props="{ location: 'end' }" style="width: 100%">
+        :menu-props="{ location: 'end', offset: 10 }" style="width: 100%">
         <template #prepend-inner>
           <v-btn icon size="12px" @click="showSourceInfo = !showSourceInfo" title="About this data source">
-            <v-icon size="12px">mdi-information-variant</v-icon>
+            <v-icon :color="colors.yellow.base" size="12px">mdi-information-variant</v-icon>
           </v-btn>
         </template>
       </v-select>
 
       <v-select v-if="depths && depths.length > 0" v-model="selectedDepth" :items="depths" label="Depth"
         item-title="label" item-value="depth" :disabled="!depths || depths.length === 0" density="compact" hide-details
-        variant="outlined" class="my-4" :menu-props="{ location: 'end' }" style="width: 100%">
+        variant="outlined" class="my-4" :menu-props="{ location: 'end', offset: 10 }" style="width: 100%">
         <template #item="{ props, item }">
-          <v-list-item v-bind="props" :title="item.value.toFixed(1) + ' m'"
+          <v-list-item v-bind="props" :title="item.raw.title"
             :style="{ color: item.raw.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">
           </v-list-item>
         </template>
         <template #selection="{ item }">
-          <div class="colormap-selection">
-            <span :style="{ color: item.raw.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">{{
-              item.value.toFixed(1) }} m</span>
+          <div class="colormap-selection">{{ item.value !== -1 ? item.value.toFixed(1) + ' m' : 'bottom' }}
           </div>
         </template>
         <template #prepend>
-          <v-btn icon size="12px" @click="deeper" title="Clear depth selection">
-            <v-icon size="10px">mdi-arrow-down</v-icon>
+          <v-btn icon size="12px" @click="deeper" title="Deeper depth selection">
+            <v-icon :color="colors.orange.lighten2" size="10px">mdi-arrow-down</v-icon>
           </v-btn>
-          <v-btn icon size="12px" @click="shallower" title="Clear depth selection">
-            <v-icon size="10px">mdi-arrow-up</v-icon>
+          <v-btn icon size="12px" @click="shallower" title="Shallower depth selection">
+            <v-icon :color="colors.green.lighten2" size="10px">mdi-arrow-up</v-icon>
           </v-btn>
         </template>
         <!-- <template #append>
@@ -209,11 +207,20 @@ const barStyle = computed(() => {
   };
 });
 
-const depths = computed(() => mainStore.variables.find(v => v.var === selectedVariable.value.var)?.depths?.sort((a, b) => a.depth - b.depth) ?? []);
+const depths = computed(() =>
+  mainStore.variables.
+    find(v => v.var === selectedVariable.value.var)?.depths?.
+    map(v => ({ title: v.depth !== -1 ? v.depth.toFixed(1) + ' m' : 'bottom', value: v.depth, hasImage: v.hasImage })) ?? [].
+    sort((a, b) => {
+      if (a.value === -1) return 1;
+      if (b.value === -1) return -1;
+      return a.title.localeCompare(b.title);
+    })
+);
 
 const selectedDepth = computed({
   get() { return selectedVariable.value.depth },
-  set(v: number | null) { mainStore.updateSelectedVariable({ depth: v }) }
+  set(v: number | null) { mainStore.updateSelectedVariable({ depth: v.value }) }
 })
 
 
@@ -255,17 +262,17 @@ function colormapStyle(item: any) {
 
 function deeper() {
   if (selectedDepth.value === null) return;
-  const currentIndex = depths.value.findIndex(d => d.depth === selectedDepth.value);
+  const currentIndex = depths.value.findIndex(d => d.value === selectedDepth.value);
   if (currentIndex < depths.value.length - 1) {
-    selectedDepth.value = depths.value[currentIndex + 1].depth;
+    selectedDepth.value = depths.value[currentIndex + 1];
   }
 }
 
 function shallower() {
   if (selectedDepth.value === null) return;
-  const currentIndex = depths.value.findIndex(d => d.depth === selectedDepth.value);
+  const currentIndex = depths.value.findIndex(d => d.value === selectedDepth.value);
   if (currentIndex > 0) {
-    selectedDepth.value = depths.value[currentIndex - 1].depth;
+    selectedDepth.value = depths.value[currentIndex - 1];
   }
 }
 
