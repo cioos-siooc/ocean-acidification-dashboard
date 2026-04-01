@@ -1,9 +1,22 @@
 import type moment from 'moment';
 import { defineStore } from 'pinia'
+import colors from 'vuetify/lib/util/colors';
 
 export const useMainStore = defineStore('main', {
     state: () => ({
-        dfnDays :5, // days from now for climate timeseries
+        colors: {
+            model: {
+                line: colors.red.lighten3,
+                shadow: colors.red.lighten4
+            },
+            observation: {
+                line: colors.green.lighten3,
+                shadow: colors.green.lighten4
+            },
+            stats: colors.blue.darken2,
+        },
+
+        dfnDays: 5, // days from now for climate timeseries
         variables: [] as Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: { depth: number, hasImage: boolean }[], precision: number }>,
         selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null },
         showBathymetryContours: false,

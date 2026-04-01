@@ -1,6 +1,6 @@
 <template>
-    <v-navigation-drawer v-model="isOpen" location="right" width="300" class="pa-2" absolute persistent mobile :scrim="false"
-        style="height:100%; z-index:9999; top:0;">
+    <v-navigation-drawer v-model="isOpen" location="right" width="300" class="pa-2" absolute persistent mobile
+        :scrim="false" style="height:100%; z-index:9999; top:0;">
         <v-row class="ma-0 pa-0" style="height: 20px;">
             <v-btn icon size="20px" color="error" flat @click="isOpen = false">
                 <v-icon size="16px">mdi-close</v-icon>
@@ -9,7 +9,8 @@
 
         <div class="profile-chart-wrapper">
             <div ref="chartContainer" class="profile-chart"></div>
-            <div v-if="statusMessage" class="profile-chart-overlay" :class="{ loading: loading, error: !!errorMessage }">
+            <div v-if="statusMessage" class="profile-chart-overlay"
+                :class="{ loading: loading, error: !!errorMessage }">
                 <v-progress-circular v-if="loading" indeterminate color="warning" :size="64" :width="12"
                     class="progress" />
                 <span v-else>{{ statusMessage }}</span>
@@ -204,15 +205,20 @@ function renderChart(points: ProfilePoint[]) {
                 // type: "scatter",
                 // showSymbol: false,
                 smooth: true,
-                showSymbol:true,
+                showSymbol: true,
                 data,
-                lineStyle: { width: 3, color: '#E74C3C' },
+                lineStyle: {
+                    width: 3,
+                    color: mainStore.colors.model.line,
+                    shadowColor: mainStore.colors.model.shadow,
+                    shadowBlur: 10,
+                },
                 // areaStyle: { opacity: data.length ? 0.25 : 0 }
                 itemStyle: {
-                    color: '#E74C3C',
-                    borderColor: '#C2185B',
+                    color: mainStore.colors.model.line,
+                    borderColor: mainStore.colors.model.line,
                     borderWidth: 1,
-                    shadowColor: '#C2185B88',
+                    shadowColor: mainStore.colors.model.shadow,
                     shadowBlur: 10,
                 },
             }

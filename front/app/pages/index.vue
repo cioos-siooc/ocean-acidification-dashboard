@@ -58,7 +58,7 @@
                     <v-divider vertical class="mx-2"></v-divider>
                     <v-col v-if="lastClicked" cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ lastClicked?.lat.toFixed(5) }} , {{ lastClicked?.lng.toFixed(5)
-                            }}</span>
+                        }}</span>
                     </v-col>
 
                     <v-spacer></v-spacer>
@@ -66,7 +66,7 @@
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
                         <span class="footer-text">{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
-                            }}</span>
+                        }}</span>
                     </v-col>
                 </v-row>
 
@@ -130,12 +130,11 @@ import { useCircleLayer } from '../../composables/useCircleLayer';
 import useStationsInteraction from '../../composables/useStationsInteraction';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
 import EchartsLineDialog from '../components/EchartsLineDialog.vue'
-
+import colors from 'vuetify/util/colors';
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
-import colors from 'vuetify/util/colors';
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
@@ -1444,16 +1443,21 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
 
         // base hidden series for stacking — all named with _ prefix so they're excluded from the legend UI
         seriesArr.push({ name: '_stats_min_base', type: 'line', data: __series_min, lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none' });
-        seriesArr.push({ name: '_stats_max_range', type: 'line', data: __series_max, lineStyle: { opacity: 0 }, areaStyle: { color: '#3498DB', opacity: 0.4 }, stack: 'minmax', symbol: 'none' });
+        seriesArr.push({ name: '_stats_max_range', type: 'line', data: __series_max, lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.4 }, stack: 'minmax', symbol: 'none' });
         seriesArr.push({ name: '_stats_q1_base', type: 'line', data: __series_q1, stack: 'range', lineStyle: { opacity: 0 }, symbol: 'none' });
-        seriesArr.push({ name: '_stats_iqr', type: 'line', data: __series_q3, stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: '#3498DB', opacity: 0.4 }, symbol: 'none' });
-        seriesArr.push({ name: '_stats_mean', type: 'line', data: __series_mean, smooth: true, lineStyle: { color: '#3498DB', opacity: 0.8, width: 4 }, symbol: 'none' });
+        seriesArr.push({ name: '_stats_iqr', type: 'line', data: __series_q3, stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.4 }, symbol: 'none' });
+        seriesArr.push({ name: '_stats_mean', type: 'line', data: __series_mean, smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 4 }, symbol: 'none' });
         // Fake "Stats" series — empty data, exists only to provide the grouped legend entry
-        seriesArr.push({ name: 'Stats', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: '#3498DB', opacity: 0 }, itemStyle: { color: '#3498DB' } });
+        seriesArr.push({ name: 'Stats', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
     }
 
     // model series (reuse previously computed __series_model)
-    seriesArr.push({ name: mainStore.selected_variable.var || 'value', type: 'line', showSymbol: false, data: __series_model, smooth: true, lineStyle: { width: 4, color: '#E74C3C', opacity: 0.8 }, itemStyle: { color: '#E74C3C' }, legendIcon: 'roundRect' });
+    seriesArr.push({
+        name: mainStore.selected_variable.var || 'value', type: 'line', showSymbol: false, data: __series_model, smooth: true, lineStyle: {
+            width: 4, color: mainStore.colors.model.line, shadowColor: mainStore.colors.model.shadow,
+            shadowBlur: 5, opacity: 0.8
+        }, itemStyle: { color: mainStore.colors.model.line }, legendIcon: 'roundRect'
+    });
 
     // sensor series will be optionally added below
     option.series = seriesArr;
@@ -1470,8 +1474,8 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
             type: 'line',
             data: __series_sensor,
             symbol: 'none',
-            lineStyle: { width: 2, color: '#AAAAAA', opacity: 0.8 },
-            itemStyle: { color: '#AAAAAA' },
+            lineStyle: { width: 4, color: mainStore.colors.observation.line, opacity: 0.8, shadowColor: mainStore.colors.observation.shadow, shadowBlur: 5 },
+            itemStyle: { color: mainStore.colors.observation.line },
             legendIcon: 'roundRect'
         });
     } else {

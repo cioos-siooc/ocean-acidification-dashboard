@@ -13,6 +13,9 @@ import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import moment from 'moment'
 
+import { useMainStore } from '~/stores/main'
+const mainStore = useMainStore();
+
 // Props
 interface Props {
     data: any | null
@@ -89,9 +92,9 @@ function plotTimeseries() {
             type: 'line',
             data: displayData.sensor.map((d: any, i: number) => [moment.utc(displayData.time[i]).tz(tz).format(), d]).filter((d: any) => d[1] !== null),
             smooth: true,
-            lineStyle: { width: 2, color: '#000', opacity: 0.75 },
+            lineStyle: { width: 2, color: mainStore.colors.observation.line, opacity: 0.75 },
             showSymbol: false,
-            itemStyle: { color: '#000', opacity: 0.75 },
+            itemStyle: { color: mainStore.colors.observation.line, opacity: 0.75 },
             large: true,
             largeThreshold: threshold,
             sampling: 'lttb'
@@ -102,12 +105,12 @@ function plotTimeseries() {
             type: 'line',
             data: displayData.model.map((d: any, i: number) => [moment.utc(displayData.time[i]).tz(tz).format(), d]).filter((d: any) => d[1] !== null),
             smooth: true,
-            lineStyle: { width: 2, color: '#3498DB', opacity: 0.75 },
+            lineStyle: { width: 2, color: mainStore.colors.model.line, opacity: 0.75 },
             showSymbol: false,
             symbol:"none",
             symbolSize:0,
             showAllSymbol:false,
-            itemStyle: { color: '#3498DB', opacity: 0.75 },
+            itemStyle: { color: mainStore.colors.model.line, opacity: 0.75 },
             large: true,
             largeThreshold: threshold,
             sampling: 'lttb'

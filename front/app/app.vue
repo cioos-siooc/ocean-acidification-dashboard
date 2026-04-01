@@ -7,10 +7,10 @@
       <v-app-bar-title>OA</v-app-bar-title>
       <v-spacer></v-spacer>
       <!-- Optional: Add menu items here -->
-      <NuxtLink to="/modeleval">
+      <NuxtLink to="/modeleval" target="_blank">
         <v-btn density="compact" text>Model Evaluation</v-btn>
       </NuxtLink>
-      <NuxtLink to="/about">
+      <NuxtLink to="/about" target="_blank">
         <v-btn density="compact" text>About</v-btn>
       </NuxtLink>
     </v-app-bar>
