@@ -105,7 +105,6 @@ const requestParams = computed<ProfileRequest | null>(() => {
     const dt = mainStore.selected_variable?.dt;
     const variable = mainStore.selected_variable?.var;
     if (typeof lat !== 'number' || typeof lng !== 'number' || !dt) {
-        console.log("Missing parameters for profile request:", { lat, lng, dt });
         return null;
     }
     const parsed = moment(dt);

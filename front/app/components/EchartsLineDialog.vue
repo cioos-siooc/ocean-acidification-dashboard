@@ -152,7 +152,6 @@ const close = () => {
 
 const getDataForCoord = async () => {
     if (!props.coord || props.coord.lat === undefined || props.coord.lon === undefined || !props.variable) return null;
-    console.log(props.coord, props.variable, props.depth);
     try {
         const response = await axios.post(`${apiBaseUrl}/getMonthlyClimatologyAtCoord`, {
             variable: props.variable,
@@ -168,7 +167,6 @@ const getDataForCoord = async () => {
 };
 
 const renderFromSeries = (data) => {
-    console.log(data);
     if (!chartInstance || !data || !data.timeseries) {
         if (chartInstance) chartInstance.clear();
         return;
@@ -276,8 +274,6 @@ const renderFromSeries = (data) => {
             }
         ]);
     }
-
-    console.log(series);
 
     const option = {
         animation: false,

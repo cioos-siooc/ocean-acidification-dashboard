@@ -2,7 +2,6 @@ import axios from 'axios';
 import { useRuntimeConfig } from '#app';
 
 export async function getSensorTimeseries(sensorId: number|null, variable: string, fromDate: string, toDate: string) {
-    console.log('Fetching sensor timeseries for sensorId:', sensorId, 'variable:', variable, 'fromDate:', fromDate, 'toDate:', toDate);
     if (sensorId === null || sensorId === undefined) {
         return null
     }

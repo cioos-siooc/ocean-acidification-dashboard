@@ -163,13 +163,10 @@ watch(() => [props.startTime, props.endTime], () => {
  * Handle datazoom event - convert zoomed range back to dates and emit to parent
  */
 function handleDataZoom(event: any) {
-    console.log(event);
     if (!props.data || !props.data.time || props.data.time.length === 0) return
-    console.log('1');
     // Get the filtered data that's currently displayed in the chart
     const displayData = filterDataByTime(props.data, props.startTime, props.endTime)
     if (!displayData || !displayData.time || displayData.time.length === 0) return
-    console.log('2');
     // Get the start and end indices from the zoom event (percentages of filtered data)
     const startIndex = Math.floor(event.start * displayData.time.length / 100)
     const endIndex = Math.ceil(event.end * displayData.time.length / 100)
@@ -177,10 +174,8 @@ function handleDataZoom(event: any) {
     // Get the dates from the filtered data at those indices
     const fromDateStr = event.batch[0].startValue
     const toDateStr = event.batch[0].endValue
-    console.log(displayData.time, startIndex, endIndex, fromDateStr, toDateStr);
     // Validate that we have valid date strings
     if (!fromDateStr || !toDateStr) return
-    console.log('3');
     try {
         // Convert to YYYY-MM-DD format
         const fromDate = new Date(fromDateStr).toISOString().split('T')[0]

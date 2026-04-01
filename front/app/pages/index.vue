@@ -216,7 +216,6 @@ const selectedColormap = computed(() => {
 });
 
 const midDate = computed(() => {
-    console.log(mainStore.midDate);
     return mainStore.midDate ?? moment.utc();
 });
 
@@ -619,7 +618,6 @@ async function init() {
             const finalX = model_timestamps[bestIdx];
             if (finalX !== lastClickedX) {
                 lastClickedX = finalX;
-                console.log('lastClickedX: ', lastClickedX);
                 mainStore.updateSelectedVariable({
                     dt: moment.utc(finalX)
                 });
@@ -656,7 +654,6 @@ async function getVariables() {
             const colormapMin = varMeta?.colormapMin ?? null;
             const colormapMax = varMeta?.colormapMax ?? null;
             if (dts.length > 0) {
-                console.log(dts);
                 mainStore.updateSelectedVariable({
                     var: varId,
                     source: source,
@@ -711,9 +708,6 @@ async function getTimeseriesPromises(lat: number, lon: number) {
 
     const fromDate = midDate.value.clone().subtract(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
     const toDate = midDate.value.clone().add(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
-
-    console.log("midDate: ", midDate.value.format());
-    console.log("Fetching timeseries with parameters:", { lat, lon, fromDate, toDate, var: mainStore.selected_variable.var, depth: mainStore.selected_variable.depth });
 
     try {
         modelResp = await getTimeseriesFromApi(lat, lon, fromDate, toDate);
@@ -1187,12 +1181,6 @@ function updateBathymetryTilesLayerColorization(layerId = 'bathymetry-tiles-laye
         ]);
         const raster_color_range = [(colormapMin - base) / precision, (colormapMax - base) / precision]
         map.setPaintProperty(layerId, 'raster-color-range', raster_color_range);
-
-        console.log("raster_vlues: ", raster_values);
-        console.log("raster-color-range: ", raster_color_range);
-
-
-
     } catch (e) {
         console.error('Error updating bathymetry tiles colorization:', e);
     }

@@ -190,8 +190,6 @@ async function addStations() {
     const loadedStations = (await Promise.all(loadingPromises)).filter(st => st !== null);
 
     for (const { s, data } of loadedStations) {
-        console.log(s, data);
-        
         const coord = s.coord as [number, number];
 
         // 1. Create dot marker

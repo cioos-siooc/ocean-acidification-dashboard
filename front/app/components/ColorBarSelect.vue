@@ -333,7 +333,6 @@ function shallower() {
 
 .colormap-label {
   font-size: 11px;
-  color: #222;
 }
 </style>
 

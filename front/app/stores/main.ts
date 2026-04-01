@@ -22,12 +22,10 @@ export const useMainStore = defineStore('main', {
         },
 
         updateSelectedVariable(partial: Partial<typeof this.selected_variable>) {
-            console.log("Updating selected variable with: ", partial, " current state: ", this.selected_variable);
             // Use individual property assignment to ensure Pinia tracks mutations properly
             for (const [key, value] of Object.entries(partial)) {
                 (this.selected_variable as any)[key] = value;
             }
-            console.log("Updated selected variable: ", this.selected_variable);
         },
 
         setShowBathymetryContours(value: boolean) {
@@ -43,7 +41,6 @@ export const useMainStore = defineStore('main', {
         },
 
         setMidDate(date: moment.Moment) {
-            console.log(date);
             this.midDate = date;
         }
     }
