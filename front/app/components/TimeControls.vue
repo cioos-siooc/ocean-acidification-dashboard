@@ -5,7 +5,7 @@
       <template #activator="{ props: menuProps }">
         <v-btn v-bind="menuProps" size="x-small" icon flat :title="'Jump to date'"><v-icon>mdi-calendar</v-icon></v-btn>
       </template>
-      <v-date-picker v-model="pickedDate" :allowed-dates="allowedDates" color="primary" show-adjacent-months :max="maxDate" :min="minDate" 
+      <v-date-picker v-model="pickedDate" :allowed-dates="allowedDates" hide-header show-adjacent-months :max="maxDate" :min="minDate" 
         @update:model-value="onDatePicked"></v-date-picker>
     </v-menu>
 
@@ -90,6 +90,9 @@ const maxDate = computed(() => {
   return moment.utc(Math.max(...dts.value)).format('YYYY-MM-DD');
 });
 
+const DFN = computed(() => mainStore.dfnDays);
+const midDate = computed(() => mainStore.midDate);
+
 ///////////////////////////////////  WATCHERS  ///////////////////////////////////
 
 // watch(() => props.timestamps, (nv) => {
@@ -136,6 +139,9 @@ function getIndexForDt(dt: moment.Moment | null) {
 function stepForward() {
   const idx = currentIndex();
   if (idx < 0) return false
+  if(dts.value[idx]?.valueOf() > midDate.value?.clone().add(DFN.value, 'days').valueOf()) {
+    return false
+  }
   if (idx < dts.value.length - 1) {
     const dt = moment.utc(dts.value[idx + 1]);
     mainStore.updateSelectedVariable({ dt });
@@ -149,6 +155,9 @@ function stepForward() {
 function stepBackward() {
   const idx = currentIndex();
   if (idx < 0) return false
+  if(dts.value[idx]?.valueOf() < midDate.value?.clone().subtract(DFN.value, 'days').valueOf()) {
+    return false
+  }
   if (idx > 0) {
     const dt = moment.utc(dts.value[idx - 1]);
     mainStore.updateSelectedVariable({ dt });

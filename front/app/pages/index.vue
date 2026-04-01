@@ -195,13 +195,14 @@ const globalChartLoading = ref(false);
 /** 
  * Number of days from now to fetch for climate timeseries. This is used both for the API request parameter and for computing the x-axis range of the chart (now +/- DFN days). The API will return all available data within that range, which may be less than DFN if the model run does not extend that far into the future.
 */
-const DFN = 5; // days from now for climate timeseries
 
 const zoom = ref('');
 
 const snackMessages = ref<object[]>([]);
 
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
+
+const DFN = computed(() => mainStore.dfnDays);
 
 const selectedVariable = computed(() => mainStore.selected_variable);
 
@@ -708,8 +709,8 @@ async function getTimeseriesPromises(lat: number, lon: number) {
 
     globalChartLoading.value = true;
 
-    const fromDate = midDate.value.clone().subtract(DFN, 'days').format('YYYY-MM-DDTHHmmss');
-    const toDate = midDate.value.clone().add(DFN, 'days').format('YYYY-MM-DDTHHmmss');
+    const fromDate = midDate.value.clone().subtract(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
+    const toDate = midDate.value.clone().add(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
 
     console.log("midDate: ", midDate.value.format());
     console.log("Fetching timeseries with parameters:", { lat, lon, fromDate, toDate, var: mainStore.selected_variable.var, depth: mainStore.selected_variable.depth });
@@ -808,7 +809,9 @@ async function addSensors() {
     try {
         const stations = useStationsInteraction(() => map, async (sensor_id: number, depth: number) => {
             // Find the closest depth in depths and switch to that if not already there
-            const closestDepth = mainStore.variables.find((v: any) => v.var === selectedVariable.value.var)?.depths?.sort((a: any, b: any) => Math.abs(a.depth - depth) - Math.abs(b.depth - depth));
+            // Create a copy of the depths array before sorting to avoid mutating the store
+            const depthsArray = mainStore.variables.find((v: any) => v.var === selectedVariable.value.var)?.depths;
+            const closestDepth = depthsArray ? [...depthsArray].sort((a: any, b: any) => Math.abs(a.depth - depth) - Math.abs(b.depth - depth)) : [];
             if (closestDepth && closestDepth.length > 0) {
                 const newDepth = closestDepth[0].depth;
                 if (newDepth !== selectedVariable.value.depth) {
@@ -1268,8 +1271,8 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     // const endLocal = moment.tz(combinedTimes_timestamp[combinedTimes_timestamp.length - 1], tz).clone();
 
     //  Now +/- DFN days
-    const startLocal = midDate.value.clone().tz(tz).subtract(DFN, 'days').clone();
-    const endLocal = midDate.value.clone().tz(tz).add(DFN, 'days').clone();
+    const startLocal = midDate.value.clone().tz(tz).subtract(DFN.value, 'days').clone();
+    const endLocal = midDate.value.clone().tz(tz).add(DFN.value, 'days').clone();
 
     // Compute night mark areas using SunCalc (sunrise/sunset) if lat/lon provided, otherwise fall back to fixed night windows
     let markAreaData: any[] = [];
