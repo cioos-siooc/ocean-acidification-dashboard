@@ -170,7 +170,8 @@ async def get_colormaps():
 class sensorTimeseriesRequest(BaseModel):
     variable: str
     sensorId: int
-    datetime: str
+    fromDate: str
+    toDate: str
     
 @app.post("/sensorTimeseries")
 async def get_sensor_timeseries(request: sensorTimeseriesRequest):
@@ -181,16 +182,16 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
     
     var = request.variable
     sensor_id = request.sensorId
-    datetime_str = request.datetime
+    from_date_str = request.fromDate
+    to_date_str = request.toDate
     
     # Parse the incoming ISO datetime and calculate ±5 day window
     try:
         # Handle both ISO format with Z and with +00:00
-        request_dt = dt.fromisoformat(datetime_str.replace('Z', '+00:00'))
-        start = request_dt - timedelta(days=5)
-        end = request_dt + timedelta(days=5)
+        from_date = dt.fromisoformat(from_date_str.replace('Z', '+00:00'))
+        to_date = dt.fromisoformat(to_date_str.replace('Z', '+00:00'))
     except Exception as exc:
-        logger.exception(f"Failed to parse datetime '{datetime_str}'")
+        logger.exception(f"Failed to parse datetime '{from_date_str}' or '{to_date_str}'")
         raise HTTPException(status_code=400, detail=f"Invalid datetime format: {exc}")
     
     def _fetch():
@@ -205,7 +206,7 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
             
             # ±5 days around requested datetime to give some context, limit to 1000 points to avoid huge responses
             sql += " AND time >= %s AND time <= %s"
-            params.extend([start.isoformat(), end.isoformat()])
+            params.extend([from_date.isoformat(), to_date.isoformat()])
 
             sql += " ORDER BY time ASC"
             cur.execute(sql, tuple(params))
@@ -348,11 +349,13 @@ class timeseriesRequest(BaseModel):
     lat: float
     lon: float
     depth: float
+    fromDate: str
+    toDate: str
 
 @app.post("/extractTimeseries")
 async def fn_extract_timeseries(request: timeseriesRequest):
     # Reject requests if we are already at concurrency limit
-    logger.info(f"START extractTimeseries: {request.var}, {request.lat}, {request.lon}")
+    logger.info(f"START extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate}")
     try:
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
     except (asyncio.TimeoutError, Exception):
@@ -360,14 +363,10 @@ async def fn_extract_timeseries(request: timeseriesRequest):
         raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
 
     try:
-        var = request.var
-        lat = request.lat
-        lon = request.lon
         # use provided depth exactly (float value passed from frontend)
         depth = float(request.depth)
-
-        time, value = await run_in_threadpool(extract_timeseries, var=var, lat=lat, lon=lon, depth=depth)
-        logger.info(f"FINISH extractTimeseries: {request.var}")
+        time, value = await run_in_threadpool(extract_timeseries, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate)
+        logger.info(f"FINISH extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate} - returned {len(time)} points")
         return {"time": time.tolist(), "value": value.tolist()}
     except Exception as exc:
         logger.exception("extract_timeseries failed")
@@ -382,12 +381,13 @@ class climate_timeseriesRequest(BaseModel):
     lat: float
     lon: float
     depth: str
-    dt: str
+    fromDate: str
+    toDate: str
 
 @app.post("/extract_climateTimeseries")
 async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
     # Reject requests if we are already at concurrency limit
-    logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, dt={request.dt}")
+    logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
     try:
         # Wait up to 10 seconds to acquire the semaphore
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
@@ -400,15 +400,16 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
         lon = request.lon
         variable = request.var
         depth = request.depth.replace('.', 'p')  # Pass depth as string (e.g., "0p5") since that's what the module expects for file naming
-        dt = request.dt  # Pass datetime string (ISO format) to the extraction function
+        from_date = request.fromDate  # Pass fromDate string (ISO format) to the extraction function
+        to_date = request.toDate  # Pass toDate string (ISO format) to the extraction function
         
         # Run the synchronous extraction in a threadpool to keep the event loop free
-        result = await run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon, variable=variable, depth=depth, dt=dt)
+        result = await run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon, variable=variable, depth=depth, from_date=from_date, to_date=to_date)
         if result is None:
             logger.error("Extraction returned None")
             raise HTTPException(status_code=500, detail="Extraction failed")
             
-        logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, dt={request.dt}")
+        logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
         return result
     except Exception as exc:
         logger.exception("extract_climate_timeseries failed")

@@ -206,6 +206,13 @@ const selectedColormap = computed(() => {
     return null;
 });
 
+const midDate = computed(() =>{
+ console.log(mainStore.midDate);   
+    return mainStore.midDate ?? moment.utc();
+});
+
+///////////////////////////////////  WATCHERS  ///////////////////////////////////
+
 // When colormap, min, or max change in store, update overlay
 watch([
     () => mainStore.selected_variable.colormap,
@@ -330,7 +337,7 @@ onBeforeUnmount(() => {
 ///////////////////////////////////  WATCH  ///////////////////////////////////
 
 // Watcher: add/update/remove overlay when selected variable or depth changes
-watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth], async ([v, depth]) => {
+watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth, mainStore.midDate], async ([v, depth]) => {
     if (!map) return;
 
     if (!v) {
@@ -395,9 +402,6 @@ watch(() => mainStore.selected_variable.dt, async (newDt) => {
         console.error('Failed to update PNG for dt change', e);
     }
 });
-
-watch(() => mainStore.selected_variable, () => {
-}, { deep: true });
 
 watch(() => mainStore.showBathymetryContours, (show) => {
     if (!map) return;
@@ -526,6 +530,8 @@ async function getMetadata() {
 
 async function init() {
     if (!map) return;
+
+    mainStore.setMidDate(moment.utc()); // Initialize midDate to now.
 
     getVariables();
 
@@ -692,8 +698,14 @@ async function getTimeseriesPromises(lat: number, lon: number) {
     let climResp = null;
     let sensorResp = null;
 
+    const fromDate = midDate.value.clone().subtract(DFN, 'days').format('YYYY-MM-DDTHHmmss');
+    const toDate = midDate.value.clone().add(DFN, 'days').format('YYYY-MM-DDTHHmmss');
+
+    console.log("midDate: ", midDate.value.format());
+    console.log("Fetching timeseries with parameters:", { lat, lon, fromDate, toDate, var: mainStore.selected_variable.var, depth: mainStore.selected_variable.depth });
+
     try {
-        modelResp = await getTimeseriesFromApi(lat, lon);
+        modelResp = await getTimeseriesFromApi(lat, lon, fromDate, toDate);
     } catch (err: any) {
         if (err?.code !== 'ERR_CANCELED') {
             console.error('Failed to fetch model timeseries:', err);
@@ -701,7 +713,7 @@ async function getTimeseriesPromises(lat: number, lon: number) {
     }
 
     try {
-        climResp = await getClimateTimeseries(lat, lon);
+        climResp = await getClimateTimeseries(lat, lon, fromDate, toDate);
     } catch (err: any) {
         if (err?.code !== 'ERR_CANCELED') {
             console.warn('Failed to fetch climate data (chart will show model only):', err);
@@ -710,7 +722,7 @@ async function getTimeseriesPromises(lat: number, lon: number) {
 
     if (clicked_sensor_id.value) {
         try {
-            sensorResp = await getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var);
+            sensorResp = await getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var, fromDate, toDate);
         } catch (err: any) {
             if (err?.code !== 'ERR_CANCELED') {
                 console.warn('Failed to fetch sensor data:', err);
@@ -728,8 +740,8 @@ async function getTimeseriesPromises(lat: number, lon: number) {
     }
 }
 
-async function getTimeseriesFromApi(lat: number, lon: number) {
-    return axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
+async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {
+    return axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth, fromDate, toDate }, { signal: tsRequestController.signal });
     // const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
     // const json = r.data;
     // if (json && Array.isArray(json.time) && Array.isArray(json.value)) {
@@ -737,14 +749,14 @@ async function getTimeseriesFromApi(lat: number, lon: number) {
     // }
 }
 
-async function getClimateTimeseries(lat: number, lon: number) {
-    const now = moment().utc();
+async function getClimateTimeseries(lat: number, lon: number, fromDate: string, toDate: string) {
     return axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
         var: mainStore.selected_variable.var,
         lat,
         lon,
         depth: formatDepth(mainStore.selected_variable.depth),
-        dt: now.format('YYYY-MM-DDTHHmmss'),
+        fromDate,
+        toDate
     });
 };
 
@@ -1244,8 +1256,8 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     // const endLocal = moment.tz(combinedTimes_timestamp[combinedTimes_timestamp.length - 1], tz).clone();
 
     //  Now +/- DFN days
-    const startLocal = moment.utc().tz(tz).subtract(DFN, 'days').clone();
-    const endLocal = moment.utc().tz(tz).add(DFN, 'days').clone();
+    const startLocal = midDate.value.clone().tz(tz).subtract(DFN, 'days').clone();
+    const endLocal = midDate.value.clone().tz(tz).add(DFN, 'days').clone();
 
     // Compute night mark areas using SunCalc (sunrise/sunset) if lat/lon provided, otherwise fall back to fixed night windows
     let markAreaData: any[] = [];

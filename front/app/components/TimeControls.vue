@@ -5,7 +5,7 @@
       <template #activator="{ props: menuProps }">
         <v-btn v-bind="menuProps" size="x-small" icon flat :title="'Jump to date'"><v-icon>mdi-calendar</v-icon></v-btn>
       </template>
-      <v-date-picker v-model="pickedDate" :allowed-dates="allowedDates" color="primary" show-adjacent-months :max="maxDate" :min="minDate"
+      <v-date-picker v-model="pickedDate" :allowed-dates="allowedDates" color="primary" show-adjacent-months :max="maxDate" :min="minDate" 
         @update:model-value="onDatePicked"></v-date-picker>
     </v-menu>
 
@@ -135,7 +135,6 @@ function getIndexForDt(dt: moment.Moment | null) {
 
 function stepForward() {
   const idx = currentIndex();
-  console.log(dts.value, idx);
   if (idx < 0) return false
   if (idx < dts.value.length - 1) {
     const dt = moment.utc(dts.value[idx + 1]);
@@ -192,8 +191,17 @@ function togglePlay() {
   if (playing.value) startTimer(); else stopTimer();
 }
 
-function onDatePicked(date: unknown) {
-  console.log(date);
+function onDatePicked(date: string) {
+  mainStore.setMidDate(moment.utc(date));
+  
+  // Find the closest available timestamp to the picked date and update selected variable
+  const idx = getIndexForDt(moment.utc(date));
+  if (idx >= 0) {
+    const dt = moment.utc(dts.value[idx]);
+    mainStore.updateSelectedVariable({ dt });
+  }
+
+  datePickerOpen.value = false;
 }
 
 onBeforeUnmount(() => stopTimer());

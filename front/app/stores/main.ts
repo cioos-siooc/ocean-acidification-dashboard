@@ -8,6 +8,11 @@ export const useMainStore = defineStore('main', {
         showBathymetryContours: false,
         colormaps: {} as Record<string, any>,
         autoRangeDisabled: false,
+
+        /**
+         * The midDate is used to determine the middle point of the time range the footer chart displays. It is set to now initially.
+         */
+        midDate: null as moment.Moment | null
     }),
 
     actions: {
@@ -34,6 +39,11 @@ export const useMainStore = defineStore('main', {
 
         setAutoRangeDisabled(value: boolean) {
             this.autoRangeDisabled = value;
+        },
+
+        setMidDate(date: moment.Moment) {
+            console.log(date);
+            this.midDate = date;
         }
     }
 })

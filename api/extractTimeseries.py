@@ -153,18 +153,17 @@ def extract_timeseries(
     db_name: str = "oa",
     db_table: str = "grid",
     verbose: bool = False,
-    recent_days: Optional[int] = 5,
+    from_date: str,
+    to_date: str,
 ) -> Tuple[pd.Series, pd.Series]:
     """Extract a time series across available files and return pandas Series (time, value).
 
-    By default the function only considers files from the last `recent_days` days
-    (to keep queries efficient). Set `recent_days=None` to include all available files
-    (useful for monthly/climatology extraction).
+    Files are filtered by date range extracted from their filenames (YYYYMMDD format).
+    Only files with dates between from_date and to_date (inclusive) are considered.
+    from_date and to_date must be ISO-8601 date strings (YYYY-MM-DD) or datetime strings.
 
     Exceptions are raised on errors; caller should catch and handle them.
     """
-    
-    print("############################# HI #############################")
     
     if db_dsn is None and not db_host:
         raise RuntimeError("No database host or DSN provided. Specify db_dsn or db_host")
@@ -201,35 +200,42 @@ def extract_timeseries(
         if files:
             print("DEBUG: Sample files:", files[:5])
 
-    # Optionally limit to recent files to keep this query efficient. If `recent_days` is
-    # None then do not filter and include all matching files (useful for climatology/monthly).
+    # Filter files by date range. Extract dates from filenames (YYYYMMDD format)
     date_pattern = re.compile(r"(\d{8})(T\d{4})?\.nc$")
-    if recent_days is None:
-        if verbose:
-            print(f"Not filtering files by date (recent_days=None). Considering {len(files)} candidate files")
-    else:
-        recent_files = []
-        # Use date-only comparison to avoid tz-aware vs tz-naive issues
-        now = pd.Timestamp.utcnow()
-        cutoff_date = (now - pd.Timedelta(days=int(recent_days))).date()
-        for fp in files:
-            m = date_pattern.search(fp)
-            if not m:
-                if verbose:
-                    print(f"Skipping file with unrecognized name format: {fp}")
-                continue
-            datestr = m.group(1)
-            try:
-                file_dt = pd.to_datetime(datestr, format="%Y%m%d").date()
-            except Exception:
-                if verbose:
-                    print(f"Skipping file with invalid date in name: {fp}")
-                continue
-            if file_dt >= cutoff_date:
-                recent_files.append(fp)
-        files = recent_files
-        if verbose:
-            print(f"Found {len(files)} files for variable '{var}' in data directory '{data_dir}' since {cutoff_date}")
+    
+    # Parse from_date and to_date (mandatory parameters)
+    try:
+        start_date = pd.to_datetime(from_date).date()
+    except Exception as e:
+        raise ValueError(f"Invalid from_date format: {from_date}. Use ISO-8601 date format (YYYY-MM-DD)") from e
+    try:
+        end_date = pd.to_datetime(to_date).date()
+    except Exception as e:
+        raise ValueError(f"Invalid to_date format: {to_date}. Use ISO-8601 date format (YYYY-MM-DD)") from e
+    
+    if start_date > end_date:
+        raise ValueError(f"from_date ({start_date}) cannot be after to_date ({end_date})")
+    
+    filtered_files = []
+    for fp in files:
+        m = date_pattern.search(fp)
+        if not m:
+            if verbose:
+                print(f"Skipping file with unrecognized name format: {fp}")
+            continue
+        datestr = m.group(1)
+        try:
+            file_dt = pd.to_datetime(datestr, format="%Y%m%d").date()
+        except Exception:
+            if verbose:
+                print(f"Skipping file with invalid date in name: {fp}")
+            continue
+        # Include file if it falls within the date range
+        if file_dt >= start_date and file_dt <= end_date:
+            filtered_files.append(fp)
+    files = filtered_files
+    if verbose:
+        print(f"Found {len(files)} files for variable '{var}' in data directory '{data_dir}' between {start_date} and {end_date}")
 
 
     # iterate files and extract
@@ -402,6 +408,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--lat", "-a", type=float, required=True, help="Latitude (required)")
     p.add_argument("--lon", "-o", type=float, required=True, help="Longitude (required)")
     p.add_argument("--depth", type=float, required=True, help="Depth value to select (required)")
+    p.add_argument("--from-date", required=True, help="Start date (ISO-8601 format, e.g., 2023-01-01)")
+    p.add_argument("--to-date", required=True, help="End date (ISO-8601 format, e.g., 2023-12-31)")
     p.add_argument("--output", "-O", default=None, help="CSV output file (time,value)")
     p.add_argument("--verbose", "-V", action="store_true", help="Verbose output")
 
@@ -430,6 +438,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         db_password=args.db_password,
         db_name=args.db_name,
         db_table=args.db_table,
+        from_date=args.from_date,
+        to_date=args.to_date,
         verbose=args.verbose,
     )
 
