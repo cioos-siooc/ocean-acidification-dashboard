@@ -39,7 +39,8 @@
 
             <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
 
-            <v-snackbar-queue ref="snackbarQueue" v-model="snackMessages" :total-visible="3" closable contained></v-snackbar-queue>
+            <v-snackbar-queue ref="snackbarQueue" v-model="snackMessages" :total-visible="3" closable
+                contained></v-snackbar-queue>
         </div>
 
         <!-- Bottom: Global Chart Footer -->
@@ -57,7 +58,7 @@
                     <v-divider vertical class="mx-2"></v-divider>
                     <v-col v-if="lastClicked" cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <span class="footer-text">{{ lastClicked?.lat.toFixed(5) }} , {{ lastClicked?.lng.toFixed(5)
-                        }}</span>
+                            }}</span>
                     </v-col>
 
                     <v-spacer></v-spacer>
@@ -65,7 +66,7 @@
                     <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
                         <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
                         <span class="footer-text">{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
-                        }}</span>
+                            }}</span>
                     </v-col>
                 </v-row>
 
@@ -73,7 +74,12 @@
                     style="position: relative;">
                     <TimeControls />
 
-                    <div ref="globalChartContainer" style="width: calc( 100% - 24px ); height: calc(100% - 32px);">
+                    <div class="global-chart-wrapper" style="width: calc( 100% - 24px ); height: calc(100% - 32px);">
+                        <div ref="globalChartContainer" style="width: 100%; height: 100%;"></div>
+                        <div v-if="globalChartLoading" class="global-chart-overlay">
+                            <v-progress-circular indeterminate color="warning" :size="64" :width="12"
+                                class="progress" />
+                        </div>
                     </div>
 
                     <div class="py-3"
@@ -96,7 +102,7 @@
         </div> -->
         <!-- </div> -->
 
-        
+
     </v-main>
 </template>
 
@@ -184,6 +190,8 @@ let didInitClick = false;
 
 const clicked_sensor_id = ref<number | null>(null);
 
+const globalChartLoading = ref(false);
+
 /** 
  * Number of days from now to fetch for climate timeseries. This is used both for the API request parameter and for computing the x-axis range of the chart (now +/- DFN days). The API will return all available data within that range, which may be less than DFN if the model run does not extend that far into the future.
 */
@@ -206,8 +214,8 @@ const selectedColormap = computed(() => {
     return null;
 });
 
-const midDate = computed(() =>{
- console.log(mainStore.midDate);   
+const midDate = computed(() => {
+    console.log(mainStore.midDate);
     return mainStore.midDate ?? moment.utc();
 });
 
@@ -698,6 +706,8 @@ async function getTimeseriesPromises(lat: number, lon: number) {
     let climResp = null;
     let sensorResp = null;
 
+    globalChartLoading.value = true;
+
     const fromDate = midDate.value.clone().subtract(DFN, 'days').format('YYYY-MM-DDTHHmmss');
     const toDate = midDate.value.clone().add(DFN, 'days').format('YYYY-MM-DDTHHmmss');
 
@@ -738,6 +748,8 @@ async function getTimeseriesPromises(lat: number, lon: number) {
     if (model) {
         plotTimeseries(model, clim, sensor);
     }
+
+    globalChartLoading.value = false;
 }
 
 async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {
@@ -1681,5 +1693,28 @@ let zrClickHandler: ((evt: any) => void) | null = null;
     z-index: 9998;
     top: 16px;
     left: 16px;
+}
+
+.global-chart-wrapper {
+    position: relative;
+}
+
+.global-chart-overlay {
+    position: absolute;
+    inset: 0;
+    background: #33333366;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.progress {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    place-self: center;
 }
 </style>

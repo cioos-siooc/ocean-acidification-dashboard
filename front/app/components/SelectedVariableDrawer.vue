@@ -9,8 +9,10 @@
 
         <div class="profile-chart-wrapper">
             <div ref="chartContainer" class="profile-chart"></div>
-            <div v-if="statusMessage" class="profile-chart-overlay" :class="{ error: !!errorMessage }">
-                <span>{{ statusMessage }}</span>
+            <div v-if="statusMessage" class="profile-chart-overlay" :class="{ loading: loading, error: !!errorMessage }">
+                <v-progress-circular v-if="loading" indeterminate color="warning" :size="64" :width="12"
+                    class="progress" />
+                <span v-else>{{ statusMessage }}</span>
             </div>
         </div>
     </v-navigation-drawer>
@@ -203,16 +205,17 @@ function renderChart(points: ProfilePoint[]) {
                 // type: "scatter",
                 // showSymbol: false,
                 smooth: true,
+                showSymbol:true,
                 data,
-                lineStyle: { width: 3, color: '#1976d2' },
+                lineStyle: { width: 3, color: '#E74C3C' },
                 // areaStyle: { opacity: data.length ? 0.25 : 0 }
-                // itemStyle: {
-                //     color: '#f976d2',
-                //     borderColor: '#c2185b',
-                //     borderWidth: 1,
-                //     shadowColor: 'rgba(194, 24, 91, 0.5)',
-                //     shadowBlur: 10,
-                // },
+                itemStyle: {
+                    color: '#E74C3C',
+                    borderColor: '#C2185B',
+                    borderWidth: 1,
+                    shadowColor: '#C2185B88',
+                    shadowBlur: 10,
+                },
             }
         ],
         animation: false
@@ -360,13 +363,30 @@ function cancelRequest() {
     align-items: center;
     text-align: center;
     padding: 12px;
-    color: #333;
-    background: rgba(255, 255, 255, 0.9);
     font-size: 0.85rem;
     line-height: 1.4;
+    z-index: 9999;
+}
+
+.profile-chart-overlay:not(.loading) {
+    color: #333;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.profile-chart-overlay.loading {
+    background: #33333366;
 }
 
 .profile-chart-overlay.error {
     color: #b71c1c;
+}
+
+.progress {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    place-self: center;
 }
 </style>
