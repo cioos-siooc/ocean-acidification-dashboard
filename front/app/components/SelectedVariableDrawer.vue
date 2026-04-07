@@ -208,10 +208,10 @@ function renderChart(points: ProfilePoint[]) {
                 showSymbol: true,
                 data,
                 lineStyle: {
-                    width: 3,
+                    width: 2,
                     color: mainStore.colors.model.line,
                     shadowColor: mainStore.colors.model.shadow,
-                    shadowBlur: 10,
+                    shadowBlur: 3,
                 },
                 // areaStyle: { opacity: data.length ? 0.25 : 0 }
                 itemStyle: {
@@ -219,7 +219,7 @@ function renderChart(points: ProfilePoint[]) {
                     borderColor: mainStore.colors.model.line,
                     borderWidth: 1,
                     shadowColor: mainStore.colors.model.shadow,
-                    shadowBlur: 10,
+                    shadowBlur: 3,
                 },
             }
         ],

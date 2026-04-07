@@ -1455,7 +1455,7 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     seriesArr.push({
         name: mainStore.selected_variable.var || 'value', type: 'line', showSymbol: false, data: __series_model, smooth: true, lineStyle: {
             width: 4, color: mainStore.colors.model.line, shadowColor: mainStore.colors.model.shadow,
-            shadowBlur: 5, opacity: 0.8
+            shadowBlur: mainStore.colors.model.shadowBlur, opacity: 0.8
         }, itemStyle: { color: mainStore.colors.model.line }, legendIcon: 'roundRect'
     });
 
@@ -1474,7 +1474,7 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
             type: 'line',
             data: __series_sensor,
             symbol: 'none',
-            lineStyle: { width: 4, color: mainStore.colors.observation.line, opacity: 0.8, shadowColor: mainStore.colors.observation.shadow, shadowBlur: 5 },
+            lineStyle: { width: 4, color: mainStore.colors.observation.line, opacity: 0.8, shadowColor: mainStore.colors.observation.shadow, shadowBlur: mainStore.colors.observation.shadowBlur },
             itemStyle: { color: mainStore.colors.observation.line },
             legendIcon: 'roundRect'
         });

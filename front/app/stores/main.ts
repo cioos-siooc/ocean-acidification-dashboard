@@ -7,11 +7,13 @@ export const useMainStore = defineStore('main', {
         colors: {
             model: {
                 line: colors.red.lighten3,
-                shadow: colors.red.lighten4
+                shadow: colors.red.lighten4,
+                shadowBlur: 3
             },
             observation: {
                 line: colors.green.lighten3,
-                shadow: colors.green.lighten4
+                shadow: colors.green.lighten4,
+                shadowBlur: 3
             },
             stats: colors.blue.darken2,
         },
