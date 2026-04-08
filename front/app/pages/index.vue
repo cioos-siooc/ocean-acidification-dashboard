@@ -74,7 +74,7 @@
                     style="position: relative;">
                     <TimeControls />
 
-                    <div class="global-chart-wrapper" style="width: calc( 100% - 24px ); height: calc(100% - 32px);">
+                    <div class="global-chart-wrapper" style="width: 100%; height: calc(100% - 32px);">
                         <div ref="globalChartContainer" style="width: 100%; height: 100%;"></div>
                         <div v-if="globalChartLoading" class="global-chart-overlay">
                             <v-progress-circular indeterminate color="warning" :size="64" :width="12"
@@ -82,19 +82,19 @@
                         </div>
                     </div>
 
-                    <div class="py-3"
+                    <!-- <div class="py-3"
                         style="position: absolute; width:40px; height: 100%; bottom: 0px; right: 0px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:6px; padding-top:6px;">
                         <v-btn title="Long-term climatology" flat size="20px" :disabled="!lastClicked" icon
                             color="primary" @click="dialogOpen = true">
                             <v-icon size="14px">mdi-chart-line</v-icon>
                         </v-btn>
-                    </div>
+                    </div> -->
                 </v-row>
             </v-container>
 
             <!-- Dialog component for monthly chart -->
-            <EchartsLineDialog v-model="dialogOpen" :coord="lastClicked" :variable="selectedVariable.var"
-                :depth="selectedVariable.depth" />
+            <!-- <EchartsLineDialog v-model="dialogOpen" :coord="lastClicked" :variable="selectedVariable.var"
+                :depth="selectedVariable.depth" /> -->
 
         </v-footer>
         <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">

@@ -14,6 +14,7 @@ from typing import List, Optional, Union
 
 _DirSpec = Union[str, List[str]]
 _DATE_RE = re.compile(r"(\d{8})")
+_ISO_DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 
 
 # ---------------------------------------------------------------------------
@@ -119,10 +120,15 @@ def _to_date_str(dt: Union[str, datetime]) -> str:
     """Return YYYYMMDD string for *dt*."""
     if isinstance(dt, datetime):
         return dt.strftime("%Y%m%d")
-    # String: extract the first 8-digit sequence (handles ISO and bare YYYYMMDD)
-    m = _DATE_RE.search(str(dt))
+    s = str(dt)
+    # Try 8 consecutive digits first (bare YYYYMMDD or YYYYMMDDTHHMMSS)
+    m = _DATE_RE.search(s)
     if m:
         return m.group(1)
+    # Fallback: ISO date with hyphens (YYYY-MM-DD or YYYY-MM-DDTHH...)
+    m = _ISO_DATE_RE.search(s)
+    if m:
+        return m.group(1) + m.group(2) + m.group(3)
     raise ValueError(f"Cannot extract date from: {dt!r}")
 
 
