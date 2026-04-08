@@ -184,7 +184,7 @@ def extract_profile(
             pass
 
     # Find NC file (tries modern format, then legacy, then closest-date fallback)
-    from nc_finder import find_nc_file
+    from modules.nc_finder import find_nc_file
     target_date_str = target_dt.strftime("%Y%m%d")
     filepath = find_nc_file(data_dir, var, target_dt, legacy=True)
     if filepath is None:

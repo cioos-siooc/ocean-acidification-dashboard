@@ -27,13 +27,14 @@ def find_nc_file(
     dt: Union[str, datetime],
     *,
     legacy: bool = False,
+    suffix: str = "",
 ) -> Optional[str]:
     """Find an NC file for *variable* on the date given by *dt*.
 
     Tries each directory in *data_dirs* in order:
-      1. Exact match  ``{var_dir}/{variable}_{YYYYMMDD}.nc``
+      1. Exact match  ``{var_dir}/{variable}_{YYYYMMDD}{suffix}.nc``
       2. Legacy match ``{var_dir}/{variable}_{YYYYMMDD}T0030_{YYYYMMDD}T2330.nc``
-         (only when *legacy=True*)
+         (only when *legacy=True* and *suffix* is empty)
       3. Closest-date glob fallback across all dirs
 
     Returns the first path found, or *None* if nothing matches.
@@ -46,10 +47,10 @@ def find_nc_file(
         var_dir = os.path.join(d, variable)
         if not os.path.isdir(var_dir):
             continue
-        exact = os.path.join(var_dir, f"{variable}_{date_str}.nc")
+        exact = os.path.join(var_dir, f"{variable}_{date_str}{suffix}.nc")
         if os.path.exists(exact):
             return exact
-        if legacy:
+        if legacy and not suffix:
             leg = os.path.join(
                 var_dir, f"{variable}_{date_str}T0030_{date_str}T2330.nc"
             )

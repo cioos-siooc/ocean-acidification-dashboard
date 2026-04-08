@@ -121,7 +121,7 @@ def get_monthly_climatology_at_coord(
         print(f"extract_timeseries failed: {exc}")
 
     # 2) Read monthly_stats climatology file
-    from nc_finder import find_file
+    from modules.nc_finder import find_file
     stats_path = find_file(data_root, f"monthly_stats/{variable}_monthly_climatology.nc")
     if stats_path is None:
         raise FileNotFoundError(f"Monthly climatology file not found for: {variable}")

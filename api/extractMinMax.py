@@ -45,10 +45,10 @@ def find_dimension(var: xr.DataArray, candidates: tuple) -> Optional[str]:
     return None
 
 
-def find_nc_file_for_date(data_dir, variable: str, dt: datetime) -> Optional[str]:
+def find_nc_file_for_date(data_dir, variable: str, dt: datetime, *, suffix: str = "") -> Optional[str]:
     """Find NC file for the given date. Accepts a single directory or list of directories."""
     from modules.nc_finder import find_nc_file
-    return find_nc_file(data_dir, variable, dt)
+    return find_nc_file(data_dir, variable, dt, suffix=suffix)
 
 
 def query_grid_points_in_bounds(conn, table: str, north: float, south: float, east: float, west: float) -> Tuple[np.ndarray, np.ndarray]:
@@ -110,10 +110,16 @@ def extract_minmax(
         FileNotFoundError: If no NC file found for the date
         ValueError: If variable not found in dataset
     """
-    # Find NC file for the date
-    nc_file = find_nc_file_for_date(data_dir, variable, dt)
-    if not nc_file:
-        raise FileNotFoundError(f"No NC file found for {variable} on {dt.strftime('%Y-%m-%d')}")
+    # For depth=-1 (bottom layer), redirect to the pre-extracted bottom NC file
+    if depth is not None and float(depth) == -1.0:
+        nc_file = find_nc_file_for_date(data_dir, variable, dt, suffix="_bottom")
+        if not nc_file:
+            raise FileNotFoundError(f"No bottom NC file found for {variable} on {dt.strftime('%Y-%m-%d')}")
+        depth = None  # bottom file has no depth dimension
+    else:
+        nc_file = find_nc_file_for_date(data_dir, variable, dt)
+        if not nc_file:
+            raise FileNotFoundError(f"No NC file found for {variable} on {dt.strftime('%Y-%m-%d')}")
     
     logger.debug(f"Loading NC file: {nc_file}")
     logger.debug(f"Bounds: north={north}, south={south}, east={east}, west={west}")
