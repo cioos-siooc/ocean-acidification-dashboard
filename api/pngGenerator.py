@@ -145,51 +145,13 @@ def get_variable_precision(var_name: str) -> float:
         return 0.1
 
 
-def find_nc_file_for_date(data_dir: str, variable: str, dt_str: str) -> str:
-    """Find NC file for the given date in ISO format (YYYY-MM-DDTHH:MM:SS).
-    
-    Args:
-        data_dir: Root directory containing variable subdirectories
-        variable: Variable name (also the subdirectory name)
-        dt_str: ISO datetime string (e.g., '2026-03-25T12:30:00')
-    
-    Returns:
-        Full path to the NC file
-    
-    Raises:
-        ValueError: If datetime format is invalid
-        FileNotFoundError: If variable directory or NC files not found
-    """
-    try:
-        # Parse ISO datetime string to get just the date
-        dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
-        date_str = dt.strftime("%Y%m%d")
-        logger.debug(f"Looking for {variable} on date {date_str}")
-    except Exception:
-        raise ValueError(f"Invalid datetime format: {dt_str}")
-    
-    var_dir = os.path.join(data_dir, variable)
-    
-    if not os.path.isdir(var_dir):
-        raise FileNotFoundError(f"Variable directory not found: {var_dir}")
-    
-    # Try exact date match
-    nc_path = os.path.join(var_dir, f"{variable}_{date_str}.nc")
-    if os.path.exists(nc_path):
-        logger.info(f"Found exact match: {nc_path}")
-        return nc_path
-    
-    # Fallback: find any NC file
-    pattern = os.path.join(var_dir, "*.nc")
-    files = sorted(glob(pattern))
-    
-    if not files:
-        raise FileNotFoundError(f"No NC files found for {variable} on {date_str}")
-    
-    # Return the most recent file
-    found_file = files[-1]
-    logger.info(f"No exact match; using most recent: {found_file}")
-    return found_file
+def find_nc_file_for_date(data_dir, variable: str, dt_str: str) -> str:
+    """Find NC file for the given date in ISO format. Accepts a single directory or list of directories."""
+    from modules.nc_finder import find_nc_file
+    result = find_nc_file(data_dir, variable, dt_str)
+    if result is None:
+        raise FileNotFoundError(f"No NC file found for {variable} on {dt_str}")
+    return result
 
 
 async def generate_png_for_variable(

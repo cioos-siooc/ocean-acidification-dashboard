@@ -109,12 +109,14 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, lo
         logger.error(f"from_date ({start_dt}) cannot be after to_date ({end_dt})")
         return None
     
-    file_path = f"/opt/data/SSC/climatology/5d/{variable}/{variable}_{depth}.nc"
+    from modules.nc_finder import find_file
+    ssc_root = os.getenv("SSC_DATA_DIR", "/opt/data/SSC")
+    file_path = find_file(ssc_root, f"climatology/5d/{variable}/{variable}_{depth}.nc")
     climatology_variables = ['mean', 'median', 'q1', 'q3', 'min', 'max']
-    
+
     # Check if file exists first (fail fast before any heavy operations)
-    if not os.path.exists(file_path):
-        logger.error(f"Climatology file not found: {file_path}")
+    if file_path is None:
+        logger.error(f"Climatology file not found in: {ssc_root}/climatology/5d/{variable}/{variable}_{depth}.nc")
         return None
     logger.debug(f"✓ Climatology file exists: {file_path}")
     

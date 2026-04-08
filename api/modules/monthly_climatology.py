@@ -121,9 +121,10 @@ def get_monthly_climatology_at_coord(
         print(f"extract_timeseries failed: {exc}")
 
     # 2) Read monthly_stats climatology file
-    stats_path = os.path.join(data_root, "monthly_stats", f"{variable}_monthly_climatology.nc")
-    if not os.path.isfile(stats_path):
-        raise FileNotFoundError(f"Monthly climatology file not found: {stats_path}")
+    from nc_finder import find_file
+    stats_path = find_file(data_root, f"monthly_stats/{variable}_monthly_climatology.nc")
+    if stats_path is None:
+        raise FileNotFoundError(f"Monthly climatology file not found for: {variable}")
 
     ds = open_nc_uncached(stats_path)
     if ds is None:

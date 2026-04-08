@@ -7,6 +7,7 @@ services:
       - "${API_PORT:-4000}:4000"
     volumes:
       - ./data:/opt/data
+      - /media/taimaz/OA/allDepths:/opt/archive
       # - ./lib:/app/lib
       # - ./bathymetry_images:/app/bathymetry_images
       # - ./trajectory_maps:/app/trajectory_maps

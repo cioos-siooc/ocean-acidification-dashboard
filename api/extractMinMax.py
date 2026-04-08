@@ -45,49 +45,10 @@ def find_dimension(var: xr.DataArray, candidates: tuple) -> Optional[str]:
     return None
 
 
-def find_nc_file_for_date(data_dir: str, variable: str, dt: datetime) -> Optional[str]:
-    """Find NC file for the given date.
-    
-    Files are typically named variable_YYYYMMDD.nc in data_dir/variable/ subfolders.
-    """
-    date_str = dt.strftime("%Y%m%d")
-    var_dir = os.path.join(data_dir, variable)
-    
-    if not os.path.isdir(var_dir):
-        return None
-    
-    # Try exact date match
-    nc_path = os.path.join(var_dir, f"{variable}_{date_str}.nc")
-    if os.path.exists(nc_path):
-        return nc_path
-    
-    # Fallback: find closest date
-    pattern = os.path.join(var_dir, "*.nc")
-    files = sorted(glob(pattern))
-    
-    if not files:
-        return None
-    
-    # Find closest file
-    closest_file = None
-    closest_diff = float('inf')
-    
-    for f in files:
-        try:
-            # Extract YYYYMMDD from filename
-            base = os.path.basename(f).replace(".nc", "")
-            # Remove variable prefix if present
-            if base.startswith(f"{variable}_"):
-                base = base[len(variable) + 1:]
-            file_dt = datetime.strptime(base, "%Y%m%d")
-            diff = abs((file_dt - dt).total_seconds())
-            if diff < closest_diff:
-                closest_diff = diff
-                closest_file = f
-        except ValueError:
-            continue
-    
-    return closest_file
+def find_nc_file_for_date(data_dir, variable: str, dt: datetime) -> Optional[str]:
+    """Find NC file for the given date. Accepts a single directory or list of directories."""
+    from modules.nc_finder import find_nc_file
+    return find_nc_file(data_dir, variable, dt)
 
 
 def query_grid_points_in_bounds(conn, table: str, north: float, south: float, east: float, west: float) -> Tuple[np.ndarray, np.ndarray]:

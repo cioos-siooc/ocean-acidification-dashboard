@@ -183,33 +183,17 @@ def extract_profile(
         except Exception:
             pass
 
-    # Find candidate files
-    if not os.path.isdir(data_dir):
-        raise RuntimeError(f"Data directory not found: {data_dir}")
-
-    # Construct expected filenames (try modern format first, then legacy)
+    # Find NC file (tries modern format, then legacy, then closest-date fallback)
+    from nc_finder import find_nc_file
     target_date_str = target_dt.strftime("%Y%m%d")
-    modern_filename = f"{var}_{target_date_str}.nc"
-    legacy_filename = f"{var}_{target_date_str}T0030_{target_date_str}T2330.nc"
-    
-    modern_path = os.path.join(data_dir, var, modern_filename)
-    legacy_path = os.path.join(data_dir, var, legacy_filename)
-    
-    # Try modern format first, then legacy; no fallback loop
-    filepath = None
-    if os.path.exists(modern_path):
-        filepath = modern_path
-        if verbose:
-            print(f"Found file (modern format): {modern_filename}")
-    elif os.path.exists(legacy_path):
-        filepath = legacy_path
-        if verbose:
-            print(f"Found file (legacy format): {legacy_filename}")
-    else:
+    filepath = find_nc_file(data_dir, var, target_dt, legacy=True)
+    if filepath is None:
         raise RuntimeError(
             f"No NC file found for {var} on {target_date_str}. "
-            f"Checked: {modern_filename}, {legacy_filename}"
+            f"Searched in: {data_dir}"
         )
+    if verbose:
+        print(f"Found file: {filepath}")
 
     # Find a sample file to inspect variable structure
     sample_ds = None

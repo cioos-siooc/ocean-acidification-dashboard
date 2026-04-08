@@ -55,6 +55,18 @@ app.add_middleware(
 # Explicit PNG route that sets cache-control for compatibility with Mapbox and browsers
 IMAGE_ROOT = os.environ.get("IMAGE_ROOT", "/opt/data/image")
 
+
+def _get_nc_data_dirs():
+    """Return the NC data directory spec (str or list) from environment.
+
+    Set NC_DATA_DIR for the primary directory (default /opt/data/nc).
+    Optionally set NC_DATA_DIR_ARCHIVE to a second directory that is searched
+    when a file is not found in the primary (e.g. an external disk mount).
+    """
+    primary = os.getenv("NC_DATA_DIR", "/opt/data/nc")
+    archive = os.getenv("NC_DATA_DIR_ARCHIVE", "")
+    return [primary, archive] if archive else primary
+
 # Read DB config from environment at import time so route handlers can access it
 db_host = os.getenv("DB_HOST", "db")
 db_port = int(os.getenv("DB_PORT", 5432))
@@ -271,7 +283,7 @@ async def get_png(var: str, dt: str, depth: str):
     # File doesn't exist; try to generate it
     try:
         depth_value = float(depth)
-        data_dir = os.getenv('NC_DATA_DIR', '/opt/data/nc')
+        data_dir = _get_nc_data_dirs()
         full_path = await generate_png_for_variable(
             var, dt, depth_value, data_dir, IMAGE_ROOT, _png_gen_semaphore, _png_executor
         )
@@ -449,7 +461,7 @@ async def fn_get_minmax(request: minmaxRequest):
         dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
         
         # Get data directory from environment
-        data_dir = os.getenv("NC_DATA_DIR", "/opt/data/nc")
+        data_dir = _get_nc_data_dirs()
         
         # Extract bounds if provided
         north = request.north

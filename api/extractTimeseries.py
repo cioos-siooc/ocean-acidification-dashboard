@@ -25,6 +25,7 @@ import argparse
 import os
 from glob import glob
 from typing import Optional, Sequence, Tuple, List
+from modules.nc_finder import list_nc_files
 
 import re
 import numpy as np
@@ -191,12 +192,9 @@ def extract_timeseries(
         conn = None
 
     # find candidate files
-    if not os.path.isdir(data_dir):
-        raise RuntimeError(f"Data directory not found: {data_dir}")
-
-    files = sorted(glob(os.path.join(data_dir, var, "*.nc")))
+    files = list_nc_files(data_dir, var)
     if verbose:
-        print(f"DEBUG: Found {len(files)} candidate files for variable '{var}' in '{data_dir}'")
+        print(f"DEBUG: Found {len(files)} candidate files for variable '{var}'")
         if files:
             print("DEBUG: Sample files:", files[:5])
 
