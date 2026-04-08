@@ -4,7 +4,7 @@
 Processes one or more 4-D NetCDF files and writes a companion bottom-layer
 file next to each one, using the same naming and structure as the pipeline:
 
-    {var}_bottom_{YYYYMMDD}.nc  (depth coordinate = -1.0, same variable name)
+    {var}_{YYYYMMDD}_bottom.nc  (depth coordinate = -1.0, same variable name)
 
 No database connection required.
 
@@ -66,14 +66,14 @@ def _get_bottom_nc_path(nc_path: str) -> str:
     """Derive the companion bottom-layer path.
 
     /data/nc/temperature/temperature_20260326.nc
-    → /data/nc/temperature/temperature_bottom_20260326.nc
+    → /data/nc/temperature/temperature_20260326_bottom.nc
     """
     dirname = os.path.dirname(nc_path)
     basename, ext = os.path.splitext(os.path.basename(nc_path))
     variable = os.path.basename(dirname)
     if basename.startswith(variable + "_"):
         date_suffix = basename[len(variable) + 1:]
-        new_basename = f"{variable}_bottom_{date_suffix}"
+        new_basename = f"{variable}_{date_suffix}_bottom"
     else:
         new_basename = f"{basename}_bottom"
     return os.path.join(dirname, new_basename + ext)

@@ -3,15 +3,15 @@
 # It iterates over specified variables and precision settings, converting each relevant netCDF file into tiles.
 
 function process {
-    V=$1
-    P=$2
+    VAR=$1
+    PRECISION=$2
     
-    # for f in `ls ../data/${V}/ | grep -v bottom`; do
-	#     uv run nc2tile.py --data ../data/${V}/$f --vars ${V} --depth-indices 0,3,5,10,18,26,30,34 --precision $P --outdir=../webp --grid grid.npz --fields fields.json --workers 20
+    # for f in `ls ../data/${VAR}/*_2026{01..03}??.nc`; do
+	#     uv run nc2tile.py --data $f --vars ${VAR} --depth-indices 0,3,5,10,18,26,30,34 --precision $PRECISION --outdir=../webp --grid grid.npz --fields fields.json --workers 20
     # done
 
-    for f in `ls ../data/${V}/*bottom.nc`; do
-	    uv run nc2tile.py --data $f --vars ${V} --depth-indices 0 --precision $P --outdir=../webp --grid grid.npz --fields fields.json --workers 24
+    for f in `ls ../data/${VAR}/*20260[123]*bottom*.nc`; do
+	    uv run nc2tile.py --data $f --vars ${VAR} --depth-indices 0 --precision $PRECISION --outdir=../webp --grid grid.npz --fields fields.json --workers 24
     done
 }
 

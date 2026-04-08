@@ -4,7 +4,10 @@
       <NuxtLink to="/" class="logo-link">
         <img src="/OA_logo.png" alt="OA Logo" class="logo-icon" />
       </NuxtLink>
-      <v-app-bar-title>OA</v-app-bar-title>
+      <v-app-bar-title>
+        <span class="">OAH</span>
+        <span class="text-caption mx-2" style="font-family: monospace">v0.1</span>
+      </v-app-bar-title>
       <v-spacer></v-spacer>
       <!-- Optional: Add menu items here -->
       <NuxtLink to="/modeleval" target="_blank">
