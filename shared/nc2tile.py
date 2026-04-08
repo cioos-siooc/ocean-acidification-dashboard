@@ -476,8 +476,8 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
         interp_capped = interp
 
     # filename and folder per user request: /opt/data/png/{var}/{datetime}/{depth}.png
-    png_root = os.getenv('PNG_ROOT', '/opt/data/png')
-    png_dir = os.path.join(png_root, varname, t_str)
+    image_root = os.getenv('IMAGE_ROOT', '/opt/data/image')
+    png_dir = os.path.join(image_root, varname, t_str)
     os.makedirs(png_dir, exist_ok=True)
 
     if d_val is None:
@@ -709,9 +709,9 @@ def process_variable(
     
     depths = ds_data[depth_dim].values
 
-    # Write per-variable meta.json into PNG_ROOT/<var>/meta.json so the API can serve it
-    png_root = os.getenv('PNG_ROOT', '/opt/data/png')
-    out_var_dir = os.path.join(png_root, varname)
+    # Write per-variable meta.json into IMAGE_ROOT/<var>/meta.json so the API can serve it
+    image_root = os.getenv('IMAGE_ROOT', '/opt/data/image')
+    out_var_dir = os.path.join(image_root, varname)
     os.makedirs(out_var_dir, exist_ok=True)
     with open(os.path.join(out_var_dir, 'meta.json'), 'w') as fh:
         json.dump(meta, fh)

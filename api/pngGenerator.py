@@ -194,7 +194,7 @@ def find_nc_file_for_date(data_dir: str, variable: str, dt_str: str) -> str:
 
 async def generate_png_for_variable(
     var: str, dt: str, depth_value: float,
-    data_dir: str, png_root: str,
+    data_dir: str, image_root: str,
     png_gen_semaphore,
     executor=None,
 ) -> str:
@@ -215,7 +215,7 @@ async def generate_png_for_variable(
     except Exception as e:
         raise ValueError(f"Invalid datetime format: {dt}") from e
 
-    full_path = os.path.join(png_root, safe_var, dt_folder, f"{safe_depth}.webp")
+    full_path = os.path.join(image_root, safe_var, dt_folder, f"{safe_depth}.webp")
 
     if os.path.isfile(full_path):
         logger.info(f"PNG already exists: {full_path}")

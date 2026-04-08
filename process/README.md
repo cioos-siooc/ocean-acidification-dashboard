@@ -35,7 +35,7 @@ This package contains the `dl2` downloader utilities used by the OA project.
 - Environment variables (defaults):
   - `ERDDAP_BASE` (default: `https://salishsea.eos.ubc.ca/erddap`)
   - `NC_ROOT` (default: `/opt/data/nc`)
-  - `PNG_ROOT` (default: `/opt/data/png`)
+  - `IMAGE_ROOT` (default: `/opt/data/image`)
   - Standard Postgres env vars: `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`.
 
 ## CLI usage (examples) ✅

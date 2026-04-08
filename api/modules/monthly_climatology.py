@@ -43,7 +43,7 @@ def get_monthly_climatology_at_coord(
     lon: float,
     depth: float,
     variable: str,
-    data_root: str = "/opt/data/nc/SalishSeaCast",
+    data_root: str = "/opt/data/SalishSeaCast",
     db_dsn: Optional[str] = None,
     db_host: str = "db",
     db_port: int = 5432,

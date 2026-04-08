@@ -53,7 +53,7 @@ app.add_middleware(
 # app.mount("/png", StaticFiles(directory="/opt/data/png"), name="png")
 
 # Explicit PNG route that sets cache-control for compatibility with Mapbox and browsers
-PNG_ROOT = os.environ.get("PNG_ROOT", "/opt/data/png")
+IMAGE_ROOT = os.environ.get("IMAGE_ROOT", "/opt/data/image")
 
 # Read DB config from environment at import time so route handlers can access it
 db_host = os.getenv("DB_HOST", "db")
@@ -229,7 +229,7 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
 # @app.get("/metadata/{var}")
 # async def get_metadata(var: str):
 #     safe_var = os.path.basename(var)
-#     path = os.path.join(PNG_ROOT, safe_var, "meta.json")
+#     path = os.path.join(IMAGE_ROOT, safe_var, "meta.json")
 #     if not os.path.isfile(path):
 #         raise HTTPException(status_code=404, detail="Metadata not found")
     
@@ -247,7 +247,7 @@ async def get_png(var: str, dt: str, depth: str):
     safe_var = os.path.basename(var)
     safe_dt = os.path.basename(dt)
     safe_depth = depth.replace('.', 'p')
-    path = os.path.join(PNG_ROOT, safe_var, safe_dt)
+    path = os.path.join(IMAGE_ROOT, safe_var, safe_dt)
     
     # Try both .webp (from on-demand generation) and .png (legacy)
     for ext in ['.webp', '.png']:
@@ -273,7 +273,7 @@ async def get_png(var: str, dt: str, depth: str):
         depth_value = float(depth)
         data_dir = os.getenv('NC_DATA_DIR', '/opt/data/nc')
         full_path = await generate_png_for_variable(
-            var, dt, depth_value, data_dir, PNG_ROOT, _png_gen_semaphore, _png_executor
+            var, dt, depth_value, data_dir, IMAGE_ROOT, _png_gen_semaphore, _png_executor
         )
         
         headers = {
