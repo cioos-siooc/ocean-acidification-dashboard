@@ -97,7 +97,6 @@ function plotResidual() {
 
     // Calculate residuals
     const residuals = calculateResiduals(displayData)
-    console.log('residuals: ', residuals);
 
     const threshold = 1000 // Threshold for downsampling
 

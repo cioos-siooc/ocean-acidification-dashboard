@@ -255,7 +255,6 @@ export function useMapAnimator(getMap: () => any) { // Using any for mapboxgl.Ma
     }
 
     function startPlayback() {
-        console.log('startPlayback called');
         if (isPlaying.value) return;
         if (!_anim.total || _anim.bitmaps.size < 1) {
              console.warn('startPlayback aborted: no frames or total 0');
@@ -269,7 +268,6 @@ export function useMapAnimator(getMap: () => any) { // Using any for mapboxgl.Ma
     }
 
     function pausePlayback() {
-        console.log('pausePlayback called');
         isPlaying.value = false;
         if (_anim.rafId) { cancelAnimationFrame(_anim.rafId); _anim.rafId = 0; }
     }

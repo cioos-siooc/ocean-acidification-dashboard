@@ -27,7 +27,7 @@ const index = ref(0)
 
 // Derived display of current depth
 const selectedVariable = computed(() => mainStore.selected_variable.var)
-const depths = computed(() => mainStore.variables.find(v => v.var === selectedVariable.value)?.depths ?? [])
+const depths = computed(() => mainStore.variables.find(v => v.var === selectedVariable.value)?.depths.map(x => x.depth) ?? [])
 const currentDepth = computed(() => depths.value[index.value] ?? null)
 const currentDepthDisplay = computed(() => currentDepth.value === null ? '-' : `${formatDepth(currentDepth.value)}`)
 
@@ -41,11 +41,11 @@ watch(() => mainStore.selected_variable.var, async (newVar) => {
     }
     try {
         // Prefer runtime-config api base if available
-        const config: any = useRuntimeConfig ? useRuntimeConfig() : undefined;
-        const apiBase = config?.public?.apiBaseUrl ?? '';
-        const res = await axios.get(`${apiBase}/metadata/${newVar}`)
-        const meta = JSON.parse(res.data)
-        depths.value = Array.isArray(meta.depths) && meta.depths.length > 0 ? meta.depths : []
+        // const config: any = useRuntimeConfig ? useRuntimeConfig() : undefined;
+        // const apiBase = config?.public?.apiBaseUrl ?? '';
+        // const res = await axios.get(`${apiBase}/metadata/${newVar}`)
+        // const meta = JSON.parse(res.data)
+        // depths.value = Array.isArray(meta.depths) && meta.depths.length > 0 ? meta.depths : []
         // pick nearest index to the currently-selected depth in store
         const curDepth = mainStore.selected_variable.depth
         if (curDepth !== null && depths.value.length > 0) {
@@ -55,13 +55,13 @@ watch(() => mainStore.selected_variable.var, async (newVar) => {
         }
     } catch (e) {
         console.warn('Failed to fetch metadata for depth slider:', e)
-        depths.value = []
+        // depths.value = []
     }
 }, { immediate: true })
 
 // When the slider index changes, update the selected variable depth in store
 function onIndexChange(v: number) {
-    mainStore.setSelectedVariable(mainStore.selected_variable.var, mainStore.selected_variable.dt, depths.value[v])
+    mainStore.updateSelectedVariable({ depth: depths.value[v] })
 }
 
 function nearestIndex(arr: number[], target: number) {

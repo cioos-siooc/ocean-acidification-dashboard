@@ -1,6 +1,6 @@
 <template>
-    <v-navigation-drawer v-model="isOpen" location="right" width="300" class="pa-2" absolute persistent mobile :scrim="false"
-        style="height:100%; z-index:9999; top:0;">
+    <v-navigation-drawer v-model="isOpen" location="right" width="300" class="pa-2" absolute persistent mobile
+        :scrim="false" style="height:100%; z-index:9999; top:0;">
         <v-row class="ma-0 pa-0" style="height: 20px;">
             <v-btn icon size="20px" color="error" flat @click="isOpen = false">
                 <v-icon size="16px">mdi-close</v-icon>
@@ -9,8 +9,11 @@
 
         <div class="profile-chart-wrapper">
             <div ref="chartContainer" class="profile-chart"></div>
-            <div v-if="statusMessage" class="profile-chart-overlay" :class="{ error: !!errorMessage }">
-                <span>{{ statusMessage }}</span>
+            <div v-if="statusMessage" class="profile-chart-overlay"
+                :class="{ loading: loading, error: !!errorMessage }">
+                <v-progress-circular v-if="loading" indeterminate color="warning" :size="64" :width="12"
+                    class="progress" />
+                <span v-else>{{ statusMessage }}</span>
             </div>
         </div>
     </v-navigation-drawer>
@@ -21,6 +24,7 @@ import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRuntimeConfig } from '#app';
 import axios from 'axios';
 import * as echarts from 'echarts';
+import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
 import type { PropType } from 'vue';
 import moment, { type MomentInput } from 'moment-timezone';
 import { var2name } from '../../composables/useVar2Name';
@@ -30,13 +34,13 @@ import { useMainStore } from '../stores/main';
 
 type SelectedPoint = {
     lat: number;
-    lon: number;
+    lng: number;
 } | null;
 
 interface ProfileRequest {
     var: string;
     lat: number;
-    lon: number;
+    lng: number;
     dt: string;
 }
 
@@ -98,16 +102,18 @@ const variableLabel = computed(() => var2name(mainStore.selected_variable.var ??
 
 const requestParams = computed<ProfileRequest | null>(() => {
     const lat = props.selectedPoint?.lat;
-    const lon = props.selectedPoint?.lon;
+    const lng = props.selectedPoint?.lng;
     const dt = mainStore.selected_variable?.dt;
     const variable = mainStore.selected_variable?.var;
-    if (typeof lat !== 'number' || typeof lon !== 'number' || !dt) return null;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || !dt) {
+        return null;
+    }
     const parsed = moment(dt);
     if (!parsed.isValid()) return null;
     return {
         var: variable,
         lat,
-        lon,
+        lng,
         dt: parsed.utc().format('YYYY-MM-DDTHHmmss')
     };
 });
@@ -124,7 +130,8 @@ const chartResizeHandler = () => {
     profileChart?.resize();
 };
 
-onMounted(() => {
+onMounted(async () => {
+    registerEchartsDarkTheme();
     ensureChart();
     renderChart(profilePoints.value);
     window.addEventListener('resize', chartResizeHandler);
@@ -146,10 +153,8 @@ watch([requestParams, isOpen], ([params, open]) => {
 }, { immediate: true, flush: 'post' });
 
 function ensureChart() {
-    console.log(profileChart, chartContainer.value);
     if (profileChart || !chartContainer.value) return;
-    console.log('HERE');
-    profileChart = echarts.init(chartContainer.value, undefined, { renderer: 'canvas' });
+    profileChart = echarts.init(chartContainer.value, 'dark', { renderer: 'canvas' });
 }
 
 function renderChart(points: ProfilePoint[]) {
@@ -159,7 +164,6 @@ function renderChart(points: ProfilePoint[]) {
 
     const sorted = [...points].sort((a, b) => a.depth - b.depth);
     const data = sorted.map((point) => [point.value, point.depth]);
-    console.log(data);
 
     const option = {
         tooltip: {
@@ -201,16 +205,22 @@ function renderChart(points: ProfilePoint[]) {
                 // type: "scatter",
                 // showSymbol: false,
                 smooth: true,
+                showSymbol: true,
                 data,
-                lineStyle: { width: 3, color: '#1976d2' },
+                lineStyle: {
+                    width: 2,
+                    color: mainStore.colors.model.line,
+                    shadowColor: mainStore.colors.model.shadow,
+                    shadowBlur: 3,
+                },
                 // areaStyle: { opacity: data.length ? 0.25 : 0 }
-                // itemStyle: {
-                //     color: '#f976d2',
-                //     borderColor: '#c2185b',
-                //     borderWidth: 1,
-                //     shadowColor: 'rgba(194, 24, 91, 0.5)',
-                //     shadowBlur: 10,
-                // },
+                itemStyle: {
+                    color: mainStore.colors.model.line,
+                    borderColor: mainStore.colors.model.line,
+                    borderWidth: 1,
+                    shadowColor: mainStore.colors.model.shadow,
+                    shadowBlur: 3,
+                },
             }
         ],
         animation: false
@@ -218,7 +228,6 @@ function renderChart(points: ProfilePoint[]) {
     profileChart.setOption(option, true);
 
     profileChart.resize();
-    console.log(option);
 }
 
 function normalizeProfileResponse(data: any): ProfilePoint[] {
@@ -280,9 +289,8 @@ async function fetchProfile(params: ProfileRequest) {
     const currentRequest = ++requestSequence;
 
     try {
-        const payload: Record<string, any> = { var: params.var, lat: params.lat, lon: params.lon, dt: params.dt };
+        const payload: Record<string, any> = { var: params.var, lat: params.lat, lng: params.lng, dt: params.dt };
         const response = await axios.post(`${apiBaseUrl}/getProfile`, payload, { signal: currentController.signal });
-        console.log('response: ', response);
 
         if (currentRequest !== requestSequence) return;
         const normalized = normalizeProfileResponse(response.data);
@@ -360,13 +368,30 @@ function cancelRequest() {
     align-items: center;
     text-align: center;
     padding: 12px;
-    color: #333;
-    background: rgba(255, 255, 255, 0.9);
     font-size: 0.85rem;
     line-height: 1.4;
+    z-index: 9999;
+}
+
+.profile-chart-overlay:not(.loading) {
+    color: #333;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.profile-chart-overlay.loading {
+    background: #33333366;
 }
 
 .profile-chart-overlay.error {
     color: #b71c1c;
+}
+
+.progress {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    place-self: center;
 }
 </style>

@@ -9,14 +9,14 @@ export type NightRange = [string, string]
  */
 export function computeNightRanges(opts: {
   lat: number,
-  lon: number,
+  lng: number,
   tz: string,
   startLocalIso: string,
   endLocalIso: string,
 }): NightRange[] {
-  const { lat, lon, tz, startLocalIso, endLocalIso } = opts
-  const startLocal = moment.tz(startLocalIso, tz).clone();
-  const endLocal = moment.tz(endLocalIso, tz).clone();
+  const { lat, lng, tz, startLocalIso, endLocalIso } = opts
+  const startLocal = moment.tz(startLocalIso, tz).clone().subtract(1, 'day'); // start a day early to capture night spanning start boundary
+  const endLocal = moment.tz(endLocalIso, tz).clone().add(1, 'day') // end a day late to capture night spanning end boundary
 
   // iterate from day before start to day after end to capture nights spanning boundaries
   let day = startLocal.clone().startOf('day').subtract(1, 'day')
@@ -29,14 +29,14 @@ export function computeNightRanges(opts: {
     let sunset: Date | null = null
     let sunriseNext: Date | null = null
     try {
-      const times = SunCalc.getTimes(dayDate, lat, lon)
+      const times = SunCalc.getTimes(dayDate, lat, lng)
       sunset = times.sunset || null
     } catch (e) {
       sunset = null
     }
     try {
       const nextDayDate = day.clone().add(1, 'day').toDate()
-      const times2 = SunCalc.getTimes(nextDayDate, lat, lon)
+      const times2 = SunCalc.getTimes(nextDayDate, lat, lng)
       sunriseNext = times2.sunrise || null
     } catch (e) {
       sunriseNext = null

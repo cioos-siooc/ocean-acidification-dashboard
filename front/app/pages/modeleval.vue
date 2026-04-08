@@ -240,7 +240,6 @@ function onTimeseriesZoom(event: { fromDate: string; toDate: string }) {
     fromDate.value = event.fromDate
     toDate.value = event.toDate
     error.value = ''
-    console.log(`Timeseries zoom updated date range: from ${event.fromDate} to ${event.toDate}`)
 }
 
 /**

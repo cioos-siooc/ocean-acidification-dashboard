@@ -8,6 +8,7 @@ from typing import Optional
 import os
 import logging
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 from typing import Optional
 from starlette.concurrency import run_in_threadpool
 
@@ -15,18 +16,22 @@ from extractTimeseries import extract_timeseries
 from modules.extract_profile import extract_profile
 from modules.eval_extractor import extract_eval_data
 from extract_climate_timeseries import extract_climate_timeseries
+from extractMinMax import extract_minmax
+from pngGenerator import generate_png_for_variable
 
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
 MAX_CONCURRENT_EXTRACTS = int(os.getenv("MAX_CONCURRENT_EXTRACTS", "4"))
 _extract_semaphore = asyncio.Semaphore(MAX_CONCURRENT_EXTRACTS)
-# from calc import bin
-# from lib.bathymetry import BathymetryProcessor
-# from lib.database import TrajectoryDatabase
-# from lib.trajectory import TrajectoryExtractor
+
+# PNG generation runs in a dedicated single-process executor so CPU-heavy
+# interpolation work never touches the shared anyio threadpool that serves
+# all other API endpoints.  One worker = one PNG at a time, no starvation.
+_png_executor = ProcessPoolExecutor(max_workers=1)
+_png_gen_semaphore = asyncio.Semaphore(1)
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -91,7 +96,7 @@ async def get_sensors():
     def _fetch():
         import psycopg2
         import psycopg2.extras
-        query = "SELECT id, name, latitude, longitude, depths, variables, device_config, active FROM sensors;"
+        query = "SELECT id, name, latitude, longitude, depth, variables, device_config, active FROM sensors;"
         conn = None
         try:
             conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password, connect_timeout=5)
@@ -107,7 +112,7 @@ async def get_sensors():
                     "name": row.get("name"),
                     "latitude": row.get("latitude"),
                     "longitude": row.get("longitude"),
-                    "depths": row.get("depths"),
+                    "depth": row.get("depth"),
                     "variables": row.get("variables"),
                     "device_config": row.get("device_config"),
                     "active": row.get("active"),
@@ -165,7 +170,8 @@ async def get_colormaps():
 class sensorTimeseriesRequest(BaseModel):
     variable: str
     sensorId: int
-    datetime: str
+    fromDate: str
+    toDate: str
     
 @app.post("/sensorTimeseries")
 async def get_sensor_timeseries(request: sensorTimeseriesRequest):
@@ -176,16 +182,16 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
     
     var = request.variable
     sensor_id = request.sensorId
-    datetime_str = request.datetime
+    from_date_str = request.fromDate
+    to_date_str = request.toDate
     
     # Parse the incoming ISO datetime and calculate ±5 day window
     try:
         # Handle both ISO format with Z and with +00:00
-        request_dt = dt.fromisoformat(datetime_str.replace('Z', '+00:00'))
-        start = request_dt - timedelta(days=5)
-        end = request_dt + timedelta(days=5)
+        from_date = dt.fromisoformat(from_date_str.replace('Z', '+00:00'))
+        to_date = dt.fromisoformat(to_date_str.replace('Z', '+00:00'))
     except Exception as exc:
-        logger.exception(f"Failed to parse datetime '{datetime_str}'")
+        logger.exception(f"Failed to parse datetime '{from_date_str}' or '{to_date_str}'")
         raise HTTPException(status_code=400, detail=f"Invalid datetime format: {exc}")
     
     def _fetch():
@@ -200,7 +206,7 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
             
             # ±5 days around requested datetime to give some context, limit to 1000 points to avoid huge responses
             sql += " AND time >= %s AND time <= %s"
-            params.extend([start.isoformat(), end.isoformat()])
+            params.extend([from_date.isoformat(), to_date.isoformat()])
 
             sql += " ORDER BY time ASC"
             cur.execute(sql, tuple(params))
@@ -220,34 +226,84 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
 
 #######################################
 
-@app.get("/metadata/{var}")
-async def get_metadata(var: str):
-    safe_var = os.path.basename(var)
-    path = os.path.join(PNG_ROOT, safe_var, "meta.json")
-    if not os.path.isfile(path):
-        raise HTTPException(status_code=404, detail="Metadata not found")
+# @app.get("/metadata/{var}")
+# async def get_metadata(var: str):
+#     safe_var = os.path.basename(var)
+#     path = os.path.join(PNG_ROOT, safe_var, "meta.json")
+#     if not os.path.isfile(path):
+#         raise HTTPException(status_code=404, detail="Metadata not found")
     
-    def _read():
-        with open(path) as f:
-            return f.read()
+#     def _read():
+#         with open(path) as f:
+#             return f.read()
             
-    content = await run_in_threadpool(_read)
-    return JSONResponse(content=content)
+#     content = await run_in_threadpool(_read)
+#     return JSONResponse(content=content)
 
 @app.get("/png/{var}/{dt}/{depth}")
 async def get_png(var: str, dt: str, depth: str):
-    # Serve the PNG file for a specific variable, datetime, and depth with appropriate headers for caching
+    """Serve PNG for variable/datetime/depth, generating on-demand if needed."""
+    # Serve the PNG file for a specific variable, datetime, and depth
     safe_var = os.path.basename(var)
     safe_dt = os.path.basename(dt)
     safe_depth = depth.replace('.', 'p')
     path = os.path.join(PNG_ROOT, safe_var, safe_dt)
-    filename = f"{safe_depth}.png"
+    
+    # Try both .webp (from on-demand generation) and .png (legacy)
+    for ext in ['.webp', '.png']:
+        filename = f"{safe_depth}{ext}"
+        full_path = os.path.join(path, filename)
+        
+        # os.path.isfile is fast but still better in a thread if the FS is slow
+        exists = await run_in_threadpool(os.path.isfile, full_path)
+        if exists:
+            headers = {
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+                "Vary": "Origin",
+                "ETag": f'"{full_path}-v1"',
+            }
+            media_type = "image/webp" if ext == '.webp' else "image/png"
+            return FileResponse(full_path, media_type=media_type, headers=headers)
+    
+    # File doesn't exist; try to generate it
+    try:
+        depth_value = float(depth)
+        data_dir = os.getenv('NC_DATA_DIR', '/opt/data/nc')
+        full_path = await generate_png_for_variable(
+            var, dt, depth_value, data_dir, PNG_ROOT, _png_gen_semaphore, _png_executor
+        )
+        
+        headers = {
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Vary": "Origin",
+            "ETag": f'"{full_path}-v1"',
+        }
+        return FileResponse(full_path, media_type="image/webp", headers=headers)
+    except Exception as e:
+        logger.error(f"Failed to generate or retrieve PNG for {var}/{dt}/{depth}: {e}")
+        raise HTTPException(status_code=404, detail=f"PNG not found and generation failed: {str(e)}")
+
+@app.get("/vector/{z}/{x}/{y}.pbf")
+async def get_vector(z: int, x: int, y: int):
+    VECTOR_ROOT = os.environ.get("VECTOR_ROOT", "/opt/data/bathymetry/NONNA/tiles")
+    # Serve the vector tile file for a specific variable, datetime, and depth with appropriate headers for caching
+    safe_z = os.path.basename(str(z))
+    safe_x = os.path.basename(str(x))
+    safe_y = os.path.basename(str(y))
+    path = os.path.join(VECTOR_ROOT, safe_z, safe_x)
+    filename = f"{safe_y}.pbf"
     full_path = os.path.join(path, filename)
     
     # os.path.isfile is fast but still better in a thread if the FS is slow
     exists = await run_in_threadpool(os.path.isfile, full_path)
     if not exists:
-        raise HTTPException(status_code=404, detail="PNG not found")
+        raise HTTPException(status_code=404, detail="Vector tile not found")
     
     headers = {
         "Cache-Control": "public, max-age=31536000, immutable",
@@ -255,8 +311,36 @@ async def get_png(var: str, dt: str, depth: str):
         "Access-Control-Allow-Methods": "GET, OPTIONS",
         "Access-Control-Allow-Headers": "*",
         "Vary": "Origin",
+        "ETag": f'"{full_path}-v1"',
     }
-    return FileResponse(full_path, media_type="image/png", headers=headers)
+    return FileResponse(full_path, media_type="application/octet-stream", headers=headers)
+
+@app.get("/raster_tiles/{z}/{x}/{y}.webp")
+async def get_raster_tiles(z: int, x: int, y: int):
+    RASTER_ROOT = os.environ.get("RASTER_TILES_ROOT", "/opt/data/bathymetry/NONNA/raster_tiles")
+    # Serve the raster tile file for bathymetry with appropriate headers for caching
+    safe_z = os.path.basename(str(z))
+    safe_x = os.path.basename(str(x))
+    safe_y = os.path.basename(str(y))
+    path = os.path.join(RASTER_ROOT, safe_z, safe_x)
+    filename = f"{safe_y}.webp"
+    full_path = os.path.join(path, filename)
+    
+    # os.path.isfile is fast but still better in a thread if the FS is slow
+    exists = await run_in_threadpool(os.path.isfile, full_path)
+    if not exists:
+        raise HTTPException(status_code=404, detail="Raster tile not found")
+    
+    headers = {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Vary": "Origin",
+        "ETag": f'"{full_path}-v1"',
+    }
+    return FileResponse(full_path, media_type="image/webp", headers=headers)
+
 
 #######################################
 
@@ -265,11 +349,13 @@ class timeseriesRequest(BaseModel):
     lat: float
     lon: float
     depth: float
+    fromDate: str
+    toDate: str
 
 @app.post("/extractTimeseries")
 async def fn_extract_timeseries(request: timeseriesRequest):
     # Reject requests if we are already at concurrency limit
-    logger.info(f"START extractTimeseries: {request.var}, {request.lat}, {request.lon}")
+    logger.info(f"START extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate}")
     try:
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
     except (asyncio.TimeoutError, Exception):
@@ -277,14 +363,10 @@ async def fn_extract_timeseries(request: timeseriesRequest):
         raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
 
     try:
-        var = request.var
-        lat = request.lat
-        lon = request.lon
         # use provided depth exactly (float value passed from frontend)
         depth = float(request.depth)
-
-        time, value = await run_in_threadpool(extract_timeseries, var=var, lat=lat, lon=lon, depth=depth)
-        logger.info(f"FINISH extractTimeseries: {request.var}")
+        time, value = await run_in_threadpool(extract_timeseries, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate)
+        logger.info(f"FINISH extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate} - returned {len(time)} points")
         return {"time": time.tolist(), "value": value.tolist()}
     except Exception as exc:
         logger.exception("extract_timeseries failed")
@@ -299,12 +381,13 @@ class climate_timeseriesRequest(BaseModel):
     lat: float
     lon: float
     depth: str
-    dt: str
+    fromDate: str
+    toDate: str
 
 @app.post("/extract_climateTimeseries")
 async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
     # Reject requests if we are already at concurrency limit
-    logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, dt={request.dt}")
+    logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
     try:
         # Wait up to 10 seconds to acquire the semaphore
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
@@ -317,18 +400,83 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
         lon = request.lon
         variable = request.var
         depth = request.depth.replace('.', 'p')  # Pass depth as string (e.g., "0p5") since that's what the module expects for file naming
-        dt = request.dt  # Pass datetime string (ISO format) to the extraction function
+        from_date = request.fromDate  # Pass fromDate string (ISO format) to the extraction function
+        to_date = request.toDate  # Pass toDate string (ISO format) to the extraction function
         
         # Run the synchronous extraction in a threadpool to keep the event loop free
-        result = await run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon, variable=variable, depth=depth, dt=dt)
+        result = await run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon, variable=variable, depth=depth, from_date=from_date, to_date=to_date)
         if result is None:
             logger.error("Extraction returned None")
             raise HTTPException(status_code=500, detail="Extraction failed")
             
-        logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, dt={request.dt}")
+        logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
         return result
     except Exception as exc:
         logger.exception("extract_climate_timeseries failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        _extract_semaphore.release()
+
+#######################################
+
+class minmaxRequest(BaseModel):
+    var: str
+    dt: str
+    depth: Optional[float] = None
+    north: Optional[float] = None
+    south: Optional[float] = None
+    east: Optional[float] = None
+    west: Optional[float] = None
+
+@app.post("/getMinMax")
+async def fn_get_minmax(request: minmaxRequest):
+    """Extract min and max values for a variable at a specific datetime and depth."""
+    logger.info(f"START getMinMax: {request.var}, dt={request.dt}, depth={request.depth}")
+    try:
+        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
+    except (asyncio.TimeoutError, Exception):
+        logger.warning("Semaphore timeout in getMinMax")
+        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
+
+    try:
+        from datetime import datetime
+        
+        var = request.var
+        depth = request.depth
+        dt_str = request.dt
+        
+        # Parse datetime string (ISO format: YYYY-MM-DDTHH:mm:ss)
+        dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+        
+        # Get data directory from environment
+        data_dir = os.getenv("NC_DATA_DIR", "/opt/data/nc")
+        
+        # Extract bounds if provided
+        north = request.north
+        south = request.south
+        east = request.east
+        west = request.west
+        
+        # Extract min/max with database connection for bounds mapping
+        min_val, max_val = await run_in_threadpool(extract_minmax, 
+            data_dir=data_dir, 
+            variable=var, 
+            dt=dt, 
+            depth=depth, 
+            north=north, 
+            south=south, 
+            east=east, 
+            west=west,
+            db_host=db_host,
+            db_port=db_port,
+            db_user=db_user,
+            db_password=db_password,
+            db_name=db_name)
+        
+        logger.info(f"FINISH getMinMax: {request.var}, range=[{min_val}, {max_val}]")
+        return {"min": min_val, "max": max_val}
+    except Exception as exc:
+        logger.exception("getMinMax failed")
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         _extract_semaphore.release()
@@ -375,13 +523,13 @@ async def fn_get_monthly_climatology(request: monthlyClimRequest):
 
 class profileRequest(BaseModel):
     lat: float
-    lon: float
+    lng: float
     dt: str
     var: Optional[str] = None
 
 @app.post("/getProfile")
 async def fn_get_profile(request: profileRequest):
-    logger.info(f"START getProfile: {request.var}, {request.lat}, {request.lon}, {request.dt}")
+    logger.info(f"START getProfile: {request.var}, {request.lat}, {request.lng}, {request.dt}")
     try:
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
     except (asyncio.TimeoutError, Exception):
@@ -391,14 +539,14 @@ async def fn_get_profile(request: profileRequest):
     try:
         var = request.var or "temperature"  # Default to temperature if not specified
         lat = request.lat
-        lon = request.lon
+        lng = request.lng
         dt = request.dt
 
         profile = await run_in_threadpool(
             extract_profile,
             var=var,
             lat=lat,
-            lon=lon,
+            lng=lng,
             dt=dt,
             db_host=db_host,
             db_port=db_port,
@@ -406,7 +554,7 @@ async def fn_get_profile(request: profileRequest):
             db_user=db_user,
             db_password=db_password,
         )
-        logger.info(f"FINISH getProfile: {var}, {lat}, {lon}, {dt} - returned {len(profile)} points")
+        logger.info(f"FINISH getProfile: {var}, {lat}, {lng}, {dt} - returned {len(profile)} points")
         return profile
     except Exception as exc:
         logger.exception("extract_profile failed")

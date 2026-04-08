@@ -67,20 +67,23 @@ def get_dataset(file_path):
     
     return open_nc(file_path)
 
-def extract_climate_timeseries(lat, lon, variable, depth, dt, log_level=logging.INFO):
+def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, log_level=logging.INFO):
     """
-    Extracts a 10-day climatology window (±5 days) around the given datetime.
+    Extracts climatology timeseries for a date range window.
+    
+    For the specified date range (from_date to to_date), extracts hourly climatology data.
     
     Args:
         lat: Latitude coordinate
         lon: Longitude coordinate
         variable: Variable name (e.g., 'temperature', 'salinity')
         depth: Depth value as string (e.g., '0p5', '1p0')
-        dt: Datetime string in ISO format (e.g., '2026-01-17T05:30:00') or None for current UTC time
+        from_date: Start date string in ISO format (e.g., '2026-01-01')
+        to_date: End date string in ISO format (e.g., '2026-12-31')
         log_level: Logging level (default: INFO)
     
     Returns:
-        A list of dictionaries.
+        A list of dictionaries with hourly climatology data, or None on error.
     """
     # Set logger level for this execution
     logger.setLevel(log_level)
@@ -91,16 +94,29 @@ def extract_climate_timeseries(lat, lon, variable, depth, dt, log_level=logging.
     logger.info("=" * 70)
     logger.info("CLIMATE TIMESERIES EXTRACTION START")
     logger.info("=" * 70)
-    logger.info(f"Input Parameters: lat={lat}, lon={lon}, variable={variable}, depth={depth}, dt={dt}")
+    logger.info(f"Input Parameters: lat={lat}, lon={lon}, variable={variable}, depth={depth}, from_date={from_date}, to_date={to_date}")
     
     # Configuration
-    if dt is None:
-        target_dt_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
-        logger.debug(f"Using current UTC: {target_dt_str}")
-    else:
-        target_dt_str = dt
+    # Parse from_date and to_date (mandatory)
+    try:
+        start_dt = pd.to_datetime(from_date)
+        end_dt = pd.to_datetime(to_date)
+    except Exception as exc:
+        logger.error(f"Invalid date format: from_date={from_date}, to_date={to_date}. Use ISO-8601 format: {exc}", exc_info=True)
+        return None
+    
+    if start_dt > end_dt:
+        logger.error(f"from_date ({start_dt}) cannot be after to_date ({end_dt})")
+        return None
+    
     file_path = f"/opt/data/SSC/climatology/5d/{variable}/{variable}_{depth}.nc"
     climatology_variables = ['mean', 'median', 'q1', 'q3', 'min', 'max']
+    
+    # Check if file exists first (fail fast before any heavy operations)
+    if not os.path.exists(file_path):
+        logger.error(f"Climatology file not found: {file_path}")
+        return None
+    logger.debug(f"✓ Climatology file exists: {file_path}")
     
     db_config = {
         "host": os.getenv("DB_HOST", "db"),
@@ -136,17 +152,12 @@ def extract_climate_timeseries(lat, lon, variable, depth, dt, log_level=logging.
         logger.error(f"Database lookup failed: {exc}", exc_info=True)
         return None
 
-    # 2. Parse requested date
-    logger.info("[2/5] Parsing datetime")
-    parse_start = time_module.time()
-    try:
-        target_dt = pd.to_datetime(target_dt_str)
-        parse_elapsed = time_module.time() - parse_start
-        logger.info(f"✓ Parsed datetime: {target_dt}")
-        logger.debug(f"Parse time: {parse_elapsed:.3f}s")
-    except Exception as exc:
-        logger.error(f"Invalid datetime string '{target_dt_str}': {exc}", exc_info=True)
-        return None
+    # 2. Parse and validate date range
+    logger.info("[2/5] Date range specified")
+    logger.debug(f"Extraction period: {start_dt} to {end_dt}")
+    logger.debug(f"Duration: {(end_dt - start_dt).days} days")
+    
+    # Proceed directly to dataset opening (no separate parse step needed)
 
     # 3. Open Dataset
     logger.info("[3/5] Opening NetCDF dataset")
@@ -192,18 +203,15 @@ def extract_climate_timeseries(lat, lon, variable, depth, dt, log_level=logging.
         logger.error(f"Extraction from NetCDF failed: {exc}", exc_info=True)
         return None
 
-    # 5. Build the 10-day hourly window (±5 days)
-    logger.info("[5/5] Building 10-day hourly window (±5 days)")
+    # 5. Build the hourly window
+    logger.info("[5/5] Building hourly extraction window.")
     window_start = time_module.time()
-    # We map each hour to the year 2020 which is the climatology year
-    start_window = target_dt - timedelta(days=5)
-    end_window = target_dt + timedelta(days=5)
     
-    logger.debug(f"Request date: {target_dt}")
-    logger.debug(f"Window: {start_window} to {end_window}")
+    logger.debug(f"Requested period: {start_dt} to {end_dt}")
+    logger.debug(f"Extraction window: {start_dt} to {end_dt} (inclusive)")
     
     # Generate all hourly timestamps in the range (use lowercase 'h' for compatibility)
-    hourly_range = pd.date_range(start=start_window, end=end_window, freq='h')
+    hourly_range = pd.date_range(start=start_dt, end=end_dt, freq='h')
     logger.info(f"Generated {len(hourly_range)} hourly timestamps")
     
     results = []
@@ -259,12 +267,13 @@ def extract_climate_timeseries(lat, lon, variable, depth, dt, log_level=logging.
     return results
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Extract 10-day climatology window.")
+    parser = argparse.ArgumentParser(description="Extract climatology timeseries for a date range.")
     parser.add_argument("--lat", type=float, required=True)
     parser.add_argument("--lon", type=float, required=True)
     parser.add_argument("--variable", type=str, required=True, help="Variable name (e.g., 'temperature', 'salinity')")
     parser.add_argument("--depth", type=str, required=True, help="Depth value (e.g., '0p5', '1p0')")
-    parser.add_argument("--date", type=str, help="ISO format datetime (e.g., 2026-01-17T05:30:00). If not provided, uses current UTC time.")
+    parser.add_argument("--from-date", required=True, help="Start date (ISO-8601 format, e.g., 2026-01-01)")
+    parser.add_argument("--to-date", required=True, help="End date (ISO-8601 format, e.g., 2026-01-31)")
     parser.add_argument("--log-level", type=str, default="INFO", 
                         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                         help="Logging level (default: INFO)")
@@ -276,10 +285,10 @@ if __name__ == "__main__":
     logger.setLevel(log_level)
     
     logger.info(f"Starting Climate Timeseries Extraction Script")
-    logger.debug(f"Arguments: lat={args.lat}, lon={args.lon}, variable={args.variable}, depth={args.depth}, date={args.date}")
+    logger.debug(f"Arguments: lat={args.lat}, lon={args.lon}, variable={args.variable}, depth={args.depth}, from_date={args.from_date}, to_date={args.to_date}")
     
     start_time = time.perf_counter()
-    result = extract_climate_timeseries(args.lat, args.lon, args.variable, args.depth, args.date, log_level=log_level)
+    result = extract_climate_timeseries(args.lat, args.lon, args.variable, args.depth, args.from_date, args.to_date, log_level=log_level)
     elapsed = time.perf_counter() - start_time
     
     logger.info("=" * 70)

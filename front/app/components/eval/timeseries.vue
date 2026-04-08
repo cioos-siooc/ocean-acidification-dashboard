@@ -13,6 +13,9 @@ import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import moment from 'moment'
 
+import { useMainStore } from '~/stores/main'
+const mainStore = useMainStore();
+
 // Props
 interface Props {
     data: any | null
@@ -89,9 +92,9 @@ function plotTimeseries() {
             type: 'line',
             data: displayData.sensor.map((d: any, i: number) => [moment.utc(displayData.time[i]).tz(tz).format(), d]).filter((d: any) => d[1] !== null),
             smooth: true,
-            lineStyle: { width: 2, color: '#000', opacity: 0.75 },
+            lineStyle: { width: 2, color: mainStore.colors.observation.line, opacity: 0.75 },
             showSymbol: false,
-            itemStyle: { color: '#000', opacity: 0.75 },
+            itemStyle: { color: mainStore.colors.observation.line, opacity: 0.75 },
             large: true,
             largeThreshold: threshold,
             sampling: 'lttb'
@@ -102,9 +105,12 @@ function plotTimeseries() {
             type: 'line',
             data: displayData.model.map((d: any, i: number) => [moment.utc(displayData.time[i]).tz(tz).format(), d]).filter((d: any) => d[1] !== null),
             smooth: true,
-            lineStyle: { width: 2, color: '#3498DB', opacity: 0.75 },
+            lineStyle: { width: 2, color: mainStore.colors.model.line, opacity: 0.75 },
             showSymbol: false,
-            itemStyle: { color: '#3498DB', opacity: 0.75 },
+            symbol:"none",
+            symbolSize:0,
+            showAllSymbol:false,
+            itemStyle: { color: mainStore.colors.model.line, opacity: 0.75 },
             large: true,
             largeThreshold: threshold,
             sampling: 'lttb'
@@ -160,13 +166,10 @@ watch(() => [props.startTime, props.endTime], () => {
  * Handle datazoom event - convert zoomed range back to dates and emit to parent
  */
 function handleDataZoom(event: any) {
-    console.log(event);
     if (!props.data || !props.data.time || props.data.time.length === 0) return
-    console.log('1');
     // Get the filtered data that's currently displayed in the chart
     const displayData = filterDataByTime(props.data, props.startTime, props.endTime)
     if (!displayData || !displayData.time || displayData.time.length === 0) return
-    console.log('2');
     // Get the start and end indices from the zoom event (percentages of filtered data)
     const startIndex = Math.floor(event.start * displayData.time.length / 100)
     const endIndex = Math.ceil(event.end * displayData.time.length / 100)
@@ -174,10 +177,8 @@ function handleDataZoom(event: any) {
     // Get the dates from the filtered data at those indices
     const fromDateStr = event.batch[0].startValue
     const toDateStr = event.batch[0].endValue
-    console.log(displayData.time, startIndex, endIndex, fromDateStr, toDateStr);
     // Validate that we have valid date strings
     if (!fromDateStr || !toDateStr) return
-    console.log('3');
     try {
         // Convert to YYYY-MM-DD format
         const fromDate = new Date(fromDateStr).toISOString().split('T')[0]

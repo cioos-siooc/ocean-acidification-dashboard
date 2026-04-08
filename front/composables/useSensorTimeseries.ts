@@ -1,8 +1,7 @@
 import axios from 'axios';
 import { useRuntimeConfig } from '#app';
 
-export async function getSensorTimeseries(sensorId: number|null, variable: string) {
-    console.log('Fetching sensor timeseries for sensorId:', sensorId, 'variable:', variable);
+export async function getSensorTimeseries(sensorId: number|null, variable: string, fromDate: string, toDate: string) {
     if (sensorId === null || sensorId === undefined) {
         return null
     }
@@ -13,7 +12,8 @@ export async function getSensorTimeseries(sensorId: number|null, variable: strin
     const payload: any = {
         variable: variable,
         sensorId: sensorId,
-        datetime: new Date().toISOString()
+        fromDate: fromDate,
+        toDate: toDate
     };
     const url = `${apiBaseUrl}/sensorTimeseries`;
     const r = await axios.post(url, payload);

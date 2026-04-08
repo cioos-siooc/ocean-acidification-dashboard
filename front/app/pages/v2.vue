@@ -302,8 +302,6 @@ async function addStations() {
         yAxis: { type: 'value', name: 'm' },
         series,
     };
-    console.log(option);
-
 
     globalChart.setOption(option);
     globalChart.resize();

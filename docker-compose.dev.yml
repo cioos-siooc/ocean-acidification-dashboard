@@ -13,45 +13,48 @@ services:
       - NUXT_PUBLIC_API_BASE=http://localhost:9001
     depends_on:
       - api
-      - umami
+      # - umami
     env_file:
       - .env.dev
     command: npm run dev
     restart: unless-stopped
 
-  umami:
-    image: ghcr.io/umami-software/umami:postgresql-latest
-    restart: always
-    environment:
-      DATABASE_URL: postgresql://umami:umami_pass@umami-db:5432/umami
-      APP_SECRET: $(openssl rand -hex 32) # You should replace this with a static random string
-    ports:
-      - "9013:3000" # Maps Umami dashboard to port 9013
-    depends_on:
-      umami-db:
-        condition: service_healthy
+  # umami:
+  #   image: ghcr.io/umami-software/umami:postgresql-latest
+  #   restart: always
+  #   environment:
+  #     DATABASE_URL: postgresql://umami:umami_pass@umami-db:5432/umami
+  #     APP_SECRET: $(openssl rand -hex 32) # You should replace this with a static random string
+  #   ports:
+  #     - "9013:3000" # Maps Umami dashboard to port 9013
+  #   depends_on:
+  #     umami-db:
+  #       condition: service_healthy
 
-  # Add Umami Database
-  umami-db:
-    image: postgres:15-alpine
-    restart: always
-    environment:
-      POSTGRES_DB: umami
-      POSTGRES_USER: umami
-      POSTGRES_PASSWORD: umami_pass
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U umami"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - umami-db-data:/var/lib/postgresql/data
+  # # Add Umami Database
+  # umami-db:
+  #   image: postgres:15-alpine
+  #   restart: always
+  #   environment:
+  #     POSTGRES_DB: umami
+  #     POSTGRES_USER: umami
+  #     POSTGRES_PASSWORD: umami_pass
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U umami"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 5
+  #   volumes:
+  #     - umami-db-data:/var/lib/postgresql/data
   
   api:
-    build: ./api
+    build:
+      context: .
+      dockerfile: api/Dockerfile
     volumes:
       - ./api:/app
-      - ./data:/opt/data
+      - ./shared:/app/shared
+      - /mnt/data/:/opt/data
     ports:
       - "${API_PORT:-4000}:4000"
     environment:
@@ -84,7 +87,9 @@ services:
     restart: unless-stopped
 
   process:
-    build: ./process
+    build:
+      context: .
+      dockerfile: process/Dockerfile
     # profiles: ["tools"]
     environment:
       - PGHOST=db
@@ -94,6 +99,7 @@ services:
       - PGPASSWORD=postgres
     volumes:
       - ./process:/app
+      - ./shared:/app/shared
       - ./data:/opt/data
     depends_on:
       db:
@@ -102,3 +108,4 @@ services:
 volumes:
   oa_db:
   umami-db-data:
+  # oa_data:

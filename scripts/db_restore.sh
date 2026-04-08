@@ -50,7 +50,7 @@ if [ ! -f "${DUMP}" ]; then
   exit 1
 fi
 
-COMPOSE_CMD="docker compose"
+COMPOSE_CMD="docker compose --env-file .env.dev"
 
 echo "Using compose command: ${COMPOSE_CMD}"
 

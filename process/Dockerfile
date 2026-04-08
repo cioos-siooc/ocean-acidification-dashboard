@@ -13,7 +13,8 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --no-dev
 
 # Copy source code
-COPY . .
+COPY process . 
+COPY shared ./shared
 
 # Entrypoint to allow arguments to be passed to MAIN.py
 # ENTRYPOINT ["python", "-Xfrozen_modules=off", "-m", "uv", "run", "MAIN.py"]
