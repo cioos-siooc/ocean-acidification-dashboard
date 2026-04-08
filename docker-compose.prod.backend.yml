@@ -17,6 +17,8 @@ services:
       - DB_NAME=oa
       - DB_USER=postgres
       - DB_PASSWORD=postgres
+      - NC_DATA_DIR=${NC_DATA_DIR:-/opt/data/nc}
+      - NC_DATA_DIR_ARCHIVE=${NC_DATA_DIR_ARCHIVE:-/opt/archive}
     depends_on:
       - db
     restart: unless-stopped
