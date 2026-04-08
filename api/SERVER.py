@@ -56,6 +56,18 @@ app.add_middleware(
 IMAGE_ROOT = os.environ.get("IMAGE_ROOT", "/opt/data/image")
 
 
+def _get_image_roots() -> list:
+    """Return list of image root directories to search when serving tiles.
+
+    IMAGE_ROOT (default /opt/data/image) is the primary directory and the
+    only one used for on-demand generation writes.
+    IMAGE_ROOT_ARCHIVE (optional) is a second read-only directory, e.g. an
+    external disk where older tiles have been moved.
+    """
+    archive = os.getenv("IMAGE_ROOT_ARCHIVE", "")
+    return [IMAGE_ROOT, archive] if archive else [IMAGE_ROOT]
+
+
 def _get_nc_data_dirs():
     """Return the NC data directory spec (str or list) from environment.
 
@@ -259,33 +271,33 @@ async def get_png(var: str, dt: str, depth: str):
     safe_var = os.path.basename(var)
     safe_dt = os.path.basename(dt)
     safe_depth = depth.replace('.', 'p')
-    path = os.path.join(IMAGE_ROOT, safe_var, safe_dt)
-    
-    # Try both .webp (from on-demand generation) and .png (legacy)
-    for ext in ['.webp', '.png']:
-        filename = f"{safe_depth}{ext}"
-        full_path = os.path.join(path, filename)
-        
-        # os.path.isfile is fast but still better in a thread if the FS is slow
-        exists = await run_in_threadpool(os.path.isfile, full_path)
-        if exists:
-            headers = {
-                "Cache-Control": "public, max-age=31536000, immutable",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "GET, OPTIONS",
-                "Access-Control-Allow-Headers": "*",
-                "Vary": "Origin",
-                "ETag": f'"{full_path}-v1"',
-            }
-            media_type = "image/webp" if ext == '.webp' else "image/png"
-            return FileResponse(full_path, media_type=media_type, headers=headers)
+
+    # Try both .webp (from on-demand generation) and .png (legacy), across all image roots
+    for image_root in _get_image_roots():
+        path = os.path.join(image_root, safe_var, safe_dt)
+        for ext in ['.webp', '.png']:
+            filename = f"{safe_depth}{ext}"
+            full_path = os.path.join(path, filename)
+
+            exists = await run_in_threadpool(os.path.isfile, full_path)
+            if exists:
+                headers = {
+                    "Cache-Control": "public, max-age=31536000, immutable",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, OPTIONS",
+                    "Access-Control-Allow-Headers": "*",
+                    "Vary": "Origin",
+                    "ETag": f'"{full_path}-v1"',
+                }
+                media_type = "image/webp" if ext == '.webp' else "image/png"
+                return FileResponse(full_path, media_type=media_type, headers=headers)
     
     # File doesn't exist; try to generate it
     try:
         depth_value = float(depth)
         data_dir = _get_nc_data_dirs()
         full_path = await generate_png_for_variable(
-            var, dt, depth_value, data_dir, IMAGE_ROOT, _png_gen_semaphore, _png_executor
+            var, dt, depth_value, data_dir, _get_image_roots(), _png_gen_semaphore, _png_executor
         )
         
         headers = {

@@ -154,13 +154,32 @@ def find_nc_file_for_date(data_dir, variable: str, dt_str: str) -> str:
     return result
 
 
+def _pick_image_root(nc_path: str, data_dirs, image_roots) -> str:
+    """Return the image root that corresponds to the data directory containing nc_path.
+
+    data_dirs and image_roots are parallel: data_dirs[i] maps to image_roots[i].
+    Falls back to image_roots[0] if no match is found.
+    """
+    data_list = [data_dirs] if isinstance(data_dirs, str) else list(data_dirs)
+    img_list = [image_roots] if isinstance(image_roots, str) else list(image_roots)
+    nc_abs = os.path.abspath(nc_path)
+    for nc_dir, img_dir in zip(data_list, img_list):
+        if nc_dir and nc_abs.startswith(os.path.abspath(nc_dir) + os.sep):
+            return img_dir
+    return img_list[0]
+
+
 async def generate_png_for_variable(
     var: str, dt: str, depth_value: float,
-    data_dir: str, image_root: str,
+    data_dir, image_roots,
     png_gen_semaphore,
     executor=None,
 ) -> str:
     """Generate PNG on-demand for a specific variable/datetime/depth.
+
+    data_dir and image_roots are parallel: data_dir[i] is searched for NC files,
+    and image_roots[i] is where generated tiles for that NC source are written.
+    Both accept a single string or a list of strings.
 
     The heavy CPU work (_generate_single_png_task) runs in `executor` when
     provided (a ProcessPoolExecutor), so it never blocks the shared anyio
@@ -177,11 +196,13 @@ async def generate_png_for_variable(
     except Exception as e:
         raise ValueError(f"Invalid datetime format: {dt}") from e
 
-    full_path = os.path.join(image_root, safe_var, dt_folder, f"{safe_depth}.webp")
-
-    if os.path.isfile(full_path):
-        logger.info(f"PNG already exists: {full_path}")
-        return full_path
+    # Check all image roots before doing any heavy work
+    img_list = [image_roots] if isinstance(image_roots, str) else list(image_roots)
+    for ir in img_list:
+        candidate = os.path.join(ir, safe_var, dt_folder, f"{safe_depth}.webp")
+        if os.path.isfile(candidate):
+            logger.info(f"PNG already exists: {candidate}")
+            return candidate
 
     import asyncio
     loop = asyncio.get_event_loop()
@@ -196,6 +217,11 @@ async def generate_png_for_variable(
                 timeout=10.0
             )
             logger.info(f"NC file: {nc_path}")
+
+            # Write the tile beside its siblings: pick image root matching the NC source dir
+            image_root = _pick_image_root(nc_path, data_dir, image_roots)
+            full_path = os.path.join(image_root, safe_var, dt_folder, f"{safe_depth}.webp")
+            logger.info(f"Output image root: {image_root}")
 
             time_idx, time_str = await asyncio.wait_for(
                 run_in_threadpool(get_time_index_from_nc, nc_path, dt),
