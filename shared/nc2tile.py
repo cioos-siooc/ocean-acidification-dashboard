@@ -307,7 +307,9 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
         clip,
         verbose,
         pack_precision,
+        *_extra,
     ) = task
+    image_root_override = _extra[0] if _extra else None
 
     # Open dataset in worker process
     ds_data = xr.open_dataset(ds_data_path)
@@ -476,7 +478,7 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
         interp_capped = interp
 
     # filename and folder per user request: /opt/data/png/{var}/{datetime}/{depth}.png
-    image_root = os.getenv('IMAGE_ROOT', '/opt/data/image')
+    image_root = image_root_override or os.getenv('IMAGE_ROOT', '/opt/data/image')
     png_dir = os.path.join(image_root, varname, t_str)
     os.makedirs(png_dir, exist_ok=True)
 

@@ -245,7 +245,7 @@ async def generate_png_for_variable(
                         executor,
                         _generate_single_png_task,
                         nc_path, safe_var, time_idx, time_str,
-                        depth_idx, depth_value, precision,
+                        depth_idx, depth_value, precision, image_root,
                     ),
                     timeout=120.0
                 )
@@ -267,12 +267,13 @@ async def generate_png_for_variable(
 
 def _generate_single_png_task(
     nc_path: str,
-    varname: str, 
+    varname: str,
     time_idx: int,
     time_str: str,
     depth_idx: int,
     depth_val: float,
-    pack_precision: float
+    pack_precision: float,
+    image_root: str = None,
 ) -> Tuple[str, str]:
     """Generate a single PNG for one time × depth combination.
     
@@ -339,6 +340,7 @@ def _generate_single_png_task(
         None,                      # clip_percentile
         True,                      # verbose
         float(pack_precision),     # pack_precision
+        image_root,                # image_root override
     )
     
     # Call the low-level worker function
