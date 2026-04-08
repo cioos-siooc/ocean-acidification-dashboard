@@ -377,7 +377,7 @@ async def fn_extract_timeseries(request: timeseriesRequest):
     try:
         # use provided depth exactly (float value passed from frontend)
         depth = float(request.depth)
-        time, value = await run_in_threadpool(extract_timeseries, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate)
+        time, value = await run_in_threadpool(extract_timeseries, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate, data_dir=_get_nc_data_dirs())
         logger.info(f"FINISH extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate} - returned {len(time)} points")
         return {"time": time.tolist(), "value": value.tolist()}
     except Exception as exc:
@@ -512,13 +512,17 @@ async def fn_get_monthly_climatology(request: monthlyClimRequest):
 
     try:
         from modules.monthly_climatology import get_monthly_climatology_at_coord
+        ssc_root = os.getenv("SSC_DATA_DIR", "/opt/data/SalishSeaCast")
+        ssc_archive = os.getenv("SSC_DATA_DIR_ARCHIVE", "")
+        data_root = [ssc_root, ssc_archive] if ssc_archive else ssc_root
         result = await run_in_threadpool(
             get_monthly_climatology_at_coord,
             lat=request.lat,
             lon=request.lon,
             depth=request.depth,
             variable=request.variable,
-            # Let module pick data root default and DB environment vars
+            data_root=data_root,
+            # Let module pick DB environment vars
         )
         logger.info(f"FINISH getMonthlyClimatologyAtCoord: {request.variable}, {request.lat}, {request.lon}, depth={request.depth}")
         return result
@@ -560,6 +564,7 @@ async def fn_get_profile(request: profileRequest):
             lat=lat,
             lng=lng,
             dt=dt,
+            data_dir=_get_nc_data_dirs(),
             db_host=db_host,
             db_port=db_port,
             db_name=db_name,
