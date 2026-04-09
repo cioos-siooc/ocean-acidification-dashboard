@@ -54,6 +54,7 @@ services:
       - PGDATABASE=oa
       - PGUSER=postgres
       - PGPASSWORD=postgres
+      - UV_CACHE_DIR=/tmp/uv-cache
     volumes:
       - ./shared:/app/shared
       - ./data:/opt/data
