@@ -540,7 +540,8 @@ async function init() {
 
     mainStore.setMidDate(moment.utc()); // Initialize midDate to now.
 
-    getVariables();
+    selectedReady.value = true;
+    maybeInitClick();
 
     // For the new flow we don't use station points. Instead, we start with NO PNG overlay.
 
@@ -573,9 +574,10 @@ async function init() {
             textStyle: { fontSize: 10 }
         },
         xAxis: {
-            type: 'time'
+            type: 'time',
+            axisLabel: { color: '#e0e0e0' }
         },
-        yAxis: { type: 'value', min: 'dataMin', max: 'dataMax' },
+        yAxis: { type: 'value', min: 'dataMin', max: 'dataMax', axisLabel: { color: '#e0e0e0' } },
         grid: { left: 160, right: 30, top: 30, bottom: 30 },
         series: []
     };
@@ -628,49 +630,6 @@ async function init() {
     }
 
     // No click handler registered until an overlay is added by selecting a variable.
-}
-
-async function getVariables() {
-    try {
-        const r = await axios.get(`${apiBaseUrl}/variables`);
-        const data = r.data;
-
-        // Convert datetimes to epoch ms numbers (plain numbers avoid deep Vue proxy overhead)
-        data.forEach((v: any) => {
-            v.dts = v.dts?.map((dtstr: string) => moment.utc(dtstr).valueOf());
-        });
-
-        mainStore.setVariables(data);
-
-        if (data.length > 0) {
-            const varId = 'temperature';
-            const varMeta = data.find((v: any) => v.var === varId);
-            const source = varMeta?.source ?? '';
-            const dts = varMeta?.dts ?? [];
-            const precision = varMeta?.precision || 0.1;
-            const depth = (varMeta?.depths && varMeta.depths.length > 0) ? varMeta.depths[0].depth : 0.5;
-            const colormap = varMeta?.colormap ?? null;
-            const colormapMin = varMeta?.colormapMin ?? null;
-            const colormapMax = varMeta?.colormapMax ?? null;
-            if (dts.length > 0) {
-                mainStore.updateSelectedVariable({
-                    var: varId,
-                    source: source,
-                    dt: moment.utc(dts[dts.length - 1]),
-                    depth: depth,
-                    precision: precision,
-                    colormap: colormap,
-                    colormapMin: colormapMin,
-                    colormapMax: colormapMax
-                });
-            }
-        }
-
-        selectedReady.value = true;
-        maybeInitClick();
-    } catch (e) {
-        console.error('Failed to fetch variables:', e);
-    }
 }
 
 function maybeInitClick() {
@@ -1373,6 +1332,7 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
             min: startLocal.format(),
             max: endLocal.format(),
             axisLabel: {
+                color: '#e0e0e0',
                 formatter: (value: any) => moment.parseZone(value).format('DD MMM, HH:mm')
             }
         },
@@ -1389,7 +1349,10 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
             min: 'dataMin',
             max: 'dataMax',
             splitLine: { show: false },
-            axisLabel: { formatter: (value: any) => Number(value).toFixed(axisDecimals) }
+            name: mainStore.variables.find((v: any) => v.var === mainStore.selected_variable.var)?.unit ?? '',
+            nameLocation: 'center',
+            nameTextStyle: { color: '#e0e0e0' },
+            axisLabel: { color: '#e0e0e0', formatter: (value: any) => Number(value).toFixed(axisDecimals) }
         },
         series: []
     };

@@ -87,43 +87,48 @@ function plotTimeseries() {
     const seriesData: any[] = []
     const threshold = 1000 // Threshold for downsampling
 
-        seriesData.push({
-            name: 'Sensor',
-            type: 'line',
-            data: displayData.sensor.map((d: any, i: number) => [moment.utc(displayData.time[i]).tz(tz).format(), d]).filter((d: any) => d[1] !== null),
-            smooth: true,
-            lineStyle: { width: 2, color: mainStore.colors.observation.line, opacity: 0.75 },
-            showSymbol: false,
-            itemStyle: { color: mainStore.colors.observation.line, opacity: 0.75 },
-            large: true,
-            largeThreshold: threshold,
-            sampling: 'lttb'
-        })
+    seriesData.push({
+        name: 'Sensor',
+        type: 'line',
+        data: displayData.sensor.map((d: any, i: number) => [moment.utc(displayData.time[i]).tz(tz).format(), d]).filter((d: any) => d[1] !== null),
+        smooth: true,
+        lineStyle: { width: 2, color: mainStore.colors.observation.line, opacity: 0.75 },
+        showSymbol: false,
+        itemStyle: { color: mainStore.colors.observation.line, opacity: 0.75 },
+        large: true,
+        largeThreshold: threshold,
+        sampling: 'lttb'
+    })
 
-        seriesData.push({
-            name: 'Model',
-            type: 'line',
-            data: displayData.model.map((d: any, i: number) => [moment.utc(displayData.time[i]).tz(tz).format(), d]).filter((d: any) => d[1] !== null),
-            smooth: true,
-            lineStyle: { width: 2, color: mainStore.colors.model.line, opacity: 0.75 },
-            showSymbol: false,
-            symbol:"none",
-            symbolSize:0,
-            showAllSymbol:false,
-            itemStyle: { color: mainStore.colors.model.line, opacity: 0.75 },
-            large: true,
-            largeThreshold: threshold,
-            sampling: 'lttb'
-        })
+    seriesData.push({
+        name: 'Model',
+        type: 'line',
+        data: displayData.model.map((d: any, i: number) => [moment.utc(displayData.time[i]).tz(tz).format(), d]).filter((d: any) => d[1] !== null),
+        smooth: true,
+        lineStyle: { width: 2, color: mainStore.colors.model.line, opacity: 0.75 },
+        showSymbol: false,
+        symbol: "none",
+        symbolSize: 0,
+        showAllSymbol: false,
+        itemStyle: { color: mainStore.colors.model.line, opacity: 0.75 },
+        large: true,
+        largeThreshold: threshold,
+        sampling: 'lttb'
+    })
 
     const option = {
-        title: { text: `${props.selectedVariable} - Time Series` },
+        title: {
+            text: `${props.selectedVariable} - Time Series`,
+            textStyle: { color: '#e0e0e0' }
+        },
         tooltip: { trigger: 'axis' },
-        legend: { 
-            data: seriesData.map(s => s.name), 
+        legend: {
+            data: seriesData.map(s => s.name),
             orient: 'vertical',
             right: 10,
-            top: 'middle'
+            top: 'middle',
+            textStyle: { color: '#e0e0e0' },
+            icon: 'rect'
         },
         toolbox: {
             feature: {
@@ -132,11 +137,21 @@ function plotTimeseries() {
                 saveAsImage: {}
             }
         },
-        xAxis: { type: 'time', name: 'Date' },
-        yAxis: { type: 'value', min: 'dataMin', max: 'dataMax' },
+        xAxis: { type: 'time', name: 'Date', axisLabel: { color: '#e0e0e0' }, nameTextStyle: { color: '#e0e0e0' } },
+        yAxis: {
+            type: 'value',
+            min: 'dataMin',
+            max: 'dataMax',
+            axisLabel: { color: '#e0e0e0', formatter: (value: any) => Number(value).toFixed(0) },
+            name: mainStore.variables.find((v: any) => v.var === props.selectedVariable)?.unit ?? '',
+            nameLocation: 'center',
+            nameTextStyle: { color: '#e0e0e0' },
+        },
         series: seriesData,
         grid: { left: 60, right: 120, top: 60, bottom: 60 }
     }
+
+    console.log(mainStore.variables, props.selectedVariable);
 
     if (!tsChartInstance) {
         tsChartInstance = echarts.init(timeseriesChart.value as any)
@@ -173,7 +188,7 @@ function handleDataZoom(event: any) {
     // Get the start and end indices from the zoom event (percentages of filtered data)
     const startIndex = Math.floor(event.start * displayData.time.length / 100)
     const endIndex = Math.ceil(event.end * displayData.time.length / 100)
-    
+
     // Get the dates from the filtered data at those indices
     const fromDateStr = event.batch[0].startValue
     const toDateStr = event.batch[0].endValue
@@ -183,7 +198,7 @@ function handleDataZoom(event: any) {
         // Convert to YYYY-MM-DD format
         const fromDate = new Date(fromDateStr).toISOString().split('T')[0]
         const toDate = new Date(toDateStr).toISOString().split('T')[0]
-        
+
         // Emit to parent
         emit('update-date-range', { fromDate, toDate })
     } catch (e) {
@@ -196,16 +211,16 @@ function handleDataZoom(event: any) {
  */
 function handleRestore() {
     if (!props.data || !props.data.time || props.data.time.length === 0) return
-    
+
     try {
         // Get the full data range
         const fromDateStr = props.data.time[0]
         const toDateStr = props.data.time[props.data.time.length - 1]
-        
+
         // Convert to YYYY-MM-DD format
         const fromDate = new Date(fromDateStr).toISOString().split('T')[0]
         const toDate = new Date(toDateStr).toISOString().split('T')[0]
-        
+
         // Emit to parent
         emit('update-date-range', { fromDate, toDate })
     } catch (e) {

@@ -208,27 +208,34 @@ function plotScatter() {
     const diagEndModelBinIdx = Math.floor((diagMax - modelMin) / modelBinWidth)
 
     const option = {
-        title: { text: 'Sensor vs Model Density Heatmap' },
+        title: {
+            text: 'Sensor vs Model Density Heatmap',
+            textStyle: { color: '#e0e0e0' }
+        },
         tooltip: { trigger: 'item' },
         xAxis: {
             type: 'category',
             name: 'Sensor',
             data: sensorLabels,
             axisLabel: {
+                color: '#e0e0e0',
                 formatter: (val: string, idx: number) => {
                     return idx % 3 === 0 ? val : ''
                 }
-            }
+            },
+            nameTextStyle: { color: '#e0e0e0' }
         },
         yAxis: {
             type: 'category',
             name: 'Model',
             data: modelLabels,
             axisLabel: {
+                color: '#e0e0e0',
                 formatter: (val: string, idx: number) => {
                     return idx % 3 === 0 ? val : ''
                 }
-            }
+            },
+            nameTextStyle: { color: '#e0e0e0' }
         },
         visualMap: {
             min: 1,
@@ -240,7 +247,7 @@ function plotScatter() {
                 color: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#ffffbf', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026']
             },
             textStyle: {
-                color: '#000',
+                color: '#e0e0e0',
                 formatter: (value: number) => {
                     return Math.round(value).toString()
                 }

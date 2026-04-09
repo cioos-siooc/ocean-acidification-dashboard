@@ -13,6 +13,9 @@ import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import moment from 'moment'
 
+import { useMainStore } from '~/stores/main'
+const mainStore = useMainStore();
+
 // Props
 interface Props {
     data: any | null
@@ -106,20 +109,25 @@ function plotResidual() {
         data: residuals.map((d: any, i: number) => [moment.utc(displayData.time[i]).tz(tz).format(), d]).filter((d: any) => d[1] !== null),
         smooth: true,
         lineStyle: { width: 2, color: '#E74C3C', opacity: 0.7 },
-        symbol: 'none',
+        showSymbol: false,
         large: true,
         largeThreshold: threshold,
         sampling: 'lttb'
     }
 
     const option = {
-        title: { text: `${props.selectedVariable} - Residuals (Sensor - Model)` },
+        title: {
+            text: `${props.selectedVariable} - Residuals (Sensor - Model)`,
+            textStyle: { color: '#e0e0e0' }
+        },
         tooltip: { trigger: 'axis' },
-        legend: { 
-            data: ['Residual (Sensor - Model)'],
-            orient: 'vertical',
-            right: 10,
-            top: 'middle'
+        legend: {
+            // data: ['Residual (Sensor - Model)'],
+            // orient: 'vertical',
+            // right: 10,
+            // top: 'middle',
+            // textStyle: { color: '#e0e0e0' },
+            // icon: 'rect'
         },
         toolbox: {
             feature: {
@@ -128,11 +136,15 @@ function plotResidual() {
                 saveAsImage: {}
             }
         },
-        xAxis: { type: 'time' },
-        yAxis: { 
+        xAxis: { type: 'time', axisLabel: { color: '#e0e0e0' }, nameTextStyle: { color: '#e0e0e0' } },
+        yAxis: {
             type: 'value',
             min: 'dataMin',
             max: 'dataMax',
+            axisLabel: { color: '#e0e0e0', formatter: (value: any) => Number(value).toFixed(0) },
+            name: mainStore.variables.find((v: any) => v.var === props.selectedVariable)?.unit ?? '',
+            nameLocation: 'center',
+            nameTextStyle: { color: '#e0e0e0' },
         },
         series: [seriesData],
         grid: { left: 60, right: 120, top: 60, bottom: 60 }
