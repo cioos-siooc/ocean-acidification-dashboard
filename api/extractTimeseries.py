@@ -197,7 +197,7 @@ def extract_timeseries(
     use_bottom = (float(depth) == -1.0)
     files = list_nc_files(data_dir, var)
     if use_bottom:
-        files = [f for f in files if os.path.basename(f).startswith(f"{var}_bottom_")]
+        files = [f for f in files if os.path.basename(f).startswith(f"{var}_") and os.path.basename(f).endswith("_bottom.nc")]
     if verbose:
         print(f"DEBUG: Found {len(files)} candidate files for variable '{var}'" + (" (bottom)" if use_bottom else ""))
         if files:
@@ -286,6 +286,12 @@ def extract_timeseries(
         conn = None
         # Provide more diagnostics in error so logs show what was attempted
         sample_paths = files[:5] if files else []
+        if use_bottom:
+            raise RuntimeError(
+                f"No bottom-layer NC files found for variable '{var}' between {from_date} and {to_date}. "
+                f"Bottom files (named {{var}}_YYYYMMDD_bottom.nc) are produced by the bottom_layer pipeline step. "
+                f"Ensure the pipeline has run the bottom_layer stage for this variable and date range."
+            )
         raise RuntimeError(
             f"Could not open any NetCDF files to inspect variable and depth dimension; "
             f"files_found={len(files)}, sample_paths={sample_paths}"
