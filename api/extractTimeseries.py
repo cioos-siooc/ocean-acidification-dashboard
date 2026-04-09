@@ -203,8 +203,9 @@ def extract_timeseries(
         if files:
             print("DEBUG: Sample files:", files[:5])
 
-    # Filter files by date range. Extract dates from filenames (YYYYMMDD format)
-    date_pattern = re.compile(r"(\d{8})(T\d{4})?\.nc$")
+    # Filter files by date range. Extract dates from filenames (YYYYMMDD format).
+    # Handles: {var}_{YYYYMMDD}.nc, {var}_{YYYYMMDD}T{HHMM}.nc, {var}_{YYYYMMDD}_bottom.nc
+    date_pattern = re.compile(r"(\d{8})(?:T\d{4,6})?(?:_\w+)?\.nc$")
     
     # Parse from_date and to_date (mandatory parameters)
     try:
