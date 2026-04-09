@@ -156,6 +156,7 @@ def extract_timeseries(
     verbose: bool = False,
     from_date: str,
     to_date: str,
+    allowed_dates: Optional[Sequence] = None,
 ) -> Tuple[pd.Series, pd.Series]:
     """Extract a time series across available files and return pandas Series (time, value).
 
@@ -222,6 +223,16 @@ def extract_timeseries(
     if start_date > end_date:
         raise ValueError(f"from_date ({start_date}) cannot be after to_date ({end_date})")
     
+    # Normalise allowed_dates to a set of date objects for O(1) lookup
+    allowed_date_set = None
+    if allowed_dates is not None:
+        allowed_date_set = set()
+        for d in allowed_dates:
+            try:
+                allowed_date_set.add(pd.to_datetime(d).date())
+            except Exception:
+                pass
+
     filtered_files = []
     for fp in files:
         m = date_pattern.search(fp)
@@ -237,8 +248,14 @@ def extract_timeseries(
                 print(f"Skipping file with invalid date in name: {fp}")
             continue
         # Include file if it falls within the date range
-        if file_dt >= start_date and file_dt <= end_date:
-            filtered_files.append(fp)
+        if file_dt < start_date or file_dt > end_date:
+            continue
+        # If a whitelist of success_image dates was provided, skip files not in it
+        if allowed_date_set is not None and file_dt not in allowed_date_set:
+            if verbose:
+                print(f"Skipping file {fp}: date {file_dt} not in allowed_dates (not success_image)")
+            continue
+        filtered_files.append(fp)
     files = filtered_files
     if verbose:
         print(f"Found {len(files)} files for variable '{var}' in data directory '{data_dir}' between {start_date} and {end_date}")
