@@ -11,6 +11,9 @@ RUN uv pip install --system -r requirements.txt
 COPY api . 
 COPY shared ./shared
 
+# Allow any user (e.g. host UID passed via docker-compose user:) to write to /app
+RUN chmod -R a+rwX /app
+
 # Expose port
 EXPOSE 4000
 

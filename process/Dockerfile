@@ -16,5 +16,8 @@ RUN uv sync --no-dev
 COPY process . 
 COPY shared ./shared
 
+# Allow any user (e.g. host UID passed via docker-compose user:) to run uv and write to /app
+RUN chmod -R a+rwX /app
+
 # Entrypoint to allow arguments to be passed to MAIN.py
 # ENTRYPOINT ["python", "-Xfrozen_modules=off", "-m", "uv", "run", "MAIN.py"]
