@@ -143,21 +143,7 @@ const apiBaseUrl = config.public.apiBaseUrl
 // Colormaps cache
 // const colormaps = ref<Record<string, any>>({});
 
-async function getColormaps() {
-    try {
-        const r = await axios.get(`${apiBaseUrl}/colormaps`);
-        const list = r.data;
-        const map: Record<string, any> = {};
-        for (const c of list) map[c.name] = c;
-        // colormaps.value = map;
-        mainStore.setColormaps(map);
-        return map;
-    } catch (e) {
-        console.error('Failed to fetch colormaps:', e);
-        mainStore.setColormaps({});
-        return {};
-    }
-}
+
 
 const mapContainer = ref<HTMLDivElement | null>(null);
 const globalChartContainer = ref<HTMLDivElement | null>(null);
@@ -273,7 +259,7 @@ onMounted(async () => {
             mouseCoords.value.lat = e.lngLat.lat;
         });
         // Fetch colormaps and variables in parallel
-        Promise.all([getColormaps(), init()]).catch((e) => console.warn('init failed:', e));
+        Promise.all([init()]).catch((e) => console.warn('init failed:', e));
         addSensors().catch((e) => console.warn('addSensors failed:', e));
 
         map?.on('zoom', () => {
