@@ -192,9 +192,14 @@ def extract_timeseries(
         conn = None
 
     # find candidate files
+    # For depth=-1 (bottom layer), use the pre-extracted bottom NC files exclusively.
+    # Those files are named {var}_bottom_{YYYYMMDD}.nc and have a single depth level at -1.0.
+    use_bottom = (float(depth) == -1.0)
     files = list_nc_files(data_dir, var)
+    if use_bottom:
+        files = [f for f in files if os.path.basename(f).startswith(f"{var}_bottom_")]
     if verbose:
-        print(f"DEBUG: Found {len(files)} candidate files for variable '{var}'")
+        print(f"DEBUG: Found {len(files)} candidate files for variable '{var}'" + (" (bottom)" if use_bottom else ""))
         if files:
             print("DEBUG: Sample files:", files[:5])
 
