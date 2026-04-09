@@ -249,7 +249,7 @@ def download_nc(conn, row, erddap_base):
                 (end_time, ds_id),
             )
         conn.commit()
-        logger.info("Downloaded and stored %s (%d bytes) -> %s", fn, size, final_path)
+        logger.info("Downloaded and stored %s -> %s", fn, final_path)
         return True
     except Exception as e:
         logger.exception("Download failed for %s", url)

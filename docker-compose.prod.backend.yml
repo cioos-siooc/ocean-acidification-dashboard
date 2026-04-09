@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: api/Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
     ports:
       - "${API_PORT:-4000}:4000"
     volumes:
@@ -45,6 +46,7 @@ services:
     build:
       context: .
       dockerfile: process/Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
     profiles: ["tools"]
     environment:
       - PGHOST=${DB_HOST:-db}
