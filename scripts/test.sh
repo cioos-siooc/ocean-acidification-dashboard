@@ -1,0 +1,1 @@
+curl -H "Content-Type: application/json" -X POST -d '{ "var": "temperature", "lat": 49.2, "lon": -123.5, "depth": 0.5000003, "fromDate": "2026-04-04T204600", "toDate": "2026-04-14T204600" }' localhost:9011/extractTimeseries

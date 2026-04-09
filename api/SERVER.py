@@ -389,7 +389,36 @@ async def fn_extract_timeseries(request: timeseriesRequest):
     try:
         # use provided depth exactly (float value passed from frontend)
         depth = float(request.depth)
-        time, value = await run_in_threadpool(extract_timeseries, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate, data_dir=_get_nc_data_dirs())
+
+        # Fetch the success_image dates for this variable in the requested range.
+        # Only NC files whose date is in this set will be read.
+        def _fetch_allowed_dates():
+            import psycopg2
+            conn = None
+            try:
+                conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password, connect_timeout=5)
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    SELECT DISTINCT nj.start_time FROM nc_jobs nj
+                    JOIN fields f ON nj.variable_id = f.id
+                    WHERE f.variable = %s
+                      AND nj.start_time >= %s
+                      AND nj.start_time <= %s
+                      AND nj.status = 'success_image'
+                    """,
+                    (request.var, request.fromDate, request.toDate),
+                )
+                return [row[0] for row in cur.fetchall()]
+            finally:
+                if conn:
+                    conn.close()
+
+        allowed_dates = await run_in_threadpool(_fetch_allowed_dates)
+        if not allowed_dates:
+            raise HTTPException(status_code=422, detail="No processed data available for the requested date range")
+
+        time, value = await run_in_threadpool(extract_timeseries, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate, data_dir=_get_nc_data_dirs(), allowed_dates=allowed_dates)
         logger.info(f"FINISH extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate} - returned {len(time)} points")
         return {"time": time.tolist(), "value": value.tolist()}
     except Exception as exc:

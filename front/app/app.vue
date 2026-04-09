@@ -36,6 +36,7 @@ const apiBaseUrl = config.public.apiBaseUrl;
 
 onBeforeMount(() => {
   getVariables();
+  getColormaps();
 });
 
 async function getVariables() {
@@ -74,9 +75,26 @@ async function getVariables() {
       }
     }
 
-    
+
   } catch (e) {
     console.error('Failed to fetch variables:', e);
+  }
+}
+
+
+async function getColormaps() {
+  try {
+    const r = await axios.get(`${apiBaseUrl}/colormaps`);
+    const list = r.data;
+    const map: Record<string, any> = {};
+    for (const c of list) map[c.name] = c;
+    // colormaps.value = map;
+    mainStore.setColormaps(map);
+    return map;
+  } catch (e) {
+    console.error('Failed to fetch colormaps:', e);
+    mainStore.setColormaps({});
+    return {};
   }
 }
 </script>
