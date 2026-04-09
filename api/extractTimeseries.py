@@ -198,6 +198,8 @@ def extract_timeseries(
     files = list_nc_files(data_dir, var)
     if use_bottom:
         files = [f for f in files if os.path.basename(f).startswith(f"{var}_") and os.path.basename(f).endswith("_bottom.nc")]
+    else:
+        files = [f for f in files if not os.path.basename(f).endswith("_bottom.nc")]
     if verbose:
         print(f"DEBUG: Found {len(files)} candidate files for variable '{var}'" + (" (bottom)" if use_bottom else ""))
         if files:
