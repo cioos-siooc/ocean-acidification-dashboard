@@ -122,6 +122,7 @@ function plotResidual() {
         },
         tooltip: { trigger: 'axis' },
         legend: {
+            show:false
             // data: ['Residual (Sensor - Model)'],
             // orient: 'vertical',
             // right: 10,
