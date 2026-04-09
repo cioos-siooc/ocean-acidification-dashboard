@@ -6,7 +6,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 
 # Copy pyproject.toml and uv.lock for dependency installation
-COPY pyproject.toml uv.lock ./
+COPY process/pyproject.toml process/uv.lock ./
 
 # Install dependencies using uv
 # RUN uv sync --frozen --no-dev

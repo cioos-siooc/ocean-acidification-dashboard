@@ -135,8 +135,19 @@ def create_compute_rows_for_group(conn, date_str):
     # For each compute variable, ensure a pending_compute row exists for the dataset/start_time/end_time
     for icv, cv in compute_vars:
         with conn.cursor() as cur2:
+            # Only insert if no row already exists for this variable/time window
+            # (regardless of status — don't clobber success_compute, success_image, etc.)
             cur2.execute(
-                "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, status) VALUES (%s, %s , %s, %s, 'pending_compute') ON CONFLICT DO NOTHING",
-                (None, icv, start_time, end_time),
+                """
+                INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, status)
+                SELECT %s, %s, %s, %s, 'pending_compute'
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM nc_jobs
+                    WHERE variable_id = %s
+                      AND start_time = %s
+                      AND end_time   = %s
+                )
+                """,
+                (None, icv, start_time, end_time, icv, start_time, end_time),
             )
             conn.commit()

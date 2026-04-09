@@ -6,11 +6,9 @@ services:
     ports:
       - "${API_PORT:-4000}:4000"
     volumes:
+      - ./shared:/app/shared
       - ./data:/opt/data
       - /media/taimaz/OA/allDepths:/opt/archive
-      # - ./lib:/app/lib
-      # - ./bathymetry_images:/app/bathymetry_images
-      # - ./trajectory_maps:/app/trajectory_maps
     environment:
       - DB_HOST=${DB_HOST:-db}
       - DB_PORT=5432 # default Postgres port inside the Docker network
@@ -55,7 +53,7 @@ services:
       - PGUSER=postgres
       - PGPASSWORD=postgres
     volumes:
-      # - ./lib:/app/lib
+      - ./shared:/app/shared
       - ./data:/opt/data
     depends_on:
       db:

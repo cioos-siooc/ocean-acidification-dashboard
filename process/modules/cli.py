@@ -183,7 +183,7 @@ def main(argv=None):
         with conn.cursor() as cur:
             cur.execute("SELECT id, base_url FROM datasets ORDER BY id")
             datasets = cur.fetchall()
-        
+        logger.info("Found %d datasets in DB to check for updates", len(datasets))
         for ds_id, base_url in datasets:
             # Get all variables for this dataset marked for download
             with conn.cursor() as cur:
