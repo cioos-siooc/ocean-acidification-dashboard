@@ -32,19 +32,19 @@ def _get_bottom_nc_path(nc_path: str) -> str:
     """Derive the bottom-layer companion NC path from a source 4-D NC path.
 
     Uses the directory name as the variable name so the companion sits in the
-    same folder with the pattern ``{var}_bottom_{YYYYMMDD}.nc``.
+    same folder with the pattern ``{var}_{YYYYMMDD}_bottom.nc``.
 
     Example::
 
         /opt/data/nc/temperature/temperature_20260117.nc
-        →  /opt/data/nc/temperature/temperature_bottom_20260117.nc
+        →  /opt/data/nc/temperature/temperature_20260117_bottom.nc
     """
     dirname = os.path.dirname(nc_path)
     basename, ext = os.path.splitext(os.path.basename(nc_path))
     variable = os.path.basename(dirname)
     if basename.startswith(variable + "_"):
         date_suffix = basename[len(variable) + 1:]
-        new_basename = f"{variable}_bottom_{date_suffix}"
+        new_basename = f"{variable}_{date_suffix}_bottom"
     else:
         new_basename = f"{basename}_bottom"
     return os.path.join(dirname, new_basename + ext)
