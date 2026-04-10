@@ -403,8 +403,8 @@ async def fn_extract_timeseries(request: timeseriesRequest):
                     SELECT DISTINCT nj.start_time FROM nc_jobs nj
                     JOIN fields f ON nj.variable_id = f.id
                     WHERE f.variable = %s
-                      AND nj.start_time >= %s
-                      AND nj.start_time <= %s
+                      AND DATE(nj.start_time) >= DATE(%s::timestamp)
+                      AND DATE(nj.start_time) <= DATE(%s::timestamp)
                       AND nj.status = 'success_image'
                     """,
                     (request.var, request.fromDate, request.toDate),
