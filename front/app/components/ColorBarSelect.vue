@@ -57,6 +57,11 @@
 
       <v-card-actions class="ma-0 pa-0" style="min-height:24px">
         <v-spacer></v-spacer>
+        <v-btn icon size="x-small" flat
+          :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled"
+          @click="autorange" title="Auto-range colorbar to data range">
+          <iconsAutorange />
+        </v-btn>
         <v-btn size="x-small" icon @click="showSettings = !showSettings"> <v-icon>mdi-cog</v-icon> </v-btn>
       </v-card-actions>
     </div>
@@ -110,6 +115,10 @@ import colors from 'vuetify/util/colors'
 
 import { useMainStore } from '../stores/main'
 const mainStore = useMainStore();
+
+const emit = defineEmits<{
+  (e: 'autorange'): void;
+}>();
 
 ////////////////////////////////  TYPES  ///////////////////////////////////
 
@@ -211,11 +220,11 @@ const depths = computed(() =>
   mainStore.variables.
     find(v => v.var === selectedVariable.value.var)?.depths?.
     map(v => ({ title: v.depth !== -1 ? v.depth.toFixed(1) + ' m' : 'bottom', value: v.depth, hasImage: v.hasImage })) ?? [].
-    sort((a, b) => {
-      if (a.value === -1) return 1;
-      if (b.value === -1) return -1;
-      return a.title.localeCompare(b.title);
-    })
+      sort((a, b) => {
+        if (a.value === -1) return 1;
+        if (b.value === -1) return -1;
+        return a.title.localeCompare(b.title);
+      })
 );
 
 const selectedDepth = computed({
@@ -223,6 +232,7 @@ const selectedDepth = computed({
   set(v: number | null) { mainStore.updateSelectedVariable({ depth: v.value }) }
 })
 
+const selectedVariableName = computed(() => mainStore.selected_variable.var);
 
 ///////////////////////////////////  WATCHERS  ///////////////////////////////////
 
@@ -274,6 +284,11 @@ function shallower() {
   if (currentIndex > 0) {
     selectedDepth.value = depths.value[currentIndex - 1];
   }
+}
+
+function autorange() {
+  mainStore.setAutoRangeDisabled(true);
+  emit('autorange');
 }
 
 </script>

@@ -23,9 +23,9 @@
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
             <div class="selector">
-                <ColorBarSelect v-if="mainStore.variables.length" />
+                <ColorBarSelect v-if="mainStore.variables.length" @autorange="autorange" />
 
-                <Overlays class="my-2" @autorange="autorange" @toggle-vertical-profile="drawerOpen = !drawerOpen" />
+                <Overlays class="my-2" @toggle-vertical-profile="drawerOpen = !drawerOpen" />
             </div>
 
             <!-- <DepthSlider /> -->

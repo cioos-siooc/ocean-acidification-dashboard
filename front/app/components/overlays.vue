@@ -7,12 +7,6 @@
       <iconsContour />
     </v-btn>
 
-    <v-btn icon size="x-small" flat
-      :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled"
-      @click="autorange" title="Auto-range colorbar to data range">
-      <iconsAutorange />
-    </v-btn>
-
     <v-btn icon size="x-small" flat @click="toggleVerticalProfile" title="Vertical Profile">
       <v-icon >mdi-chart-line</v-icon>
     </v-btn>
@@ -27,18 +21,10 @@ import { useMainStore } from '../stores/main'
 const mainStore = useMainStore();
 
 const emit = defineEmits<{
-  (e: 'autorange'): void;
   (e: 'toggle-vertical-profile'): void;
 }>();
 
 const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
-
-const selectedVariableName = computed(() => mainStore.selected_variable.var);
-
-function autorange() {
-  mainStore.setAutoRangeDisabled(true);
-  emit('autorange');
-}
 
 function toggleVerticalProfile() {
   emit('toggle-vertical-profile');
