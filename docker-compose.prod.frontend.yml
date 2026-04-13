@@ -4,12 +4,14 @@ services:
       context: ./front
       target: ${FRONTEND_TARGET:-production}
       args:
-        - NUXT_PUBLIC_API_BASE=${NUXT_PUBLIC_API_BASE:-https://oa.cioospacificlabs.ca/api}
+        - NUXT_PUBLIC_API_BASE_URL=${NUXT_PUBLIC_API_BASE_URL:-https://oa.cioospacificlabs.ca/api}
+        - NUXT_PUBLIC_VERSION=${NUXT_PUBLIC_VERSION:-unknown}
     ports:
       - "${FRONT_PORT:-3000}:3000"
     volumes: []
     environment:
-      - NUXT_PUBLIC_API_BASE=${NUXT_PUBLIC_API_BASE:-https://oa.cioospacificlabs.ca/api}
+      - NUXT_PUBLIC_API_BASE_URL=${NUXT_PUBLIC_API_BASE_URL:-https://oa.cioospacificlabs.ca/api}
+      - NUXT_PUBLIC_VERSION=${NUXT_PUBLIC_VERSION:-unknown}
     depends_on:
       - umami
     env_file:

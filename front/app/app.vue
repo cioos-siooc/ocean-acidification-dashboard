@@ -6,7 +6,7 @@
       </NuxtLink>
       <v-app-bar-title>
         <span class="">OAH</span>
-        <span class="text-caption mx-2" style="font-family: monospace">v0.1</span>
+        <span class="text-caption mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
       </v-app-bar-title>
       <v-spacer></v-spacer>
       <!-- Optional: Add menu items here -->
@@ -24,7 +24,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeMount } from 'vue'
+import { onBeforeMount, ref } from 'vue'
 import moment from 'moment'
 import axios from 'axios'
 

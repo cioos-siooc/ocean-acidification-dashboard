@@ -16,6 +16,7 @@
 
     <v-main>
         <BetaDisclaimerDialog />
+        <howTo v-model="showHow" />
         <!-- <div class="d-flex flex-column h-screen overflow-hidden"> -->
         <!-- Top: Map -->
         <div ref="mapContainer" class="flex-grow-1"
@@ -25,7 +26,7 @@
             <div class="selector">
                 <ColorBarSelect v-if="mainStore.variables.length" @autorange="autorange" />
 
-                <Overlays class="my-2" @toggle-vertical-profile="drawerOpen = !drawerOpen" />
+                <Overlays class="my-2" @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"/>
             </div>
 
             <!-- <DepthSlider /> -->
@@ -184,6 +185,8 @@ const globalChartLoading = ref(false);
 const zoom = ref('');
 
 const snackMessages = ref<object[]>([]);
+
+const showHow = ref(false);
 
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 

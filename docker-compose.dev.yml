@@ -4,13 +4,15 @@ services:
       target: development
       context: ./front
       args:
-        - NUXT_PUBLIC_API_BASE=http://localhost:9001
+        - NUXT_PUBLIC_API_BASE_URL=${NUXT_PUBLIC_API_BASE_URL:-http://localhost:9011}
+        - NUXT_PUBLIC_VERSION=${NUXT_PUBLIC_VERSION:-unknown}
     ports:
       - "${FRONT_PORT:-3000}:3000"
     volumes:
       - ./front:/app
     environment:
-      - NUXT_PUBLIC_API_BASE=http://localhost:9001
+      - NUXT_PUBLIC_API_BASE_URL=${NUXT_PUBLIC_API_BASE_URL:-http://localhost:9011}
+      - NUXT_PUBLIC_VERSION=${NUXT_PUBLIC_VERSION:-unknown}
     depends_on:
       - api
       # - umami
