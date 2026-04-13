@@ -4,11 +4,11 @@
       :color="showBathymetryContours ? 'primary' : undefined"
       @click="mainStore.setShowBathymetryContours(!showBathymetryContours)"
       :title="showBathymetryContours ? 'Hide bathymetry contours' : 'Show bathymetry contours'">
-      <iconsContour />
+      <IconsContour />
     </v-btn>
 
     <v-btn icon size="x-small" flat @click="toggleVerticalProfile" title="Vertical Profile">
-      <v-icon >mdi-chart-line</v-icon>
+      <IconsProfile />
     </v-btn>
 
   </v-card>
