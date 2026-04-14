@@ -35,9 +35,6 @@ jobs:
           NUXT_PUBLIC_API_BASE: ${{ secrets.NUXT_PUBLIC_API_BASE }}
           NUXT_PUBLIC_VERSION: ${{ secrets.NUXT_PUBLIC_VERSION }}
 
-      - name: Verify build output
-        run: ls -la front/.output/public
-
       - name: Publish to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
