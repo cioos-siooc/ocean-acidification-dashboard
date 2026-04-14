@@ -3,7 +3,7 @@ name: Deploy Nuxt to Cloudflare Pages
 on:
   push:
     branches:
-      - main  # Or whichever branch you want to trigger the deploy
+      - main
 
 jobs:
   deploy:
@@ -19,21 +19,25 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm' # Change to 'pnpm' or 'yarn' if needed
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: front/package-lock.json
 
       - name: Install dependencies
+        working-directory: front
         run: npm install
 
       - name: Build Nuxt App
-        # Nuxt automatically detects Cloudflare if you set the NITRO_PRESET
+        working-directory: front
         run: npx nuxi build
         env:
           NITRO_PRESET: cloudflare-pages
+          NUXT_PUBLIC_API_BASE: ${{ secrets.NUXT_PUBLIC_API_BASE }}
+          NUXT_PUBLIC_VERSION: ${{ secrets.NUXT_PUBLIC_VERSION }}
 
       - name: Publish to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy .output/public --project-name=my-nuxt-app
+          command: pages deploy front/.output/public --project-name=YOUR_PROJECT_NAME
