@@ -1,22 +1,29 @@
 <template>
   <v-card class="colorbar">
-    <v-btn icon size="x-small" flat :variant="showBathymetryContours ? 'elevated' : 'text'"
-      :color="showBathymetryContours ? 'primary' : undefined"
-      @click="mainStore.setShowBathymetryContours(!showBathymetryContours)"
-      :title="showBathymetryContours ? 'Hide bathymetry contours' : 'Show bathymetry contours'">
-      <iconsContour />
-    </v-btn>
+    <v-row class="px-2">
+      <v-col cols="auto" class="px-0 ">
+        <v-btn icon size="x-small" flat :variant="showBathymetryContours ? 'elevated' : 'text'"
+          :color="showBathymetryContours ? 'primary' : undefined"
+          @click="mainStore.setShowBathymetryContours(!showBathymetryContours)"
+          :title="showBathymetryContours ? 'Hide bathymetry contours' : 'Show bathymetry contours'">
+          <IconsContour />
+        </v-btn>
+      </v-col>
 
-    <v-btn icon size="x-small" flat
-      :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled"
-      @click="autorange" title="Auto-range colorbar to data range">
-      <iconsAutorange />
-    </v-btn>
+      <v-col cols="auto" class="px-0">
+        <v-btn icon size="x-small" flat @click="toggleVerticalProfile" title="Vertical Profile">
+          <IconsProfile />
+        </v-btn>
+      </v-col>
 
-    <v-btn icon size="x-small" flat @click="toggleVerticalProfile" title="Vertical Profile">
-      <v-icon >mdi-chart-line</v-icon>
-    </v-btn>
+      <v-spacer></v-spacer>
 
+      <v-col cols="auto" class="px-0">
+        <v-btn icon size="x-small" flat @click="showHow" title="Vertical Profile">
+          <IconsHelp />
+        </v-btn>
+      </v-col>
+    </v-row>
   </v-card>
 </template>
 
@@ -27,21 +34,18 @@ import { useMainStore } from '../stores/main'
 const mainStore = useMainStore();
 
 const emit = defineEmits<{
-  (e: 'autorange'): void;
   (e: 'toggle-vertical-profile'): void;
+  (e: 'show-how'): void;
 }>();
 
 const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
 
-const selectedVariableName = computed(() => mainStore.selected_variable.var);
-
-function autorange() {
-  mainStore.setAutoRangeDisabled(true);
-  emit('autorange');
-}
-
 function toggleVerticalProfile() {
   emit('toggle-vertical-profile');
+}
+
+const showHow = () => {
+  emit('show-how');
 }
 </script>
 

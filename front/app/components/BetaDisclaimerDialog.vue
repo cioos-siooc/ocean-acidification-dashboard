@@ -8,7 +8,7 @@
 
             <v-card-text class="pa-6">
                 <div class="mb-4">
-                    <p class="text-h6  mb-2">Welcome to CHOKE</p>
+                    <p class="text-h6  mb-2">Welcome to the OAH app</p>
                     <p>
                         This application is currently in <strong>beta</strong> and actively under development.
                         Features, data, and functionality may change as we continue to improve the platform.
@@ -61,7 +61,7 @@ import { ref, onMounted } from 'vue'
 const showDialog = ref(true)
 const dontShowAgain = ref(false)
 
-const STORAGE_KEY = 'choke_beta_disclaimer_dismissed'
+const STORAGE_KEY = 'oah_beta_disclaimer_dismissed'
 
 onMounted(() => {
     // Check if user has dismissed this before

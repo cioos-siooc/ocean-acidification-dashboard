@@ -1,9 +1,23 @@
+
 <template>
-  <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24"><!-- Icon from Material Symbols by Google - https://github.com/google/material-design-icons/blob/master/LICENSE --><path fill="currentColor" d="M5.5 22.5L2 19l3.5-3.5l1.425 1.4l-1.1 1.1h12.35L17.1 16.9l1.4-1.4L22 19l-3.5 3.5l-1.425-1.4l1.1-1.1H5.825L6.9 21.1zM12 11q-1.25 0-2.125-.875T9 8t.875-2.125T12 5t2.125.875T15 8t-.875 2.125T12 11m-9 3V2h18v12zm4-2h10q0-.825.588-1.412T19 10V6q-.825 0-1.412-.587T17 4H7q0 .825-.587 1.413T5 6v4q.825 0 1.413.588T7 12m-2 0V4z" /></svg>
+  <svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="rainbow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#ff8080"/>
+      <stop offset="17%"  stop-color="#ffbb66"/>
+      <stop offset="33%"  stop-color="#fff066"/>
+      <stop offset="50%"  stop-color="#66dd66"/>
+      <stop offset="67%"  stop-color="#66aaff"/>
+      <stop offset="83%"  stop-color="#aa77ff"/>
+      <stop offset="100%" stop-color="#cc66ff"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#rainbow)" d="M17.45 17.55L12 23l-5.45-5.45l1.41-1.41L11 19.17V4.83L7.96 7.86L6.55 6.45L12 1l5.45 5.45l-1.41 1.41L13 4.83v14.34l3.04-3.03z"/>
+</svg>
 </template>
 
-<script lang="ts">
+<script>
 export default {
-  name: 'MaterialSymbolsMoneyRangeOutlineSharp'
+  name: 'MdiArrowUpDown'
 }
 </script>

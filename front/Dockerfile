@@ -26,8 +26,8 @@ CMD ["npm", "run", "dev"]
 # Production stage
 FROM base AS production
 
-ARG NUXT_PUBLIC_API_BASE
-ENV NUXT_PUBLIC_API_BASE=${NUXT_PUBLIC_API_BASE}
+ARG NUXT_PUBLIC_API_BASE_URL
+ENV NUXT_PUBLIC_API_BASE_URL=${NUXT_PUBLIC_API_BASE_URL}
 
 # Install all dependencies (needed for build)
 RUN npm install

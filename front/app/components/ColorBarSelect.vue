@@ -17,7 +17,7 @@
 
       <v-select v-if="depths && depths.length > 0" v-model="selectedDepth" :items="depths" label="Depth"
         item-title="label" item-value="depth" :disabled="!depths || depths.length === 0" density="compact" hide-details
-        variant="outlined" class="my-4" :menu-props="{ location: 'end', offset: 10 }" style="width: 100%">
+        variant="outlined" class="my-4" :menu-props="{ location: 'end', offset: 50 }" style="width: 100%">
         <template #item="{ props, item }">
           <v-list-item v-bind="props" :title="item.raw.title"
             :style="{ color: item.raw.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">
@@ -27,7 +27,7 @@
           <div class="colormap-selection">{{ item.value !== -1 ? item.value.toFixed(1) + ' m' : 'bottom' }}
           </div>
         </template>
-        <template #prepend>
+        <template #append>
           <v-btn icon size="12px" @click="deeper" title="Deeper depth selection">
             <v-icon :color="colors.orange.lighten2" size="10px">mdi-arrow-down</v-icon>
           </v-btn>
@@ -56,6 +56,11 @@
       </div>
 
       <v-card-actions class="ma-0 pa-0" style="min-height:24px">
+        <v-btn icon size="x-small" flat
+          :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled"
+          @click="autorange" title="Auto-range colorbar to data range">
+          <iconsAutorange />
+        </v-btn>
         <v-spacer></v-spacer>
         <v-btn size="x-small" icon @click="showSettings = !showSettings"> <v-icon>mdi-cog</v-icon> </v-btn>
       </v-card-actions>
@@ -110,6 +115,10 @@ import colors from 'vuetify/util/colors'
 
 import { useMainStore } from '../stores/main'
 const mainStore = useMainStore();
+
+const emit = defineEmits<{
+  (e: 'autorange'): void;
+}>();
 
 ////////////////////////////////  TYPES  ///////////////////////////////////
 
@@ -211,11 +220,11 @@ const depths = computed(() =>
   mainStore.variables.
     find(v => v.var === selectedVariable.value.var)?.depths?.
     map(v => ({ title: v.depth !== -1 ? v.depth.toFixed(1) + ' m' : 'bottom', value: v.depth, hasImage: v.hasImage })) ?? [].
-    sort((a, b) => {
-      if (a.value === -1) return 1;
-      if (b.value === -1) return -1;
-      return a.title.localeCompare(b.title);
-    })
+      sort((a, b) => {
+        if (a.value === -1) return 1;
+        if (b.value === -1) return -1;
+        return a.title.localeCompare(b.title);
+      })
 );
 
 const selectedDepth = computed({
@@ -223,6 +232,7 @@ const selectedDepth = computed({
   set(v: number | null) { mainStore.updateSelectedVariable({ depth: v.value }) }
 })
 
+const selectedVariableName = computed(() => mainStore.selected_variable.var);
 
 ///////////////////////////////////  WATCHERS  ///////////////////////////////////
 
@@ -274,6 +284,11 @@ function shallower() {
   if (currentIndex > 0) {
     selectedDepth.value = depths.value[currentIndex - 1];
   }
+}
+
+function autorange() {
+  mainStore.setAutoRangeDisabled(true);
+  emit('autorange');
 }
 
 </script>
