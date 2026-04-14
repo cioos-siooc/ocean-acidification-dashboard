@@ -6,7 +6,7 @@
       </NuxtLink>
       <v-app-bar-title>
         <span class="">OAH</span>
-        <span class="text-caption mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
+        <span class="text-label-medium mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
       </v-app-bar-title>
       <v-spacer></v-spacer>
       <!-- Optional: Add menu items here -->

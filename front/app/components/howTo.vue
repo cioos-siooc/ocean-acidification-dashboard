@@ -2,7 +2,7 @@
     <v-dialog v-model="showDialog" width="75%" height="75%"  >
         <v-card>
             <v-card-title class="beta-header pa-6">
-                <div class="text-h5 font-weight-bold text-white">Visual Guide to OAH</div>
+                <div class="text-headline-small font-weight-700 text-white">Visual Guide to OAH</div>
             </v-card-title>
 
             <v-row>

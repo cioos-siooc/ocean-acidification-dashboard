@@ -71,8 +71,7 @@
                     </v-col>
                 </v-row>
 
-                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)` }"
-                    style="position: relative;">
+                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)`, position: 'relative' }" gap="0">
                     <TimeControls />
 
                     <div class="global-chart-wrapper" style="width: 100%; height: calc(100% - 32px);">

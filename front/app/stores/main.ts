@@ -1,6 +1,6 @@
 import type moment from 'moment';
 import { defineStore } from 'pinia'
-import colors from 'vuetify/lib/util/colors';
+import colors from 'vuetify/util/colors';
 
 export const useMainStore = defineStore('main', {
     state: () => ({

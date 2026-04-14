@@ -2,7 +2,7 @@
     <v-main>
         <v-container>
             <v-card class="mx-auto mb-6 card-elevated">
-                <v-card-title class="text-h3 d-flex align-center gap-3">
+                <v-card-title class="text-display-medium d-flex align-center gap-3">
                     <v-icon icon="mdi-information" size="36px" color="primary" class="mr-5"></v-icon>
                     About Us
                 </v-card-title>
@@ -41,7 +41,7 @@
             </v-card>
 
             <v-card class="mx-auto mb-6 card-elevated">
-                <v-card-title class="text-h3 d-flex align-center gap-3">
+                <v-card-title class="text-display-medium d-flex align-center gap-3">
                     <v-icon icon="mdi-account-multiple" size="36px" color="success" class="mr-5"></v-icon>
                     Who We Are
                 </v-card-title>
@@ -61,7 +61,7 @@
             </v-card>
 
             <v-card class="mx-auto mb-6 card-elevated">
-                <v-card-title class="text-h3 d-flex align-center gap-3">
+                <v-card-title class="text-display-medium d-flex align-center gap-3">
                     <v-icon icon="mdi-book-open" size="36px" color="warning" class="mr-5"></v-icon>
                     User Guide
                 </v-card-title>
@@ -71,7 +71,7 @@
             </v-card>
 
             <v-card class="mx-auto mb-6 card-elevated">
-                <v-card-title class="text-h3 d-flex align-center gap-3">
+                <v-card-title class="text-display-medium d-flex align-center gap-3">
                     <v-icon icon="mdi-database" size="36px" color="info" class="mr-5"></v-icon>
                     Data Sources
                 </v-card-title>
@@ -81,7 +81,7 @@
                     <about-nonna />
 
                     <!-- SENSORS -->
-                    <v-card-title class="text-h5 d-flex align-center gap-2 mt-6 mb-4">
+                    <v-card-title class="text-headline-small d-flex align-center gap-2 mt-6 mb-4">
                         <v-icon icon="mdi-wifi" size="24px" class="mr-5"></v-icon>
                         Sensor Network
                     </v-card-title>
@@ -103,7 +103,7 @@
                                     <td>
                                         {{ sensor.id }}
                                         <br v-if="sensor.note">
-                                        <span v-if="sensor.note" class="text-caption text-medium-emphasis">{{
+                                        <span v-if="sensor.note" class="text-body-small">{{
                                             sensor.note }}</span>
                                         <v-chip v-if="sensor.decommissioned" size="x-small" color="error" label
                                             prepend-icon="mdi-alert" class="mt-1">Decommissioned</v-chip>
@@ -127,7 +127,7 @@
             </v-card>
 
             <v-card class="mx-auto card-elevated">
-                <v-card-title class="text-h3 d-flex align-center gap-3">
+                <v-card-title class="text-display-medium d-flex align-center gap-3">
                     <v-icon icon="mdi-email" size="36px" color="secondary" class="mr-5"></v-icon>
                     Contact Us
                 </v-card-title>
