@@ -32,8 +32,9 @@ jobs:
         run: npm run build
         env:
           NITRO_PRESET: cloudflare-pages
-          NUXT_PUBLIC_API_BASE: ${{ secrets.NUXT_PUBLIC_API_BASE }}
+          NUXT_PUBLIC_API_BASE_URL: ${{ secrets.NUXT_PUBLIC_API_BASE_URL }}
           NUXT_PUBLIC_VERSION: ${{ secrets.NUXT_PUBLIC_VERSION }}
+          NUXT_PUBLIC_MAPBOX_TOKEN: ${{ secrets.NUXT_PUBLIC_MAPBOX_TOKEN }}
 
       - name: Publish to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
