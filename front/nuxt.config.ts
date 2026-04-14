@@ -21,6 +21,11 @@ export default defineNuxtConfig({
   build: {
     transpile: ['vuetify'],
   },
+  nitro: {
+    externals: {
+      inline: ['pinia'],
+    },
+  },
   modules: [
     '@nuxt/eslint',
     ['@pinia/nuxt'],
