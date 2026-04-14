@@ -19,12 +19,12 @@
         item-title="label" item-value="depth" :disabled="!depths || depths.length === 0" density="compact" hide-details
         variant="outlined" class="my-4" :menu-props="{ location: 'end', offset: 50 }" style="width: 100%">
         <template #item="{ props, item }">
-          <v-list-item v-bind="props" :title="item.raw.title"
-            :style="{ color: item.raw.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">
+          <v-list-item v-bind="props" :title="item.title"
+            :style="{ color: item.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">
           </v-list-item>
         </template>
         <template #selection="{ item }">
-          <div class="colormap-selection">{{ item.value !== -1 ? item.value.toFixed(1) + ' m' : 'bottom' }}
+          <div class="colormap-selection">{{ item !== -1 ? item.toFixed(1) + ' m' : 'bottom' }}
           </div>
         </template>
         <template #append>
