@@ -35,12 +35,9 @@ jobs:
           NUXT_PUBLIC_API_BASE: ${{ secrets.NUXT_PUBLIC_API_BASE }}
           NUXT_PUBLIC_VERSION: ${{ secrets.NUXT_PUBLIC_VERSION }}
 
-      - name: Verify build output
-        run: ls -la front/.output/ && ls -la front/.output/public/ || echo "No public dir found"
-
       - name: Publish to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy front/.output/public --project-name=oah --commit-dirty=true
+          command: pages deploy front/dist --project-name=oah --commit-dirty=true
