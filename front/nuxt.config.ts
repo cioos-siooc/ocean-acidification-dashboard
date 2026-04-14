@@ -45,9 +45,9 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     public: {
-      mapboxToken: '',
-      apiBaseUrl: '',
-      version: '',
+      mapboxToken: process.env.NUXT_PUBLIC_MAPBOX_TOKEN || '',
+      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || '',
+      version: process.env.NUXT_PUBLIC_VERSION || '',
     },
   },
 })
