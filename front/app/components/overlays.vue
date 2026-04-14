@@ -1,7 +1,7 @@
 <template>
   <v-card class="colorbar">
     <v-row class="px-2">
-      <v-col cols="auto" class="px-0 ">
+      <v-col cols="1" class="mx-1 px-0" style="background-color: red;">
         <v-btn icon size="x-small" flat :variant="showBathymetryContours ? 'elevated' : 'text'"
           :color="showBathymetryContours ? 'primary' : undefined"
           @click="mainStore.setShowBathymetryContours(!showBathymetryContours)"
@@ -10,15 +10,15 @@
         </v-btn>
       </v-col>
 
-      <v-col cols="auto" class="px-0">
-        <v-btn icon size="x-small" flat @click="toggleVerticalProfile" title="Vertical Profile">
+      <v-col cols="1" class="mx-1 px-0" style="background-color: red;">
+        <v-btn icon size="x-small" flat @click="toggleVerticalProfile" title="Vertical Profile" class="ma-0 pa-0">
           <IconsProfile />
         </v-btn>
       </v-col>
 
       <v-spacer></v-spacer>
 
-      <v-col cols="auto" class="px-0">
+      <v-col cols="1" class="mx-1 px-0">
         <v-btn icon size="x-small" flat @click="showHow" title="Vertical Profile">
           <IconsHelp />
         </v-btn>
