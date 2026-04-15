@@ -1,10 +1,9 @@
 import json
 import os
-import sys
 import psycopg2
 from psycopg2.extras import Json, execute_values
 from onc import ONC
-from datetime import datetime
+from datetime import datetime, timedelta
 import numpy as np
 
 # Configuration
@@ -20,7 +19,7 @@ DB_PASS = os.getenv("PGPASSWORD", "postgres")
 
 # Default range if not specified
 # Typically we want to pull "recent" data, e.g. last 3 days
-dateFrom = "2026-01-20T00:00:00.000Z"
+# dateFrom = "2026-01-20T00:00:00.000Z"
 
 def get_db_conn():
     return psycopg2.connect(
@@ -52,9 +51,22 @@ def ensure_schema(conn):
             CREATE TABLE IF NOT EXISTS sensors_data (
                 time TIMESTAMPTZ NOT NULL,
                 sensor_id INTEGER REFERENCES sensors(id) ON DELETE CASCADE,
-                measurements JSONB NOT NULL DEFAULT '{}'::jsonb,
-                PRIMARY KEY (sensor_id, time)
+                measurements JSONB NOT NULL DEFAULT '{}'::jsonb
             );
+        """)
+        
+        # Add PRIMARY KEY if it doesn't exist (table may have been created without it)
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.table_constraints
+                    WHERE constraint_type = 'PRIMARY KEY'
+                    AND table_name = 'sensors_data'
+                ) THEN
+                    ALTER TABLE sensors_data ADD PRIMARY KEY (sensor_id, time);
+                END IF;
+            END $$;
         """)
         
         # 3. Create Functional Indexes for performance
@@ -83,32 +95,50 @@ def fetch_and_store():
     for sensor_id, sensor_name, device_config in sensors:
         print(f"Processing Sensor: {sensor_name} (ID: {sensor_id})")
         
-        # Build a list of (deviceCode, categoryCodes)
-        configs_to_fetch = []
         if device_config and isinstance(device_config, dict) and len(device_config) > 0:
-            for d_code, v_list in device_config.items():
-                # v_list could be ["temperature", "salinity"] or a comma-sep string
-                cat_codes = ",".join(v_list) if isinstance(v_list, list) else v_list
-                configs_to_fetch.append((d_code, cat_codes))
+            # for d_code, v_list in device_config.items():
+            #     # v_list could be ["temperature", "salinity"] or a comma-sep string
+            #     cat_codes = ",".join(v_list) if isinstance(v_list, list) else v_list
+            #     configs_to_fetch.append((d_code, cat_codes))
+            locationCode = device_config.get('locationCode')
+            codeRows = device_config.get('codes', [])
         else:
             # Skip sensors without valid device_config
             print(f"  No valid device_config for sensor {sensor_name}, skipping.")
             continue
 
-        for deviceCode, sensorCategoryCodes in configs_to_fetch:
-            print(f"  Fetching Device {deviceCode} (Vars: {sensorCategoryCodes})...")
+        for codeRow in codeRows:
+            deviceCategoryCode = codeRow.get('deviceCategoryCode')
+            sensorCategoryCodes = codeRow.get('sensorCategoryCodes')
+            #
+            # Find max time in DB where measurements includes this sensorCategoryCode for this sensor_id
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT MAX(time) FROM sensors_data
+                    WHERE sensor_id = %s AND measurements ? %s
+                """, (sensor_id, sensorCategoryCodes))
+                result = cur.fetchone()
+                # +1 day and format date only.  ONC API expects this format.
+                dateFrom = (result[0] + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z") if result and result[0] else None
+            #
+            print(f"  Fetching data for locationCode={locationCode}, deviceCategoryCode={deviceCategoryCode}, sensorCategoryCodes={sensorCategoryCodes}")
             try:
-                data = onc.getScalardataByDevice({
-                    "deviceCode": deviceCode, 
-                    "dateFrom": dateFrom, 
-                    "dateTo": dateTo, 
-                    "getLatest": True, 
-                    "resamplePeriod": 3600, 
-                    "sensorCategoryCodes": sensorCategoryCodes
-                })
+                data = onc.getScalardataByLocation(
+                    {
+                        "locationCode": locationCode,
+                        "deviceCategoryCode": deviceCategoryCode,
+                        "getLatest": True,
+                        "resamplePeriod": 3600,
+                        "resampleType": "avg",
+                        "qualityControl": "clean",
+                        "sensorCategoryCodes": sensorCategoryCodes,
+                        "dateFrom": dateFrom,
+                        "dateTo": dateTo
+                    }
+                )
                 
                 if 'sensorData' not in data:
-                    print(f"    No sensorData found for {deviceCode}")
+                    print(f"    No sensorData found for {deviceCategoryCode}")
                     continue
                     
                 # Pivot data: time -> { var: value }
@@ -139,7 +169,7 @@ def fetch_and_store():
                             ON CONFLICT (sensor_id, time) DO UPDATE SET
                             measurements = sensors_data.measurements || EXCLUDED.measurements
                         """, records)
-                    conn.commit()
+                        conn.commit()
                     print(f"    Stored {len(records)} points.")
                 else:
                     print(f"    No numeric data found.")

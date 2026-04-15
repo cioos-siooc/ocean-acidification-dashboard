@@ -16,4 +16,5 @@ dependencies = [
     "PyCO2SYS>=1.8.3",
     "onc>=2.6.0",
     "cmocean>=4.0.3",
+    "ipython>=9.12.0",
 ]
