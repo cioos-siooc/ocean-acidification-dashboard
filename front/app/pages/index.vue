@@ -652,45 +652,51 @@ async function getTimeseriesPromises(lat: number, lon: number) {
 
     globalChartLoading.value = true;
 
-    const fromDate = midDate.value.clone().subtract(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
-    const toDate = midDate.value.clone().add(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
-
     try {
-        modelResp = await getTimeseriesFromApi(lat, lon, fromDate, toDate);
-    } catch (err: any) {
-        if (err?.code !== 'ERR_CANCELED') {
-            console.error('Failed to fetch model timeseries:', err);
-        }
-    }
+        const fromDate = midDate.value.clone().subtract(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
+        const toDate = midDate.value.clone().add(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
 
-    try {
-        climResp = await getClimateTimeseries(lat, lon, fromDate, toDate);
-    } catch (err: any) {
-        if (err?.code !== 'ERR_CANCELED') {
-            console.warn('Failed to fetch climate data (chart will show model only):', err);
-        }
-    }
-
-    if (clicked_sensor_id.value) {
         try {
-            sensorResp = await getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var, fromDate, toDate);
+            modelResp = await getTimeseriesFromApi(lat, lon, fromDate, toDate);
         } catch (err: any) {
             if (err?.code !== 'ERR_CANCELED') {
-                console.warn('Failed to fetch sensor data:', err);
+                console.error('Failed to fetch model timeseries:', err);
             }
         }
+
+        try {
+            climResp = await getClimateTimeseries(lat, lon, fromDate, toDate);
+        } catch (err: any) {
+            if (err?.code !== 'ERR_CANCELED') {
+                console.warn('Failed to fetch climate data (chart will show model only):', err);
+            }
+        }
+
+        if (clicked_sensor_id.value) {
+            try {
+                sensorResp = await getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var, fromDate, toDate);
+            } catch (err: any) {
+                if (err?.code !== 'ERR_CANCELED') {
+                    console.warn('Failed to fetch sensor data:', err);
+                }
+            }
+        }
+
+        const model = modelResp?.data || null;
+        const clim = climResp?.data || null;
+        const sensor = sensorResp?.data || null;
+
+        // Plot whatever data we successfully retrieved (model, climate, or sensor)
+        if (model || sensor) {
+            try {
+                plotTimeseries(model, clim, sensor);
+            } catch (err) {
+                console.error('Failed to plot timeseries:', err);
+            }
+        }
+    } finally {
+        globalChartLoading.value = false;
     }
-
-    const model = modelResp?.data || null;
-    const clim = climResp?.data || null;
-    const sensor = sensorResp?.data || null;
-
-    // Plot whatever data we successfully retrieved
-    if (model) {
-        plotTimeseries(model, clim, sensor);
-    }
-
-    globalChartLoading.value = false;
 }
 
 async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {

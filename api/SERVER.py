@@ -11,13 +11,14 @@ import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from typing import Optional
 from starlette.concurrency import run_in_threadpool
+import numpy as np
 
-from extractTimeseries import extract_timeseries
+from modules.extractTimeseries import extract_timeseries
 from modules.extract_profile import extract_profile
 from modules.eval_extractor import extract_eval_data
-from extract_climate_timeseries import extract_climate_timeseries
-from extractMinMax import extract_minmax
-from pngGenerator import generate_png_for_variable
+from modules.extract_climate_timeseries import extract_climate_timeseries
+from modules.extractMinMax import extract_minmax
+from modules.pngGenerator import generate_png_for_variable
 
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
 MAX_CONCURRENT_EXTRACTS = int(os.getenv("MAX_CONCURRENT_EXTRACTS", "4"))
@@ -420,7 +421,18 @@ async def fn_extract_timeseries(request: timeseriesRequest):
 
         time, value = await run_in_threadpool(extract_timeseries, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate, data_dir=_get_nc_data_dirs(), allowed_dates=allowed_dates)
         logger.info(f"FINISH extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate} - returned {len(time)} points")
-        return {"time": time.tolist(), "value": value.tolist()}
+        # Replace NaN values with None (serializes to null in JSON)
+        time_list = [None if (isinstance(t, float) and np.isnan(t)) else t for t in time.tolist()]
+        value_list = [None if (isinstance(v, float) and np.isnan(v)) else v for v in value.tolist()]
+        return {"time": time_list, "value": value_list}
+    except RuntimeError as exc:
+        # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
+        if "km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc):
+            logger.warning(f"Out-of-domain or invalid coordinates: {exc}")
+            raise HTTPException(status_code=400, detail=str(exc))
+        # Other RuntimeErrors are unexpected, treat as 500
+        logger.exception("extract_timeseries failed with RuntimeError")
+        raise HTTPException(status_code=500, detail=str(exc))
     except Exception as exc:
         logger.exception("extract_timeseries failed")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -461,9 +473,26 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
         if result is None:
             logger.error("Extraction returned None")
             raise HTTPException(status_code=500, detail="Extraction failed")
+        
+        # Clean NaN values from all numeric columns before JSON serialization
+        if isinstance(result, dict) and 'data' in result:
+            data = result['data']
+            if isinstance(data, list):
+                for row in data:
+                    for key in row:
+                        if isinstance(row[key], float) and np.isnan(row[key]):
+                            row[key] = None
             
         logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
         return result
+    except RuntimeError as exc:
+        # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
+        if "km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc):
+            logger.warning(f"Out-of-domain or invalid coordinates: {exc}")
+            raise HTTPException(status_code=400, detail=str(exc))
+        # Other RuntimeErrors are unexpected, treat as 500
+        logger.exception("extract_climate_timeseries failed with RuntimeError")
+        raise HTTPException(status_code=500, detail=str(exc))
     except Exception as exc:
         logger.exception("extract_climate_timeseries failed")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -614,6 +643,14 @@ async def fn_get_profile(request: profileRequest):
         )
         logger.info(f"FINISH getProfile: {var}, {lat}, {lng}, {dt} - returned {len(profile)} points")
         return profile
+    except RuntimeError as exc:
+        # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
+        if "km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc):
+            logger.warning(f"Out-of-domain or invalid coordinates: {exc}")
+            raise HTTPException(status_code=400, detail=str(exc))
+        # Other RuntimeErrors are unexpected, treat as 500
+        logger.exception("extract_profile failed with RuntimeError")
+        raise HTTPException(status_code=500, detail=str(exc))
     except Exception as exc:
         logger.exception("extract_profile failed")
         raise HTTPException(status_code=500, detail=str(exc))

@@ -19,7 +19,7 @@ import pandas as pd
 from nc_reader import open_nc_uncached, close_nc
 
 # Import helpers from extractTimeseries
-from extractTimeseries import (
+from api.modules.extractTimeseries import (
     connect_db,
     query_nearest_rowcol,
     get_grid_shape_from_db,
