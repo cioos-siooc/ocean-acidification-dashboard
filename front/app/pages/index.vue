@@ -940,8 +940,9 @@ async function trigger_mapClick(lat: number, lng: number) {
     if (!(lng >= lon0 && lng <= lon1 && lat >= lat0 && lat <= lat1)) return; // outside overlay
     // show a marker at clicked position
     try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
-    const el = document.createElement('div'); el.style.width = '12px'; el.style.height = '12px'; el.style.borderRadius = '50%'; el.style.background = '#ff5722'; el.style.border = '2px solid white';
-    const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
+    const el = document.createElement('div');
+    el.className = 'map-click-marker';
+    const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map);
     (map as any).__clickMarker = marker;
 
     // Abort any in-flight timeseries requests and create a new controller
@@ -1605,6 +1606,21 @@ let zrClickHandler: ((evt: any) => void) | null = null;
     font-family: "Roboto Mono", monospace;
     font-size: 0.75rem;
     vertical-align: text-bottom;
+}
+
+@keyframes map-click-pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(255, 87, 34, 0.7); }
+    70%  { box-shadow: 0 0 0 14px rgba(255, 87, 34, 0);   }
+    100% { box-shadow: 0 0 0 0   rgba(255, 87, 34, 0);   }
+}
+
+.map-click-marker {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ff5722;
+    border: 2px solid white;
+    animation: map-click-pulse 1.5s ease-out infinite;
 }
 </style>
 
