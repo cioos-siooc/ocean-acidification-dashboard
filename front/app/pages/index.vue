@@ -127,8 +127,8 @@ import { computeNightRanges } from '../../composables/useSunCalc'
 import { var2name } from '../../composables/useVar2Name'
 import { utc2pst } from '../../composables/useUTC2PST'
 import { formatDepth } from '../../composables/useFormatDepth'
-import { useCircleLayer } from '../../composables/useCircleLayer';
 import useStationsInteraction from '../../composables/useStationsInteraction';
+import { addBuoyLayer } from '../../composables/useBuoyLayer';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
 import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 import colors from 'vuetify/util/colors';
@@ -735,7 +735,6 @@ async function getClimateTimeseries(lat: number, lon: number, fromDate: string, 
 
 async function addSensors() {
     const sensors = await getSensors();
-    console.log(sensors);
 
     const features = sensors.map((s: any) => ({
         type: 'Feature',
@@ -756,27 +755,12 @@ async function addSensors() {
         features: features
     };
 
-    const circle = useCircleLayer(() => map);
-    // Color by `active` property: active -> yellow, inactive -> grey
-    circle.addCircleLayer({
-        sourceId: 'stations',
-        layerId: 'stations-circles',
-        radius: 6,
-        color: ['case', ['==', ['get', 'active'], true], '#FFD700', '#888888']
-    });
-    circle.updateData(geojson);
-
-    // Attach active-only click handlers via composable
     try {
-        const stations = useStationsInteraction(() => map, clickSensor);
-
-        // attach and keep a reference for cleanup
-        const detachStations = stations.attach(circle);
-        (map as any).__stationsDetach = detachStations;
+        const detach = await addBuoyLayer(map, geojson, clickSensor);
+        (map as any).__stationsDetach = detach;
     } catch (e) {
-        console.warn('Failed to attach station handlers:', e);
+        console.warn('Failed to add buoy layer:', e);
     }
-    // circle.on('mouseenter', (e) => { /* ... */ });
 }
 
 function clickSensor(sensor_id: number, depth: number) {
