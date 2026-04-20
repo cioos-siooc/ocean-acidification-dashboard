@@ -38,6 +38,9 @@ export const useMainStore = defineStore('main', {
         mapCenter: null as { lat: number, lng: number } | null,
 
         snackMessages: [] as Array<{ color: string, text: string }>,
+
+        controlPanel_width: 300,
+        isControlPanelOpen: true,
     }),
 
     actions: {
@@ -105,7 +108,10 @@ export const useMainStore = defineStore('main', {
                 }
             }
             this.setSelectedSensorID(sensor_id);
-        }
+        },
 
+        toggleIsControlPanelOpen() {
+            this.isControlPanelOpen = !this.isControlPanelOpen;
+        }
     }
 })

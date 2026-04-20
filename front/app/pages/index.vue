@@ -23,11 +23,11 @@
             :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }">
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
-            <!-- <div class="selector">
-                <ColorBarSelect v-if="mainStore.variables.length" @autorange="autorange" />
+            <div class="selector">
+                <!-- <ColorBarSelect v-if="mainStore.variables.length" @autorange="autorange" /> -->
 
                 <Overlays class="my-2" @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"/>
-            </div> -->
+            </div>
 
             <controlPanel />
 
@@ -1620,10 +1620,10 @@ let zrClickHandler: ((evt: any) => void) | null = null;
 
 .selector {
     position: absolute;
-    width: 220px;
+    width: 0;
     z-index: 9998;
     top: 16px;
-    left: 16px;
+    left: 0;
 }
 
 .global-chart-wrapper {

@@ -1,6 +1,12 @@
 <template>
   <v-app theme="dark">
     <v-app-bar density="compact" class="px-5" app>
+      <!-- HAMBURGER MENU ICON -->
+      <template v-slot:prepend>
+        <v-app-bar-nav-icon @click="mainStore.toggleIsControlPanelOpen"></v-app-bar-nav-icon>
+      </template>
+
+
       <NuxtLink to="/" class="logo-link">
         <img src="/cioos_pacific.png" alt="OA Logo" class="logo-icon" />
       </NuxtLink>

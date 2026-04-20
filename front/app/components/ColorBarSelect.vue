@@ -1,5 +1,5 @@
 <template>
-  <v-card class="colorbar">
+  <v-card v-if="selectedVariableName" class="colorbar">
     <div class="label">
       <v-select v-model="selectedVarName" label="Field" :items="variableItems" :disabled="variableItems.length === 0"
         item-title="label" item-value="var" density="compact" hide-details variant="outlined" class="my-4"
