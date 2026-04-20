@@ -26,7 +26,7 @@
             <div class="selector">
                 <!-- <ColorBarSelect v-if="mainStore.variables.length" @autorange="autorange" /> -->
 
-                <Overlays class="my-2" @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"/>
+                <Overlays class="my-2" @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true" @autorange="autorange" />
             </div>
 
             <controlPanel />

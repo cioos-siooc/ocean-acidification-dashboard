@@ -55,7 +55,7 @@
         <div style="flex: 0 0 auto; font-size: x-small; color: #aaa; padding-bottom: 2px;">{{ unit }}</div>
       </div>
 
-      <v-card-actions class="ma-0 pa-0" style="min-height:24px">
+      <!-- <v-card-actions class="ma-0 pa-0" style="min-height:24px">
         <v-spacer></v-spacer>
         <v-btn size="x-small" icon @click="showSettings = !showSettings" class="ma-0 pa-0">
           <IconsConfig />
@@ -65,7 +65,7 @@
           @click="autorange" title="Auto-range colorbar to data range" class="ma-0 pa-0">
           <IconsAutorange />
         </v-btn>
-      </v-card-actions>
+      </v-card-actions> -->
     </div>
 
     <v-row v-if="showSettings" class="ma-0 pa-0" style="place-items: center;" gap="1">
@@ -296,10 +296,6 @@ function shallower() {
   }
 }
 
-function autorange() {
-  mainStore.setAutoRangeDisabled(true);
-  emit('autorange');
-}
 
 </script>
 

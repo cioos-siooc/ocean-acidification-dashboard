@@ -3,21 +3,23 @@
     <v-spacer></v-spacer>
     <v-menu v-model="datePickerOpen" :close-on-content-click="false" offset-y>
       <template #activator="{ props: menuProps }">
-        <v-btn v-bind="menuProps" size="x-small" icon flat :title="'Jump to date'"><v-icon>mdi-calendar</v-icon></v-btn>
+        <v-btn v-bind="menuProps" size="20px" icon flat :title="'Jump to date'"><v-icon size="14px">mdi-calendar</v-icon></v-btn>
       </template>
-      <v-date-picker v-model="pickedDate" :allowed-dates="allowedDates" hide-header show-adjacent-months :max="maxDate" :min="minDate" 
-        @update:model-value="onDatePicked"></v-date-picker>
+      <v-date-picker v-model="pickedDate" :allowed-dates="allowedDates" hide-header show-adjacent-months :max="maxDate"
+        :min="minDate" @update:model-value="onDatePicked"></v-date-picker>
     </v-menu>
 
     <v-divider vertical class="mx-2" style="height: 24px"></v-divider>
 
     <!-- <v-btn size="x-small" icon flat :title="'Move to start'"
       @click="moveToStart"><v-icon>mdi-skip-backward</v-icon></v-btn> -->
-    <v-btn size="x-small" icon flat :title="'Step backward'"
-      @click="stepBackward"><v-icon>mdi-skip-previous</v-icon></v-btn>
-    <v-btn size="x-small" icon flat :title="playing ? 'Pause' : 'Play'" @click="togglePlay"><v-icon
-        v-if="!playing">mdi-play</v-icon><v-icon v-else>mdi-pause</v-icon></v-btn>
-    <v-btn size="x-small" icon flat :title="'Step forward'" @click="stepForward"><v-icon>mdi-skip-next</v-icon></v-btn>
+    <v-btn size="20px" icon flat :title="'Step backward'" @click="stepBackward"><v-icon
+        size="14px">mdi-skip-previous</v-icon></v-btn>
+    <v-btn size="20px" icon flat :title="playing ? 'Pause' : 'Play'" @click="togglePlay">
+      <v-icon size="14px" v-if="!playing">mdi-play</v-icon>
+      <v-icon size="14px" v-else>mdi-pause </v-icon>
+    </v-btn>
+    <v-btn size="20px" icon flat :title="'Step forward'" @click="stepForward"><v-icon size="14px">mdi-skip-next</v-icon></v-btn>
     <!-- <v-btn size="x-small" icon flat :title="'Move to end'" @click="moveToEnd"><v-icon>mdi-skip-forward</v-icon></v-btn> -->
 
     <v-divider vertical class="mx-2" style="height: 24px"></v-divider>
@@ -27,8 +29,8 @@
 
     <v-menu offset-y>
       <template #activator="{ props }">
-        <v-btn v-bind="props" size="x-small" icon flat
-          :title="`Speed: x${speed}`"><v-icon>mdi-speedometer</v-icon></v-btn>
+        <v-btn v-bind="props" size="20px" icon flat
+          :title="`Speed: x${speed}`"><v-icon size="14px">mdi-speedometer</v-icon></v-btn>
       </template>
       <v-list>
         <v-list-item v-for="s in speeds" :key="s" @click="setSpeed(s)">
@@ -76,8 +78,8 @@ const selectedDatetime = computed(() => {
 const dts = computed(() => {
   return mainStore.variables.find(v => v.name === selectedVariable.value.name)?.dts
     .map(ts => moment.utc(ts))
-    // .format('YYYY-MM-DD'))
-    // .reduce((set, key) => set.add(key), new Set<string>());
+  // .format('YYYY-MM-DD'))
+  // .reduce((set, key) => set.add(key), new Set<string>());
 });
 
 const minDate = computed(() => {
@@ -139,7 +141,7 @@ function getIndexForDt(dt: moment.Moment | null) {
 function stepForward() {
   const idx = currentIndex();
   if (idx < 0) return false
-  if(dts.value[idx]?.valueOf() > midDate.value?.clone().add(DFN.value, 'days').valueOf()) {
+  if (dts.value[idx]?.valueOf() > midDate.value?.clone().add(DFN.value, 'days').valueOf()) {
     return false
   }
   if (idx < dts.value.length - 1) {
@@ -155,7 +157,7 @@ function stepForward() {
 function stepBackward() {
   const idx = currentIndex();
   if (idx < 0) return false
-  if(dts.value[idx]?.valueOf() < midDate.value?.clone().subtract(DFN.value, 'days').valueOf()) {
+  if (dts.value[idx]?.valueOf() < midDate.value?.clone().subtract(DFN.value, 'days').valueOf()) {
     return false
   }
   if (idx > 0) {
@@ -202,7 +204,7 @@ function togglePlay() {
 
 function onDatePicked(date: string) {
   mainStore.setMidDate(moment.utc(date));
-  
+
   // Find the closest available timestamp to the picked date and update selected variable
   const idx = getIndexForDt(moment.utc(date));
   if (idx >= 0) {

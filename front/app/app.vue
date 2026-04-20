@@ -6,15 +6,15 @@
         <v-app-bar-nav-icon @click="mainStore.toggleIsControlPanelOpen"></v-app-bar-nav-icon>
       </template>
 
-
-      <NuxtLink to="/" class="logo-link">
-        <img src="/cioos_pacific.png" alt="OA Logo" class="logo-icon" />
-      </NuxtLink>
       <v-app-bar-title>
         <span class="">OAH</span>
         <span class="text-label-medium mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
       </v-app-bar-title>
-      <v-spacer></v-spacer>
+
+      <a href="https://cioospacific.ca/" target="_blank" rel="noopener noreferrer" class="logo-link" style="position: absolute; left: 50%; transform: translateX(-50%);">
+        <img src="/cioos_pacific.png" alt="OA Logo" class="logo-icon" />
+      </a>
+
       <!-- Optional: Add menu items here -->
       <NuxtLink to="/modeleval" target="_blank">
         <v-btn density="compact" text>Model Evaluation</v-btn>
