@@ -1,10 +1,15 @@
 import type { Ref } from 'vue';
+import type { MultiSensorCandidate } from './useBuoyLayer';
 
 export type CircleLayer = {
   on: (layerEvent: string, handler: (evt: any) => void) => (() => void) | undefined;
 };
 
-export function useStationsInteraction(getMap: () => any, onFetchTimeseries: (sensor_id: number, depth: number) => void) {
+export function useStationsInteraction(
+  getMap: () => any,
+  onFetchTimeseries: (sensor_id: number, depth: number) => void,
+  onMultiSensorClick: (sensors: MultiSensorCandidate[], screenX: number, screenY: number) => void,
+) {
   let _detach: (() => void) | null = null;
 
   function _isActive(raw: any) {
@@ -19,16 +24,29 @@ export function useStationsInteraction(getMap: () => any, onFetchTimeseries: (se
     const offClick = circle.on('click', (evt: any) => {
       try {
         const feature = (evt.features && evt.features[0]) || null;
+        if (!feature) return;
+
+        const rawActive = feature.properties?.active;
+        if (!_isActive(rawActive)) return;
+
+        // Multi-sensor location: parse embedded sensors list
+        const sensorsJson = feature.properties?.sensorsJson;
+        if (sensorsJson) {
+          const sensors: MultiSensorCandidate[] = JSON.parse(sensorsJson);
+          if (sensors.length > 1) {
+            const point = map.project(evt.lngLat);
+            onMultiSensorClick(sensors, point.x, point.y);
+            return;
+          }
+          // Single sensor embedded in sensorsJson
+          onFetchTimeseries(sensors[0].id, sensors[0].depth);
+          return;
+        }
+
+        // Fallback: flat properties (legacy)
         const sensor_id = feature?.properties?.id;
         const depth = feature?.properties?.depth;
-        const lng = evt.lngLat?.lng ?? feature?.geometry?.coordinates?.[0];
-        const lat = evt.lngLat?.lat ?? feature?.geometry?.coordinates?.[1];
-        if (!feature || !sensor_id || lng === undefined || lat === undefined) return;
-        const rawActive = feature.properties?.active;
-        if (!_isActive(rawActive)) return; // ignore inactive stations
-
-        // Provide sensor id + coords to caller
-        onFetchTimeseries(sensor_id, depth);
+        if (sensor_id !== undefined) onFetchTimeseries(sensor_id, depth);
       } catch (e) {
         // swallow
       }

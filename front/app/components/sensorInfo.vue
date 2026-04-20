@@ -10,17 +10,17 @@
                     clearable rounded=""></v-text-field>
 
                 <!-- SENSOR LIST -->
-                <v-list-item v-for="sensor in sensors" :key="sensor.id" :active="sensor.id === selectedSensorID"
-                    @click="selectSensor(sensor.id)" variant="text" class="rounded my-3">
+                <v-list-item v-for="(sensor, i) in sensors" :key="sensor.id" :active="sensor.id === selectedSensorID"
+                    @click="selectSensor(sensor.id)" variant="text" class="rounded my-3"
+                    color="yellow" :style="{ backgroundColor: i % 2 === 0 ? '#33333399' : 'transparent' }">
                     <v-list-item-content>
                         <v-list-item-title class="text-body-medium">
                             <v-icon size="12px" :color="sensor.active ? 'green' : 'grey'">mdi-circle</v-icon>
                             {{ sensor.name }}
                         </v-list-item-title>
-                        <div class="ml-2">
-                            <v-list-item-subtitle>Latitude: {{ sensor.latitude }}</v-list-item-subtitle>
-                            <v-list-item-subtitle>Longitude: {{ sensor.longitude }}</v-list-item-subtitle>
-                            <v-list-item-subtitle>Depth: {{ sensor.depth }}m</v-list-item-subtitle>
+                        <div class="ml-4">
+                            <v-list-item-subtitle>({{ sensor.latitude.toFixed(2) }}, {{ sensor.longitude.toFixed(2) }})
+                                | {{ formatDepth(sensor.depth) }} m</v-list-item-subtitle>
                             <v-list-item-subtitle>Last Updated: 13 hours ago</v-list-item-subtitle>
                         </div>
                     </v-list-item-content>
@@ -39,7 +39,7 @@ const mainStore = useMainStore();
 
 ///////////////////////////////////  PROPS & STATE  ///////////////////////////////////
 
-const sensors = computed(() => mainStore.sensors);
+const sensors = computed(() => mainStore.sensors.sort((a, b) => a.active === b.active ? 0 : a.active ? -1 : 1)); // active sensors first
 const selectedSensorID = computed(() => mainStore.selectedSensorID);
 const searchQuery = ref('');
 

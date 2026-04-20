@@ -40,6 +40,16 @@
 
             <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
 
+            <!-- Multi-sensor location picker -->
+            <SensorPickerPopover
+              :visible="sensorPicker.visible"
+              :x="sensorPicker.x"
+              :y="sensorPicker.y"
+              :sensors="sensorPicker.sensors"
+              @pick="(s) => clickSensor(s.id, s.depth)"
+              @close="sensorPicker.visible = false"
+            />
+
             <v-snackbar-queue ref="snackbarQueue" v-model="snackMessages" :total-visible="3" closable
                 contained></v-snackbar-queue>
         </div>
@@ -128,7 +138,7 @@ import { var2name } from '../../composables/useVar2Name'
 import { utc2pst } from '../../composables/useUTC2PST'
 import { formatDepth } from '../../composables/useFormatDepth'
 import useStationsInteraction from '../../composables/useStationsInteraction';
-import { addBuoyLayer } from '../../composables/useBuoyLayer';
+import { addBuoyLayer, type MultiSensorCandidate } from '../../composables/useBuoyLayer';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
 import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 import colors from 'vuetify/util/colors';
@@ -155,6 +165,13 @@ let _statsLegendHandler: ((params: any) => void) | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
 const footerHeight = '300px';
+
+const sensorPicker = ref<{ visible: boolean; x: number; y: number; sensors: MultiSensorCandidate[] }>({
+    visible: false,
+    x: 0,
+    y: 0,
+    sensors: [],
+});
 
 // [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
 const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, number]];
@@ -325,7 +342,8 @@ onBeforeUnmount(() => {
             }
         }
 
-        // remove stations layer + source if present
+        // remove stations layers + source if present
+        try { if (map.getLayer && map.getLayer('stations-badge')) map.removeLayer('stations-badge'); } catch (e) { }
         try { if (map.getLayer && map.getLayer('stations-circles')) map.removeLayer('stations-circles'); } catch (e) { }
         try { if (map.getSource && map.getSource('stations-points')) map.removeSource('stations-points'); } catch (e) { }
 
@@ -700,13 +718,11 @@ async function getTimeseriesPromises(lat: number, lon: number) {
         const clim = climResp?.data || null;
         const sensor = sensorResp?.data || null;
 
-        // Plot whatever data we successfully retrieved (model, climate, or sensor)
-        if (model || sensor) {
-            try {
-                plotTimeseries(model, clim, sensor);
-            } catch (err) {
-                console.error('Failed to plot timeseries:', err);
-            }
+        // Always plot — plotTimeseries handles the "No data available" case internally
+        try {
+            plotTimeseries(model, clim, sensor);
+        } catch (err) {
+            console.error('Failed to plot timeseries:', err);
         }
     } finally {
         globalChartLoading.value = false;
@@ -736,35 +752,61 @@ async function getClimateTimeseries(lat: number, lon: number, fromDate: string, 
 async function addSensors() {
     const sensors = await getSensors();
 
-    const features = sensors.map((s: any) => ({
-        type: 'Feature',
-        geometry: {
-            type: 'Point',
-            coordinates: [s.longitude, s.latitude]
-        },
-        properties: {
-            id: s.id,
-            name: s.name,
-            depth: s.depth,
-            variables: s.variables,
-            active: s.active
-        }
-    }));
+    // Group sensors by coordinate key so co-located sensors share one marker
+    const locationMap = new Map<string, any[]>();
+    for (const s of sensors) {
+        const key = `${s.longitude},${s.latitude}`;
+        if (!locationMap.has(key)) locationMap.set(key, []);
+        locationMap.get(key)!.push(s);
+    }
+
+    const features = Array.from(locationMap.entries()).map(([, group]) => {
+        const first = group[0];
+        const anyActive = group.some((s: any) => s.active);
+        return {
+            type: 'Feature',
+            geometry: {
+                type: 'Point',
+                coordinates: [first.longitude, first.latitude]
+            },
+            properties: {
+                sensorCount: group.length,
+                active: anyActive,
+                // Embed all sensors as JSON string (Mapbox flattens properties to primitives)
+                sensorsJson: JSON.stringify(
+                    group
+                        .sort((a: any, b: any) => a.depth - b.depth)
+                        .map((s: any) => ({ id: s.id, name: s.name, depth: s.depth }))
+                ),
+            }
+        };
+    });
+
     const geojson: FeatureCollection<Geometry, GeoJsonProperties> = {
         type: 'FeatureCollection',
         features: features
     };
 
     try {
-        const detach = await addBuoyLayer(map, geojson, clickSensor);
+        const detach = await addBuoyLayer(map, geojson, clickSensor, openSensorPicker);
         (map as any).__stationsDetach = detach;
     } catch (e) {
         console.warn('Failed to add buoy layer:', e);
     }
 }
 
+function openSensorPicker(sensors: MultiSensorCandidate[], screenX: number, screenY: number) {
+    sensorPicker.value = { visible: true, x: screenX, y: screenY, sensors };
+}
+
 function clickSensor(sensor_id: number, depth: number) {
+    sensorPicker.value.visible = false;
     mainStore.selectSensor(sensor_id, depth);
+    // Re-fetch timeseries so the newly selected sensor data is plotted.
+    // The watcher on lastClickedMapPoint won't re-fire (point didn't change),
+    // so we trigger the fetch explicitly here.
+    const pt = lastClicked.value;
+    if (pt) getTimeseriesPromises(pt.lat, pt.lng);
 }
 
 
@@ -910,6 +952,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
         // Only clear sensor ID if we clicked empty map (not on a feature)
         if (features.length === 0) {
             mainStore.setSelectedSensorID(null);
+            sensorPicker.value.visible = false;
         }
 
         mainStore.setLastClickedMapPoint({ lat, lng });
@@ -923,8 +966,6 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 async function trigger_mapClick(lat: number, lng: number) {
     const overlay = (map as any).__activePngOverlay;
     if (!overlay) return;
-    const [lon0, lat0, lon1, lat1] = overlay.bounds;
-    if (!(lng >= lon0 && lng <= lon1 && lat >= lat0 && lat <= lat1)) return; // outside overlay
     // show a marker at clicked position
     try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
     const el = document.createElement('div');
@@ -1128,10 +1169,14 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     const lat = lastClicked.value?.lat;
     const lng = lastClicked.value?.lng;
 
-    // Update global timestamp cache for the click handler
-    model_timestamps = modelData.time.map((t: any) => moment.utc(t).valueOf());
-    const values = modelData.value;
-    const __series_model = model_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), values[i]]);
+    // Update global timestamp cache and build model series only if model data is present
+    const hasModelData = modelData && Array.isArray(modelData.time) && modelData.time.length > 0;
+    let __series_model: any[] = [];
+    if (hasModelData) {
+        model_timestamps = modelData.time.map((t: any) => moment.utc(t).valueOf());
+        const values = modelData.value;
+        __series_model = model_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), values[i]]);
+    }
 
     const climate_timestamps = Array.isArray(climateData) ? climateData.map((row: any) => moment.utc(row.requested_date).valueOf()) : [];
     // const mean = Array.isArray(climateData) ? climateData.map((row: any) => row.mean) : [];
@@ -1315,8 +1360,27 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
         series: []
     };
 
-    // Determine whether we have climate data to plot
     const hasClimate = Array.isArray(climateData) && climateData.length > 0;
+    const hasSensorData = sensorData && Array.isArray(sensorData.time) && sensorData.time.length > 0;
+
+    // If nothing to show, clear chart and display a message
+    if (!hasModelData && !hasClimate && !hasSensorData) {
+        globalChart.setOption({
+            graphic: [{
+                type: 'text',
+                left: 'center',
+                top: 'middle',
+                style: { text: 'No data available', fill: 'rgba(255,255,255,0.4)', fontSize: 16, fontFamily: 'Inter, sans-serif' }
+            }],
+            legend: { data: [] },
+            series: []
+        }, true);
+        globalChart.resize();
+        return;
+    }
+
+    // Clear any previous "No data" graphic
+    globalChart.setOption({ graphic: [{ type: 'text', style: { text: '' } }] }, false);
 
     // Day/Night base series (always present)
     const dayNightSeries: any = {
@@ -1372,25 +1436,23 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
         seriesArr.push({ name: 'Stats', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
     }
 
-    // model series (reuse previously computed __series_model)
-    seriesArr.push({
-        name: mainStore.selected_variable.var || 'value', type: 'line', showSymbol: false, data: __series_model, smooth: true, lineStyle: {
-            width: 4, color: mainStore.colors.model.line, shadowColor: mainStore.colors.model.shadow,
-            shadowBlur: mainStore.colors.model.shadowBlur, opacity: 0.8
-        }, itemStyle: { color: mainStore.colors.model.line }, legendIcon: 'roundRect'
-    });
+    // model series — only push if data is available
+    if (hasModelData) {
+        seriesArr.push({
+            name: mainStore.selected_variable.var || 'value', type: 'line', showSymbol: false, data: __series_model, smooth: true, lineStyle: {
+                width: 4, color: mainStore.colors.model.line, shadowColor: mainStore.colors.model.shadow,
+                shadowBlur: mainStore.colors.model.shadowBlur, opacity: 0.8
+            }, itemStyle: { color: mainStore.colors.model.line }, legendIcon: 'roundRect'
+        });
+    }
 
-    // sensor series will be optionally added below
-    option.series = seriesArr;
-
-    const hasSensorData = sensorData && Array.isArray(sensorData.time) && sensorData.time.length > 0;
-
+    // sensor series — push if available, otherwise ensure it's absent via notMerge
     if (hasSensorData) {
         const sensor_timestamps = sensorData.time.map((t: any) => moment.utc(t).valueOf());
         const sensor_values = sensorData.value;
         const __series_sensor = sensor_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), sensor_values[i]]);
 
-        option.series.push({
+        seriesArr.push({
             name: 'Sensor Data',
             type: 'line',
             data: __series_sensor,
@@ -1399,12 +1461,10 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
             itemStyle: { color: mainStore.colors.observation.line },
             legendIcon: 'roundRect'
         });
-    } else {
-        // Remove sensor series if previously present
-        option.series = option.series.filter((s: any) => s.name !== 'Sensor Data');
     }
 
-    // Add night mark areas if any
+    // notMerge=true ensures removed series (sensor, stats) are fully cleared from chart
+    option.series = seriesArr;
     if (markAreaData.length > 0) {
         (option.series[0] as any).markArea = { silent: true, itemStyle: { color: colors.yellow.accent2, opacity: 0.05 }, data: markAreaData };
     }
@@ -1414,7 +1474,6 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
         .filter((s: any) => s.name && !s.name.startsWith('_'))
         .map((s: any) => s.name);
 
-    // Use notMerge=true so removal of 'Sensor Data' is enforced (prevents stale series remaining)
     globalChart.setOption(option, true);
     globalChart.resize();
 
