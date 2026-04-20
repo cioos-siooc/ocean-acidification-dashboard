@@ -39,13 +39,13 @@ logger = setup_logging()
 # Centralised, thread-safe NetCDF reader (single lock + LRU cache for the whole API)
 from nc_reader import open_nc
 
-# Try to import DB helpers from extractProfile (local to api/)
+# Import DB helpers from shared module
 try:
-    from extractProfile import connect_db, query_nearest_rowcol
+    from modules.postgis_helpers import connect_db, query_nearest_rowcol
 except ImportError:
     # Fallback if run from project root
     sys.path.append(os.path.join(os.path.dirname(__file__), "."))
-    from extractProfile import connect_db, query_nearest_rowcol
+    from modules.postgis_helpers import connect_db, query_nearest_rowcol
 
 def get_dataset(file_path):
     """Open and return NetCDF dataset via the centralised nc_reader.

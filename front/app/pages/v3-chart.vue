@@ -36,7 +36,8 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import * as echarts from 'echarts';
 import axios from 'axios';
-import { stack } from 'vuetify/lib/components/VCalendar/modes/stack.mjs';
+// Note: v3-chart is a legacy file - the following import may need adjustment for Vuetify 4
+// import { stack } from 'vuetify/components/VCalendar/modes/stack';
 
 const config = useRuntimeConfig();
 const apiBaseUrl = config.public.apiBaseUrl

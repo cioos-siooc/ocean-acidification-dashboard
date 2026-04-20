@@ -1,5 +1,5 @@
 <template>
-  <v-card class="colorbar">
+  <v-card v-if="selectedVariableName" class="colorbar">
     <div class="label">
       <v-select v-model="selectedVarName" label="Field" :items="variableItems" :disabled="variableItems.length === 0"
         item-title="label" item-value="var" density="compact" hide-details variant="outlined" class="my-4"
@@ -19,12 +19,12 @@
         item-title="label" item-value="depth" :disabled="!depths || depths.length === 0" density="compact" hide-details
         variant="outlined" class="my-4" :menu-props="{ location: 'end', offset: 50 }" style="width: 100%">
         <template #item="{ props, item }">
-          <v-list-item v-bind="props" :title="item.raw.title"
-            :style="{ color: item.raw.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">
+          <v-list-item v-bind="props" :title="item.title"
+            :style="{ color: item.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">
           </v-list-item>
         </template>
         <template #selection="{ item }">
-          <div class="colormap-selection">{{ item.value !== -1 ? item.value.toFixed(1) + ' m' : 'bottom' }}
+          <div class="colormap-selection">{{ item !== -1 ? item.toFixed(1) + ' m' : 'bottom' }}
           </div>
         </template>
         <template #append>
@@ -56,46 +56,56 @@
       </div>
 
       <v-card-actions class="ma-0 pa-0" style="min-height:24px">
+        <v-spacer></v-spacer>
+        <v-btn size="x-small" icon @click="showSettings = !showSettings" class="ma-0 pa-0">
+          <IconsConfig />
+        </v-btn>
         <v-btn icon size="x-small" flat
           :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled"
-          @click="autorange" title="Auto-range colorbar to data range">
-          <iconsAutorange />
+          @click="autorange" title="Auto-range colorbar to data range" class="ma-0 pa-0">
+          <IconsAutorange />
         </v-btn>
-        <v-spacer></v-spacer>
-        <v-btn size="x-small" icon @click="showSettings = !showSettings"> <v-icon>mdi-cog</v-icon> </v-btn>
       </v-card-actions>
     </div>
 
-    <v-row v-if="showSettings" class="ma-0 pa-0" style="place-items: center;">
-      <v-select v-model="selectedColormap" label="Color map"
-        :items="Object.entries(colormaps).map(([name, cmap]) => ({ name, raw: cmap }))" item-title="name"
-        item-value="name" density="compact" hide-details variant="outlined" class="my-4" close-on-click="false"
-        :menu-props="{ location: 'end' }" style="width: 100%; margin-top: 6px">
-        <template #item="{ props, item }">
-          <v-list-item v-bind="props" :title="undefined">
-            <div class="colormap-item">
-              <div class="mini-bar" :style="colormapStyle(item.raw)"></div>
-              <div class="colormap-label">{{ item.raw.name }}</div>
+    <v-row v-if="showSettings" class="ma-0 pa-0" style="place-items: center;" gap="1">
+      <v-col cols="12" class="ma-0 pa-0" >
+        <v-select v-model="selectedColormap" label="Color map"
+          :items="Object.entries(colormaps).map(([name, cmap]) => ({ name, raw: cmap }))" item-title="name"
+          item-value="name" density="compact" hide-details variant="outlined" class="my-4" close-on-click="false"
+          :menu-props="{ location: 'end' }" style="width: 100%;">
+          <template #item="{ props, item }">
+            <v-list-item v-bind="props" :title="undefined">
+              <div class="colormap-item">
+                <div class="mini-bar" :style="colormapStyle(item.raw)"></div>
+                <div class="colormap-label">{{ item.raw.name }}</div>
+              </div>
+            </v-list-item>
+          </template>
+          <template #selection="{ item }">
+            <div class="colormap-selection">
+              <span>{{ item.raw.name }}</span>
             </div>
-          </v-list-item>
-        </template>
-        <template #selection="{ item }">
-          <div class="colormap-selection">
-            <span>{{ item.raw.name }}</span>
-          </div>
-        </template>
-      </v-select>
+          </template>
+        </v-select>
+      </v-col>
 
-      <v-number-input v-model.number="colormapMin" hide-details :reverse="false" controlVariant="stacked" label="Min"
-        variant="solo-filled" flat :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
-        style="width: 30%; scale:75%"></v-number-input>
+      <v-col cols=5 class="ma-0 pa-0">
+        <v-number-input v-model.number="colormapMin" hide-details :reverse="false" controlVariant="stacked" label="Min"
+          variant="solo-filled" flat :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
+          style="width: 100%; scale:0.75;"></v-number-input>
+      </v-col>
 
-      <v-btn width="30%" size="x-small" flat @click="resetToDefaults" variant="outlined"
-        :title="'Reset min/max to defaults'">Reset</v-btn>
+      <v-col cols=2 class="ma-0 pa-0" style="display: flex; justify-content: center;">
+        <v-btn size="xx-small" flat @click="resetToDefaults" variant="outlined"
+          :title="'Reset min/max to defaults'">R</v-btn>
+      </v-col>
 
-      <v-number-input v-model.number="colormapMax" hide-details :reverse="false" controlVariant="stacked" label="Max"
-        variant="solo-filled" flat :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
-        style="width: 30%; scale:75%"></v-number-input>
+      <v-col cols=5 class="ma-0 pa-0">
+        <v-number-input v-model.number="colormapMax" hide-details :reverse="false" controlVariant="stacked" label="Max"
+          variant="solo-filled" flat :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
+          style="width: 100%; scale:0.75;"></v-number-input>
+      </v-col>
     </v-row>
   </v-card>
 

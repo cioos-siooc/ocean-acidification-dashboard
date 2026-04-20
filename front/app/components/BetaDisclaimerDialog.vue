@@ -2,13 +2,13 @@
     <v-dialog v-model="showDialog" width="600" persistent @update:model-value="handleDialogToggle">
         <v-card>
             <v-card-title class="beta-header pa-6">
-                <div class="text-h5 font-weight-bold text-white">Beta Version Notice</div>
-                <div class="text-caption text-white" style="opacity: 0.9;">Help us improve</div>
+                <div class="text-headline-small font-weight-700 text-white">Beta Version Notice</div>
+                <div class="text-body-small text-white" style="opacity: 0.9;">Help us improve</div>
             </v-card-title>
 
             <v-card-text class="pa-6">
                 <div class="mb-4">
-                    <p class="text-h6  mb-2">Welcome to the OAH app</p>
+                    <p class="text-title-large mb-2">Welcome to the OAH app</p>
                     <p>
                         This application is currently in <strong>beta</strong> and actively under development.
                         Features, data, and functionality may change as we continue to improve the platform.
@@ -16,7 +16,7 @@
                 </div>
 
                 <div class="mb-4">
-                    <p class="text-h6  mb-2">We Value Your Feedback</p>
+                    <p class="text-title-large mb-2">We Value Your Feedback</p>
                     <p>
                         Your input is crucial in helping us build a better tool. Whether you encounter issues,
                         have suggestions, or want to share your experience, we'd love to hear from you.

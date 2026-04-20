@@ -4,19 +4,19 @@
             <!-- Row 1: Sensor, Variable, Model, Load Button -->
             <v-card elevation="0" class="ma-4 pa-4">
                 <v-card-text>
-                    <v-row align="center" class="mb-4">
+                    <v-row class="mb-4 align-center">
                         <v-select v-model="selectedSensor" :items="sensors" label="Select Sensor ID"
                             density="compact" variant="outlined" hide-details @update:modelValue="onSelectionChange" />
                     </v-row>
-                    <v-row align="center" class="mb-4">
+                    <v-row class="mb-4 align-center">
                         <v-select v-model="selectedVariable" :items="variables" label="Select Variable"
                             density="compact" variant="outlined" hide-details @update:modelValue="onSelectionChange" />
                     </v-row>
-                    <v-row align="center" class="mb-4">
+                    <v-row class="mb-4 align-center">
                         <v-select v-model="selectedModel" :items="models" label="Select Model" density="compact"
                             variant="outlined" hide-details @update:modelValue="onSelectionChange" />
                     </v-row>
-                    <v-row align="center" class="mb-4">
+                    <v-row class="mb-4 align-center">
                         <v-btn color="primary" @click="fetchEvalData" :loading="loading" block>
                             Load Data
                         </v-btn>
@@ -25,7 +25,7 @@
                     <v-divider class="my-8" />
 
                     <!-- Row 2: Date Range Selector -->
-                    <v-row align="center" class="mb-4">
+                    <v-row class="mb-4 align-center">
                         <v-menu v-model="fromDateMenu" :close-on-content-click="false"
                             :disabled="isDatePickersDisabled">
                             <template #activator="{ props }">
@@ -35,7 +35,7 @@
                             <v-date-picker v-model="fromDate" :min="minDate" :max="toDate || maxDate" @update:model-value="onDateChange" />
                         </v-menu>
                     </v-row>
-                    <v-row align="center" class="mb-4">
+                    <v-row class="mb-4 align-center">
                         <v-menu v-model="toDateMenu" :close-on-content-click="false" :disabled="isDatePickersDisabled">
                             <template #activator="{ props }">
                                 <v-text-field :model-value="toDateDisplay" label="To Date" variant="outlined" hide-details

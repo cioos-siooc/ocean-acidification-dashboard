@@ -18,7 +18,7 @@ venv/
 
 # === Database ===
 DB/
-oa.dump
+*.dump
 oa_*
 
 # === Virtualenv tool (uv) ===

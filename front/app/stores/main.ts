@@ -1,6 +1,6 @@
 import type moment from 'moment';
 import { defineStore } from 'pinia'
-import colors from 'vuetify/lib/util/colors';
+import colors from 'vuetify/util/colors';
 
 export const useMainStore = defineStore('main', {
     state: () => ({
@@ -28,7 +28,19 @@ export const useMainStore = defineStore('main', {
         /**
          * The midDate is used to determine the middle point of the time range the footer chart displays. It is set to now initially.
          */
-        midDate: null as moment.Moment | null
+        midDate: null as moment.Moment | null,
+
+        sensors : [] as Array<{ id: number, name: string, latitude: number, longitude: number, depth: number, variables: string[], active: boolean }>,
+        selectedSensorID: null as number | null,
+
+        lastClickedMapPoint: null as { lat: number, lng: number } | null,
+
+        mapCenter: null as { lat: number, lng: number } | null,
+
+        snackMessages: [] as Array<{ color: string, text: string }>,
+
+        controlPanel_width: 300,
+        isControlPanelOpen: true,
     }),
 
     actions: {
@@ -57,6 +69,49 @@ export const useMainStore = defineStore('main', {
 
         setMidDate(date: moment.Moment) {
             this.midDate = date;
+        },
+
+        setSensors(sensors: Array<{ id: number, name: string, latitude: number, longitude: number, depth: number, variables: string[], active: boolean }>) {
+            this.sensors = sensors;
+        },
+        setSelectedSensorID(sensorID: number | null) {
+            this.selectedSensorID = sensorID;
+        },
+
+        setLastClickedMapPoint(point: { lat: number, lng: number } | null) {
+            this.lastClickedMapPoint = point;
+        },
+
+        setMapCenter(center: { lat: number, lng: number } | null) {
+            this.mapCenter = center;
+        },
+
+        pushSnack(message: { color: string, text: string }) {
+            this.snackMessages.push(message);
+        },
+
+        /**
+         * Select a sensor: snap to closest available depth and set as active sensor.
+         * Can be called from any component (sensorInfo, map click handler, etc.)
+         */
+        selectSensor(sensor_id: number, depth: number) {
+            const variable = this.selected_variable.var;
+            const depthsArray = this.variables.find((v) => v.var === variable)?.depths;
+            const closestDepth = depthsArray
+                ? [...depthsArray].sort((a, b) => Math.abs(a.depth - depth) - Math.abs(b.depth - depth))
+                : [];
+            if (closestDepth.length > 0) {
+                const newDepth = closestDepth[0].depth;
+                if (newDepth !== this.selected_variable.depth) {
+                    this.snackMessages.push({ color: 'warning', text: `Switched to closest available depth: ${newDepth}m` });
+                    this.updateSelectedVariable({ depth: newDepth });
+                }
+            }
+            this.setSelectedSensorID(sensor_id);
+        },
+
+        toggleIsControlPanelOpen() {
+            this.isControlPanelOpen = !this.isControlPanelOpen;
         }
     }
 })

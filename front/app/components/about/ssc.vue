@@ -1,6 +1,6 @@
 <template>
     <!-- SALISH SEA CAST -->
-    <v-card-title class="text-h6 mt-4 mb-2">
+    <v-card-title class="text-title-large mt-4 mb-2">
         <a href="https://salishsea.eos.ubc.ca/nemo/" target="_blank" rel="noopener noreferrer">SalishSeaCast NEMO
             Model</a>
     </v-card-title>

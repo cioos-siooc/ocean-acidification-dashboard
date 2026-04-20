@@ -19,14 +19,7 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 from nc_reader import open_nc_uncached, close_nc
-
-try:
-    import psycopg2
-    import psycopg2.extras
-    psycopg2_import_error = False
-except Exception:
-    psycopg2 = None
-    psycopg2_import_error = True
+from .postgis_helpers import connect_db, query_nearest_rowcol, get_grid_shape_from_db
 
 TIME_CANDIDATES = ("time",)
 DEPTH_CANDIDATES = ("depth", "lev", "level", "z", "deptht", "depthu", "depths")
@@ -41,39 +34,6 @@ def find_variable(ds: xr.Dataset, name: str) -> xr.DataArray:
         if k.lower() == low:
             return ds[k]
     raise KeyError(f"Variable '{name}' not found in dataset")
-
-
-def connect_db(dsn: Optional[str], host: str, port: int, user: str, password: str, dbname: str):
-    """Connect to PostGIS database."""
-    if psycopg2 is None:
-        raise RuntimeError(
-            "psycopg2 is not available. For quick development install the binary wheel:\n"
-            "  pip install psycopg2-binary\n"
-            "or in uv: uv add --active psycopg2-binary\n"
-        )
-    if dsn:
-        return psycopg2.connect(dsn)
-    return psycopg2.connect(host=host, port=port, user=user, password=password, dbname=dbname)
-
-
-def query_nearest_rowcol(conn, table: str, lat: float, lng: float) -> Tuple[int, int, float, float]:
-    """Query the nearest grid cell from the database."""
-    sql = f"SELECT row_idx, col_idx, lat, lon FROM {table} ORDER BY geom <-> ST_SetSRID(ST_MakePoint(%s,%s),4326) LIMIT 1"
-    with conn.cursor() as cur:
-        cur.execute(sql, (lng, lat))
-        row = cur.fetchone()
-        if row is None:
-            raise RuntimeError("Grid table is empty or not found")
-        return int(row[0]), int(row[1]), float(row[2]), float(row[3])
-
-
-def get_grid_shape_from_db(conn, table: str) -> Tuple[int, int]:
-    """Get grid dimensions from database."""
-    sql = f"SELECT COALESCE(MAX(row_idx),0), COALESCE(MAX(col_idx),0) FROM {table}"
-    with conn.cursor() as cur:
-        cur.execute(sql)
-        r, c = cur.fetchone()
-        return int(r) + 1, int(c) + 1
 
 
 def find_horiz_dims_by_shape(var: xr.DataArray, nrows: int, ncols: int) -> Tuple[str, str]:

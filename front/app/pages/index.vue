@@ -24,12 +24,12 @@
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
             <div class="selector">
-                <ColorBarSelect v-if="mainStore.variables.length" @autorange="autorange" />
+                <!-- <ColorBarSelect v-if="mainStore.variables.length" @autorange="autorange" /> -->
 
                 <Overlays class="my-2" @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"/>
             </div>
 
-            <!-- <DepthSlider /> -->
+            <controlPanel />
 
             <!-- <div class="map-drawer-toggle" :style="{ right: drawerOpen ? '312px' : '12px' }">
                 <v-btn size="24px" color="warning" class="ma-0 pa-0" @click="drawerOpen = !drawerOpen"
@@ -71,8 +71,8 @@
                     </v-col>
                 </v-row>
 
-                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)` }"
-                    style="position: relative;">
+                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)`, position: 'relative' }"
+                    gap="0">
                     <TimeControls />
 
                     <div class="global-chart-wrapper" style="width: 100%; height: calc(100% - 32px);">
@@ -127,8 +127,8 @@ import { computeNightRanges } from '../../composables/useSunCalc'
 import { var2name } from '../../composables/useVar2Name'
 import { utc2pst } from '../../composables/useUTC2PST'
 import { formatDepth } from '../../composables/useFormatDepth'
-import { useCircleLayer } from '../../composables/useCircleLayer';
 import useStationsInteraction from '../../composables/useStationsInteraction';
+import { addBuoyLayer } from '../../composables/useBuoyLayer';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
 import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 import colors from 'vuetify/util/colors';
@@ -154,8 +154,6 @@ let model_timestamps: number[] = []; // Global cache for chart timestamps to sup
 let _statsLegendHandler: ((params: any) => void) | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
-// remember last clicked point (lat/lon) so chart can be refreshed when var/depth changes
-const lastClicked = ref<{ lat: number; lng: number } | null>(null);
 const footerHeight = '300px';
 
 // [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
@@ -174,8 +172,6 @@ const mapLoaded = ref(false);
 const selectedReady = ref(false);
 let didInitClick = false;
 
-const clicked_sensor_id = ref<number | null>(null);
-
 const globalChartLoading = ref(false);
 
 /** 
@@ -184,7 +180,10 @@ const globalChartLoading = ref(false);
 
 const zoom = ref('');
 
-const snackMessages = ref<object[]>([]);
+const snackMessages = computed({
+    get: () => mainStore.snackMessages,
+    set: (val) => { mainStore.snackMessages = val; },
+});
 
 const showHow = ref(false);
 
@@ -196,6 +195,8 @@ const selectedVariable = computed(() => mainStore.selected_variable);
 
 const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
 
+const lastClicked = computed(() => mainStore.lastClickedMapPoint);
+
 const selectedColormap = computed(() => {
     const name = mainStore.selected_variable.colormap;
     if (name) return mainStore.colormaps[name] ?? null;
@@ -206,6 +207,8 @@ const selectedColormap = computed(() => {
 const midDate = computed(() => {
     return mainStore.midDate ?? moment.utc();
 });
+
+const mapCenter = computed(() => mainStore.mapCenter);
 
 ///////////////////////////////////  WATCHERS  ///////////////////////////////////
 
@@ -232,6 +235,11 @@ watch([
 //     // dt is a moment object (UTC)
 //     mainStore.updateSelectedVariable({ dt });
 // }
+
+watch(() => mapCenter.value, (newCenter) => {
+    if (!map || !newCenter) return;
+    map.easeTo({ center: [newCenter.lng, newCenter.lat] });
+}, { immediate: true })
 
 ///////////////////////////////////  HOOKS  ///////////////////////////////////
 onMounted(async () => {
@@ -511,6 +519,11 @@ watch(() => mainStore.showBathymetryContours, (show) => {
     }
 }, { immediate: true });
 
+watch(() => mainStore.lastClickedMapPoint, (point) => {
+    if (!point) return;
+    trigger_mapClick(point.lat, point.lng);
+}, { immediate: true });
+
 ///////////////////////////////////  MEDTHODS  ///////////////////////////////////
 async function getMetadata() {
     try {
@@ -632,7 +645,7 @@ function maybeInitClick() {
 function initClick(lat: number, lng: number) {
     if (!map) return;
 
-    lastClicked.value = { lat, lng };
+    mainStore.setLastClickedMapPoint({ lat, lng });
 
     // Abort any in-flight timeseries requests and create a new controller
     try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
@@ -653,45 +666,51 @@ async function getTimeseriesPromises(lat: number, lon: number) {
 
     globalChartLoading.value = true;
 
-    const fromDate = midDate.value.clone().subtract(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
-    const toDate = midDate.value.clone().add(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
-
     try {
-        modelResp = await getTimeseriesFromApi(lat, lon, fromDate, toDate);
-    } catch (err: any) {
-        if (err?.code !== 'ERR_CANCELED') {
-            console.error('Failed to fetch model timeseries:', err);
-        }
-    }
+        const fromDate = midDate.value.clone().subtract(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
+        const toDate = midDate.value.clone().add(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
 
-    try {
-        climResp = await getClimateTimeseries(lat, lon, fromDate, toDate);
-    } catch (err: any) {
-        if (err?.code !== 'ERR_CANCELED') {
-            console.warn('Failed to fetch climate data (chart will show model only):', err);
-        }
-    }
-
-    if (clicked_sensor_id.value) {
         try {
-            sensorResp = await getSensorTimeseries(clicked_sensor_id.value, mainStore.selected_variable.var, fromDate, toDate);
+            modelResp = await getTimeseriesFromApi(lat, lon, fromDate, toDate);
         } catch (err: any) {
             if (err?.code !== 'ERR_CANCELED') {
-                console.warn('Failed to fetch sensor data:', err);
+                console.error('Failed to fetch model timeseries:', err);
             }
         }
+
+        try {
+            climResp = await getClimateTimeseries(lat, lon, fromDate, toDate);
+        } catch (err: any) {
+            if (err?.code !== 'ERR_CANCELED') {
+                console.warn('Failed to fetch climate data (chart will show model only):', err);
+            }
+        }
+
+        if (mainStore.selectedSensorID) {
+            try {
+                sensorResp = await getSensorTimeseries(mainStore.selectedSensorID, mainStore.selected_variable.var, fromDate, toDate);
+            } catch (err: any) {
+                if (err?.code !== 'ERR_CANCELED') {
+                    console.warn('Failed to fetch sensor data:', err);
+                }
+            }
+        }
+
+        const model = modelResp?.data || null;
+        const clim = climResp?.data || null;
+        const sensor = sensorResp?.data || null;
+
+        // Plot whatever data we successfully retrieved (model, climate, or sensor)
+        if (model || sensor) {
+            try {
+                plotTimeseries(model, clim, sensor);
+            } catch (err) {
+                console.error('Failed to plot timeseries:', err);
+            }
+        }
+    } finally {
+        globalChartLoading.value = false;
     }
-
-    const model = modelResp?.data || null;
-    const clim = climResp?.data || null;
-    const sensor = sensorResp?.data || null;
-
-    // Plot whatever data we successfully retrieved
-    if (model) {
-        plotTimeseries(model, clim, sensor);
-    }
-
-    globalChartLoading.value = false;
 }
 
 async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {
@@ -736,72 +755,16 @@ async function addSensors() {
         features: features
     };
 
-    const circle = useCircleLayer(() => map);
-    // Color by `active` property: active -> yellow, inactive -> grey
-    circle.addCircleLayer({
-        sourceId: 'stations',
-        layerId: 'stations-circles',
-        radius: 6,
-        color: ['case', ['==', ['get', 'active'], true], '#FFD700', '#888888']
-    });
-    circle.updateData(geojson);
-
-    // Attach active-only click handlers via composable
     try {
-        const stations = useStationsInteraction(() => map, async (sensor_id: number, depth: number) => {
-            // Find the closest depth in depths and switch to that if not already there
-            // Create a copy of the depths array before sorting to avoid mutating the store
-            const depthsArray = mainStore.variables.find((v: any) => v.var === selectedVariable.value.var)?.depths;
-            const closestDepth = depthsArray ? [...depthsArray].sort((a: any, b: any) => Math.abs(a.depth - depth) - Math.abs(b.depth - depth)) : [];
-            if (closestDepth && closestDepth.length > 0) {
-                const newDepth = closestDepth[0].depth;
-                if (newDepth !== selectedVariable.value.depth) {
-                    snackMessages.value.push({ color: 'warning', text: `Switched to closest available depth: ${formatDepth(newDepth)}` });
-                    mainStore.updateSelectedVariable({ depth: newDepth });
-                }
-            }
-
-            clicked_sensor_id.value = sensor_id;
-            // show marker
-            // try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
-            // const el = document.createElement('div'); el.style.width = '12px'; el.style.height = '12px'; el.style.borderRadius = '50%'; el.style.background = '#ff5722'; el.style.border = '2px solid white';
-            // const marker = new mapboxgl.Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
-            // (map as any).__clickMarker = marker;
-
-            // remember clicked point
-            // lastClicked.value = { lat, lon };
-
-            // Abort any in-flight timeseries requests and create new controller
-            // try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-            // tsRequestController = new AbortController();
-
-            // try {
-            //     // fetch sensor telemetry and climate in parallel
-            //     const [modelResp, climResp] = await Promise.all([
-            //         getSensorTimeseries(sensor_id, selectedVariable.value.var),
-            //         getClimateTimeseries(lat, lon)
-            //     ]);
-
-            //     // modelResp expected: { time: [...], value: [...] }
-            //     const model = { data: modelResp };
-            //     const clim = climResp.data;
-
-            //     plotTimeseries(model.data, clim);
-            // } catch (err: any) {
-            //     if (err && err.code === 'ERR_CANCELED') return;
-            //     console.error('Failed to fetch sensor timeseries:', err);
-            // } finally {
-            //     tsRequestController = null;
-            // }
-        });
-
-        // attach and keep a reference for cleanup
-        const detachStations = stations.attach(circle);
-        (map as any).__stationsDetach = detachStations;
+        const detach = await addBuoyLayer(map, geojson, clickSensor);
+        (map as any).__stationsDetach = detach;
     } catch (e) {
-        console.warn('Failed to attach station handlers:', e);
+        console.warn('Failed to add buoy layer:', e);
     }
-    // circle.on('mouseenter', (e) => { /* ... */ });
+}
+
+function clickSensor(sensor_id: number, depth: number) {
+    mainStore.selectSensor(sensor_id, depth);
 }
 
 
@@ -809,6 +772,7 @@ async function getSensors() {
     try {
         const r = await axios.get(`${apiBaseUrl}/sensors`);
         const data = r.data;
+        mainStore.setSensors(data);
         return data;
     } catch (e) {
         console.error('Failed to fetch sensors:', e);
@@ -937,48 +901,53 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     const onMapClick = async (evt: any) => {
         const { lng, lat } = evt.lngLat;
 
-        // Check if click landed on a sensor feature
-        const features = map.queryRenderedFeatures(evt.point, { layers: ['stations-circles'] });
+        // Check if click landed on a sensor feature (layer may not exist yet)
+        const stationLayers = map.getLayer('stations-circles') ? ['stations-circles'] : [];
+        const features = stationLayers.length
+            ? map.queryRenderedFeatures(evt.point, { layers: stationLayers })
+            : [];
 
         // Only clear sensor ID if we clicked empty map (not on a feature)
         if (features.length === 0) {
-            clicked_sensor_id.value = null;
+            mainStore.setSelectedSensorID(null);
         }
 
-        const overlay = (map as any).__activePngOverlay;
-        if (!overlay) return;
-        const [lon0, lat0, lon1, lat1] = overlay.bounds;
-        if (!(lng >= lon0 && lng <= lon1 && lat >= lat0 && lat <= lat1)) return; // outside overlay
-        // show a marker at clicked position
-        try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
-        const el = document.createElement('div'); el.style.width = '12px'; el.style.height = '12px'; el.style.borderRadius = '50%'; el.style.background = '#ff5722'; el.style.border = '2px solid white';
-        const marker = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
-        (map as any).__clickMarker = marker;
-
-        // remember clicked point so subsequent var/depth changes can refresh the chart
-        lastClicked.value = { lat, lng };
-
-        // Abort any in-flight timeseries requests and create a new controller
-        try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-        tsRequestController = new AbortController();
-
-        // POST to the API and expect {time: [...], value: [...]} in response
-        try {
-            await getTimeseriesPromises(lat, lng);
-        } catch (err) {
-            if (err && err.code === 'ERR_CANCELED') {
-                // request was aborted; ignore
-            } else {
-                console.error('Failed to fetch timeseries:', err);
-            }
-        } finally {
-            tsRequestController = null;
-        }
+        mainStore.setLastClickedMapPoint({ lat, lng });
     };
 
     // register click handler
     overlayObj.clickHandler = onMapClick;
     map.on('click', onMapClick);
+}
+
+async function trigger_mapClick(lat: number, lng: number) {
+    const overlay = (map as any).__activePngOverlay;
+    if (!overlay) return;
+    const [lon0, lat0, lon1, lat1] = overlay.bounds;
+    if (!(lng >= lon0 && lng <= lon1 && lat >= lat0 && lat <= lat1)) return; // outside overlay
+    // show a marker at clicked position
+    try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
+    const el = document.createElement('div');
+    el.className = 'map-click-marker';
+    const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map);
+    (map as any).__clickMarker = marker;
+
+    // Abort any in-flight timeseries requests and create a new controller
+    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
+    tsRequestController = new AbortController();
+
+    // POST to the API and expect {time: [...], value: [...]} in response
+    try {
+        await getTimeseriesPromises(lat, lng);
+    } catch (err) {
+        if (err && err.code === 'ERR_CANCELED') {
+            // request was aborted; ignore
+        } else {
+            console.error('Failed to fetch timeseries:', err);
+        }
+    } finally {
+        tsRequestController = null;
+    }
 }
 
 // NOTE: stopping animator on every change to `mainStore.selected_variable` caused the animator to stop
@@ -1625,6 +1594,21 @@ let zrClickHandler: ((evt: any) => void) | null = null;
     font-size: 0.75rem;
     vertical-align: text-bottom;
 }
+
+@keyframes map-click-pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(255, 87, 34, 0.7); }
+    70%  { box-shadow: 0 0 0 14px rgba(255, 87, 34, 0);   }
+    100% { box-shadow: 0 0 0 0   rgba(255, 87, 34, 0);   }
+}
+
+.map-click-marker {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ff5722;
+    border: 2px solid white;
+    animation: map-click-pulse 1.5s ease-out infinite;
+}
 </style>
 
 <style scoped>
@@ -1636,10 +1620,10 @@ let zrClickHandler: ((evt: any) => void) | null = null;
 
 .selector {
     position: absolute;
-    width: 220px;
+    width: 0;
     z-index: 9998;
     top: 16px;
-    left: 16px;
+    left: 0;
 }
 
 .global-chart-wrapper {

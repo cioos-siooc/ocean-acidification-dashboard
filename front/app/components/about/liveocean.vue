@@ -1,6 +1,6 @@
 <template>
     <!-- LIVE OCEAN -->
-    <v-card-title class="text-h6 mt-4 mb-2">
+    <v-card-title class="text-title-large mt-4 mb-2">
         <a href="https://faculty.washington.edu/pmacc/LO/LiveOcean.html" target="_blank" rel="noopener noreferrer">Live
             Ocean Model</a>
     </v-card-title>

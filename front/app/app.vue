@@ -1,12 +1,18 @@
 <template>
   <v-app theme="dark">
     <v-app-bar density="compact" class="px-5" app>
+      <!-- HAMBURGER MENU ICON -->
+      <template v-slot:prepend>
+        <v-app-bar-nav-icon @click="mainStore.toggleIsControlPanelOpen"></v-app-bar-nav-icon>
+      </template>
+
+
       <NuxtLink to="/" class="logo-link">
-        <img src="/OA_logo.png" alt="OA Logo" class="logo-icon" />
+        <img src="/cioos_pacific.png" alt="OA Logo" class="logo-icon" />
       </NuxtLink>
       <v-app-bar-title>
         <span class="">OAH</span>
-        <span class="text-caption mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
+        <span class="text-label-medium mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
       </v-app-bar-title>
       <v-spacer></v-spacer>
       <!-- Optional: Add menu items here -->
@@ -108,8 +114,8 @@ async function getColormaps() {
 }
 
 .logo-icon {
-  height: 40px;
-  width: 40px;
+  height: 32px;
+  /* width: 40px; */
   margin-right: 16px;
   border-radius: 4px;
 }

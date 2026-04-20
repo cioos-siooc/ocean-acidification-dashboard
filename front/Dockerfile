@@ -11,7 +11,7 @@ COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./
 FROM base AS development
 
 # Install all dependencies (including dev dependencies)
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Copy all source files
 COPY . .
@@ -30,7 +30,7 @@ ARG NUXT_PUBLIC_API_BASE_URL
 ENV NUXT_PUBLIC_API_BASE_URL=${NUXT_PUBLIC_API_BASE_URL}
 
 # Install all dependencies (needed for build)
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Copy all source files
 COPY . .
