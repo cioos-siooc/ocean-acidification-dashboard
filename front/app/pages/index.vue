@@ -901,8 +901,11 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     const onMapClick = async (evt: any) => {
         const { lng, lat } = evt.lngLat;
 
-        // Check if click landed on a sensor feature
-        const features = map.queryRenderedFeatures(evt.point, { layers: ['stations-circles'] });
+        // Check if click landed on a sensor feature (layer may not exist yet)
+        const stationLayers = map.getLayer('stations-circles') ? ['stations-circles'] : [];
+        const features = stationLayers.length
+            ? map.queryRenderedFeatures(evt.point, { layers: stationLayers })
+            : [];
 
         // Only clear sensor ID if we clicked empty map (not on a feature)
         if (features.length === 0) {
