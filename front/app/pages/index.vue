@@ -385,6 +385,8 @@ watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth,
             try {
                 // debounce rapid var/depth changes to avoid hammering the API
                 if (tsRefreshTimer) clearTimeout(tsRefreshTimer);
+                // Skip if a sensor click is already handling the fetch via lastClickedMapPoint watcher
+                if (_sensorClickPending) return;
                 tsRefreshTimer = setTimeout(async () => {
                     try {
                         const lat = lastClicked.value!.lat;
@@ -801,12 +803,21 @@ function openSensorPicker(sensors: MultiSensorCandidate[], screenX: number, scre
 
 function clickSensor(sensor_id: number, depth: number) {
     sensorPicker.value.visible = false;
+    // Set flag BEFORE selectSensor so the var/depth watcher skips its own fetch.
+    // The lastClickedMapPoint watcher (via setLastClickedMapPoint below) will
+    // trigger the single authoritative fetch.
+    _sensorClickPending = true;
     mainStore.selectSensor(sensor_id, depth);
-    // Re-fetch timeseries so the newly selected sensor data is plotted.
-    // The watcher on lastClickedMapPoint won't re-fire (point didn't change),
-    // so we trigger the fetch explicitly here.
-    const pt = lastClicked.value;
-    if (pt) getTimeseriesPromises(pt.lat, pt.lng);
+    const sensor = mainStore.sensors.find((s: any) => s.id === sensor_id);
+    if (sensor) {
+        mainStore.setLastClickedMapPoint({ lat: sensor.latitude, lng: sensor.longitude });
+    } else {
+        // Sensor not in store — fall back to current point
+        const pt = lastClicked.value;
+        if (pt) getTimeseriesPromises(pt.lat, pt.lng);
+    }
+    // Clear after this tick — the var/depth watcher has already seen the flag.
+    nextTick(() => { _sensorClickPending = false; });
 }
 
 
@@ -949,12 +960,14 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
             ? map.queryRenderedFeatures(evt.point, { layers: stationLayers })
             : [];
 
-        // Only clear sensor ID if we clicked empty map (not on a feature)
-        if (features.length === 0) {
-            mainStore.setSelectedSensorID(null);
-            sensorPicker.value.visible = false;
+        if (features.length > 0) {
+            // Sensor click is fully handled by useStationsInteraction → clickSensor.
+            // Returning here prevents a duplicate getTimeseriesPromises call.
+            return;
         }
 
+        mainStore.setSelectedSensorID(null);
+        sensorPicker.value.visible = false;
         mainStore.setLastClickedMapPoint({ lat, lng });
     };
 
@@ -1621,6 +1634,9 @@ try {
 let tsRequestController: AbortController | null = null;
 let tsRefreshTimer: any = null;
 let zrClickHandler: ((evt: any) => void) | null = null;
+// Prevents the var/depth watcher from scheduling a duplicate fetch when a sensor
+// click already triggers one via the lastClickedMapPoint watcher path.
+let _sensorClickPending = false;
 
 
 </script>
