@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { useRuntimeConfig } from '#app';
 
-export async function getSensorTimeseries(sensorId: number|null, variable: string, fromDate: string, toDate: string) {
+export async function getSensorTimeseries(sensorId: number|null, canonicalVariable: string, fromDate: string, toDate: string) {
     if (sensorId === null || sensorId === undefined) {
         return null
     }
@@ -10,7 +10,7 @@ export async function getSensorTimeseries(sensorId: number|null, variable: strin
     const apiBaseUrl = config.public.apiBaseUrl;
 
     const payload: any = {
-        variable: variable,
+        canonicalVariable: canonicalVariable,  // Model variable name (e.g., "dissolved_oxygen")
         sensorId: sensorId,
         fromDate: fromDate,
         toDate: toDate

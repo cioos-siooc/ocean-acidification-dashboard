@@ -26,6 +26,38 @@ def get_db_conn():
         host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS
     )
 
+def get_sensor_var_mapping(conn, sensor_id: int) -> dict:
+    """
+    Fetch the variables mapping for a sensor, which contains column names and conversion factors.
+    Returns: {canonical_var: {"name": sensor_column, "unit": unit_str, "conversion_factor": factor}}
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT variables FROM sensors WHERE id = %s", (sensor_id,))
+        result = cur.fetchone()
+        if not result or not result[0]:
+            return {}
+        
+        variables_data = result[0]
+        if isinstance(variables_data, str):
+            return json.loads(variables_data)
+        return variables_data or {}
+
+def apply_conversion(value: float, canonical_var: str, sensor_var_mapping: dict) -> float:
+    """
+    Apply unit conversion if defined in the mapping.
+    Returns the converted value, or the original value if no conversion is defined.
+    """
+    if value is None or not isinstance(value, (int, float)):
+        return value
+    if canonical_var not in sensor_var_mapping:
+        return value
+    
+    var_info = sensor_var_mapping[canonical_var]
+    if isinstance(var_info, dict):
+        conversion_factor = var_info.get("conversion_factor", 1.0)
+        return value * conversion_factor
+    return value
+
 def ensure_schema(conn):
     with conn.cursor() as cur:
         # 1. Ensure sensors table exists with device_config
@@ -141,6 +173,17 @@ def fetch_and_store():
                     print(f"    No sensorData found for {deviceCategoryCode}")
                     continue
                     
+                # Get sensor variable mapping for conversion
+                sensor_var_mapping = get_sensor_var_mapping(conn, sensor_id)
+                
+                # Build reverse mapping: sensor column name -> canonical name (for conversion lookup)
+                col_to_canonical = {}
+                for canonical_var, var_info in sensor_var_mapping.items():
+                    if isinstance(var_info, dict):
+                        col_name = var_info.get("name")
+                        if col_name:
+                            col_to_canonical[col_name] = canonical_var
+                
                 # Pivot data: time -> { var: value }
                 pivoted = {}
                 for s in data['sensorData']:
@@ -153,7 +196,12 @@ def fetch_and_store():
                         if t not in pivoted:
                             pivoted[t] = {}
                         if v is not None and not (isinstance(v, (float, int)) and np.isnan(v)):
-                            pivoted[t][sensorCategoryCode] = float(v)
+                            # Look up canonical name to apply correct conversion factor
+                            canonical_var = col_to_canonical.get(sensorCategoryCode, sensorCategoryCode)
+                            # Apply conversion to canonical units
+                            converted_v = apply_conversion(float(v), canonical_var, sensor_var_mapping)
+                            # Store under sensor-specific column name
+                            pivoted[t][sensorCategoryCode] = converted_v
 
                 # Upsert into DB
                 records = []

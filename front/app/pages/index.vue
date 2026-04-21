@@ -26,7 +26,8 @@
             <div class="selector">
                 <!-- <ColorBarSelect v-if="mainStore.variables.length" @autorange="autorange" /> -->
 
-                <Overlays class="my-2" @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true" @autorange="autorange" />
+                <Overlays class="my-2" @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
+                    @autorange="autorange" />
             </div>
 
             <controlPanel />
@@ -41,14 +42,9 @@
             <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
 
             <!-- Multi-sensor location picker -->
-            <SensorPickerPopover
-              :visible="sensorPicker.visible"
-              :x="sensorPicker.x"
-              :y="sensorPicker.y"
-              :sensors="sensorPicker.sensors"
-              @pick="(s) => clickSensor(s.id, s.depth)"
-              @close="sensorPicker.visible = false"
-            />
+            <SensorPickerPopover :visible="sensorPicker.visible" :x="sensorPicker.x" :y="sensorPicker.y"
+                :sensors="sensorPicker.sensors" @pick="(s) => clickSensor(s.id, s.depth)"
+                @close="sensorPicker.visible = false" />
 
             <v-snackbar-queue ref="snackbarQueue" v-model="snackMessages" :total-visible="3" closable
                 contained></v-snackbar-queue>
@@ -1441,10 +1437,10 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
 
         // base hidden series for stacking — all named with _ prefix so they're excluded from the legend UI
         seriesArr.push({ name: '_stats_min_base', type: 'line', data: __series_min, lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none' });
-        seriesArr.push({ name: '_stats_max_range', type: 'line', data: __series_max, lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.4 }, stack: 'minmax', symbol: 'none' });
+        seriesArr.push({ name: '_stats_max_range', type: 'line', data: __series_max, lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, stack: 'minmax', symbol: 'none' });
         seriesArr.push({ name: '_stats_q1_base', type: 'line', data: __series_q1, stack: 'range', lineStyle: { opacity: 0 }, symbol: 'none' });
-        seriesArr.push({ name: '_stats_iqr', type: 'line', data: __series_q3, stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.4 }, symbol: 'none' });
-        seriesArr.push({ name: '_stats_mean', type: 'line', data: __series_mean, smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 4 }, symbol: 'none' });
+        seriesArr.push({ name: '_stats_iqr', type: 'line', data: __series_q3, stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, symbol: 'none' });
+        seriesArr.push({ name: '_stats_mean', type: 'line', data: __series_mean, smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 2, type: "dashed" }, symbol: 'none' });
         // Fake "Stats" series — empty data, exists only to provide the grouped legend entry
         seriesArr.push({ name: 'Stats', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
     }
@@ -1452,10 +1448,20 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
     // model series — only push if data is available
     if (hasModelData) {
         seriesArr.push({
-            name: mainStore.selected_variable.var || 'value', type: 'line', showSymbol: false, data: __series_model, smooth: true, lineStyle: {
-                width: 4, color: mainStore.colors.model.line, shadowColor: mainStore.colors.model.shadow,
-                shadowBlur: mainStore.colors.model.shadowBlur, opacity: 0.8
-            }, itemStyle: { color: mainStore.colors.model.line }, legendIcon: 'roundRect'
+            name: mainStore.selected_variable.var || 'value',
+            type: 'line',
+            data: __series_model,
+            smooth: true, lineStyle: {
+                width: 1,
+                color: mainStore.colors.model.line,
+                shadowColor: mainStore.colors.model.shadow,
+                shadowBlur: mainStore.colors.model.shadowBlur,
+                opacity: 0.8
+            },
+            itemStyle: {
+                color: mainStore.colors.model.line
+            },
+            legendIcon: 'roundRect'
         });
     }
 
@@ -1469,8 +1475,8 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
             name: 'Sensor Data',
             type: 'line',
             data: __series_sensor,
-            symbol: 'none',
-            lineStyle: { width: 4, color: mainStore.colors.observation.line, opacity: 0.8, shadowColor: mainStore.colors.observation.shadow, shadowBlur: mainStore.colors.observation.shadowBlur },
+            // symbol: 'none',
+            lineStyle: { width: 1, color: mainStore.colors.observation.line, opacity: 0.8, shadowColor: mainStore.colors.observation.shadow, shadowBlur: mainStore.colors.observation.shadowBlur },
             itemStyle: { color: mainStore.colors.observation.line },
             legendIcon: 'roundRect'
         });
@@ -1487,6 +1493,7 @@ function plotTimeseries(modelData: any, climateData: any, sensorData: any | null
         .filter((s: any) => s.name && !s.name.startsWith('_'))
         .map((s: any) => s.name);
 
+    console.log(option);
     globalChart.setOption(option, true);
     globalChart.resize();
 
@@ -1671,9 +1678,17 @@ let _sensorClickPending = false;
 }
 
 @keyframes map-click-pulse {
-    0%   { box-shadow: 0 0 0 0   rgba(255, 87, 34, 0.7); }
-    70%  { box-shadow: 0 0 0 14px rgba(255, 87, 34, 0);   }
-    100% { box-shadow: 0 0 0 0   rgba(255, 87, 34, 0);   }
+    0% {
+        box-shadow: 0 0 0 0 rgba(255, 87, 34, 0.7);
+    }
+
+    70% {
+        box-shadow: 0 0 0 14px rgba(255, 87, 34, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 87, 34, 0);
+    }
 }
 
 .map-click-marker {

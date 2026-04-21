@@ -121,7 +121,7 @@ async def get_sensors():
     def _fetch():
         import psycopg2
         import psycopg2.extras
-        query = "SELECT id, name, latitude, longitude, depth, variables, device_config, active FROM sensors;"
+        query = "SELECT id, name, latitude, longitude, depth, device_config, active FROM sensors;"
         conn = None
         try:
             conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password, connect_timeout=5)
@@ -138,7 +138,6 @@ async def get_sensors():
                     "latitude": row.get("latitude"),
                     "longitude": row.get("longitude"),
                     "depth": row.get("depth"),
-                    "variables": row.get("variables"),
                     "device_config": row.get("device_config"),
                     "active": row.get("active"),
                 })
@@ -193,26 +192,28 @@ async def get_colormaps():
 #######################################
 
 class sensorTimeseriesRequest(BaseModel):
-    variable: str
+    canonicalVariable: str  # e.g., "dissolved_oxygen" (the model name)
     sensorId: int
     fromDate: str
     toDate: str
     
 @app.post("/sensorTimeseries")
 async def get_sensor_timeseries(request: sensorTimeseriesRequest):
-    """Return sensor telemetry for a given sensor id and variable and datetime.
+    """Return sensor telemetry for a given sensor id and canonical variable name.
+    Uses sensor variable mapping to translate canonical names to sensor-specific column names.
+    Data is stored in canonical units but under sensor-specific column names.
     Response: { time: [iso...], value: [float,...] }
     """
-    from datetime import datetime as dt, timedelta
+    from datetime import datetime as dt
+    import json
     
-    var = request.variable
+    canonical_var = request.canonicalVariable
     sensor_id = request.sensorId
     from_date_str = request.fromDate
     to_date_str = request.toDate
     
-    # Parse the incoming ISO datetime and calculate ±5 day window
+    # Parse the incoming ISO datetime
     try:
-        # Handle both ISO format with Z and with +00:00
         from_date = dt.fromisoformat(from_date_str.replace('Z', '+00:00'))
         to_date = dt.fromisoformat(to_date_str.replace('Z', '+00:00'))
     except Exception as exc:
@@ -225,11 +226,32 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
         conn = None
         try:
             conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password, connect_timeout=5)
-            cur = conn.cursor()
-            sql = "SELECT time, (measurements->>%s)::float AS value FROM sensors_data WHERE sensor_id=%s"
-            params = [var, sensor_id]
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
             
-            # ±5 days around requested datetime to give some context, limit to 1000 points to avoid huge responses
+            # Fetch the sensor's variable mappings
+            cur.execute("SELECT variables FROM sensors WHERE id=%s", (sensor_id,))
+            sensor_row = cur.fetchone()
+            if not sensor_row or not sensor_row.get('variables'):
+                raise HTTPException(status_code=400, detail=f"Sensor {sensor_id} has no variable mapping defined")
+            
+            variables_mapping = sensor_row['variables']
+            if isinstance(variables_mapping, str):
+                variables_mapping = json.loads(variables_mapping)
+            
+            # Look up the sensor-specific column name from the mapping
+            var_info = variables_mapping.get(canonical_var)
+            if not var_info or not isinstance(var_info, dict):
+                raise HTTPException(status_code=400, detail=f"Sensor {sensor_id} does not have a mapping for variable '{canonical_var}'")
+            
+            sensor_col_name = var_info.get("name")
+            if not sensor_col_name:
+                raise HTTPException(status_code=400, detail=f"Sensor {sensor_id} mapping for '{canonical_var}' is invalid (missing 'name')")
+            
+            # Query using the sensor-specific column name
+            # Data is already converted to canonical units at ingestion time
+            sql = "SELECT time, (measurements->>%s)::float AS value FROM sensors_data WHERE sensor_id=%s"
+            params = [sensor_col_name, sensor_id]
+            
             sql += " AND time >= %s AND time <= %s"
             params.extend([from_date.isoformat(), to_date.isoformat()])
 
@@ -245,6 +267,8 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
 
     try:
         return await run_in_threadpool(_fetch)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("get_sensor_timeseries failed")
         raise HTTPException(status_code=500, detail=str(exc))
