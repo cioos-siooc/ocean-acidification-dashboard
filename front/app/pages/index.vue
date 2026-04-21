@@ -24,8 +24,6 @@
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
             <div class="selector">
-                <!-- <ColorBarSelect v-if="mainStore.variables.length" @autorange="autorange" /> -->
-
                 <Overlays class="my-2" @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
                     @autorange="autorange" />
             </div>
@@ -122,8 +120,6 @@ import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
 import axios from 'axios'
 import moment from 'moment-timezone'
-import DepthSlider from '../components/depth-slider.vue'
-import ColorBarSelect from '../components/ColorBarSelect.vue'
 import TimeControls from '../components/TimeControls.vue'
 import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'

@@ -3,11 +3,11 @@
     <div class="label">
       <v-select v-model="selectedVarName" label="Field" :items="variableItems" :disabled="variableItems.length === 0"
         item-title="label" item-value="var" density="compact" hide-details variant="outlined" class="my-4"
-        :menu-props="{ location: 'end', offset: 10 }" style="width: 100%"></v-select>
+        :menu-props="{ location: 'end', offset: 35, zIndex: 9999 }" style="width: 100%"></v-select>
 
       <v-select v-model="selectedSource" :items="sourceItems" label="Source" item-title="label" item-value="source"
         :disabled="sourceItems.length === 0" density="compact" hide-details variant="outlined" class="my-4"
-        :menu-props="{ location: 'end', offset: 10 }" style="width: 100%">
+        :menu-props="{ location: 'end', offset: 35, zIndex: 9999 }" style="width: 100%">
         <template #prepend-inner>
           <v-btn icon size="12px" @click="showSourceInfo = !showSourceInfo" title="About this data source">
             <v-icon :color="colors.yellow.base" size="12px">mdi-information-variant</v-icon>
@@ -17,7 +17,7 @@
 
       <v-select v-if="depths && depths.length > 0" v-model="selectedDepth" :items="depths" label="Depth"
         item-title="label" item-value="depth" :disabled="!depths || depths.length === 0" density="compact" hide-details
-        variant="outlined" class="my-4" :menu-props="{ location: 'end', offset: 50 }" style="width: 100%">
+        variant="outlined" class="my-4" :menu-props="{ location: 'end', offset: 75, zIndex: 9999 }" style="width: 100%">
         <template #item="{ props, item }">
           <v-list-item v-bind="props" :title="item.title"
             :style="{ color: item.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">

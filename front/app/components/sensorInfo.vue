@@ -6,7 +6,7 @@
             </div>
             <div v-else>
                 <!-- SEARCH BAR -->
-                <v-text-field v-model="searchQuery" label="Search Sensors" variant="outlined" density="compact"
+                <v-text-field v-model="searchQuery" disabled label="Search Sensors" variant="outlined" density="compact"
                     clearable rounded=""></v-text-field>
 
                 <!-- SENSOR LIST -->

@@ -1,6 +1,6 @@
 <template>
-    <v-navigation-drawer v-model="isOpen" location="left" :width="mainStore.controlPanel_width" class="pa-2" absolute persistent mobile
-        :scrim="false" style="height:100%; z-index:9999; top:0;">
+    <v-navigation-drawer v-model="isOpen" location="left" :width="mainStore.controlPanel_width" class="pa-2" absolute
+        persistent mobile :scrim="false" style="height:100%; z-index:9999; top:0;">
         <!-- <v-row>
             <v-col cols="1">
                 <v-btn icon>
@@ -13,7 +13,7 @@
             <v-expansion-panel value="variables">
                 <v-expansion-panel-title class="text-subtitle-1">Variables</v-expansion-panel-title>
                 <v-expansion-panel-text>
-                    <colorBarSelect @autorange="autorange" />
+                    <variables />
                 </v-expansion-panel-text>
             </v-expansion-panel>
 
