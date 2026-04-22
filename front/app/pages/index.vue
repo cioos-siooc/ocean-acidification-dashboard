@@ -27,6 +27,7 @@
                 <Overlays class="my-2" @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
                     @autorange="autorange" />
             </div>
+            <ColorbarSettings />
 
             <controlPanel />
 

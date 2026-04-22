@@ -25,7 +25,7 @@
         <IconsAutorange />
       </v-btn>
 
-      <v-btn size="20px" disabled icon @click="showSettings = !showSettings" class="ma-2">
+      <v-btn size="20px" flat icon @click="showColorbarSettings = !showColorbarSettings" class="ma-2">
         <IconsConfig />
       </v-btn>
 
@@ -52,9 +52,12 @@ const emit = defineEmits<{
   (e: 'autorange'): void;
 }>();
 
-const showSettings = ref(false);
-
 ////////////////////////////////////// COMPUTED //////////////////////////////////////
+
+const showColorbarSettings = computed({
+  get: () => mainStore.showColorbarSettings,
+  set: (val: boolean) => mainStore.setShowColorbarSettings(val)
+});
 
 const selectedVariableName = computed(() => mainStore.selected_variable.var);
 

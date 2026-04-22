@@ -68,45 +68,6 @@
       </v-card-actions> -->
     </div>
 
-    <v-row v-if="showSettings" class="ma-0 pa-0" style="place-items: center;" gap="1">
-      <v-col cols="12" class="ma-0 pa-0" >
-        <v-select v-model="selectedColormap" label="Color map"
-          :items="Object.entries(colormaps).map(([name, cmap]) => ({ name, raw: cmap }))" item-title="name"
-          item-value="name" density="compact" hide-details variant="outlined" class="my-4" close-on-click="false"
-          :menu-props="{ location: 'end' }" style="width: 100%;">
-          <template #item="{ props, item }">
-            <v-list-item v-bind="props" :title="undefined">
-              <div class="colormap-item">
-                <div class="mini-bar" :style="colormapStyle(item.raw)"></div>
-                <div class="colormap-label">{{ item.raw.name }}</div>
-              </div>
-            </v-list-item>
-          </template>
-          <template #selection="{ item }">
-            <div class="colormap-selection">
-              <span>{{ item.raw.name }}</span>
-            </div>
-          </template>
-        </v-select>
-      </v-col>
-
-      <v-col cols=5 class="ma-0 pa-0">
-        <v-number-input v-model.number="colormapMin" hide-details :reverse="false" controlVariant="stacked" label="Min"
-          variant="solo-filled" flat :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
-          style="width: 100%; scale:0.75;"></v-number-input>
-      </v-col>
-
-      <v-col cols=2 class="ma-0 pa-0" style="display: flex; justify-content: center;">
-        <v-btn size="xx-small" flat @click="resetToDefaults" variant="outlined"
-          :title="'Reset min/max to defaults'">R</v-btn>
-      </v-col>
-
-      <v-col cols=5 class="ma-0 pa-0">
-        <v-number-input v-model.number="colormapMax" hide-details :reverse="false" controlVariant="stacked" label="Max"
-          variant="solo-filled" flat :hideInput="false" density="compact" :inset="false" :step="0.1" inputmode="decimal"
-          style="width: 100%; scale:0.75;"></v-number-input>
-      </v-col>
-    </v-row>
   </v-card>
 
   <v-dialog v-model="showSourceInfo" max-width="50%">
@@ -213,10 +174,6 @@ const selectedColormap = computed({
   set(v: string | null) { mainStore.updateSelectedVariable({ colormap: v }) }
 });
 
-// Default variable bounds
-const default_colormapMin = computed(() => variables.value.find(v => v.var === selectedVariable.value.var && v.source === selectedVariable.value.source)?.colormapMin ?? 0);
-const default_colormapMax = computed(() => variables.value.find(v => v.var === selectedVariable.value.var && v.source === selectedVariable.value.source)?.colormapMax ?? 1);
-
 const colormaps = computed(() => mainStore.colormaps);
 const barStyle = computed(() => {
   const palette = colormaps.value[selectedColormap.value]?.stops
@@ -248,37 +205,9 @@ const selectedVariableName = computed(() => mainStore.selected_variable.var);
 
 //////////////////////////////////  METHODS  ///////////////////////////////////
 
-function resetToDefaults() {
-  // Reset adjustable bounds to the variable's default bounds
-  mainStore.updateSelectedVariable({
-    colormapMin: default_colormapMin.value,
-    colormapMax: default_colormapMax.value
-  });
-}
 
-function colormapStyle(item: any) {
-  if (!item || !Array.isArray(item.raw.stops)) return {};
-  const raw = item.raw;
-  // Normalize stops (if absolute mode, convert to normalized 0..1 using current min/max)
-  const stops = (raw.mode === 'absolute')
-    ? (raw.stops || []).map((s: any) => {
-      const mn = colormapMin.value;
-      const mx = colormapMax.value;
-      const rng = mx - mn || 1.0;
-      return [Math.max(0, Math.min(1, (s[0] - mn) / rng)), s[1]];
-    })
-    : raw.stops;
-  const stopsStr = stops.map((s: any) => `${s[1]} ${Math.round(s[0] * 100)}%`).join(', ');
-  return {
-    background: `linear-gradient(90deg, ${stopsStr})`,
-    width: '48px',
-    height: '12px',
-    borderRadius: '3px',
-    border: '1px solid rgba(0,0,0,0.08)',
-    marginRight: '8px',
-    display: 'inline-block'
-  };
-}
+
+
 
 function deeper() {
   if (selectedDepth.value === null) return;

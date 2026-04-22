@@ -18,6 +18,7 @@
     "mapbox-gl": "3.2.0",
     "moment": "^2.29.4",
     "moment-timezone": "^0.5.40",
+    "nouislider": "^15.8.1",
     "nuxt": "^4.2.2",
     "pinia": "^3.0.4",
     "suncalc": "^1.9.0",

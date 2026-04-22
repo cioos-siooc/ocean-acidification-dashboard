@@ -20,7 +20,7 @@ export const useMainStore = defineStore('main', {
 
         dfnDays: 5, // days from now for climate timeseries
         variables: [] as Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: { depth: number, hasImage: boolean }[], precision: number }>,
-        selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null },
+        selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null, colormapStops: [null, null, null] as (number | null)[] },
         showBathymetryContours: false,
         colormaps: {} as Record<string, any>,
         autoRangeDisabled: false,
@@ -41,6 +41,8 @@ export const useMainStore = defineStore('main', {
 
         controlPanel_width: 300,
         isControlPanelOpen: true,
+
+        showColorbarSettings: false,
     }),
 
     actions: {
@@ -112,6 +114,10 @@ export const useMainStore = defineStore('main', {
 
         toggleIsControlPanelOpen() {
             this.isControlPanelOpen = !this.isControlPanelOpen;
+        },
+
+        setShowColorbarSettings(value: boolean) {
+            this.showColorbarSettings = value;
         }
     }
 })
