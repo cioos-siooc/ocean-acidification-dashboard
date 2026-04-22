@@ -1,58 +1,56 @@
 <template>
-    <v-dialog v-model="showColorbarSettings" max-width="500px" transition="dialog-transition">
-        <v-card class="pa-4">
-            <v-row>
-                <v-col cols="auto" style="width:90%">
-                    <v-row>
-                        <div :style="{ position: 'relative', width: barWidth, left: barLeft }">
-                            <div class="bar" :style="barStyle"></div>
-                            <!-- <div class="ticks">
-                        <div class="tick left">{{ colormapMin?.toFixed(precisionDigits) }}</div>
-                        <div class="tick right">{{ colormapMax?.toFixed(precisionDigits) }}</div>
-                    </div> -->
-                        </div>
-                    </v-row>
-                    <v-row>
-                        <v-range-slider v-model="sliderEnds" thumb-label="always" strict>
-                            <template #thumb-label="{ modelValue }">
-                                <!-- <div style="background: white; padding: 2px 4px; border-radius: 3px; font-size: 10px; border: 1px solid rgba(0,0,0,0.1);"> -->
-                                {{ (default_colormapMin + (default_colormapMax - default_colormapMin) * (modelValue /
-                                    100)).toFixed(precisionDigits) }}
-                                <!-- </div> -->
-                            </template>
-                        </v-range-slider>
-                    </v-row>
-                </v-col>
+    <!-- <v-dialog v-model="showColorbarSettings" max-width="500px" transition="dialog-transition"> -->
+    <v-card width="400px" class="ma-0 py-3 px-7" >
+        <v-row class="ma-0 pa-0 mt-6">
+            <v-col cols="11">
+                <v-range-slider v-model="sliderEnds" thumb-label="always" strict density="compact" hide-details >
+                    <template #thumb-label="{ modelValue }">
+                        <!-- <div style="background: white; padding: 2px 4px; border-radius: 3px; font-size: 10px; border: 1px solid rgba(0,0,0,0.1);"> -->
+                        {{ (default_colormapMin + (default_colormapMax - default_colormapMin) * (modelValue /
+                            100)).toFixed(precisionDigits) }}
+                        <!-- </div> -->
+                    </template>
+                </v-range-slider>
+            </v-col>
+        </v-row>
 
-                <v-col cols="1" style="width:5%">
-                    <v-menu> 
-                        <template v-slot:activator="{ props }">
-                            <v-btn flat size="16px" icon v-bind="props">
-                                <v-icon>mdi-menu-down</v-icon>
-                            </v-btn>
-                        </template>
-                        <v-list>
-                            <v-list-item v-for="(item, index) in colormaps" :key="index" :value="index" @click="mainStore.updateSelectedVariable({ colormap: index })">
-                                <v-list-item-title>
-                                    <div :style="colormapStyle(item)"></div> {{ item.name }}
-                                </v-list-item-title>
-                            </v-list-item>
-                        </v-list>
-                    </v-menu>
-                </v-col>
-            </v-row>
+        <v-row class="ma-0 pa-0">
+            <v-col cols="11">
+                <div :style="{ position: 'relative', width: barWidth, left: barLeft, height: '100%' }">
+                    <div class="bar" :style="barStyle"></div>
+                </div>
+            </v-col>
 
-            <v-card-actions class="pa-0">
-                <v-spacer></v-spacer>
-                <v-btn color="error" variant="tonal" @click="resetToDefaults">
-                    Reset to Defaults
-                </v-btn>
-                <v-btn color="primary" variant="tonal" @click="showColorbarSettings = false">
-                    Close
-                </v-btn>
-            </v-card-actions>
-        </v-card>
-    </v-dialog>
+            <v-col cols="1">
+                <v-menu height="50%">
+                    <template v-slot:activator="{ props }">
+                        <v-btn flat size="16px" icon v-bind="props">
+                            <v-icon>mdi-menu-down</v-icon>
+                        </v-btn>
+                    </template>
+                    <v-list>
+                        <v-list-item v-for="(item, index) in colormaps" :key="index" :value="index"
+                            @click="mainStore.updateSelectedVariable({ colormap: index })">
+                            <v-list-item-title>
+                                <div :style="colormapStyle(item)"></div> {{ item.name }}
+                            </v-list-item-title>
+                        </v-list-item>
+                    </v-list>
+                </v-menu>
+            </v-col>
+        </v-row>
+
+        <v-card-actions class="pa-0">
+            <v-spacer></v-spacer>
+            <v-btn color="error" variant="tonal" @click="resetToDefaults">
+                Reset to Defaults
+            </v-btn>
+            <v-btn color="primary" variant="tonal" @click="showColorbarSettings = false">
+                Close
+            </v-btn>
+        </v-card-actions>
+    </v-card>
+    <!-- </v-dialog> -->
 </template>
 
 <script setup lang="ts">
@@ -110,6 +108,7 @@ const barStyle = computed(() => {
     const stops = palette?.map(s => `${s[1]} ${Math.round(s[0] * 100)}%`).join(', ');
     return {
         background: `linear-gradient(90deg, ${stops})`,
+        height: '100%'
     };
 });
 

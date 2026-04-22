@@ -24,10 +24,10 @@
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
             <div class="selector">
-                <Overlays class="my-2" @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
+                <Overlays @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
                     @autorange="autorange" />
             </div>
-            <ColorbarSettings />
+            <ColorbarSettings v-if="showColorbarSettings" class="selector" :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + 16+50 : 16+50) + 'px' , transition: 'left 0.3s ease' }" />
 
             <controlPanel />
 
@@ -219,6 +219,8 @@ const midDate = computed(() => {
 });
 
 const mapCenter = computed(() => mainStore.mapCenter);
+
+const showColorbarSettings = computed(()=> mainStore.showColorbarSettings);
 
 ///////////////////////////////////  WATCHERS  ///////////////////////////////////
 
