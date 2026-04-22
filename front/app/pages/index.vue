@@ -53,23 +53,28 @@
         <v-footer class="ma-0 pa-0" :style="{ maxHeight: `${footerHeight}` }">
             <!-- <div ref="globalChartContainer" class="w-100" :style="{ height: `calc(${footerHeight} - 20px)` }"></div> -->
             <v-container minWidth="100%" class="ma-0 pa-0">
-                <v-row class="ma-0 pa-0" style="height:20px; ">
-                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
+                <v-row class="my-0 mx-2 pa-0" style="height:20px; ">
+                    <v-col cols="auto" class="my-0 mx-1 pa-0" style="height:20px">
                         <span class="footer-text">{{ var2name(selectedVariable.var) }}</span>
                     </v-col>
-                    <v-divider vertical class="mx-2"></v-divider>
-                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
+                    <v-divider vertical class="mx-0"></v-divider>
+                    <v-col cols="auto" class="my-0 mx-1 pa-0" style="height:20px">
                         <span class="footer-text">{{ utc2pst(moment(selectedVariable.dt)) }}</span>
                     </v-col>
-                    <v-divider vertical class="mx-2"></v-divider>
-                    <v-col v-if="lastClicked" cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
+                    <v-divider vertical class="mx-0"></v-divider>
+                    <v-col cols="auto" class="my-0 mx-1 pa-0" style="height:20px">
+                        <span class="footer-text">Depth {{ formatDepth(selectedVariable.depth) }} m</span>
+                    </v-col>
+                    <v-divider vertical class="mx-0"></v-divider>
+                    <v-col v-if="lastClicked" cols="auto" class="my-0 mx-1 pa-0" style="height:20px">
                         <span class="footer-text">{{ lastClicked?.lat.toFixed(5) }} , {{ lastClicked?.lng.toFixed(5)
                         }}</span>
                     </v-col>
+                    
 
                     <v-spacer></v-spacer>
 
-                    <v-col cols="auto" class="my-0 mx-2 pa-0" style="height:20px">
+                    <v-col cols="auto" class="my-0 mx-1 pa-0" style="height:20px">
                         <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
                         <span class="footer-text">{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
                         }}</span>

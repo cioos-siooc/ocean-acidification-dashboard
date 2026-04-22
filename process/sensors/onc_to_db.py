@@ -150,8 +150,8 @@ def fetch_and_store():
                     WHERE sensor_id = %s AND measurements ? %s
                 """, (sensor_id, sensorCategoryCodes))
                 result = cur.fetchone()
-                # +1 day and format date only.  ONC API expects this format.
-                dateFrom = (result[0] + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z") if result and result[0] else None
+                # -1 day and format date only.  ONC API expects this format.
+                dateFrom = (result[0] - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.000Z") if result and result[0] else None
             #
             print(f"  Fetching data for locationCode={locationCode}, deviceCategoryCode={deviceCategoryCode}, sensorCategoryCodes={sensorCategoryCodes}")
             try:

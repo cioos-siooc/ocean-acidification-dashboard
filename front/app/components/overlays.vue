@@ -6,7 +6,7 @@
       <v-btn icon size="20px" flat :variant="showBathymetryContours ? 'elevated' : 'text'"
         :color="showBathymetryContours ? 'primary' : undefined"
         @click="mainStore.setShowBathymetryContours(!showBathymetryContours)"
-        :title="showBathymetryContours ? 'Hide bathymetry contours' : 'Show bathymetry contours'" class="ma-2">
+        title="Bathymetry Contours" class="ma-2">
         <IconsContour />
       </v-btn>
       <!-- </v-row> -->
@@ -21,18 +21,18 @@
 
       <v-btn icon size="20px" flat
         :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled"
-        @click="autorange" title="Auto-range colorbar to data range" class="ma-2">
+        @click="autorange" title="Auto Color" class="ma-2">
         <IconsAutorange />
       </v-btn>
 
-      <v-btn size="20px" flat icon @click="showColorbarSettings = !showColorbarSettings" class="ma-2">
+      <v-btn size="20px" flat icon @click="showColorbarSettings = !showColorbarSettings" title="Color Settings" class="ma-2">
         <IconsConfig />
       </v-btn>
 
       <v-divider></v-divider>
 
       <!-- <v-row class="mx-1 my-1 px-0"> -->
-      <v-btn icon size="20px" flat @click="showHow" title="How to use" class="ma-2">
+      <v-btn icon size="20px" flat @click="showHow" title="How to Use" class="ma-2">
         <IconsHelp />
       </v-btn>
       <!-- </v-row> -->
