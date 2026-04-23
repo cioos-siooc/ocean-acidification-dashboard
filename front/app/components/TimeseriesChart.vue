@@ -136,7 +136,7 @@ async function fetchAndPlot(
         ]);
 
         const model = modelResp.status === 'fulfilled' ? modelResp.value?.data ?? null : null;
-        const clim  = climResp.status  === 'fulfilled' ? climResp.value?.data  ?? null : null;
+        const clim = climResp.status === 'fulfilled' ? climResp.value?.data ?? null : null;
         const sensor = sensorResp.status === 'fulfilled' ? sensorResp.value?.data ?? null : null;
 
         if (modelResp.status === 'rejected' && modelResp.reason?.code !== 'ERR_CANCELED')
@@ -170,7 +170,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     }
 
     const startLocal = midDate.value.clone().tz(tz).subtract(DFN.value, 'days');
-    const endLocal   = midDate.value.clone().tz(tz).add(DFN.value, 'days');
+    const endLocal = midDate.value.clone().tz(tz).add(DFN.value, 'days');
 
     // Night mark areas
     let markAreaData: any[] = [];
@@ -186,19 +186,19 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         const lastDay = endLocal.clone().endOf('day').add(1, 'day');
         while (day.isBefore(lastDay)) {
             const n1Start = day.clone().hour(0).minute(0).format();
-            const n1End   = day.clone().hour(6).minute(0).format();
+            const n1End = day.clone().hour(6).minute(0).format();
             const n2Start = day.clone().hour(20).minute(0).format();
-            const n2End   = day.clone().add(1, 'day').startOf('day').format();
+            const n2End = day.clone().add(1, 'day').startOf('day').format();
             if (moment(n1End).isAfter(startLocal) && moment(n1Start).isBefore(endLocal)) {
                 markAreaData.push([
                     { xAxis: moment(n1Start).isBefore(startLocal) ? startLocal.format() : n1Start },
-                    { xAxis: moment(n1End).isAfter(endLocal)   ? endLocal.format()   : n1End }
+                    { xAxis: moment(n1End).isAfter(endLocal) ? endLocal.format() : n1End }
                 ]);
             }
             if (moment(n2End).isAfter(startLocal) && moment(n2Start).isBefore(endLocal)) {
                 markAreaData.push([
                     { xAxis: moment(n2Start).isBefore(startLocal) ? startLocal.format() : n2Start },
-                    { xAxis: moment(n2End).isAfter(endLocal)    ? endLocal.format()   : n2End }
+                    { xAxis: moment(n2End).isAfter(endLocal) ? endLocal.format() : n2End }
                 ]);
             }
             day = day.add(1, 'day');
@@ -225,7 +225,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         return 0;
     })();
 
-    const hasClimate    = Array.isArray(climateData) && climateData.length > 0;
+    const hasClimate = Array.isArray(climateData) && climateData.length > 0;
     const hasSensorData = sensorData && Array.isArray(sensorData.time) && sensorData.time.length > 0;
 
     if (!hasModelData && !hasClimate && !hasSensorData) {
@@ -243,17 +243,30 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     const option: any = {
         legend: { show: true, orient: 'vertical', left: 'left', top: 'center', itemWidth: 15, itemHeight: 10, textStyle: { fontSize: 10 }, icon: 'rect' },
         tooltip: {
-            trigger: 'axis',
-            formatter: (params: any) => {
-                if (!Array.isArray(params)) return '';
-                const timeStr = moment.parseZone(params[0]?.value?.[0] ?? params[0]?.axisValue).format('DD MMM, HH:mm');
-                let out = `<b>${timeStr}</b><br/>`;
-                for (const p of params) {
-                    const val = Array.isArray(p.value) ? p.value[1] : p.value;
-                    out += `<span style="color:${p.color}">●</span> ${Number(val).toFixed(3)}<br/>`;
+            trigger: 'none',
+            axisPointer: {
+                type: 'cross',
+                animation: true,
+                label: {
+                    backgroundColor: '#333333cc',
+                    borderColor: '#aaaaaa88',
+                    borderWidth: 1,
+                    shadowBlur: 0,
+                    shadowOffsetX: 0,
+                    shadowOffsetY: 0,
+                    color: '#e0e0e0'
                 }
-                return out;
-            }
+            },
+            // formatter: (params: any) => {
+            //     if (!Array.isArray(params)) return '';
+            //     const timeStr = moment.parseZone(params[0]?.value?.[0] ?? params[0]?.axisValue).format('DD MMM, HH:mm');
+            //     let out = `<b>${timeStr}</b><br/>`;
+            //     for (const p of params) {
+            //         const val = Array.isArray(p.value) ? p.value[1] : p.value;
+            //         out += `<span style="color:${p.color}">●</span> ${Number(val).toFixed(3)}<br/>`;
+            //     }
+            //     return out;
+            // }
         },
         toolbox: { feature: { saveAsImage: {} } },
         grid: { left: 160, right: 30, top: 30, bottom: 30 },
@@ -308,19 +321,19 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
 
     if (hasClimate) {
         const climate_ts = climateData.map((row: any) => moment.utc(row.requested_date).valueOf());
-        const mean   = climateData.map((row: any) => row.mean);
-        const q1     = climateData.map((row: any) => row.q1);
-        const q3     = climateData.map((row: any) => row.q3);
-        const min    = climateData.map((row: any) => row.min);
+        const mean = climateData.map((row: any) => row.mean);
+        const q1 = climateData.map((row: any) => row.q1);
+        const q3 = climateData.map((row: any) => row.q3);
+        const min = climateData.map((row: any) => row.min);
         const q3Diff = q3.map((v: any, i: number) => v - q1[i]);
         const maxDiff = climateData.map((row: any, i: number) => row.max - min[i]);
 
         const fmt = (ts: number[], vals: any[]) => ts.map((t, i) => [moment.utc(t).tz(tz).format(), vals[i]]);
-        seriesArr.push({ name: '_stats_min_base',  type: 'line', data: fmt(climate_ts, min),    lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none' });
+        seriesArr.push({ name: '_stats_min_base', type: 'line', data: fmt(climate_ts, min), lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none' });
         seriesArr.push({ name: '_stats_max_range', type: 'line', data: fmt(climate_ts, maxDiff), lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, stack: 'minmax', symbol: 'none' });
-        seriesArr.push({ name: '_stats_q1_base',   type: 'line', data: fmt(climate_ts, q1),     stack: 'range', lineStyle: { opacity: 0 }, symbol: 'none' });
-        seriesArr.push({ name: '_stats_iqr',       type: 'line', data: fmt(climate_ts, q3Diff), stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, symbol: 'none' });
-        seriesArr.push({ name: '_stats_mean',      type: 'line', data: fmt(climate_ts, mean),   smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 2, type: 'dashed' }, symbol: 'none' });
+        seriesArr.push({ name: '_stats_q1_base', type: 'line', data: fmt(climate_ts, q1), stack: 'range', lineStyle: { opacity: 0 }, symbol: 'none' });
+        seriesArr.push({ name: '_stats_iqr', type: 'line', data: fmt(climate_ts, q3Diff), stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, symbol: 'none' });
+        seriesArr.push({ name: '_stats_mean', type: 'line', data: fmt(climate_ts, mean), smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 2, type: 'dashed' }, symbol: 'none' });
         seriesArr.push({ name: 'Stats', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
     }
 
