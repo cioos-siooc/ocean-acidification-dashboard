@@ -50,7 +50,7 @@
         </div>
 
         <!-- Bottom: Global Chart Footer -->
-        <v-footer class="ma-0 pa-0" :style="{ maxHeight: `${footerHeight}` }">
+        <v-footer class="ma-0 pa-0" :style="{ maxHeight: footerHeight }">
             <!-- <div ref="globalChartContainer" class="w-100" :style="{ height: `calc(${footerHeight} - 20px)` }"></div> -->
             <v-container minWidth="100%" class="ma-0 pa-0">
                 <v-row class="my-0 mx-2 pa-0" style="height:20px; ">
@@ -149,7 +149,7 @@ const timeseriesChart = ref<InstanceType<typeof TimeseriesChart> | null>(null);
 let map: mapboxgl.Map | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
-const footerHeight = '300px';
+const footerHeight = ref<string>('300px');
 
 const sensorPicker = ref<{ visible: boolean; x: number; y: number; sensors: MultiSensorCandidate[] }>({
     visible: false,
