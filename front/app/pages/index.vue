@@ -85,13 +85,7 @@
                     gap="0">
                     <TimeControls />
 
-                    <div class="global-chart-wrapper" style="width: 100%; height: calc(100% - 32px);">
-                        <div ref="globalChartContainer" style="width: 100%; height: 100%;"></div>
-                        <div v-if="globalChartLoading" class="global-chart-overlay">
-                            <v-progress-circular indeterminate color="warning" :size="64" :width="12"
-                                class="progress" />
-                        </div>
-                    </div>
+                    <TimeseriesChart ref="timeseriesChart" style="width: 100%; height: calc(100% - 32px);" />
 
                     <!-- <div class="py-3"
                         style="position: absolute; width:40px; height: 100%; bottom: 0px; right: 0px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:6px; padding-top:6px;">
@@ -122,16 +116,12 @@ import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import { useRuntimeConfig } from '#app';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import * as echarts from 'echarts'
-import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
 import axios from 'axios'
 import moment from 'moment-timezone'
 import TimeControls from '../components/TimeControls.vue'
 import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
-
-import { computeNightRanges } from '../../composables/useSunCalc'
 import { var2name } from '../../composables/useVar2Name'
 import { utc2pst } from '../../composables/useUTC2PST'
 import { formatDepth } from '../../composables/useFormatDepth'
@@ -139,7 +129,7 @@ import useStationsInteraction from '../../composables/useStationsInteraction';
 import { addBuoyLayer, type MultiSensorCandidate } from '../../composables/useBuoyLayer';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
 import EchartsLineDialog from '../components/EchartsLineDialog.vue'
-import colors from 'vuetify/util/colors';
+import TimeseriesChart from '../components/TimeseriesChart.vue';
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
@@ -155,11 +145,8 @@ const apiBaseUrl = config.public.apiBaseUrl
 
 
 const mapContainer = ref<HTMLDivElement | null>(null);
-const globalChartContainer = ref<HTMLDivElement | null>(null);
+const timeseriesChart = ref<InstanceType<typeof TimeseriesChart> | null>(null);
 let map: mapboxgl.Map | null = null;
-let globalChart: echarts.ECharts | null = null;
-let model_timestamps: number[] = []; // Global cache for chart timestamps to support "click anywhere"
-let _statsLegendHandler: ((params: any) => void) | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
 const footerHeight = '300px';
@@ -186,8 +173,6 @@ const dialogOpen = ref(false);
 const mapLoaded = ref(false);
 const selectedReady = ref(false);
 let didInitClick = false;
-
-const globalChartLoading = ref(false);
 
 /** 
  * Number of days from now to fetch for climate timeseries. This is used both for the API request parameter and for computing the x-axis range of the chart (now +/- DFN days). The API will return all available data within that range, which may be less than DFN if the model run does not extend that far into the future.
@@ -260,7 +245,6 @@ watch(() => mapCenter.value, (newCenter) => {
 
 ///////////////////////////////////  HOOKS  ///////////////////////////////////
 onMounted(async () => {
-    registerEchartsDarkTheme();
     mapboxgl.accessToken = config.public.mapboxToken;
     if (!mapContainer.value) return;
 
@@ -320,10 +304,6 @@ onBeforeUnmount(() => {
             try { window.removeEventListener('resize', globalHandlers.resizeHandler); } catch (e) { }
             try { if (globalHandlers.onStationEnter) map.off('mouseenter', 'stations-circles', globalHandlers.onStationEnter); } catch (e) { }
             try { if (globalHandlers.onStationLeave) map.off('mouseleave', 'stations-circles', globalHandlers.onStationLeave); } catch (e) { }
-            try { if (globalHandlers.onChartHighlight && globalChart) globalChart.off('highlight', globalHandlers.onChartHighlight); } catch (e) { }
-            try { if (globalHandlers.onChartDownplay && globalChart) globalChart.off('downplay', globalHandlers.onChartDownplay); } catch (e) { }
-            try { if (globalHandlers.onLegendSelectChanged && globalChart) globalChart.off('legendselectchanged', globalHandlers.onLegendSelectChanged); } catch (e) { }
-            try { if (globalHandlers.onChartHighlight) delete (map as any).__globalChartHandlers.onChartHighlight; } catch (e) { }
         }
         // detach station handlers if attached
         try { const sd = (map as any).__stationsDetach; if (sd) sd(); } catch (e) { }
@@ -351,9 +331,6 @@ onBeforeUnmount(() => {
         map.remove();
     }
 
-    if (globalChart && zrClickHandler) {
-        try { globalChart.getZr().off('click', zrClickHandler); } catch (e) { }
-    }
 });
 
 ///////////////////////////////////  WATCH  ///////////////////////////////////
@@ -567,91 +544,7 @@ async function init() {
 
     // For the new flow we don't use station points. Instead, we start with NO PNG overlay.
 
-    // initialize the chart now with an empty series
-    try { if (globalChart) { globalChart.dispose(); globalChart = null; } } catch (e) { /* ignore */ }
-    if (!globalChartContainer.value) return;
-    globalChart = echarts.init(globalChartContainer.value, 'dark', { renderer: 'canvas' });
-
-    const option = {
-        // title: { text: 'Timeseries', left: 'center' },
-        tooltip: {
-            trigger: 'axis'
-        },
-        toolbox: {
-            feature: {
-                dataZoom: {
-                    yAxisIndex: 'none'
-                },
-                dataView: { readOnly: true },
-                saveAsImage: {}
-            }
-        },
-        legend: {
-            show: true,
-            orient: 'vertical',
-            left: 'left',
-            top: 'center',
-            itemWidth: 15,
-            itemHeight: 10,
-            textStyle: { fontSize: 10 }
-        },
-        xAxis: {
-            type: 'time',
-            axisLabel: { color: '#e0e0e0' }
-        },
-        yAxis: { type: 'value', min: 'dataMin', max: 'dataMax', axisLabel: { color: '#e0e0e0' } },
-        grid: { left: 160, right: 30, top: 30, bottom: 30 },
-        series: []
-    };
-    globalChart.setOption(option);
-    globalChart.resize();
-
-    // Clicks anywhere on the chart area (using global canvas coordinate conversion)
-    try {
-        let lastClickedX: string | number | null = null;
-        zrClickHandler = (evt: any) => {
-            if (!globalChart || !model_timestamps.length) return;
-
-            // ZRender coordinates for the click
-            const px = evt.event.zrX;
-            const py = evt.event.zrY;
-
-            // Convert pixel point to chart coordinates (values)
-            const converted = globalChart.convertFromPixel('grid', [px, py]);
-            if (!converted || converted[0] === undefined) return;
-
-            const clickX = Number(converted[0]);
-
-            // Find nearest point in __series_model (assumed sorted timestamps)
-            // Binary search for efficiency
-            let low = 0;
-            let high = model_timestamps.length - 1;
-            let bestIdx = 0;
-
-            while (low <= high) {
-                const mid = Math.floor((low + high) / 2);
-                if (Math.abs(model_timestamps[mid] - clickX) < Math.abs(model_timestamps[bestIdx] - clickX)) {
-                    bestIdx = mid;
-                }
-                if (model_timestamps[mid] < clickX) low = mid + 1;
-                else if (model_timestamps[mid] > clickX) high = mid - 1;
-                else break;
-            }
-
-            const finalX = model_timestamps[bestIdx];
-            if (finalX !== lastClickedX) {
-                lastClickedX = finalX;
-                mainStore.updateSelectedVariable({
-                    dt: moment.utc(finalX)
-                });
-            }
-        };
-        globalChart.getZr().on('click', zrClickHandler);
-    } catch (e) {
-        console.warn('Failed to attach ECharts hover listeners:', e);
-    }
-
-    // No click handler registered until an overlay is added by selecting a variable.
+    // Chart is initialized by the TimeseriesChart component itself
 }
 
 function maybeInitClick() {
@@ -679,56 +572,18 @@ function initClick(lat: number, lng: number) {
 
 
 async function getTimeseriesPromises(lat: number, lon: number) {
-    // Fetch each data source independently so failures don't block others
-    let modelResp = null;
-    let climResp = null;
-    let sensorResp = null;
+    if (!timeseriesChart.value) return;
+    const fromDate = midDate.value.clone().subtract(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
+    const toDate   = midDate.value.clone().add(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
 
-    globalChartLoading.value = true;
-
-    try {
-        const fromDate = midDate.value.clone().subtract(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
-        const toDate = midDate.value.clone().add(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
-
-        try {
-            modelResp = await getTimeseriesFromApi(lat, lon, fromDate, toDate);
-        } catch (err: any) {
-            if (err?.code !== 'ERR_CANCELED') {
-                console.error('Failed to fetch model timeseries:', err);
-            }
-        }
-
-        try {
-            climResp = await getClimateTimeseries(lat, lon, fromDate, toDate);
-        } catch (err: any) {
-            if (err?.code !== 'ERR_CANCELED') {
-                console.warn('Failed to fetch climate data (chart will show model only):', err);
-            }
-        }
-
-        if (mainStore.selectedSensorID) {
-            try {
-                sensorResp = await getSensorTimeseries(mainStore.selectedSensorID, mainStore.selected_variable.var, fromDate, toDate);
-            } catch (err: any) {
-                if (err?.code !== 'ERR_CANCELED') {
-                    console.warn('Failed to fetch sensor data:', err);
-                }
-            }
-        }
-
-        const model = modelResp?.data || null;
-        const clim = climResp?.data || null;
-        const sensor = sensorResp?.data || null;
-
-        // Always plot — plotTimeseries handles the "No data available" case internally
-        try {
-            plotTimeseries(model, clim, sensor);
-        } catch (err) {
-            console.error('Failed to plot timeseries:', err);
-        }
-    } finally {
-        globalChartLoading.value = false;
-    }
+    await timeseriesChart.value.fetchAndPlot(
+        lat, lon,
+        () => getTimeseriesFromApi(lat, lon, fromDate, toDate),
+        () => getClimateTimeseries(lat, lon, fromDate, toDate),
+        () => mainStore.selectedSensorID
+            ? getSensorTimeseries(mainStore.selectedSensorID, mainStore.selected_variable.var, fromDate, toDate)
+            : Promise.resolve(null)
+    );
 }
 
 async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {
@@ -1174,349 +1029,6 @@ function removeBathymetryTilesLayer() {
     }
 }
 
-// Plot timeseries returned from the API into the footer chart
-function plotTimeseries(modelData: any, climateData: any, sensorData: any | null) {
-    if (!globalChart) return;
-    const tz = 'America/Vancouver';
-
-    const lat = lastClicked.value?.lat;
-    const lng = lastClicked.value?.lng;
-
-    // Update global timestamp cache and build model series only if model data is present
-    const hasModelData = modelData && Array.isArray(modelData.time) && modelData.time.length > 0;
-    let __series_model: any[] = [];
-    if (hasModelData) {
-        model_timestamps = modelData.time.map((t: any) => moment.utc(t).valueOf());
-        const values = modelData.value;
-        __series_model = model_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), values[i]]);
-    }
-
-    const climate_timestamps = Array.isArray(climateData) ? climateData.map((row: any) => moment.utc(row.requested_date).valueOf()) : [];
-    // const mean = Array.isArray(climateData) ? climateData.map((row: any) => row.mean) : [];
-    // const median = Object.values(climateData.median);
-    // const q1 = Array.isArray(climateData) ? climateData.map((row: any) => row.q1) : [];
-    // const q3 = Array.isArray(climateData) ? climateData.map((row: any) => row.q3) : [];
-    // const q3Diff = (Array.isArray(climateData) && q1.length === q3.length) ? q3.map((v: any, idx: number) => v - q1[idx]) : [];
-    // const min = Array.isArray(climateData) ? climateData.map((row: any) => row.min) : [];
-    // const maxDiff = (Array.isArray(climateData) && min.length > 0) ? climateData.map((row: any, idx: number) => row.max - min[idx]) : [];
-
-    // const __series_mean = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), mean[i]]);
-    // const __series_q1 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q1[i]]);
-    // const __series_q3 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q3Diff[i]]);
-    // const __series_min = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), min[i]]);
-    // const __series_max = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), maxDiff[i]]);
-
-    // Combine time_model_local and times_clim_local into a single array for x-axis range calculation
-    // const combinedTimes_timestamp = [...model_timestamps, ...climate_timestamps].sort((a, b) => a - b);
-    // if (combinedTimes_timestamp.length === 0) {
-    //     globalChart.setOption({ series: [] }, true);
-    //     globalChart.resize();
-    //     return;
-    // }
-
-    // Determine time range in local timezone
-    // if (!localTimes || localTimes.length === 0) {
-    //     globalChart.setOption({
-    //         series: [
-    //             {
-    //                 name: mainStore.selected_variable.var || 'value',
-    //                 type: 'line',
-    //                 showSymbol: false,
-    //                 smooth: true,
-    //                 data: []
-    //             }]
-    //     });
-    //     return;
-    // }
-
-    // const startLocal = moment.tz(combinedTimes_timestamp[0], tz).clone();
-    // const endLocal = moment.tz(combinedTimes_timestamp[combinedTimes_timestamp.length - 1], tz).clone();
-
-    //  Now +/- DFN days
-    const startLocal = midDate.value.clone().tz(tz).subtract(DFN.value, 'days').clone();
-    const endLocal = midDate.value.clone().tz(tz).add(DFN.value, 'days').clone();
-
-    // Compute night mark areas using SunCalc (sunrise/sunset) if lat/lon provided, otherwise fall back to fixed night windows
-    let markAreaData: any[] = [];
-    if (typeof lat === 'number' && typeof lng === 'number') {
-        const nights = computeNightRanges({ lat, lng, tz, startLocalIso: startLocal.format(), endLocalIso: endLocal.format() });
-        // markAreaData = nights.map(([s, e]) => [{ xAxis: s }, { xAxis: e }]);
-        for (let i = 0; i < nights.length - 1; i++) {
-            // add a mark area between the end of one night and the start of the next to visually separate days
-            markAreaData.push([{ xAxis: nights[i][1] }, { xAxis: nights[i + 1][0] }]);
-        }
-    } else {
-        // fallback to previous simple night windows
-        const tmp: any[] = [];
-        let day = startLocal.clone().startOf('day').subtract(1, 'day');
-        const lastDay = endLocal.clone().endOf('day').add(1, 'day');
-        while (day.isBefore(lastDay)) {
-            const n1Start = day.clone().hour(0).minute(0).format();
-            const n1End = day.clone().hour(6).minute(0).format();
-            const n2Start = day.clone().hour(20).minute(0).format();
-            const n2End = day.clone().add(1, 'day').startOf('day').format();
-            if (moment(n1End).isAfter(startLocal) && moment(n1Start).isBefore(endLocal)) {
-                const cs = moment(n1Start).isBefore(startLocal) ? startLocal.format() : n1Start;
-                const ce = moment(n1End).isAfter(endLocal) ? endLocal.format() : n1End;
-                tmp.push([{ xAxis: cs }, { xAxis: ce }]);
-            }
-            if (moment(n2End).isAfter(startLocal) && moment(n2Start).isBefore(endLocal)) {
-                const cs = moment(n2Start).isBefore(startLocal) ? startLocal.format() : n2Start;
-                const ce = moment(n2End).isAfter(endLocal) ? endLocal.format() : n2End;
-                tmp.push([{ xAxis: cs }, { xAxis: ce }]);
-            }
-            day = day.add(1, 'day');
-        }
-        markAreaData = tmp;
-    }
-
-    // selected time in chart timezone (to draw vertical marker)
-    const selectedXLocal = mainStore.selected_variable.dt ? moment.utc(mainStore.selected_variable.dt).tz(tz).format() : null;
-
-    // Build chart option with conditional inclusion of climate series
-    const axisDecimals = (() => {
-        const values: number[] = [];
-        const pushValues = (arr: any[] | undefined) => {
-            if (!Array.isArray(arr)) return;
-            for (const v of arr) {
-                const n = Number(v);
-                if (Number.isFinite(n)) values.push(n);
-            }
-        };
-
-        pushValues(modelData?.value);
-
-        if (Array.isArray(climateData)) {
-            for (const row of climateData) {
-                pushValues([row?.mean, row?.q1, row?.q3, row?.min, row?.max]);
-            }
-        }
-
-        if (sensorData && Array.isArray(sensorData.value)) {
-            pushValues(sensorData.value);
-        }
-
-        if (values.length === 0) return 0;
-        let min = values[0];
-        let max = values[0];
-        for (const v of values) {
-            if (v < min) min = v;
-            if (v > max) max = v;
-        }
-        const range = max - min;
-        if (!Number.isFinite(range)) return 0;
-        if (range < 1) return 3;
-        if (range < 5) return 2;
-        if (range < 10) return 1;
-        return 0;
-    })();
-
-    const option: any = {
-        // title: { text: varName ? `Timeseries — ${varName}` : 'Timeseries', left: 'center' },
-        legend: {
-            show: true,
-            orient: 'vertical',
-            left: 'left',
-            top: 'center',
-            itemWidth: 15,
-            itemHeight: 10,
-            textStyle: { fontSize: 10 },
-            icon: 'rect'
-        },
-        tooltip: {
-            trigger: 'axis', formatter: (params: any) => {
-                if (!Array.isArray(params)) return '';
-                const timeVal = params[0]?.value?.[0] ?? params[0]?.axisValue;
-                // timeVal will be a local-time string with offset; parseZone keeps offset
-                const timeStr = moment.parseZone(timeVal).format('DD MMM, HH:mm');
-                let out = `<b>${timeStr}</b><br/>`;
-                for (const p of params) {
-                    const val = Array.isArray(p.value) ? p.value[1] : p.value;
-                    out += `<span style="color:${p.color}">●</span> value: ${Number(val).toFixed(3)}<br/>`;
-                }
-                return out;
-            }
-        },
-        toolbox: {
-            feature: {
-                saveAsImage: {}
-            }
-        },
-        grid: { left: 160, right: 30, top: 30, bottom: 30 },
-        xAxis: {
-            type: 'time',
-            min: startLocal.format(),
-            max: endLocal.format(),
-            axisLabel: {
-                color: '#e0e0e0',
-                formatter: (value: any) => moment.parseZone(value).format('DD MMM, HH:mm')
-            }
-        },
-        yAxis: {
-            type: 'value',
-            // min: (value) => {
-            //     const padding = (value.max - value.min) * 0.1;
-            //     return (value.min - padding).toFixed(1);
-            // },
-            // max: (value) => {
-            //     const padding = (value.max - value.min) * 0.1;
-            //     return (value.max + padding).toFixed(1);
-            // },
-            min: 'dataMin',
-            max: 'dataMax',
-            splitLine: { show: false },
-            name: mainStore.variables.find((v: any) => v.var === mainStore.selected_variable.var)?.unit ?? '',
-            nameLocation: 'center',
-            nameTextStyle: { color: '#e0e0e0' },
-            axisLabel: { color: '#e0e0e0', formatter: (value: any) => Number(value).toFixed(axisDecimals) }
-        },
-        series: []
-    };
-
-    const hasClimate = Array.isArray(climateData) && climateData.length > 0;
-    const hasSensorData = sensorData && Array.isArray(sensorData.time) && sensorData.time.length > 0;
-
-    // If nothing to show, clear chart and display a message
-    if (!hasModelData && !hasClimate && !hasSensorData) {
-        globalChart.setOption({
-            graphic: [{
-                type: 'text',
-                left: 'center',
-                top: 'middle',
-                style: { text: 'No data available', fill: 'rgba(255,255,255,0.4)', fontSize: 16, fontFamily: 'Inter, sans-serif' }
-            }],
-            legend: { data: [] },
-            series: []
-        }, true);
-        globalChart.resize();
-        return;
-    }
-
-    // Clear any previous "No data" graphic
-    globalChart.setOption({ graphic: [{ type: 'text', style: { text: '' } }] }, false);
-
-    // Day/Night base series (always present)
-    const dayNightSeries: any = {
-        name: 'Day/Night',
-        type: 'line',
-        data: [],
-        markArea: {},
-        itemStyle: { color: colors.yellow.accent2 },
-        legendIcon: 'roundRect',
-        markLine: {
-            symbol: ['none', 'none'],
-            data: [
-                {
-                    xAxis: moment.tz(moment(), tz).format(),
-                    lineStyle: { color: colors.green.lighten2, width: 1, type: 'dashed' },
-                    label: { show: true, position: 'end', formatter: 'Now', color: colors.green.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.green.lighten2 }
-                },
-                {
-                    xAxis: selectedXLocal,
-                    lineStyle: { color: colors.orange.lighten2, width: 1, type: 'dashed' },
-                    label: { show: true, position: 'end', formatter: 'Map', color: colors.orange.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.orange.lighten2 }
-                }
-            ]
-        },
-        showSymbol: false
-    };
-
-    const seriesArr: any[] = [dayNightSeries];
-
-    // If climate present, compute series and push them
-    if (hasClimate) {
-        const climate_timestamps = climateData.map((row: any) => moment.utc(row.requested_date).valueOf());
-        const mean = climateData.map((row: any) => row.mean);
-        const q1 = climateData.map((row: any) => row.q1);
-        const q3 = climateData.map((row: any) => row.q3);
-        const min = climateData.map((row: any) => row.min);
-        const q3Diff = q3.map((v: any, idx: number) => v - q1[idx]);
-        const maxDiff = climateData.map((row: any, idx: number) => row.max - min[idx]);
-
-        const __series_mean = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), mean[i]]);
-        const __series_q1 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q1[i]]);
-        const __series_q3 = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), q3Diff[i]]);
-        const __series_min = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), min[i]]);
-        const __series_max = climate_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), maxDiff[i]]);
-
-        // base hidden series for stacking — all named with _ prefix so they're excluded from the legend UI
-        seriesArr.push({ name: '_stats_min_base', type: 'line', data: __series_min, lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none' });
-        seriesArr.push({ name: '_stats_max_range', type: 'line', data: __series_max, lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, stack: 'minmax', symbol: 'none' });
-        seriesArr.push({ name: '_stats_q1_base', type: 'line', data: __series_q1, stack: 'range', lineStyle: { opacity: 0 }, symbol: 'none' });
-        seriesArr.push({ name: '_stats_iqr', type: 'line', data: __series_q3, stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, symbol: 'none' });
-        seriesArr.push({ name: '_stats_mean', type: 'line', data: __series_mean, smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 2, type: "dashed" }, symbol: 'none' });
-        // Fake "Stats" series — empty data, exists only to provide the grouped legend entry
-        seriesArr.push({ name: 'Stats', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
-    }
-
-    // model series — only push if data is available
-    if (hasModelData) {
-        seriesArr.push({
-            name: mainStore.selected_variable.var || 'value',
-            type: 'line',
-            data: __series_model,
-            smooth: true, lineStyle: {
-                width: 1,
-                color: mainStore.colors.model.line,
-                shadowColor: mainStore.colors.model.shadow,
-                shadowBlur: mainStore.colors.model.shadowBlur,
-                opacity: 0.8
-            },
-            itemStyle: {
-                color: mainStore.colors.model.line
-            },
-            legendIcon: 'roundRect'
-        });
-    }
-
-    // sensor series — push if available, otherwise ensure it's absent via notMerge
-    if (hasSensorData) {
-        const sensor_timestamps = sensorData.time.map((t: any) => moment.utc(t).valueOf());
-        const sensor_values = sensorData.value;
-        const __series_sensor = sensor_timestamps.map((t: any, i: number) => [moment.utc(t).tz(tz).format(), sensor_values[i]]);
-
-        seriesArr.push({
-            name: 'Sensor Data',
-            type: 'line',
-            data: __series_sensor,
-            // symbol: 'none',
-            lineStyle: { width: 1, color: mainStore.colors.observation.line, opacity: 0.8, shadowColor: mainStore.colors.observation.shadow, shadowBlur: mainStore.colors.observation.shadowBlur },
-            itemStyle: { color: mainStore.colors.observation.line },
-            legendIcon: 'roundRect'
-        });
-    }
-
-    // notMerge=true ensures removed series (sensor, stats) are fully cleared from chart
-    option.series = seriesArr;
-    if (markAreaData.length > 0) {
-        (option.series[0] as any).markArea = { silent: true, itemStyle: { color: colors.yellow.accent2, opacity: 0.05 }, data: markAreaData };
-    }
-
-    // Build explicit legend.data: show all named series except internal underscore-prefixed stats series
-    option.legend.data = (option.series as any[])
-        .filter((s: any) => s.name && !s.name.startsWith('_'))
-        .map((s: any) => s.name);
-
-    console.log(option);
-    globalChart.setOption(option, true);
-    globalChart.resize();
-
-    // Register grouped 'Stats' legend toggle — clicking it shows/hides all 5 internal stats series
-    const STATS_INTERNAL = ['_stats_min_base', '_stats_max_range', '_stats_q1_base', '_stats_iqr', '_stats_mean'];
-    if (_statsLegendHandler) globalChart.off('legendselectchanged', _statsLegendHandler);
-    if (hasClimate) {
-        _statsLegendHandler = (params: any) => {
-            if (params.name !== 'Stats') return;
-            const action = params.selected['Stats'] ? 'legendSelect' : 'legendUnSelect';
-            for (const name of STATS_INTERNAL) {
-                globalChart!.dispatchAction({ type: action, name });
-            }
-        };
-        globalChart.on('legendselectchanged', _statsLegendHandler);
-    } else {
-        _statsLegendHandler = null;
-    }
-}
 
 
 async function autorange() {
@@ -1581,70 +1093,9 @@ async function autorange() {
     }
 }
 
-// Watch selected timestamp and update vertical marker without replotting the series
-try {
-    watch(() => mainStore.selected_variable.dt, (newDt) => {
-        if (!globalChart) return;
-        const tz = 'America/Vancouver';
-        const sel = newDt ? moment.utc(newDt).tz(tz).format() : null;
-        try {
-            globalChart.setOption({
-                series: [
-                    {
-                        name: "Day/Night",
-                        markLine: {
-                            symbol: ['none', 'none'],
-                            data: [
-                                //  Now line
-                                {
-                                    xAxis: moment.tz(moment(), tz).format(),
-                                    lineStyle: {
-                                        color: colors.green.lighten2,
-                                        width: 1,
-                                        type: 'dashed'
-                                    },
-                                    label: {
-                                        show: true,
-                                        position: 'end',
-                                        formatter: 'Now',
-                                        backgroundColor: '',
-                                        padding: [2, 4],
-                                        borderRadius: 2,
-                                        borderWidth: 1,
-                                        borderColor: colors.green.lighten2
-                                    },
-                                },
-                                // Selected time line
-                                {
-                                    xAxis: sel,
-                                    lineStyle: { color: colors.orange.lighten2, width: 1, type: 'dashed' },
-                                    label: {
-                                        show: true,
-                                        position: 'end',
-                                        formatter: 'Map',
-                                        backgroundColor: '',
-                                        padding: [2, 4],
-                                        borderRadius: 2,
-                                        borderWidth: 1,
-                                        borderColor: colors.orange.lighten2
-                                    },
-                                }
-                            ]
-                        }
-                    }]
-            });
-        } catch (e) {
-            // ignore if chart has no series yet
-        }
-    });
-} catch (e) {
-    console.warn('Failed to attach selected timestamp watcher for chart marker:', e);
-}
-
 // Abort controller for ongoing timeseries requests and debounce timer
 let tsRequestController: AbortController | null = null;
 let tsRefreshTimer: any = null;
-let zrClickHandler: ((evt: any) => void) | null = null;
 // Prevents the var/depth watcher from scheduling a duplicate fetch when a sensor
 // click already triggers one via the lastClickedMapPoint watcher path.
 let _sensorClickPending = false;
@@ -1718,28 +1169,5 @@ let _sensorClickPending = false;
     z-index: 9998;
     top: 16px;
     left: 0;
-}
-
-.global-chart-wrapper {
-    position: relative;
-}
-
-.global-chart-overlay {
-    position: absolute;
-    inset: 0;
-    background: #33333366;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 9999;
-}
-
-.progress {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    place-self: center;
 }
 </style>
