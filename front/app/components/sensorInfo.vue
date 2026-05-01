@@ -40,11 +40,18 @@
 
                             <v-list-item-subtitle class="text-label-small">Last Updated: 4 hours
                                 ago</v-list-item-subtitle>
-                            <v-row>
+                            <v-row class="ma-0 pa-0" >
                                 <v-spacer></v-spacer>
-                                <v-btn flat icon size="12px" title="Model Evaluation">
-                                    <icons-compare />
-                                </v-btn>
+                                <v-col v-if="sensor.depth.length>1" cols="auto" class="ma-0 pa-0" @click.stop="">
+                                    <v-btn flat icon size="12px" title="Model Evaluation">
+                                        <icons-heatmap :color="colors.orange.lighten3"/>
+                                    </v-btn>
+                                </v-col>
+                                <v-col cols="auto" class="ma-0 pa-0" @click.stop="">
+                                    <v-btn flat icon size="12px" title="Model Evaluation">
+                                        <icons-compare :color="colors.blue.lighten3"/>
+                                    </v-btn>
+                                </v-col>
                             </v-row>
 
                         </div>
@@ -70,8 +77,7 @@
 <script setup lang="ts">
 import { useMainStore } from '@/stores/main';
 import { ref, computed } from 'vue';
-import { formatDepth } from '../../composables/useFormatDepth';
-import { el } from 'vuetify/locale';
+import colors from 'vuetify/util/colors';
 
 const mainStore = useMainStore();
 

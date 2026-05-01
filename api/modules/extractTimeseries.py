@@ -31,7 +31,7 @@ import re
 import numpy as np
 import xarray as xr
 import pandas as pd
-from nc_reader import open_nc_uncached, close_nc, _nc_lock as _io_lock
+from nc_reader import open_nc_uncached, close_nc
 from modules.postgis_helpers import connect_db, query_nearest_rowcol, get_grid_shape_from_db
 
 # Reuse same DB helper patterns as extractProfile

@@ -17,8 +17,6 @@ import pandas as pd
 import psycopg2
 import psycopg2.extras
 
-from nc_reader import _nc_lock as _io_lock
-
 from shared.nc2tile import (
     get_grid_from_db,
     compute_mercator_grid_bounds,
@@ -47,21 +45,19 @@ def get_time_index_from_nc(nc_path: str, dt_requested: str) -> Tuple[int, str]:
         # Parse requested datetime
         dt_req = datetime.fromisoformat(dt_requested.replace('Z', '+00:00'))
         
-        with _io_lock:
-            with xr.open_dataset(nc_path) as ds:
-                # Find time dimension
-                time_dim = None
-                for dim in ds.dims:
-                    if 'time' in dim.lower():
-                        time_dim = dim
-                        break
-                
-                if time_dim is None:
-                    raise ValueError(f"No time dimension found in {nc_path}")
-                
-                # Get time values and convert to datetime
-                times = ds[time_dim].values
-            # file closed; lock released
+        with xr.open_dataset(nc_path) as ds:
+            # Find time dimension
+            time_dim = None
+            for dim in ds.dims:
+                if 'time' in dim.lower():
+                    time_dim = dim
+                    break
+            
+            if time_dim is None:
+                raise ValueError(f"No time dimension found in {nc_path}")
+            
+            # Get time values and convert to datetime
+            times = ds[time_dim].values
         
         times_dt = pd.to_datetime(times).to_pydatetime()
         
@@ -95,23 +91,21 @@ def get_depth_index_from_nc(nc_path: str, depth_value: float) -> int:
         Exception: If NC file cannot be read or no depth coordinate found
     """
     try:
-        with _io_lock:
-            with xr.open_dataset(nc_path) as ds:
-                # Find depth dimension
-                depth_coord = None
-                for coord_name in ('depth', 'z', 'lev', 'level', 'deptht', 'depthu', 'altitude'):
-                    if coord_name in ds.coords:
-                        depth_coord = ds.coords[coord_name].values
-                        break
+        with xr.open_dataset(nc_path) as ds:
+            # Find depth dimension
+            depth_coord = None
+            for coord_name in ('depth', 'z', 'lev', 'level', 'deptht', 'depthu', 'altitude'):
+                if coord_name in ds.coords:
+                    depth_coord = ds.coords[coord_name].values
+                    break
 
-                if depth_coord is None:
-                    # No depth coordinate found, assume 2D variable
-                    logger.warning(f"No depth coordinate found in {nc_path}; using index 0")
-                    return 0
+            if depth_coord is None:
+                # No depth coordinate found, assume 2D variable
+                logger.warning(f"No depth coordinate found in {nc_path}; using index 0")
+                return 0
 
-                # Find nearest depth index
-                idx = int(np.argmin(np.abs(depth_coord - float(depth_value))))
-            # file closed; lock released
+            # Find nearest depth index
+            idx = int(np.argmin(np.abs(depth_coord - float(depth_value))))
         return idx
     except Exception as e:
         logger.error(f"Error finding depth index in {nc_path}: {e}")

@@ -60,7 +60,7 @@ app.add_middleware(
 # app.mount("/png", StaticFiles(directory="/opt/data/png"), name="png")
 
 # Explicit PNG route that sets cache-control for compatibility with Mapbox and browsers
-IMAGE_ROOT = os.environ.get("IMAGE_ROOT", "/opt/data/image")
+IMAGE_ROOT = os.environ.get("IMAGE_ROOT", "/opt/data/images")
 
 
 def _get_image_roots() -> list:
