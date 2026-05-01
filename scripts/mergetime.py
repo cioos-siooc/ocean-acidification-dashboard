@@ -97,175 +97,128 @@ def merge_files(filepaths, output_path=None, chunk_size=20, complevel=1):
         for i, (fp, t_min, t_max) in enumerate(file_times, 1):
             print(f"  {i:2}. {Path(fp).name:50} {t_min} to {t_max}")
         
-        print(f"\n[2/4] Loading and concatenating {len(sorted_files)} files...")
-        datasets = []
-        total_loaded_mb = 0
-        for i, fp in enumerate(sorted_files, 1):
-            size_mb = os.path.getsize(fp) / (1024 * 1024)
-            print(f"  [{i}/{len(sorted_files)}] Loading {Path(fp).name}...", end=" ", flush=True)
-            ds = xr.open_dataset(fp, engine='netcdf4')
-            datasets.append(ds)
-            total_loaded_mb += size_mb
-            n_time = ds.dims.get('virtual_time') or ds.dims.get('time') or 0
-            n_vars = len(ds.data_vars)
-            print(f"OK ({n_time} timesteps, {n_vars} variables)")
-        
-        print(f"\n  Concatenating {len(datasets)} datasets along time dimension...")
-        # Concatenate along time dimension
-        merged_ds = xr.concat(datasets, dim=None)  # Let xarray auto-detect time dim
-        
-        # Find actual time dimension name
-        time_dim = None
-        for dim in merged_ds.dims:
-            if 'time' in dim.lower():
-                time_dim = dim
-                break
-        
-        if time_dim is None:
-            print("Error: No time dimension found in merged dataset")
-            for ds in datasets:
-                ds.close()
-            return False
-        
-        total_timesteps = merged_ds.dims[time_dim]
-        total_vars = len(merged_ds.data_vars)
-        print(f"  ✓ Successfully merged into {total_timesteps} timesteps, {total_vars} variables")
-        
-        # Close source datasets to free memory
-        print(f"\n  Closing source datasets...")
-        for ds in datasets:
-            ds.close()
-        print(f"  ✓ Memory released")
-        
-        # Save merged file
-        print(f"\n[3/4] Creating output file with rechunking...")
-        print(f"  Output: {output_path}")
-        print(f"  Format: NetCDF4 (HDF5)")
-        print(f"  Compression: zlib level {complevel}")
-        
-        # Use netCDF4 to save with proper chunking
+        print(f"\n[2/4] Inspecting structure from first file...")
         import netCDF4
-        
-        # Determine target chunks
-        spatial_dims = [d for d in merged_ds.dims if d not in [time_dim]]
-        chunks = {time_dim: total_timesteps}
-        for sd in spatial_dims:
-            chunks[sd] = chunk_size
-        print(f"  Chunk scheme: time={total_timesteps}, spatial={chunk_size}x{chunk_size}")
-        
-        # Now use netCDF4 to write with chunking (merged_ds already in memory)
         import time as time_module
+
+        first_file = sorted_files[0]
+        with netCDF4.Dataset(first_file, 'r') as src0:
+            unlimited_dims = {name for name, dim in src0.dimensions.items() if dim.isunlimited()}
+            if not unlimited_dims:
+                # Fall back: treat the time-like dim as unlimited
+                time_dim_nc = next((n for n in src0.dimensions if 'time' in n.lower()), None)
+                unlimited_dims = {time_dim_nc} if time_dim_nc else set()
+            time_dim_nc = next(iter(unlimited_dims)) if unlimited_dims else None
+            if time_dim_nc is None:
+                print("Error: No time dimension found")
+                return False
+
+            all_dim_names  = list(src0.dimensions.keys())
+            all_var_names  = list(src0.variables.keys())
+            spatial_dims   = [d for d in all_dim_names if d not in unlimited_dims]
+            global_attrs   = src0.__dict__
+            dim_sizes      = {name: dim.size for name, dim in src0.dimensions.items()}  # actual sizes
+            var_meta       = {}  # var_name -> (dtype, dims, attrs)
+            for vn in all_var_names:
+                v = src0.variables[vn]
+                var_meta[vn] = (v.dtype, v.dimensions, v.__dict__)
+            total_timesteps_per_file = src0.dimensions[time_dim_nc].size
+
+        total_timesteps = total_timesteps_per_file * len(sorted_files)
+        print(f"  Time dim : {time_dim_nc}")
+        print(f"  Spatial  : {spatial_dims}")
+        print(f"  Files    : {len(sorted_files)}  ×  {total_timesteps_per_file} timesteps  =  {total_timesteps} total")
+
+        # Chunk time = timesteps per source file so each write fills complete HDF5 chunks.
+        # Writing partial time-chunks forces HDF5 to buffer ALL spatial chunks simultaneously,
+        # which is what caused the OOM. TIME_COPY_BLOCK must equal chunk_time.
+        chunk_time = total_timesteps_per_file
+        TIME_COPY_BLOCK = chunk_time
+
         start_write = time_module.time()
-        
+        print(f"\n[3/4] Creating output file: {output_path}")
+        print(f"  Chunks  : time={chunk_time} (per source file), spatial={chunk_size}×{chunk_size}, complevel={complevel}")
+
         with netCDF4.Dataset(output_path, 'w', format='NETCDF4') as dst_ds:
-            print(f"\n[4/4] Writing variables to disk...")
-            
-            # Get unlimited dims
-            unlimited_dims = {time_dim}  # Time is unlimited
-            
-            # Copy dimensions
-            print(f"  Creating {len(merged_ds.dims)} dimensions...")
-            for name in merged_ds.dims:
-                size = merged_ds.dims[name]
+            # Dimensions
+            for name in all_dim_names:
                 if name in unlimited_dims:
                     dst_ds.createDimension(name, None)
-                    print(f"    {name:20} = unlimited ({size} current)")
                 else:
-                    dst_ds.createDimension(name, size)
-                    print(f"    {name:20} = {size}")
-            
-            # Copy global attributes
-            print(f"\n  Copying global attributes ({len(merged_ds.attrs)} items)...")
-            dst_ds.setncatts(merged_ds.attrs)
-            
-            # Copy and rechunk variables
-            print(f"\n  Writing {len(merged_ds.data_vars)} data variables:")
-            for var_idx, var_name in enumerate(merged_ds.data_vars, 1):
-                src_var = merged_ds[var_name]
-                is_coord = var_name in merged_ds.dims
-                
-                # Build chunksizes for data variables
+                    with netCDF4.Dataset(first_file, 'r') as src0:
+                        dst_ds.createDimension(name, src0.dimensions[name].size)
+
+            # Global attributes
+            dst_ds.setncatts(global_attrs)
+
+            # Create variables with target chunking (don't write data yet)
+            is_coord = lambda vn: vn in all_dim_names
+            for vn, (dtype, dims, attrs) in var_meta.items():
+                ndim = len(dims)
                 chunksizes = None
-                if not is_coord and src_var.ndim >= 3:
-                    chunksizes = []
-                    for i, dim_name in enumerate(src_var.dims):
-                        if dim_name == time_dim:
-                            chunksizes.append(total_timesteps)
-                        else:
-                            chunksizes.append(min(chunk_size, src_var.shape[i]))
-                    chunksizes = tuple(chunksizes)
-                
-                # Create variable
-                try:
-                    print(f"    [{var_idx}/{len(merged_ds.data_vars)}] {var_name:30}", end=" ", flush=True)
-                    dst_var = dst_ds.createVariable(
-                        var_name,
-                        src_var.dtype,
-                        src_var.dims,
-                        chunksizes=chunksizes,
-                        zlib=True,
-                        complevel=complevel
+                if not is_coord(vn) and ndim >= 3:
+                    chunksizes = tuple(
+                        chunk_time if d in unlimited_dims else min(chunk_size, dim_sizes.get(d, chunk_size))
+                        for d in dims
                     )
-                    
-                    # Copy attributes
-                    dst_var.setncatts(src_var.attrs)
-                    
-                    # Copy data
-                    dst_var[:] = src_var.values
-                    
-                    chunk_str = f"chunks={chunksizes}" if chunksizes else "(no chunking)"
-                    size_mb = (src_var.size * src_var.dtype.itemsize) / (1024 * 1024)
-                    print(f"OK ({chunk_str}, {size_mb:.1f} MB)")
-                except Exception as e:
-                    print(f"ERROR - {e}")
-            
-            # Copy coordinate variables
-            print(f"\n  Writing {len(merged_ds.coords)} coordinate variables:")
-            for coord_idx, coord_name in enumerate(merged_ds.coords, 1):
-                if coord_name not in dst_ds.variables:
-                    coord_var = merged_ds[coord_name]
-                    try:
-                        print(f"    [{coord_idx}/{len(merged_ds.coords)}] {coord_name:30}", end=" ", flush=True)
-                        dst_coord = dst_ds.createVariable(
-                            coord_name,
-                            coord_var.dtype,
-                            coord_var.dims
-                        )
-                        dst_coord.setncatts(coord_var.attrs)
-                        dst_coord[:] = coord_var.values
-                        print(f"OK")
-                    except Exception as e:
-                        print(f"ERROR - {e}")
-            
-            merged_ds.close()
-            
+                dst_var = dst_ds.createVariable(
+                    vn, dtype, dims,
+                    chunksizes=chunksizes,
+                    zlib=(complevel > 0),
+                    complevel=complevel,
+                )
+                dst_var.setncatts(attrs)
+
+            # Stream data: one source file at a time, one time-block at a time
+            print(f"\n[4/4] Streaming data ({TIME_COPY_BLOCK} timesteps/block)...")
+            t_offset = 0
+            for file_idx, fp in enumerate(sorted_files, 1):
+                print(f"  [{file_idx}/{len(sorted_files)}] {Path(fp).name}")
+                with netCDF4.Dataset(fp, 'r') as src_ds:
+                    t_len = src_ds.dimensions[time_dim_nc].size
+                    for vn in all_var_names:
+                        src_var = src_ds.variables[vn]
+                        dst_var = dst_ds.variables[vn]
+                        if not is_coord(vn) and src_var.ndim >= 3:
+                            # Find time axis index
+                            t_axis = src_var.dimensions.index(time_dim_nc)
+                            slc_src = [slice(None)] * src_var.ndim
+                            slc_dst = [slice(None)] * src_var.ndim
+                            for t_start in range(0, t_len, TIME_COPY_BLOCK):
+                                t_end = min(t_start + TIME_COPY_BLOCK, t_len)
+                                slc_src[t_axis] = slice(t_start, t_end)
+                                slc_dst[t_axis] = slice(t_offset + t_start, t_offset + t_end)
+                                dst_var[tuple(slc_dst)] = src_var[tuple(slc_src)]
+                            print(f"    {vn}: {t_len} timesteps written (offset {t_offset})")
+                        elif is_coord(vn) and file_idx == 1:
+                            # Write coordinate vars only from first file (except time)
+                            if time_dim_nc not in src_var.dimensions:
+                                dst_var[:] = src_var[:]
+                        # Time coordinate: append from every file
+                        if vn == time_dim_nc or (src_var.ndim == 1 and src_var.dimensions == (time_dim_nc,)):
+                            dst_var[t_offset:t_offset + t_len] = src_var[:]
+                t_offset += t_len
+
             write_time = time_module.time() - start_write
             output_size_mb = os.path.getsize(output_path) / (1024 * 1024)
             print(f"\n  Write completed in {write_time:.1f}s, output size: {output_size_mb:.1f} MB")
-        
-        # Cleanup
-        for ds in datasets:
-            ds.close()
-        
+
         # Verify
         print(f"\nVerifying output file...")
         ds_verify = xr.open_dataset(output_path, engine='netcdf4')
-        
         print(f"  Dimensions:")
         for dim_name, dim_size in ds_verify.dims.items():
             print(f"    {dim_name:20} = {dim_size}")
-        
         print(f"  Data variables: {len(ds_verify.data_vars)}")
-        for var_name in list(ds_verify.data_vars)[:3]:  # Show first 3
+        for var_name in list(ds_verify.data_vars)[:3]:
             var = ds_verify[var_name]
             chunks = var.encoding.get('chunksizes', 'N/A')
             print(f"    {var_name:30} {str(var.shape):30} chunks={chunks}")
         if len(ds_verify.data_vars) > 3:
             print(f"    ... and {len(ds_verify.data_vars) - 3} more")
-        
         ds_verify.close()
         print(f"\n  ✓ Verification successful!")
-        
+
         return True
     
     except Exception as e:

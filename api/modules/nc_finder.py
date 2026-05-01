@@ -14,6 +14,7 @@ from typing import List, Optional, Union
 
 _DirSpec = Union[str, List[str]]
 _DATE_RE = re.compile(r"(\d{8})")
+_YEAR_RE = re.compile(r"_(\d{4})\.nc$")
 _ISO_DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 
 
@@ -43,6 +44,7 @@ def find_nc_file(
     dirs = _to_list(data_dirs)
 
     # Phase 1: exact (and optional legacy) matches — prefer primary dir
+    year_str = date_str[:4]  # YYYY from YYYYMMDD
     for d in dirs:
         var_dir = os.path.join(d, variable)
         if not os.path.isdir(var_dir):
@@ -56,6 +58,11 @@ def find_nc_file(
             )
             if os.path.exists(leg):
                 return leg
+        # Yearly file: {var}_{YYYY}.nc — contains all timesteps for that year
+        if not suffix:
+            yearly = os.path.join(var_dir, f"{variable}_{year_str}.nc")
+            if os.path.exists(yearly):
+                return yearly
 
     # Phase 2: closest-date fallback across all dirs
     for d in dirs:
@@ -146,15 +153,27 @@ def _find_closest(files: List[str], variable: str, date_str: str) -> Optional[st
         base = os.path.basename(f).replace(".nc", "")
         if base.startswith(f"{variable}_"):
             base = base[len(variable) + 1:]
+        # Try 8-digit YYYYMMDD first
         m = _DATE_RE.search(base)
-        if not m:
+        if m:
+            try:
+                file_dt = datetime.strptime(m.group(1), "%Y%m%d")
+                diff = abs((file_dt - target).total_seconds())
+                if diff < closest_diff:
+                    closest_diff = diff
+                    closest_file = f
+            except ValueError:
+                pass
             continue
-        try:
-            file_dt = datetime.strptime(m.group(1), "%Y%m%d")
-            diff = abs((file_dt - target).total_seconds())
-            if diff < closest_diff:
-                closest_diff = diff
-                closest_file = f
-        except ValueError:
-            continue
+        # Try 4-digit year (yearly files): represent as Jan 1 of that year
+        ym = _YEAR_RE.search(os.path.basename(f))
+        if ym:
+            try:
+                file_dt = datetime.strptime(ym.group(1), "%Y")
+                diff = abs((file_dt - target).total_seconds())
+                if diff < closest_diff:
+                    closest_diff = diff
+                    closest_file = f
+            except ValueError:
+                pass
     return closest_file

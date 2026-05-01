@@ -16,6 +16,11 @@ import xarray as xr
 import argparse
 from pathlib import Path
 
+# Number of timesteps to copy at a time during rechunking.
+# 100 timesteps x 40 × (898×398) float32 ≈ 5 GB — safe on most machines.
+# Increase for faster I/O if you have more RAM.
+TIME_COPY_BLOCK = 500
+
 def is_already_optimally_chunked(filepath, chunk_size=20):
     """Check if file is already chunked optimally (T, 20, 20) for data variables.
     
@@ -173,10 +178,33 @@ def rechunk_file(filepath, output_path=None, chunk_size=20, complevel=4):
                     
                     # Copy attributes
                     dst_var.setncatts(src_var.__dict__)
-                    
-                    # Copy data
-                    dst_var[:] = src_var[:]
-                    
+
+                    # Copy data in time-sliced blocks to avoid loading the full array into RAM.
+                    # Coordinate/1-D vars are small enough to copy whole.
+                    if chunksizes is not None and src_var.ndim >= 3:
+                        # Find which axis is the unlimited (time) dimension
+                        time_axis = None
+                        for i, dim_name in enumerate(src_var.dimensions):
+                            if dim_name in unlimited_dims:
+                                time_axis = i
+                                break
+                        if time_axis is not None:
+                            t_len = src_var.shape[time_axis]
+                            block = max(1, TIME_COPY_BLOCK)
+                            slices_src = [slice(None)] * src_var.ndim
+                            slices_dst = [slice(None)] * src_var.ndim
+                            for t_start in range(0, t_len, block):
+                                t_end = min(t_start + block, t_len)
+                                slices_src[time_axis] = slice(t_start, t_end)
+                                slices_dst[time_axis] = slice(t_start, t_end)
+                                dst_var[tuple(slices_dst)] = src_var[tuple(slices_src)]
+                                print(f"      {var_name}: copied timesteps {t_start}–{t_end-1}/{t_len-1}", end='\r')
+                            print()  # newline after progress
+                        else:
+                            dst_var[:] = src_var[:]
+                    else:
+                        dst_var[:] = src_var[:]
+
                     chunk_str = chunksizes if chunksizes else "(no chunking - coordinate)"
                     print(f"    {var_name}: {chunk_str}")
         

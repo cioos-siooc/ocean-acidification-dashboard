@@ -334,12 +334,12 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         seriesArr.push({ name: '_stats_q1_base', type: 'line', data: fmt(climate_ts, q1), stack: 'range', lineStyle: { opacity: 0 }, symbol: 'none' });
         seriesArr.push({ name: '_stats_iqr', type: 'line', data: fmt(climate_ts, q3Diff), stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, symbol: 'none' });
         seriesArr.push({ name: '_stats_mean', type: 'line', data: fmt(climate_ts, mean), smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 2, type: 'dashed' }, symbol: 'none' });
-        seriesArr.push({ name: 'Stats', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
+        seriesArr.push({ name: 'Model Stats', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
     }
 
     if (hasModelData) {
         seriesArr.push({
-            name: mainStore.selected_variable.var || 'value',
+            name: 'Model',
             type: 'line',
             data: __series_model,
             smooth: true,
@@ -352,7 +352,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     if (hasSensorData) {
         const sensor_ts = sensorData.time.map((t: any) => moment.utc(t).valueOf());
         seriesArr.push({
-            name: 'Sensor Data',
+            name: 'Sensor',
             type: 'line',
             data: sensor_ts.map((t: number, i: number) => [moment.utc(t).tz(tz).format(), sensorData.value[i]]),
             lineStyle: { width: 1, color: mainStore.colors.observation.line, opacity: 0.8, shadowColor: mainStore.colors.observation.shadow, shadowBlur: mainStore.colors.observation.shadowBlur },
@@ -372,8 +372,8 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     if (_statsLegendHandler) chart.off('legendselectchanged', _statsLegendHandler);
     if (hasClimate) {
         _statsLegendHandler = (params: any) => {
-            if (params.name !== 'Stats') return;
-            const action = params.selected['Stats'] ? 'legendSelect' : 'legendUnSelect';
+            if (params.name !== 'Model Stats') return;
+            const action = params.selected['Model Stats'] ? 'legendSelect' : 'legendUnSelect';
             for (const name of STATS_INTERNAL) chart!.dispatchAction({ type: action, name });
         };
         chart.on('legendselectchanged', _statsLegendHandler);

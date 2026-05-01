@@ -132,6 +132,19 @@ def compute(
     logger.info(f"Base dir: {base_dir}")
     logger.info(f"Mode: {mode}, Workers: {workers}, Depth batch: {depth_batch_size}")
 
+    # Skip if all outputs already exist and overwrite is not set
+    if not overwrite:
+        existing = [
+            glob(os.path.join(base_dir, var, f"*{date_token}*.nc"))
+            for var in COMPUTE_VARS
+        ]
+        if all(existing):
+            logger.info(
+                f"Skipping {dt.strftime('%Y-%m-%d')} — output files already exist "
+                f"(use --overwrite to recompute)."
+            )
+            return True
+
     # Verify inputs exist before launching subprocess
     find_input_files(base_dir, date_token)
 

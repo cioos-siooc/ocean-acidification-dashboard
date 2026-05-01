@@ -56,7 +56,7 @@ services:
     volumes:
       - ./api:/app
       - ./shared:/app/shared
-      - /mnt/data:/opt/data
+      - /mnt/data/.:/opt/data
     ports:
       - "${API_PORT:-4000}:4000"
     environment:
@@ -102,7 +102,7 @@ services:
     volumes:
       - ./process:/app
       - ./shared:/app/shared
-      - ./data:/opt/data
+      - ./data/.:/opt/data
     depends_on:
       db:
         condition: service_healthy

@@ -34,11 +34,52 @@ import xarray as xr
 
 logger = logging.getLogger(__name__)
 
-# ── Process-wide lock ──────────────────────────────────────────────────────
-# A single REENTRANT lock shared by every call site in the API process.
-# Must be RLock (not Lock) because xarray also acquires it internally
-# for data reads when we pass lock=_nc_lock to open_dataset().
-_nc_lock = threading.RLock()
+# ── Timed reentrant lock ───────────────────────────────────────────────────
+# If the storage backing /opt/data stalls (e.g. NFS timeout, slow USB disk),
+# a thread can get stuck inside an HDF5 C call while holding _nc_lock
+# indefinitely.  Every other thread that then calls _nc_lock.acquire() (either
+# directly or via xarray's internal "with self.lock:" path) will also block
+# forever, eventually exhausting the anyio thread pool and freezing the whole
+# event loop.
+#
+# _TimedRLock fixes this by raising RuntimeError after NC_LOCK_TIMEOUT seconds
+# instead of blocking forever.  Callers already wrap reads in try/except so
+# they can skip a bad file rather than hang.  Once the disk recovers the
+# stuck thread completes, releases the lock, and normal service resumes.
+NC_LOCK_TIMEOUT = float(os.getenv("NC_LOCK_TIMEOUT", "30"))
+
+
+class _TimedRLock:
+    """RLock that raises RuntimeError on acquire() instead of blocking forever."""
+
+    def __init__(self, default_timeout: float = 30.0) -> None:
+        self._rlock = threading.RLock()
+        self.default_timeout = default_timeout
+
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:  # noqa: FBT001
+        if blocking and timeout < 0:
+            timeout = self.default_timeout
+        result = self._rlock.acquire(blocking=blocking, timeout=timeout)
+        if not result and blocking:
+            raise RuntimeError(
+                f"NC I/O lock timed out after {timeout:.0f}s — "
+                "a storage stall may be in progress"
+            )
+        return result
+
+    def release(self) -> None:
+        self._rlock.release()
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.release()
+        return False  # never suppress exceptions
+
+
+_nc_lock = _TimedRLock(default_timeout=NC_LOCK_TIMEOUT)
 
 # ── LRU cache ──────────────────────────────────────────────────────────────
 _cache: OrderedDict[str, xr.Dataset] = OrderedDict()
@@ -131,9 +172,15 @@ def open_nc_uncached(path: str) -> Optional[xr.Dataset]:
 
 
 def close_nc(ds: Optional[xr.Dataset]) -> None:
-    """Safely close a dataset (for uncached opens)."""
+    """Safely close a dataset (for uncached opens).
+
+    Acquires ``_nc_lock`` before calling ``ds.close()`` so that the HDF5
+    ``H5Fclose`` call is never concurrent with any other HDF5 operation
+    (e.g. a ``.values`` read on a different dataset in another thread).
+    """
     if ds is not None:
         try:
-            ds.close()
+            with _nc_lock:
+                ds.close()
         except Exception:
             pass

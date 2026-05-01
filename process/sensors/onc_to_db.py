@@ -114,7 +114,7 @@ def fetch_and_store():
     # If device_config is empty, we'll try to use the 'name' as a fallback deviceCode.
     sensors = []
     with conn.cursor() as cur:
-        cur.execute("SELECT id, name, device_config FROM sensors")
+        cur.execute("SELECT id, name, device_config FROM sensors WHERE source->>'type' = 'ONC'")
         sensors = cur.fetchall()
 
     if not sensors:

@@ -24,7 +24,7 @@ from __future__ import annotations
 import argparse
 import os
 from glob import glob
-from typing import Optional, Sequence, Tuple, List
+from typing import Optional, Sequence, Tuple, List, Union
 from modules.nc_finder import list_nc_files
 
 import re
@@ -113,7 +113,7 @@ def extract_timeseries(
     var: str,
     lat: float,
     lon: float,
-    depth: float,
+    depth: Optional[float] = None,
     data_dir: str = "/opt/data/nc",
     db_dsn: Optional[str] = None,
     db_host: Optional[str] = "db",
@@ -126,8 +126,12 @@ def extract_timeseries(
     from_date: str,
     to_date: str,
     allowed_dates: Optional[Sequence] = None,
-) -> Tuple[pd.Series, pd.Series]:
-    """Extract a time series across available files and return pandas Series (time, value).
+) -> Union[Tuple[pd.Series, pd.Series], pd.DataFrame]:
+    """Extract a time series across available files.
+
+    When *depth* is provided, returns ``(times, values)`` as a tuple of pd.Series.
+    When *depth* is ``None``, returns a ``pd.DataFrame`` with columns
+    ``time``, ``depth``, ``value`` covering every depth level in each file.
 
     Files are filtered by date range extracted from their filenames (YYYYMMDD format).
     Only files with dates between from_date and to_date (inclusive) are considered.
@@ -163,7 +167,7 @@ def extract_timeseries(
     # find candidate files
     # For depth=-1 (bottom layer), use the pre-extracted bottom NC files exclusively.
     # Those files are named {var}_bottom_{YYYYMMDD}.nc and have a single depth level at -1.0.
-    use_bottom = (float(depth) == -1.0)
+    use_bottom = (depth is not None and float(depth) == -1.0)
     files = list_nc_files(data_dir, var)
     if use_bottom:
         files = [f for f in files if os.path.basename(f).startswith(f"{var}_") and os.path.basename(f).endswith("_bottom.nc")]
@@ -174,10 +178,12 @@ def extract_timeseries(
         if files:
             print("DEBUG: Sample files:", files[:5])
 
-    # Filter files by date range. Extract dates from filenames (YYYYMMDD format).
-    # Handles: {var}_{YYYYMMDD}.nc, {var}_{YYYYMMDD}T{HHMM}.nc, {var}_{YYYYMMDD}_bottom.nc
+    # Filter files by date range. Extract dates from filenames.
+    # Handles daily files:  {var}_{YYYYMMDD}.nc, {var}_{YYYYMMDD}T{HHMM}.nc, {var}_{YYYYMMDD}_bottom.nc
+    # Handles yearly files: {var}_{YYYY}.nc  (4-digit year — always included if year overlaps range)
     date_pattern = re.compile(r"(\d{8})(?:T\d{4,6})?(?:_\w+)?\.nc$")
-    
+    year_pattern = re.compile(r"_(\d{4})\.nc$")
+
     # Parse from_date and to_date (mandatory parameters)
     try:
         start_date = pd.to_datetime(from_date).date()
@@ -187,10 +193,10 @@ def extract_timeseries(
         end_date = pd.to_datetime(to_date).date()
     except Exception as e:
         raise ValueError(f"Invalid to_date format: {to_date}. Use ISO-8601 date format (YYYY-MM-DD)") from e
-    
+
     if start_date > end_date:
         raise ValueError(f"from_date ({start_date}) cannot be after to_date ({end_date})")
-    
+
     # Normalise allowed_dates to a set of date objects for O(1) lookup
     allowed_date_set = None
     if allowed_dates is not None:
@@ -203,40 +209,56 @@ def extract_timeseries(
 
     filtered_files = []
     for fp in files:
+        # Try daily filename first (YYYYMMDD)
         m = date_pattern.search(fp)
-        if not m:
-            if verbose:
-                print(f"Skipping file with unrecognized name format: {fp}")
+        if m:
+            datestr = m.group(1)
+            try:
+                file_dt = pd.to_datetime(datestr, format="%Y%m%d").date()
+            except Exception:
+                if verbose:
+                    print(f"Skipping file with invalid date in name: {fp}")
+                continue
+            if file_dt < start_date or file_dt > end_date:
+                continue
+            # allowed_dates whitelist applies only to daily files
+            if allowed_date_set is not None and file_dt not in allowed_date_set:
+                if verbose:
+                    print(f"Skipping file {fp}: date {file_dt} not in allowed_dates")
+                continue
+            filtered_files.append(fp)
             continue
-        datestr = m.group(1)
-        try:
-            file_dt = pd.to_datetime(datestr, format="%Y%m%d").date()
-        except Exception:
-            if verbose:
-                print(f"Skipping file with invalid date in name: {fp}")
+
+        # Try yearly filename (YYYY) — include if the year overlaps the requested range
+        ym = year_pattern.search(fp)
+        if ym:
+            year = int(ym.group(1))
+            file_year_start = pd.Timestamp(year=year, month=1, day=1).date()
+            file_year_end   = pd.Timestamp(year=year, month=12, day=31).date()
+            if file_year_end < start_date or file_year_start > end_date:
+                continue
+            filtered_files.append(fp)
             continue
-        # Include file if it falls within the date range
-        if file_dt < start_date or file_dt > end_date:
-            continue
-        # If a whitelist of success_image dates was provided, skip files not in it
-        if allowed_date_set is not None and file_dt not in allowed_date_set:
-            if verbose:
-                print(f"Skipping file {fp}: date {file_dt} not in allowed_dates (not success_image)")
-            continue
-        filtered_files.append(fp)
+
+        if verbose:
+            print(f"Skipping file with unrecognized name format: {fp}")
+        continue
+
     files = filtered_files
     if verbose:
         print(f"Found {len(files)} files for variable '{var}' in data directory '{data_dir}' between {start_date} and {end_date}")
 
 
     # iterate files and extract
-    times_list: List[pd.DatetimeIndex] = []
+    times_list:  List[pd.DatetimeIndex] = []
     values_list: List[np.ndarray] = []
+    depths_list: List[np.ndarray] = []  # populated only in all-depths mode
 
     # Find a sample dataset that can be opened to inspect variable and depth axis
     sample_ds = None
     var_sample = None
     depth_dim = None
+    depths: Optional[np.ndarray] = None
     for fp in files:
         try:
             sample_ds = open_nc_uncached(fp)
@@ -286,9 +308,16 @@ def extract_timeseries(
         )
 
     # Determine which depth index to select based on the requested depth value
-    if depth_dim is not None:
+    if depth is None:
+        # All-depths mode — do not slice the depth axis
+        depth_sel = None
+        if verbose:
+            n_d = len(depths) if (depths is not None) else "unknown"  # type: ignore[arg-type]
+            print(f"No depth specified — extracting all {n_d} depth levels")
+    elif depth_dim is not None:
         try:
             # support depth arrays that may be increasing or decreasing
+            assert depths is not None
             depth_sel = int(np.argmin(np.abs(depths - depth)))
             if verbose:
                 print(f"Selecting depth index {depth_sel} nearest to requested depth {depth}")
@@ -332,7 +361,7 @@ def extract_timeseries(
                 continue
 
             try:
-                idxs_local, times_local = pick_time_slice(dsf, tdim, None, None)
+                idxs_local, times_local = pick_time_slice(dsf, tdim, from_date, to_date)
             except Exception as exc:
                 if verbose:
                     print(f"Skipping {fp}: pick_time_slice failed: {exc}")
@@ -360,8 +389,22 @@ def extract_timeseries(
                 continue
 
             vals = np.asarray(sub.values, dtype=float)
-            times_list.append(pd.to_datetime(times_local).copy())
-            values_list.append(vals)
+
+            if depth_sel is None and depth_dim is not None and depth_dim in sub.dims:
+                # All-depths: vals is 2-D (time, depth) — flatten to parallel flat arrays
+                dims = list(sub.dims)
+                t_ax = dims.index(tdim) if tdim in dims else 0
+                d_ax = dims.index(depth_dim)
+                if t_ax != 0:
+                    vals = np.moveaxis(vals, t_ax, 0)  # ensure (n_times, n_depths)
+                n_t, n_d = vals.shape
+                times_list.append(pd.DatetimeIndex(np.repeat(times_local, n_d)))
+                values_list.append(vals.flatten())
+                assert depths is not None
+                depths_list.append(np.tile(depths, n_t))
+            else:
+                times_list.append(pd.to_datetime(times_local).copy())
+                values_list.append(vals)
         except Exception as e:
             if verbose:
                 print(f"Skipping {fp}: failed to open/process file: {e}")
@@ -378,11 +421,8 @@ def extract_timeseries(
         conn = None
         raise RuntimeError("No data found in files for the requested time range")
 
-    times_concat = pd.DatetimeIndex([]).append(times_list)
+    times_concat  = pd.DatetimeIndex([]).append(times_list)
     values_concat = np.concatenate(values_list)
-
-    df = pd.DataFrame({"time": times_concat, "value": values_concat})
-    df = df.drop_duplicates(subset="time").sort_values(by="time").reset_index(drop=True)
 
     # Ensure DB connection is closed if still open
     try:
@@ -391,6 +431,20 @@ def extract_timeseries(
     except Exception:
         pass
     conn = None
+
+    if depths_list:
+        # All-depths mode: return a DataFrame with time, depth, value columns
+        depths_concat = np.concatenate(depths_list)
+        df = pd.DataFrame({"time": times_concat, "depth": depths_concat, "value": values_concat})
+        df = (
+            df.drop_duplicates(subset=["time", "depth"])
+            .sort_values(by=["time", "depth"])
+            .reset_index(drop=True)
+        )
+        return df
+
+    df = pd.DataFrame({"time": times_concat, "value": values_concat})
+    df = df.drop_duplicates(subset="time").sort_values(by="time").reset_index(drop=True)
     return df.time, df.value
 
 
@@ -404,7 +458,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--data-dir", default=os.environ.get("DATA_DIR", "/opt/data/nc"), help="Directory containing daily NetCDF files (default: /opt/data/nc)")
     p.add_argument("--lat", "-a", type=float, required=True, help="Latitude (required)")
     p.add_argument("--lon", "-o", type=float, required=True, help="Longitude (required)")
-    p.add_argument("--depth", type=float, required=True, help="Depth value to select (required)")
+    p.add_argument("--depth", type=float, default=None,
+                   help="Depth value to select; omit to extract all depth levels")
     p.add_argument("--from-date", required=True, help="Start date (ISO-8601 format, e.g., 2023-01-01)")
     p.add_argument("--to-date", required=True, help="End date (ISO-8601 format, e.g., 2023-12-31)")
     p.add_argument("--output", "-O", default=None, help="CSV output file (time,value)")
@@ -422,7 +477,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = p.parse_args(argv)
 
     # Use the high-level callable to perform extraction
-    df = extract_timeseries(
+    result = extract_timeseries(
         var=args.var,
         lat=args.lat,
         lon=args.lon,
@@ -440,14 +495,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         verbose=args.verbose,
     )
 
-    if args.output:
-        df.to_csv(args.output, index=False)
-        if args.verbose:
-            print(f"Wrote {len(df)} rows to {args.output}")
+    if isinstance(result, pd.DataFrame):
+        # All-depths result
+        if args.output:
+            result.to_csv(args.output, index=False)
+            if args.verbose:
+                print(f"Wrote {len(result)} rows to {args.output}")
+        else:
+            print("time,depth,value")
+            for _, row in result.iterrows():
+                v = float(row["value"])
+                t = pd.Timestamp(row["time"])
+                print(f"{t.isoformat()},{row['depth']},{'' if np.isnan(v) else v}")
     else:
-        print("time,value")
-        for t, v in zip(df["time"], df["value"]):
-            print(f"{t.isoformat()},{'' if np.isnan(v) else v}")
+        times, values = result
+        if args.output:
+            pd.DataFrame({"time": times, "value": values}).to_csv(args.output, index=False)
+            if args.verbose:
+                print(f"Wrote {len(times)} rows to {args.output}")
+        else:
+            print("time,value")
+            for t, v in zip(times, values):
+                print(f"{t.isoformat()},{'' if np.isnan(v) else v}")
 
     return 0
 

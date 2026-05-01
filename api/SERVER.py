@@ -19,10 +19,16 @@ from modules.eval_extractor import extract_eval_data
 from modules.extract_climate_timeseries import extract_climate_timeseries
 from modules.extractMinMax import extract_minmax
 from modules.pngGenerator import generate_png_for_variable
+from modules.extractSensorTimeseries import extract_sensor_timeseries
 
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
 MAX_CONCURRENT_EXTRACTS = int(os.getenv("MAX_CONCURRENT_EXTRACTS", "4"))
 _extract_semaphore = asyncio.Semaphore(MAX_CONCURRENT_EXTRACTS)
+
+# Hard cap (seconds) on how long a single blocking threadpool task may run.
+# If a filesystem stall or bad file causes a thread to hang, this ensures the
+# semaphore slot and the anyio threadpool slot are eventually released.
+THREADPOOL_TIMEOUT = int(os.getenv("THREADPOOL_TIMEOUT", "120"))
 
 # PNG generation runs in a dedicated single-process executor so CPU-heavy
 # interpolation work never touches the shared anyio threadpool that serves
@@ -192,86 +198,98 @@ async def get_colormaps():
 #######################################
 
 class sensorTimeseriesRequest(BaseModel):
-    canonicalVariable: str  # e.g., "dissolved_oxygen" (the model name)
     sensorId: int
+    modelVariable: str  # model/canonical name, e.g. "dissolved_oxygen"
     fromDate: str
     toDate: str
-    
+    depth: Optional[float] = None
+
 @app.post("/sensorTimeseries")
 async def get_sensor_timeseries(request: sensorTimeseriesRequest):
-    """Return sensor telemetry for a given sensor id and canonical variable name.
-    Uses sensor variable mapping to translate canonical names to sensor-specific column names.
-    Data is stored in canonical units but under sensor-specific column names.
-    Response: { time: [iso...], value: [float,...] }
+    """Return sensor telemetry read from a compressed NC file.
+
+    Accepts a canonical variable name (model name) and resolves it to the
+    sensor-specific sensorCategoryCode via the sensors.variables DB mapping
+    before reading {SENSORS_ROOT}/{sensorId}/{sensorCategoryCode}.nc.
+
+    NC files may be 1-D (time,) or 2-D (time, depth).  When depth is omitted
+    and a depth dimension is present, all depths are returned.
+
+    Response: { time: [iso...], value: [float|null,...] }
+              or with depth axis: { time: [...], depth: [...], value: [...] }
     """
-    from datetime import datetime as dt
+    import psycopg2
+    import psycopg2.extras
     import json
-    
-    canonical_var = request.canonicalVariable
-    sensor_id = request.sensorId
-    from_date_str = request.fromDate
-    to_date_str = request.toDate
-    
-    # Parse the incoming ISO datetime
+
     try:
-        from_date = dt.fromisoformat(from_date_str.replace('Z', '+00:00'))
-        to_date = dt.fromisoformat(to_date_str.replace('Z', '+00:00'))
-    except Exception as exc:
-        logger.exception(f"Failed to parse datetime '{from_date_str}' or '{to_date_str}'")
-        raise HTTPException(status_code=400, detail=f"Invalid datetime format: {exc}")
-    
-    def _fetch():
-        import psycopg2
-        import psycopg2.extras
+        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
+    except (asyncio.TimeoutError, Exception):
+        logger.warning("Semaphore timeout in sensorTimeseries")
+        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
+
+    def _resolve_sensor_code() -> str:
         conn = None
         try:
-            conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password, connect_timeout=5)
+            conn = psycopg2.connect(
+                host=db_host, port=db_port, dbname=db_name,
+                user=db_user, password=db_password, connect_timeout=5,
+            )
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            
-            # Fetch the sensor's variable mappings
-            cur.execute("SELECT variables FROM sensors WHERE id=%s", (sensor_id,))
-            sensor_row = cur.fetchone()
-            if not sensor_row or not sensor_row.get('variables'):
-                raise HTTPException(status_code=400, detail=f"Sensor {sensor_id} has no variable mapping defined")
-            
-            variables_mapping = sensor_row['variables']
-            if isinstance(variables_mapping, str):
-                variables_mapping = json.loads(variables_mapping)
-            
-            # Look up the sensor-specific column name from the mapping
-            var_info = variables_mapping.get(canonical_var)
+            cur.execute("SELECT variables FROM sensors WHERE id=%s", (request.sensorId,))
+            row = cur.fetchone()
+            if not row or not row.get("variables"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Sensor {request.sensorId} has no variable mapping defined",
+                )
+            mapping = row["variables"]
+            if isinstance(mapping, str):
+                mapping = json.loads(mapping)
+            var_info = mapping.get(request.modelVariable)
             if not var_info or not isinstance(var_info, dict):
-                raise HTTPException(status_code=400, detail=f"Sensor {sensor_id} does not have a mapping for variable '{canonical_var}'")
-            
-            sensor_col_name = var_info.get("name")
-            if not sensor_col_name:
-                raise HTTPException(status_code=400, detail=f"Sensor {sensor_id} mapping for '{canonical_var}' is invalid (missing 'name')")
-            
-            # Query using the sensor-specific column name
-            # Data is already converted to canonical units at ingestion time
-            sql = "SELECT time, (measurements->>%s)::float AS value FROM sensors_data WHERE sensor_id=%s"
-            params = [sensor_col_name, sensor_id]
-            
-            sql += " AND time >= %s AND time <= %s"
-            params.extend([from_date.isoformat(), to_date.isoformat()])
-
-            sql += " ORDER BY time ASC"
-            cur.execute(sql, tuple(params))
-            rows = cur.fetchall()
-            times = [r[0].isoformat() for r in rows]
-            vals = [None if r[1] is None else float(r[1]) for r in rows]
-            return {"time": times, "value": vals}
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Sensor {request.sensorId} has no mapping for '{request.modelVariable}'",
+                )
+            code = var_info.get("name")
+            if not code:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Sensor {request.sensorId} mapping for '{request.modelVariable}' is missing 'name'",
+                )
+            return code
         finally:
             if conn:
                 conn.close()
 
     try:
-        return await run_in_threadpool(_fetch)
+        sensor_code = await asyncio.wait_for(run_in_threadpool(_resolve_sensor_code), timeout=10.0)
+        result = await asyncio.wait_for(
+            run_in_threadpool(
+                extract_sensor_timeseries,
+                request.sensorId,
+                sensor_code,
+                request.fromDate,
+                request.toDate,
+                request.depth,
+            ),
+            timeout=THREADPOOL_TIMEOUT,
+        )
+        return result
     except HTTPException:
         raise
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.exception("get_sensor_timeseries failed")
         raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        _extract_semaphore.release()
 
 #######################################
 
@@ -397,7 +415,7 @@ class timeseriesRequest(BaseModel):
     var: str
     lat: float
     lon: float
-    depth: float
+    depth: Optional[float] = None
     fromDate: str
     toDate: str
 
@@ -412,8 +430,8 @@ async def fn_extract_timeseries(request: timeseriesRequest):
         raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
 
     try:
-        # use provided depth exactly (float value passed from frontend)
-        depth = float(request.depth)
+        # use provided depth exactly (float value passed from frontend); None means all depths
+        depth = float(request.depth) if request.depth is not None else None
 
         # Fetch the success_image dates for this variable in the requested range.
         # Only NC files whose date is in this set will be read.
@@ -439,16 +457,31 @@ async def fn_extract_timeseries(request: timeseriesRequest):
                 if conn:
                     conn.close()
 
-        allowed_dates = await run_in_threadpool(_fetch_allowed_dates)
+        allowed_dates = await asyncio.wait_for(run_in_threadpool(_fetch_allowed_dates), timeout=15.0)
         if not allowed_dates:
             raise HTTPException(status_code=422, detail="No processed data available for the requested date range")
 
-        time, value = await run_in_threadpool(extract_timeseries, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate, data_dir=_get_nc_data_dirs(), allowed_dates=allowed_dates)
-        logger.info(f"FINISH extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate} - returned {len(time)} points")
-        # Replace NaN values with None (serializes to null in JSON)
-        time_list = [None if (isinstance(t, float) and np.isnan(t)) else t for t in time.tolist()]
-        value_list = [None if (isinstance(v, float) and np.isnan(v)) else v for v in value.tolist()]
-        return {"time": time_list, "value": value_list}
+        result = await asyncio.wait_for(
+            run_in_threadpool(extract_timeseries, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate, data_dir=_get_nc_data_dirs(), allowed_dates=allowed_dates),
+            timeout=THREADPOOL_TIMEOUT,
+        )
+        import pandas as pd
+        if isinstance(result, pd.DataFrame):
+            # All-depths response: return time, depth, value arrays
+            logger.info(f"FINISH extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth=all, from={request.fromDate}, to={request.toDate} - returned {len(result)} points")
+            def _clean(v): return None if (isinstance(v, float) and np.isnan(v)) else v
+            return {
+                "time":  [t.isoformat() if hasattr(t, "isoformat") else t for t in result["time"].tolist()],
+                "depth": result["depth"].tolist(),
+                "value": [_clean(v) for v in result["value"].tolist()],
+            }
+        else:
+            time, value = result
+            logger.info(f"FINISH extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate} - returned {len(time)} points")
+            # Replace NaN values with None (serializes to null in JSON)
+            time_list = [None if (isinstance(t, float) and np.isnan(t)) else t for t in time.tolist()]
+            value_list = [None if (isinstance(v, float) and np.isnan(v)) else v for v in value.tolist()]
+            return {"time": time_list, "value": value_list}
     except RuntimeError as exc:
         # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
         if "km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc):
@@ -493,7 +526,10 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
         to_date = request.toDate  # Pass toDate string (ISO format) to the extraction function
         
         # Run the synchronous extraction in a threadpool to keep the event loop free
-        result = await run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon, variable=variable, depth=depth, from_date=from_date, to_date=to_date)
+        result = await asyncio.wait_for(
+            run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon, variable=variable, depth=depth, from_date=from_date, to_date=to_date),
+            timeout=THREADPOOL_TIMEOUT,
+        )
         if result is None:
             logger.error("Extraction returned None")
             raise HTTPException(status_code=500, detail="Extraction failed")
@@ -564,20 +600,23 @@ async def fn_get_minmax(request: minmaxRequest):
         west = request.west
         
         # Extract min/max with database connection for bounds mapping
-        min_val, max_val = await run_in_threadpool(extract_minmax, 
-            data_dir=data_dir, 
-            variable=var, 
-            dt=dt, 
-            depth=depth, 
-            north=north, 
-            south=south, 
-            east=east, 
-            west=west,
-            db_host=db_host,
-            db_port=db_port,
-            db_user=db_user,
-            db_password=db_password,
-            db_name=db_name)
+        min_val, max_val = await asyncio.wait_for(
+            run_in_threadpool(extract_minmax,
+                data_dir=data_dir,
+                variable=var,
+                dt=dt,
+                depth=depth,
+                north=north,
+                south=south,
+                east=east,
+                west=west,
+                db_host=db_host,
+                db_port=db_port,
+                db_user=db_user,
+                db_password=db_password,
+                db_name=db_name),
+            timeout=THREADPOOL_TIMEOUT,
+        )
         
         logger.info(f"FINISH getMinMax: {request.var}, range=[{min_val}, {max_val}]")
         return {"min": min_val, "max": max_val}

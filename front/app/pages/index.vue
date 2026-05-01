@@ -23,11 +23,15 @@
             :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }">
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
-            <div class="selector">
-                <Overlays @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
-                    @autorange="autorange" />
-            </div>
-            <ColorbarSettings v-if="showColorbarSettings" class="selector" :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + 16+50 : 16+50) + 'px' , transition: 'left 0.3s ease' }" />
+            <Overlays @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
+                @autorange="autorange" class="overlay"
+                :style="{ top: `${overlayGap}px`, left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap : overlayGap) + 'px' }" />
+
+            <ColorbarSettings v-if="showColorbarSettings" class="overlay"
+                :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap + 50 : overlayGap + 50) + 'px', transition: 'left 0.3s ease' }" />
+
+            <selectedInfo class="overlay"
+                :style="{ bottom: `${overlayGap}px`, left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap : overlayGap) + 'px' }" />
 
             <controlPanel />
 
@@ -47,45 +51,24 @@
 
             <v-snackbar-queue ref="snackbarQueue" v-model="snackMessages" :total-visible="3" closable
                 contained></v-snackbar-queue>
+
+            <div class="px-2 pt-2"
+                style="width:250px; position: absolute; bottom:0; z-index: 9999; background-color: #11111199; border-top-left-radius: 20px; border-top-right-radius: 20px; margin:auto; right:0; "
+                :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap + 50 : overlayGap + 50) + 'px', transition: 'left 0.3s ease'  }">
+                <ColormapBar class="ma-2" />
+            </div>
         </div>
 
         <!-- Bottom: Global Chart Footer -->
         <v-footer class="ma-0 pa-0" :style="{ maxHeight: footerHeight }">
             <!-- <div ref="globalChartContainer" class="w-100" :style="{ height: `calc(${footerHeight} - 20px)` }"></div> -->
             <v-container minWidth="100%" class="ma-0 pa-0">
-                <v-row class="my-0 mx-2 pa-0" style="height:20px; ">
-                    <v-col cols="auto" class="my-0 mx-1 pa-0" style="height:20px">
-                        <span class="footer-text">{{ var2name(selectedVariable.var) }}</span>
-                    </v-col>
-                    <v-divider vertical class="mx-0"></v-divider>
-                    <v-col cols="auto" class="my-0 mx-1 pa-0" style="height:20px">
-                        <span class="footer-text">{{ utc2pst(moment(selectedVariable.dt)) }}</span>
-                    </v-col>
-                    <v-divider vertical class="mx-0"></v-divider>
-                    <v-col cols="auto" class="my-0 mx-1 pa-0" style="height:20px">
-                        <span class="footer-text">Depth {{ formatDepth(selectedVariable.depth) }} m</span>
-                    </v-col>
-                    <v-divider vertical class="mx-0"></v-divider>
-                    <v-col v-if="lastClicked" cols="auto" class="my-0 mx-1 pa-0" style="height:20px">
-                        <span class="footer-text">{{ lastClicked?.lat.toFixed(5) }} , {{ lastClicked?.lng.toFixed(5)
-                        }}</span>
-                    </v-col>
-                    
-
-                    <v-spacer></v-spacer>
-
-                    <v-col cols="auto" class="my-0 mx-1 pa-0" style="height:20px">
-                        <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
-                        <span class="footer-text">{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
-                        }}</span>
-                    </v-col>
-                </v-row>
-
                 <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)`, position: 'relative' }"
                     gap="0">
                     <TimeControls />
 
                     <TimeseriesChart ref="timeseriesChart" style="width: 100%; height: calc(100% - 32px);" />
+                    <!-- <HeatmapChart style="width: 100%; height: calc(100% - 32px);" /> -->
 
                     <!-- <div class="py-3"
                         style="position: absolute; width:40px; height: 100%; bottom: 0px; right: 0px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:6px; padding-top:6px;">
@@ -95,6 +78,21 @@
                         </v-btn>
                     </div> -->
                 </v-row>
+
+                <!-- VERY BOTTOM BAR -->
+                <v-row class="my-0 mx-2 pa-0" style="height:20px; ">
+                    <v-col cols="auto" class="my-0 mx-1 pa-0 text-label-small" style="height:20px">
+                        Server Status
+                        <v-icon size="10px" color="green">mdi-circle</v-icon>
+                    </v-col>
+                    <v-spacer></v-spacer>
+                    <v-col cols="auto" class="my-0 mx-1 pa-0 text-label-small" style="height:20px">
+                        <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
+                        <span>{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
+                            }}</span>
+                    </v-col>
+                </v-row>
+
             </v-container>
 
             <!-- Dialog component for monthly chart -->
@@ -187,6 +185,8 @@ const snackMessages = computed({
 
 const showHow = ref(false);
 
+const overlayGap = 8; // gap in px between map edge and overlays (info, colorbar, buttons)
+
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 
 const DFN = computed(() => mainStore.dfnDays);
@@ -210,7 +210,7 @@ const midDate = computed(() => {
 
 const mapCenter = computed(() => mainStore.mapCenter);
 
-const showColorbarSettings = computed(()=> mainStore.showColorbarSettings);
+const showColorbarSettings = computed(() => mainStore.showColorbarSettings);
 
 ///////////////////////////////////  WATCHERS  ///////////////////////////////////
 
@@ -574,14 +574,14 @@ function initClick(lat: number, lng: number) {
 async function getTimeseriesPromises(lat: number, lon: number) {
     if (!timeseriesChart.value) return;
     const fromDate = midDate.value.clone().subtract(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
-    const toDate   = midDate.value.clone().add(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
+    const toDate = midDate.value.clone().add(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
 
     await timeseriesChart.value.fetchAndPlot(
         lat, lon,
         () => getTimeseriesFromApi(lat, lon, fromDate, toDate),
         () => getClimateTimeseries(lat, lon, fromDate, toDate),
-        () => mainStore.selectedSensorID
-            ? getSensorTimeseries(mainStore.selectedSensorID, mainStore.selected_variable.var, fromDate, toDate)
+        () => mainStore.selectedSensor && mainStore.selectedSensor.id
+            ? getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selectedSensor.depth)
             : Promise.resolve(null)
     );
 }
@@ -632,7 +632,7 @@ async function addSensors() {
                 // Embed all sensors as JSON string (Mapbox flattens properties to primitives)
                 sensorsJson: JSON.stringify(
                     group
-                        .sort((a: any, b: any) => a.depth - b.depth)
+                        // .sort((a: any, b: any) => a.depth - b.depth)
                         .map((s: any) => ({ id: s.id, name: s.name, depth: s.depth }))
                 ),
             }
@@ -656,13 +656,13 @@ function openSensorPicker(sensors: MultiSensorCandidate[], screenX: number, scre
     sensorPicker.value = { visible: true, x: screenX, y: screenY, sensors };
 }
 
-function clickSensor(sensor_id: number, depth: number) {
+function clickSensor(sensor_id: number, depth: number[]) {
     sensorPicker.value.visible = false;
     // Set flag BEFORE selectSensor so the var/depth watcher skips its own fetch.
     // The lastClickedMapPoint watcher (via setLastClickedMapPoint below) will
     // trigger the single authoritative fetch.
     _sensorClickPending = true;
-    mainStore.selectSensor(sensor_id, depth);
+    mainStore.selectSensor(sensor_id, depth[0]);
     const sensor = mainStore.sensors.find((s: any) => s.id === sensor_id);
     if (sensor) {
         mainStore.setLastClickedMapPoint({ lat: sensor.latitude, lng: sensor.longitude });
@@ -821,7 +821,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
             return;
         }
 
-        mainStore.setSelectedSensorID(null);
+        mainStore.setSelectedSensor(null); // Clear selected sensor on map click
         sensorPicker.value.visible = false;
         mainStore.setLastClickedMapPoint({ lat, lng });
     };
@@ -1163,11 +1163,8 @@ let _sensorClickPending = false;
     height: calc(100vh - 48px);
 }
 
-.selector {
+.overlay {
     position: absolute;
-    width: 0;
     z-index: 9998;
-    top: 16px;
-    left: 0;
 }
 </style>

@@ -1,0 +1,6 @@
+sshfs side:Projects/OA/data /mnt/data \
+      -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3 \
+      -o allow_other,default_permissions \
+      -o cache=yes,kernel_cache,compression=no
+
+# rclone mount remote:Projects/OA/data /mnt/data --vfs-cache-mode full --daemon

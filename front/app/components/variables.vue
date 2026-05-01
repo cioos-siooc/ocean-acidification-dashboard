@@ -43,17 +43,7 @@
       </v-select>
 
       <!-- COLORBAR -->
-      <div style="display: flex; align-items: flex-end; gap: 6px;">
-        <div style="flex: 1; min-width: 0;">
-          <div class="bar" :style="barStyle"></div>
-          <div class="ticks">
-            <div class="tick left">{{ colormapMin?.toFixed(precisionDigits) }}</div>
-            <div class="tick center">{{ ((colormapMin + colormapMax) / 2)?.toFixed(precisionDigits) }}</div>
-            <div class="tick right">{{ colormapMax?.toFixed(precisionDigits) }}</div>
-          </div>
-        </div>
-        <div style="flex: 0 0 auto; font-size: x-small; color: #aaa; padding-bottom: 2px;">{{ unit }}</div>
-      </div>
+      <!-- <ColormapBar /> -->
 
       <!-- <v-card-actions class="ma-0 pa-0" style="min-height:24px">
         <v-spacer></v-spacer>
@@ -128,8 +118,6 @@ const showSourceInfo = ref(false);
 const variables = computed(() => mainStore.variables);
 const variableItems = computed(() => variables.value.map((v) => ({ var: v.var, label: var2name(v.var), colormapMin: v.colormapMin, colormapMax: v.colormapMax })));
 const selectedVariable = computed(() => mainStore.selected_variable);
-const unit = computed(() => variables.value.find(v => v.var === selectedVariable.value.var)?.unit ?? '');
-
 const sourceItems = computed(() => {
   const sources = variables.value.filter(v => v.var == selectedVariable.value.var).map(v => ({ source: v.source, label: v.source }));
   // Check if selectedSource is in the sources list, if not set it to the first source
@@ -154,33 +142,6 @@ const selectedVarName = computed({
     const precision = matchingVar?.precision ?? null;
     mainStore.updateSelectedVariable({ var: v, colormap, colormapMin, colormapMax, precision });
   }
-});
-
-const precisionDigits = computed(() => -Math.log10(selectedVariable.value.precision));
-
-const colormapMin = computed({
-  get() {
-    return selectedVariable.value.colormapMin
-  },
-  set(v: number | null) { mainStore.updateSelectedVariable({ colormapMin: v }) }
-});
-const colormapMax = computed({
-  get() { return selectedVariable.value.colormapMax },
-  set(v: number | null) { mainStore.updateSelectedVariable({ colormapMax: v }) }
-});
-
-const selectedColormap = computed({
-  get() { return selectedVariable.value.colormap },
-  set(v: string | null) { mainStore.updateSelectedVariable({ colormap: v }) }
-});
-
-const colormaps = computed(() => mainStore.colormaps);
-const barStyle = computed(() => {
-  const palette = colormaps.value[selectedColormap.value]?.stops
-  const stops = palette?.map(s => `${s[1]} ${Math.round(s[0] * 100)}%`).join(', ');
-  return {
-    background: `linear-gradient(90deg, ${stops})`,
-  };
 });
 
 const depths = computed(() =>
@@ -249,22 +210,6 @@ function shallower() {
 
 .label-text {
   font-weight: 600;
-}
-
-.bar {
-  height: 14px;
-  border-radius: 4px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-}
-
-.ticks {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 6px;
-}
-
-.tick {
-  color: #ccc;
 }
 
 .colormap-item {

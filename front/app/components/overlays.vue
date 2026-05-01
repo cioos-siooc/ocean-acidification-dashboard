@@ -1,6 +1,5 @@
 <template>
-  <v-card class="colorbar"
-    :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + 16 : 16) + 'px' }">
+  <v-card class="colorbar" width="40px">
     <v-col class="pa-0">
       <!-- <v-row class="mx-1 my-1 px-0"> -->
       <v-btn icon size="20px" flat :variant="showBathymetryContours ? 'elevated' : 'text'"
@@ -82,7 +81,6 @@ const showHow = () => {
 
 <style scoped>
 .colorbar {
-  position: absolute;
   padding: 3px;
   width: fit-content;
   transition: left 0.3s ease;

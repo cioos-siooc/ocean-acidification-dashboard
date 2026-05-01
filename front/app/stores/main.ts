@@ -30,8 +30,8 @@ export const useMainStore = defineStore('main', {
          */
         midDate: null as moment.Moment | null,
 
-        sensors : [] as Array<{ id: number, name: string, latitude: number, longitude: number, depth: number, variables: string[], active: boolean }>,
-        selectedSensorID: null as number | null,
+        sensors: [] as Array<{ id: number, name: string, latitude: number, longitude: number, depth: number[], variables: string[], active: boolean }>,
+        selectedSensor: {} as { id: number, depth: number } | null,
 
         lastClickedMapPoint: null as { lat: number, lng: number } | null,
 
@@ -73,30 +73,18 @@ export const useMainStore = defineStore('main', {
             this.midDate = date;
         },
 
-        setSensors(sensors: Array<{ id: number, name: string, latitude: number, longitude: number, depth: number, variables: string[], active: boolean }>) {
+        setSensors(sensors: Array<{ id: number, name: string, latitude: number, longitude: number, depth: number[], variables: string[], active: boolean }>) {
             this.sensors = sensors;
         },
-        setSelectedSensorID(sensorID: number | null) {
-            this.selectedSensorID = sensorID;
+        setSelectedSensor(sensor: { id: number, depth: number } | null) {
+            this.selectedSensor = sensor;
         },
-
-        setLastClickedMapPoint(point: { lat: number, lng: number } | null) {
-            this.lastClickedMapPoint = point;
-        },
-
-        setMapCenter(center: { lat: number, lng: number } | null) {
-            this.mapCenter = center;
-        },
-
-        pushSnack(message: { color: string, text: string }) {
-            this.snackMessages.push(message);
-        },
-
         /**
          * Select a sensor: snap to closest available depth and set as active sensor.
          * Can be called from any component (sensorInfo, map click handler, etc.)
          */
         selectSensor(sensor_id: number, depth: number) {
+            console.log("Selecting sensor", sensor_id, "at depth", depth);
             const variable = this.selected_variable.var;
             const depthsArray = this.variables.find((v) => v.var === variable)?.depths;
             const closestDepth = depthsArray
@@ -109,7 +97,19 @@ export const useMainStore = defineStore('main', {
                     this.updateSelectedVariable({ depth: newDepth });
                 }
             }
-            this.setSelectedSensorID(sensor_id);
+            this.setSelectedSensor({ id: sensor_id, depth: depth });
+        },
+
+        setLastClickedMapPoint(point: { lat: number, lng: number } | null) {
+            this.lastClickedMapPoint = point;
+        },
+
+        setMapCenter(center: { lat: number, lng: number } | null) {
+            this.mapCenter = center;
+        },
+
+        pushSnack(message: { color: string, text: string }) {
+            this.snackMessages.push(message);
         },
 
         toggleIsControlPanelOpen() {
