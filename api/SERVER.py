@@ -5,12 +5,21 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
+from functools import partial
+import contextvars
 import os
 import logging
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from typing import Optional
+from functools import partial
+import contextvars
 from starlette.concurrency import run_in_threadpool
+
+async def run_in_process(func, *args, **kwargs):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_extract_executor, partial(func, *args, **kwargs))
+
 import numpy as np
 
 from modules.extractTimeseries import extract_timeseries
@@ -24,6 +33,7 @@ from modules.extractSensorTimeseries import extract_sensor_timeseries
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
 MAX_CONCURRENT_EXTRACTS = int(os.getenv("MAX_CONCURRENT_EXTRACTS", "4"))
 _extract_semaphore = asyncio.Semaphore(MAX_CONCURRENT_EXTRACTS)
+_extract_executor = ProcessPoolExecutor(max_workers=MAX_CONCURRENT_EXTRACTS)
 
 # Hard cap (seconds) on how long a single blocking threadpool task may run.
 # If a filesystem stall or bad file causes a thread to hang, this ensures the
@@ -266,7 +276,7 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
     try:
         sensor_code = await asyncio.wait_for(run_in_threadpool(_resolve_sensor_code), timeout=10.0)
         result = await asyncio.wait_for(
-            run_in_threadpool(
+            run_in_process(
                 extract_sensor_timeseries,
                 request.sensorId,
                 sensor_code,
@@ -462,7 +472,7 @@ async def fn_extract_timeseries(request: timeseriesRequest):
             raise HTTPException(status_code=422, detail="No processed data available for the requested date range")
 
         result = await asyncio.wait_for(
-            run_in_threadpool(extract_timeseries, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate, data_dir=_get_nc_data_dirs(), allowed_dates=allowed_dates),
+            run_in_process(extract_timeseries, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate, data_dir=_get_nc_data_dirs(), allowed_dates=allowed_dates),
             timeout=THREADPOOL_TIMEOUT,
         )
         import pandas as pd
@@ -527,7 +537,7 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
         
         # Run the synchronous extraction in a threadpool to keep the event loop free
         result = await asyncio.wait_for(
-            run_in_threadpool(extract_climate_timeseries, lat=lat, lon=lon, variable=variable, depth=depth, from_date=from_date, to_date=to_date),
+            run_in_process(extract_climate_timeseries, lat=lat, lon=lon, variable=variable, depth=depth, from_date=from_date, to_date=to_date),
             timeout=THREADPOOL_TIMEOUT,
         )
         if result is None:
@@ -601,7 +611,7 @@ async def fn_get_minmax(request: minmaxRequest):
         
         # Extract min/max with database connection for bounds mapping
         min_val, max_val = await asyncio.wait_for(
-            run_in_threadpool(extract_minmax,
+            run_in_process(extract_minmax,
                 data_dir=data_dir,
                 variable=var,
                 dt=dt,

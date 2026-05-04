@@ -3,14 +3,18 @@
 All API modules that need to open NetCDF files SHOULD use the helpers in this
 module to benefit from LRU caching.
 
-Strategy: Use a global RLock passed to xarray's open_dataset(lock=...) parameter.
-Xarray will use this lock to serialize HDF5 access. This is the recommended
-approach for thread-safe concurrent access in the xarray documentation.
+Strategy: Per-file RLocks keyed by canonical file path. This allows concurrent
+reads of different NC files while preventing races on the same file.
+Different files (model, sensor, climatology) can be opened concurrently by
+different threads, unlike a global lock which serialises everything.
 
 This module provides:
 
-* ``open_nc(path)``  – thread-safe open with LRU caching.
-* ``open_nc_uncached(path)``  – thread-safe open **without** caching.
+* ``open_nc(path)``        – thread-safe open with LRU caching.
+* ``open_nc_uncached(path)`` – thread-safe open **without** caching.
+* ``get_file_lock(path)``  – exported per-file RLock for other modules
+                              that open NC files with raw netCDF4 (e.g.,
+                              extractSensorTimeseries, pngGenerator).
 """
 
 from __future__ import annotations
@@ -25,13 +29,29 @@ import xarray as xr
 
 logger = logging.getLogger(__name__)
 
-# ── Global HDF5 lock ──────────────────────────────────────────────────────
-# Passed to xarray to serialize HDF5 operations across all threads and files.
-# This is the recommended way in xarray documentation for thread-safe access.
-_hdf5_lock = threading.RLock()
+# ── Per-file lock store ───────────────────────────────────────────────────
+# Maps canonical file path → RLock. Allows concurrent access to DIFFERENT
+# files while serialising concurrent access to the SAME file.
+_file_locks: dict[str, threading.RLock] = {}
+_file_locks_meta = threading.Lock()  # protects the _file_locks dict itself
+
+
+def get_file_lock(path: str) -> threading.RLock:
+    """Return (or create) the per-file RLock for *path*.
+
+    Uses the canonical (realpath) form so that symlinks to the same file share
+    a single lock. Exported for use by modules that open NC files directly
+    with netCDF4 (e.g. extractSensorTimeseries, pngGenerator).
+    """
+    canonical = os.path.realpath(path)
+    with _file_locks_meta:
+        if canonical not in _file_locks:
+            _file_locks[canonical] = threading.RLock()
+        return _file_locks[canonical]
+
 
 # ── Cache lock ────────────────────────────────────────────────────────────
-# Simple lock to protect the LRU cache dict (add/evict operations).
+# Protects the LRU cache dict (add/evict operations).
 _cache_lock = threading.Lock()
 
 # ── LRU cache ──────────────────────────────────────────────────────────────
@@ -89,9 +109,9 @@ def open_nc(path: str) -> Optional[xr.Dataset]:
 
         logger.info("opening (cached): %s", os.path.basename(path))
         try:
-            # Wrap entire xr.open_dataset() in _hdf5_lock to protect metadata AND data access
-            # This prevents "Can't open HDF5 attribute" errors during concurrent attribute reads
-            with _hdf5_lock:
+            # Per-file lock: allows different files to open concurrently
+            # while serialising concurrent opens of the SAME file.
+            with get_file_lock(path):
                 ds = xr.open_dataset(path)
             _cache[path] = ds
             return ds
@@ -124,9 +144,9 @@ def open_nc_uncached(path: str) -> Optional[xr.Dataset]:
     logger.info("opening (uncached): %s", os.path.basename(path))
     
     try:
-        # Wrap entire xr.open_dataset() in lock to protect both metadata AND data access
-        # This prevents "Can't open HDF5 attribute" errors during concurrent opens
-        with _hdf5_lock:
+        # Per-file lock: allows different files to open concurrently
+        # while serialising concurrent opens of the SAME file.
+        with get_file_lock(path):
             return xr.open_dataset(path)
     except Exception:
         logger.exception("failed to open %s", path)

@@ -19,14 +19,12 @@ import netCDF4
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
-import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Sensor NC files live in a separate directory from model NC files and are
-# opened with raw netCDF4 (not xarray).  Use a dedicated lock so sensor reads
-# do not compete with the global xarray _nc_lock used by timeseries/climatology.
-_sensor_nc_lock = threading.RLock()
+# Import get_file_lock from nc_reader to ensure per-file locking for all HDF5 operations.
+# This allows concurrent access to different sensor NC files.
+from nc_reader import get_file_lock
 
 SENSORS_ROOT = os.getenv("SENSORS_ROOT", "/opt/data/sensors")
 
@@ -88,8 +86,9 @@ def extract_sensor_timeseries(
     from_epoch = (from_dt - _EPOCH).total_seconds()
     to_epoch = (to_dt - _EPOCH).total_seconds()
 
-    # Hold the lock only for the raw HDF5 reads; release before any numpy/Python processing.
-    with _sensor_nc_lock:
+    # Hold the per-file lock for raw HDF5 reads; release before numpy/Python processing.
+    # Per-file locking allows concurrent access to DIFFERENT sensor files.
+    with get_file_lock(str(nc_path)):
         with netCDF4.Dataset(nc_path, "r") as ds:
             if "time" not in ds.variables:
                 raise KeyError(f"NC file '{nc_path}' has no 'time' variable")

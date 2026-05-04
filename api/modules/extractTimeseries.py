@@ -388,7 +388,9 @@ def extract_timeseries(
                     print(f"Skipping {fp}: unexpected selection result; expected 1D time series")
                 continue
 
-            vals = np.asarray(sub.values, dtype=float)
+            from nc_reader import get_file_lock
+            with get_file_lock(fp):
+                vals = np.asarray(sub.values, dtype=float)
 
             if depth_sel is None and depth_dim is not None and depth_dim in sub.dims:
                 # All-depths: vals is 2-D (time, depth) — flatten to parallel flat arrays

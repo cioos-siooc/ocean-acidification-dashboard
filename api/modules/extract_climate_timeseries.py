@@ -195,7 +195,9 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, lo
         logger.debug(f"Using dimensions: {y_dim}, {x_dim}")
         
         logger.info(f"Selecting pixel at [{yi}, {xi}] for all {len(found_vars)} variables")
-        ds_pixel = ds[found_vars].isel({y_dim: yi, x_dim: xi}).load()
+        from nc_reader import get_file_lock
+        with get_file_lock(file_path):
+            ds_pixel = ds[found_vars].isel({y_dim: yi, x_dim: xi}).load()
         
         extract_elapsed = time_module.time() - extract_start
         t_dim = 'virtual_time' if 'virtual_time' in ds_pixel.dims else 'time'
