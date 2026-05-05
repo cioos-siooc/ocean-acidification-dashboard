@@ -27,24 +27,35 @@ logger = logging.getLogger("compute_standalone")
 
 COMPUTE_VARS = ["ph_total", "omega_arag", "omega_cal"]
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CALC_SCRIPT = os.path.join(SCRIPT_DIR, "calc_carbon_grid_shm_memmap.py")
+PARENT_DIR = os.path.dirname(SCRIPT_DIR)
+CALC_SCRIPT = os.path.join(PARENT_DIR, "process", "calc_carbon_grid_shm_memmap_year_aware.py")
 
 
 def find_input_files(base_dir: str, date_token: str) -> dict[str, str]:
     """Find the four input NetCDF files matching the given date token (YYYYMMDD).
 
+    Searches in year-based subdirectories (e.g., variable/2022/*.nc).
     Returns a dict with keys DIC, TA, Temp, Sal, or raises RuntimeError if not found.
     """
+    # Extract year from date_token (YYYYMMDD format)
+    year = date_token[:4]
+    
     dic_dir = os.path.join(base_dir, "dissolved_inorganic_carbon")
     if not os.path.exists(dic_dir):
         raise RuntimeError(f"DIC directory not found: {dic_dir}")
 
-    dic_files = sorted(glob(os.path.join(dic_dir, "*.nc")))
+    # Look for files in year subdirectory first, then fall back to root
+    year_dic_dir = os.path.join(dic_dir, year)
+    if os.path.exists(year_dic_dir):
+        dic_files = sorted(glob(os.path.join(year_dic_dir, "*.nc")))
+    else:
+        dic_files = sorted(glob(os.path.join(dic_dir, "*.nc")))
+    
     matching_dic = [f for f in dic_files if date_token in os.path.basename(f)]
 
     if not matching_dic:
         raise RuntimeError(
-            f"No DIC files found for date token '{date_token}' in {dic_dir}"
+            f"No DIC files found for date token '{date_token}' in {dic_dir}/{year} or {dic_dir}"
         )
 
     # Use the first matching DIC file
@@ -52,8 +63,12 @@ def find_input_files(base_dir: str, date_token: str) -> dict[str, str]:
     base = os.path.basename(dic_file)
     logger.info(f"Found DIC file: {base}")
 
-    # Find matching TA/Temp/Sal files using the same date token
-    candidates = glob(os.path.join(base_dir, "*", f"*{date_token}*.nc"))
+    # Find matching TA/Temp/Sal files in year subdirectories
+    candidates = glob(os.path.join(base_dir, "*", year, f"*{date_token}*.nc"))
+    # Also check root level as fallback
+    if not candidates:
+        candidates = glob(os.path.join(base_dir, "*", f"*{date_token}*.nc"))
+    
     found: dict[str, str] = {}
     for c in candidates:
         if "dissolved_inorganic_carbon" in c:
@@ -80,15 +95,28 @@ def find_input_files(base_dir: str, date_token: str) -> dict[str, str]:
 
 
 def verify_outputs(base_dir: str, date_token: str) -> list[str]:
-    """Verify that output files exist. Returns list of output paths."""
+    """Verify that output files exist. Returns list of output paths.
+    
+    Searches in year-based subdirectories (e.g., variable/2022/*.nc).
+    """
+    # Extract year from date_token (YYYYMMDD format)
+    year = date_token[:4]
+    
     out_paths = []
     for var in COMPUTE_VARS:
         out_dir = os.path.join(base_dir, var)
-        matches = glob(os.path.join(out_dir, f"*{date_token}*.nc"))
+        
+        # Look for files in year subdirectory first, then fall back to root
+        year_out_dir = os.path.join(out_dir, year)
+        if os.path.exists(year_out_dir):
+            matches = glob(os.path.join(year_out_dir, f"*{date_token}*.nc"))
+        else:
+            matches = glob(os.path.join(out_dir, f"*{date_token}*.nc"))
+        
         if not matches:
             raise RuntimeError(
                 f"Expected output file not found for variable '{var}' "
-                f"matching date '{date_token}' in {out_dir}"
+                f"matching date '{date_token}' in {out_dir}/{year} or {out_dir}"
             )
         out_paths.append(matches[0])
         logger.info(f"Output verified: {os.path.basename(matches[0])}")
@@ -134,10 +162,17 @@ def compute(
 
     # Skip if all outputs already exist and overwrite is not set
     if not overwrite:
-        existing = [
-            glob(os.path.join(base_dir, var, f"*{date_token}*.nc"))
-            for var in COMPUTE_VARS
-        ]
+        year = date_token[:4]
+        existing = []
+        for var in COMPUTE_VARS:
+            # Check in year subdirectory first, then root
+            year_dir = os.path.join(base_dir, var, year)
+            if os.path.exists(year_dir):
+                matches = glob(os.path.join(year_dir, f"*{date_token}*.nc"))
+            else:
+                matches = glob(os.path.join(base_dir, var, f"*{date_token}*.nc"))
+            existing.append(matches)
+        
         if all(existing):
             logger.info(
                 f"Skipping {dt.strftime('%Y-%m-%d')} — output files already exist "

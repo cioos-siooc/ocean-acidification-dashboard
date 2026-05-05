@@ -26,6 +26,7 @@ import numpy as np
 from onc import ONC
 from datetime import datetime, timedelta
 from pathlib import Path
+from nc_utils import get_datetime_range_from_nc_file, update_variable_datetime_range
 
 # ── ONC credentials ──────────────────────────────────────────────────────────
 TOKEN = "7d291a6a-b57e-49cd-acb1-83f59010d32b"
@@ -45,6 +46,9 @@ def get_db_conn():
     return psycopg2.connect(
         host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS
     )
+
+
+
 
 
 def get_sensor_var_mapping(conn, sensor_id: int) -> dict:
@@ -170,6 +174,12 @@ def fetch_and_store(sensor_id_filter: int | None = None):
 
     if not sensors:
         print("No sensors found in database.")
+
+        # Update datetime range in database
+        from_dt, to_dt = get_datetime_range_from_nc_files(sensor_id, storage_dir)
+        if from_dt is not None or to_dt is not None:
+            update_sensor_datetime_range(conn, sensor_id, from_dt, to_dt)
+            print(f"  Updated datetime range: {from_dt} to {to_dt}")
         conn.close()
         return
 
@@ -252,6 +262,12 @@ def fetch_and_store(sensor_id_filter: int | None = None):
                     out_path = storage_dir / f"{s_code}.nc"
                     n_written = append_to_nc(out_path, s_code, times_epoch, values_out)
                     print(f"    {s_code}: wrote {n_written} new points → {out_path}")
+                    
+                    # Update datetime range for this variable
+                    canonical = col_to_canonical.get(s_code, s_code)
+                    from_dt, to_dt = get_datetime_range_from_nc_file(out_path)
+                    if from_dt is not None or to_dt is not None:
+                        update_variable_datetime_range(conn, sensor_id, canonical, from_dt, to_dt)
 
             except Exception as e:
                 print(f"    Error: {e}")

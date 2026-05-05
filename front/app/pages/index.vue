@@ -53,10 +53,12 @@
                 contained></v-snackbar-queue>
 
             <div class="px-2 pt-2"
-                style="width:250px; position: absolute; bottom:0; z-index: 9999; background-color: #11111199; border-top-left-radius: 20px; border-top-right-radius: 20px; margin:auto; right:0; "
+                style="width:250px; position: absolute; bottom:0; z-index: 999; background-color: #11111199; border-top-left-radius: 20px; border-top-right-radius: 20px; margin:auto; right:0; "
                 :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap + 50 : overlayGap + 50) + 'px', transition: 'left 0.3s ease'  }">
                 <ColormapBar class="ma-2" />
             </div>
+
+
         </div>
 
         <!-- Bottom: Global Chart Footer -->
@@ -211,6 +213,7 @@ const midDate = computed(() => {
 const mapCenter = computed(() => mainStore.mapCenter);
 
 const showColorbarSettings = computed(() => mainStore.showColorbarSettings);
+
 
 ///////////////////////////////////  WATCHERS  ///////////////////////////////////
 
@@ -1165,6 +1168,6 @@ let _sensorClickPending = false;
 
 .overlay {
     position: absolute;
-    z-index: 9998;
+    z-index: 998;
 }
 </style>

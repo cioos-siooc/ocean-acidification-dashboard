@@ -1,6 +1,6 @@
 <template>
     <v-navigation-drawer v-model="isOpen" location="left" :width="mainStore.controlPanel_width" class="pa-2" absolute
-        persistent mobile :scrim="false" style="height:100%; z-index:9999; top:0;">
+        persistent mobile :scrim="false" style="height:100%; z-index:999; top:0;">
         <!-- <v-row>
             <v-col cols="1">
                 <v-btn icon>

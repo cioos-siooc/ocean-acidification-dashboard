@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Carbonate computation using shared memory or memory-mapped files to reduce RAM usage.
 
+YEAR-AWARE VERSION: Handles file organization by year subdirectories (e.g., temperature/2022/*.nc).
+
 Modes:
  - sharedmem: uses multiprocessing.shared_memory to place a time-slice in RAM once and avoid pickling when sending to workers.
  - memmap: writes time-slice to a temporary memmap file on disk and workers read/write that file (lower peak RAM, more IO).
@@ -11,7 +13,7 @@ Design decisions:
  - Parent process writes results immediately to NetCDF (append) and deletes temp resources to keep peak RAM low.
 
 Usage:
- python process/calc_carbon_grid_shm_memmap.py --mode sharedmem --base-dir /opt/data/nc --date 20260105 --workers 4 --depth-batch-size 8
+ python process/calc_carbon_grid_shm_memmap_year_aware.py --mode sharedmem --base-dir /opt/data/nc --date 20260105 --workers 4 --depth-batch-size 8
 """
 
 from __future__ import annotations
@@ -44,7 +46,7 @@ import netCDF4 as nc4
 
 # Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("calc_carbon_grid_shm_memmap")
+logger = logging.getLogger("calc_carbon_grid_shm_memmap_year_aware")
 
 # Constants
 DEFAULT_DENSITY = 1025.0
@@ -741,7 +743,7 @@ def process_file_set_with_mode(files, out_base_dir, mode='sharedmem', workers=2,
                     pass
 
 # ----------------------------------------------------------------------------
-# CLI
+# CLI - YEAR-AWARE VERSION
 # ----------------------------------------------------------------------------
 
 def main():
@@ -752,6 +754,7 @@ def main():
     parser.add_argument('--workers', type=int, default=2)
     parser.add_argument('--depth-batch-size', type=int, default=8)
     parser.add_argument('--overwrite', action='store_true')
+    parser.add_argument('--worker-timeout', type=int, default=1800, help='Seconds to wait for a single timestep worker to complete (default: 1800)')
     args = parser.parse_args()
 
     dic_dir = os.path.join(args.base_dir, 'dissolved_inorganic_carbon')
@@ -759,7 +762,16 @@ def main():
         logger.error('DIC directory not found')
         sys.exit(1)
 
-    files = sorted(glob(os.path.join(dic_dir, '*.nc')))
+    # Year-aware: look for DIC files in year subdirectories first, then fall back to root
+    year = args.date[:4] if args.date else None
+    files = []
+    if year:
+        year_dic_dir = os.path.join(dic_dir, year)
+        if os.path.exists(year_dic_dir):
+            files = sorted(glob(os.path.join(year_dic_dir, '*.nc')))
+    if not files:
+        files = sorted(glob(os.path.join(dic_dir, '*.nc')))
+    
     if args.date:
         files = [f for f in files if args.date in os.path.basename(f)]
 
@@ -769,9 +781,23 @@ def main():
         match = None
         # reuse matching logic from other scripts: search for TA/Temp/Sal by token
         m = re.search(r"\d{8}T\d{4}", base)
-        token = m.group(0) if m else None
+        if m:
+            token = m.group(0)
+        else:
+            # Fallback: files named without time component (e.g. dissolved_inorganic_carbon_20220101.nc)
+            m2 = re.search(r"\d{8}", base)
+            token = m2.group(0) if m2 else (args.date if args.date else None)
+        
         if token:
-            candidates = glob(os.path.join(args.base_dir, '*', f'*{token}*.nc'))
+            # Year-aware: search in year subdirectories first, then fall back to root
+            candidates = []
+            if year:
+                year_candidates = glob(os.path.join(args.base_dir, '*', year, f'*{token}*.nc'))
+                candidates.extend(year_candidates)
+            # Fall back to root level search if no matches found
+            if not candidates:
+                candidates = glob(os.path.join(args.base_dir, '*', f'*{token}*.nc'))
+            
             found = {}
             for c in candidates:
                 if 'dissolved_inorganic_carbon' in c: found['DIC'] = c

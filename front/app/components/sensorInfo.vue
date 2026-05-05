@@ -40,16 +40,16 @@
 
                             <v-list-item-subtitle class="text-label-small">Last Updated: 4 hours
                                 ago</v-list-item-subtitle>
-                            <v-row class="ma-0 pa-0" >
+                            <v-row class="ma-0 pa-0">
                                 <v-spacer></v-spacer>
-                                <v-col v-if="sensor.depth.length>1" cols="auto" class="ma-0 pa-0" @click.stop="">
-                                    <v-btn flat icon size="12px" title="Model Evaluation">
-                                        <icons-heatmap :color="colors.orange.lighten3"/>
+                                <v-col v-if="sensor.depth.length > 1" cols="auto" class="ma-0 pa-0">
+                                    <v-btn flat icon size="12px" title="Model Evaluation" @click.stop="openHeatmapDialog(sensor.id)">
+                                        <icons-heatmap :color="colors.orange.lighten3" />
                                     </v-btn>
                                 </v-col>
-                                <v-col cols="auto" class="ma-0 pa-0" @click.stop="">
+                                <v-col cols="auto" class="ma-0 pa-0" disabled>
                                     <v-btn flat icon size="12px" title="Model Evaluation">
-                                        <icons-compare :color="colors.blue.lighten3"/>
+                                        <icons-compare :color="colors.blue.lighten3" />
                                     </v-btn>
                                 </v-col>
                             </v-row>
@@ -61,7 +61,9 @@
         </v-card-text>
     </v-card>
 
-    <!-- Depth picker dialog -->
+
+    <!-- DIALOGS -->
+    <!-- DEPTH PICKER -->
     <v-dialog v-model="depthDialogOpen" max-width="280" max-height="300">
         <v-card v-if="depthDialogSensor">
             <v-card-title class="text-body-1">{{ depthDialogSensor.name }}</v-card-title>
@@ -71,6 +73,11 @@
                     @click="pickDepth(depthDialogSensor.id, d)" />
             </v-list>
         </v-card>
+    </v-dialog>
+
+    <!-- HEATMATP -->
+    <v-dialog v-model="showHeatmapDialog" width="85%" height="85%" transition="dialog-transition">
+        <HeatmapChart :sensor-id="heatmap_sensorId" :model-variable="heatmap_variable"/>
     </v-dialog>
 </template>
 
@@ -92,14 +99,18 @@ const depthDialogOpen = computed({
     set: (v) => { if (!v) depthDialogSensor.value = null; }
 });
 
+const showHeatmapDialog = ref(false);
+const heatmap_sensorId = ref<number | null>(null);
+const heatmap_variable = computed(() => mainStore.selected_variable?.var ?? null);
+const heatmap_minDate = ref<string | null>(null);
+const heatmap_maxDate = ref<string | null>(null);
+
 ///////////////////////////////// METHODS  ///////////////////////////////////
 
 function selectSensor(sensorID: number) {
     const sensor = sensors.value.find(s => s.id === sensorID);
-    console.log(sensor);
     if (sensor) {
         if (sensor.depth.length === 1) {
-            console.log(sensor.depth[0]);
             mainStore.selectSensor(sensorID, sensor.depth[0]);
             mainStore.setLastClickedMapPoint({ lat: sensor.latitude, lng: sensor.longitude });
             mainStore.setMapCenter({ lat: sensor.latitude, lng: sensor.longitude });
@@ -136,6 +147,12 @@ function sensorDepths(depth: number[]): Array<{ label: string, value: number }> 
     if (depth === null || depth.length === 0) return [];
 
     return depth.map(d => ({ label: d === 0 ? 'Surface' : d.toFixed(0) + ' m', value: d }));
+}
+
+function openHeatmapDialog(sensorId: number) {
+    const sensor = sensors.value.find(s => s.id === sensorId);
+    heatmap_sensorId.value = sensorId;
+    showHeatmapDialog.value = true;
 }
 
 </script>

@@ -36,6 +36,7 @@ import requests
 import urllib3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from nc_utils import get_datetime_range_from_nc_file, update_variable_datetime_range
 
 # Suppress InsecureRequestWarning for servers with self-signed / incomplete cert chains
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -306,10 +307,9 @@ def fetch_and_store(sensor_id_filter: int | None = None):
             cur.execute(query)
         sensors = cur.fetchall()
 
-    conn.close()
-
     if not sensors:
         print("No active variable-depth ERDDAP sensors found (depth = -1).")
+        conn.close()
         return
 
     print(f"Found {len(sensors)} variable-depth ERDDAP sensor(s).")
@@ -400,12 +400,20 @@ def fetch_and_store(sensor_id_filter: int | None = None):
                     nc_path, erddap_col, times_epoch, depth_levels, grid
                 )
                 print(f"  {erddap_col}: wrote {n_written} new time slice(s) → {nc_path}")
+                
+                # Update datetime range for this variable
+                from_dt, to_dt = get_datetime_range_from_nc_file(nc_path)
+                if from_dt is not None or to_dt is not None:
+                    update_variable_datetime_range(conn, sensor_id, canonical, from_dt, to_dt)
             except ValueError as e:
                 print(f"  {erddap_col}: SKIPPED — {e}")
             except Exception as e:
                 print(f"  {erddap_col}: ERROR writing NC: {e}")
 
+        # Done with all variables for this sensor
+
     print("\nDone.")
+    conn.close()
 
 
 if __name__ == "__main__":

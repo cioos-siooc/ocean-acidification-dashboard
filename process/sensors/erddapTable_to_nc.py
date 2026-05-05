@@ -31,6 +31,7 @@ import psycopg2
 import requests
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from nc_utils import get_datetime_range_from_nc_file, update_variable_datetime_range
 
 # ── Storage root ─────────────────────────────────────────────────────────────
 SENSORS_ROOT = os.getenv("SENSORS_ROOT", "/opt/data/sensors")
@@ -54,6 +55,9 @@ def get_db_conn():
     return psycopg2.connect(
         host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS
     )
+
+
+
 
 
 def dt_to_epoch(dt: datetime) -> float:
@@ -341,10 +345,9 @@ def fetch_and_store(sensor_id_filter: int | None = None):
             cur.execute(query)
         sensors = cur.fetchall()
 
-    conn.close()
-
     if not sensors:
         print("No active ERDDAP sensors found.")
+        conn.close()
         return
 
     print(f"Found {len(sensors)} active ERDDAP sensor(s).")
@@ -462,8 +465,16 @@ def fetch_and_store(sensor_id_filter: int | None = None):
                 n_written = append_to_nc_1d(nc_path, erddap_col, times_epoch, values_list)
 
             print(f"  {erddap_col}: wrote {n_written} new record(s) → {nc_path}")
+            
+            # Update datetime range for this variable
+            from_dt, to_dt = get_datetime_range_from_nc_file(nc_path)
+            if from_dt is not None or to_dt is not None:
+                update_variable_datetime_range(conn, sensor_id, canonical, from_dt, to_dt)
+
+        # Done with all variables for this sensor
 
     print("\nDone.")
+    conn.close()
 
 
 if __name__ == "__main__":
