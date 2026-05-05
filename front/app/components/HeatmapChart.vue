@@ -114,6 +114,46 @@ const maxDate = computed(() => {
     return varData && typeof varData === 'object' ? varData.to_datetime || '' : '';
 });
 
+/**
+ * Get the colormap colors for the current variable from mainStore.
+ * Returns an array of hex colors or the default blue-red diverging colormap if not found.
+ */
+const colormapColors = computed(() => {
+    const sensor = mainStore.sensors.find(s => s.id === props.sensorId);
+    if (!sensor) return getDefaultColormap();
+    
+    const varData = sensor.variables[plotVariable.value];
+    if (!varData || typeof varData !== 'object') return getDefaultColormap();
+    
+    // The variable data should have a colormap field with the colormap name
+    // For now, we'll look for it in the stored variables from the API
+    // This could be enhanced if we store the colormap name in sensor.variables
+    
+    // Try to find the variable in mainStore.variables
+    const mainVar = mainStore.variables?.find((v: any) => v.var === plotVariable.value);
+    if (!mainVar || !mainVar.colormap) return getDefaultColormap();
+    
+    const colormap = mainStore.colormaps[mainVar.colormap];
+    if (!colormap || !colormap.stops) return getDefaultColormap();
+    
+    // If stops is an array of [value, color] pairs, extract just the colors
+    if (Array.isArray(colormap.stops[0])) {
+        return colormap.stops.map((stop: any) => stop[1]);
+    }
+    
+    // If stops is already just an array of colors
+    return colormap.stops;
+});
+
+function getDefaultColormap(): string[] {
+    // Default blue-red diverging colormap
+    return [
+        '#313695', '#4575b4', '#74add1', '#abd9e9',
+        '#e0f3f8', '#ffffbf',
+        '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026',
+    ];
+}
+
 ///////////////////////////////////////////  METHODS  ///////////////////////////////////////////
 
 function resolvedTimes() {
@@ -270,11 +310,7 @@ function buildOption(): echarts.EChartsOption {
             right: 10,
             top: 'center',
             inRange: {
-                color: [
-                    '#313695', '#4575b4', '#74add1', '#abd9e9',
-                    '#e0f3f8', '#ffffbf',
-                    '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026',
-                ],
+                color: colormapColors.value,
             },
             text: [String(maxVal.toFixed(1)), String(minVal.toFixed(1))],
             textStyle: { color: '#e0e0e0' },
