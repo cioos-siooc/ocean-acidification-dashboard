@@ -31,7 +31,7 @@
       <v-divider></v-divider>
 
       <!-- <v-row class="mx-1 my-1 px-0"> -->
-      <v-btn icon size="20px" flat @click="showHow" title="How to Use" class="ma-2">
+      <v-btn icon size="20px" flat @click="showHow" title="How to Use" class="ma-2" disabled>
         <IconsHelp />
       </v-btn>
       <!-- </v-row> -->
