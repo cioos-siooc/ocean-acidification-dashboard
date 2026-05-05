@@ -180,7 +180,8 @@ def worker_shm_compute_time(shm_info):
             ph_slice[mask] = res.get('pH')
             ar_slice[mask] = res.get('saturation_aragonite')
             cal_slice[mask] = res.get('saturation_calcite')
-            del res  # free the 50+ output arrays immediately
+
+            # reshape and assign to the output shared mem arrays
             ph_arr[start:stop] = ph_slice.reshape((d_count, ny, nx))
             ar_arr[start:stop] = ar_slice.reshape((d_count, ny, nx))
             cal_arr[start:stop] = cal_slice.reshape((d_count, ny, nx))
@@ -268,7 +269,6 @@ def worker_memmap_compute_time(mem_info):
             ph_flat[mask] = res.get('pH')
             ar_flat[mask] = res.get('saturation_aragonite')
             cal_flat[mask] = res.get('saturation_calcite')
-            del res  # free the 50+ output arrays immediately — large memory spike otherwise
 
             dcount = stop - start
             ph_m[start:stop] = ph_flat.reshape((dcount, ny, nx))
@@ -343,7 +343,7 @@ def create_netcdf_outputs(base_dir: str, filename_base: str, coords, dims, outpu
     return files
 
 
-def process_file_set_with_mode(files, out_base_dir, mode='sharedmem', workers=2, overwrite=False, depth_batch_size=8, worker_timeout=1800):
+def process_file_set_with_mode(files, out_base_dir, mode='sharedmem', workers=2, overwrite=False, depth_batch_size=8):
     assert mode in ('sharedmem', 'memmap')
     if mode == 'sharedmem' and not HAS_SHM:
         raise RuntimeError('Shared memory not available in this python environment')
@@ -403,7 +403,7 @@ def process_file_set_with_mode(files, out_base_dir, mode='sharedmem', workers=2,
         def _handle_task_result(fut, mode_type, resource):
             nonlocal total_valid_points, total_pyco_time, total_worker_elapsed
             try:
-                res = fut.result(timeout=worker_timeout)
+                res = fut.result(timeout=300)  # 5 minute timeout per worker task
             except Exception as worker_exc:
                 # Child process crashed. Check if it wrote an error log.
                 if mode_type == 'memmap' and 'tmpdir' in resource:
@@ -752,7 +752,6 @@ def main():
     parser.add_argument('--workers', type=int, default=2)
     parser.add_argument('--depth-batch-size', type=int, default=8)
     parser.add_argument('--overwrite', action='store_true')
-    parser.add_argument('--worker-timeout', type=int, default=1800, help='Seconds to wait for a single timestep worker to complete (default: 1800)')
     args = parser.parse_args()
 
     dic_dir = os.path.join(args.base_dir, 'dissolved_inorganic_carbon')
@@ -761,8 +760,6 @@ def main():
         sys.exit(1)
 
     files = sorted(glob(os.path.join(dic_dir, '*.nc')))
-    # Exclude companion bottom-layer files — they must never be used as DIC source
-    files = [f for f in files if '_bottom_' not in os.path.basename(f)]
     if args.date:
         files = [f for f in files if args.date in os.path.basename(f)]
 
@@ -772,15 +769,9 @@ def main():
         match = None
         # reuse matching logic from other scripts: search for TA/Temp/Sal by token
         m = re.search(r"\d{8}T\d{4}", base)
-        if m:
-            token = m.group(0)
-        else:
-            # Fallback: files named without time component (e.g. dissolved_inorganic_carbon_20250101.nc)
-            m2 = re.search(r"\d{8}", base)
-            token = m2.group(0) if m2 else (args.date if args.date else None)
+        token = m.group(0) if m else None
         if token:
             candidates = glob(os.path.join(args.base_dir, '*', f'*{token}*.nc'))
-            candidates = [c for c in candidates if '_bottom_' not in os.path.basename(c)]
             found = {}
             for c in candidates:
                 if 'dissolved_inorganic_carbon' in c: found['DIC'] = c
@@ -790,7 +781,7 @@ def main():
             if len(found) == 4:
                 match = {k: found[k] for k in ['DIC','TA','Temp','Sal']}
         if match:
-            process_file_set_with_mode(match, args.base_dir, mode=args.mode, workers=args.workers, overwrite=args.overwrite, depth_batch_size=args.depth_batch_size, worker_timeout=args.worker_timeout)
+            process_file_set_with_mode(match, args.base_dir, mode=args.mode, workers=args.workers, overwrite=args.overwrite, depth_batch_size=args.depth_batch_size)
         else:
             logger.warning(f"Could not find full input set for {f}")
 

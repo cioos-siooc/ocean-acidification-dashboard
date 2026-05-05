@@ -194,7 +194,9 @@ def extract_profile(
                 # File has only one time; assume it matches
                 time_idx = None
             else:
-                times = ds[time_dim].values
+                from nc_reader import get_file_lock
+                with get_file_lock(filepath):
+                    times = ds[time_dim].values
                 times_pd = pd.to_datetime(times)
                 # Find exact match or closest match
                 diffs = np.abs((times_pd - target_dt).total_seconds())
@@ -216,13 +218,15 @@ def extract_profile(
             data_at_loc = data_at_time.isel({y_dim: yi, x_dim: xi})
 
             # Extract all depth levels
-            depths = ds[depth_dim].values
-            if data_at_loc.ndim == 1:
-                # data_at_loc is 1D along depth
-                values = data_at_loc.values
-            else:
-                # Shouldn't happen if we selected correctly, but handle it
-                values = data_at_loc.values.flatten()
+            from nc_reader import get_file_lock
+            with get_file_lock(filepath):
+                depths = ds[depth_dim].values
+                if data_at_loc.ndim == 1:
+                    # data_at_loc is 1D along depth
+                    values = data_at_loc.values
+                else:
+                    # Shouldn't happen if we selected correctly, but handle it
+                    values = data_at_loc.values.flatten()
 
             # Build profile list (depth, value)
             for d_idx, depth_val in enumerate(depths):

@@ -1,25 +1,20 @@
 """Centralised, thread-safe NetCDF / HDF5 file reader.
 
-All API modules that need to open NetCDF files MUST use the helpers in this
-module instead of calling ``xr.open_dataset()`` directly.
+All API modules that need to open NetCDF files SHOULD use the helpers in this
+module to benefit from LRU caching.
 
-Why?
-----
-The HDF5 C library (used by netCDF4-python and therefore xarray) is **not**
-thread-safe.  When FastAPI dispatches multiple requests to a thread-pool,
-concurrent ``open_dataset`` calls can segfault or raise opaque HDF errors.
+Strategy: Per-file RLocks keyed by canonical file path. This allows concurrent
+reads of different NC files while preventing races on the same file.
+Different files (model, sensor, climatology) can be opened concurrently by
+different threads, unlike a global lock which serialises everything.
 
 This module provides:
 
-* ``open_nc(path)``  – thread-safe open with LRU caching.  Returns a lazily-
-  opened ``xr.Dataset`` that can be indexed / sliced by multiple threads
-  (the underlying data access is still serialised by the lock when needed).
-* ``open_nc_uncached(path)``  – thread-safe open **without** caching.  The
-  caller is responsible for closing the dataset.
-
-Both functions use a single process-wide ``threading.Lock`` so that no two
-threads ever call into HDF5 at the same time, regardless of which API module
-triggered the read.
+* ``open_nc(path)``        – thread-safe open with LRU caching.
+* ``open_nc_uncached(path)`` – thread-safe open **without** caching.
+* ``get_file_lock(path)``  – exported per-file RLock for other modules
+                              that open NC files with raw netCDF4 (e.g.,
+                              extractSensorTimeseries, pngGenerator).
 """
 
 from __future__ import annotations
@@ -34,11 +29,30 @@ import xarray as xr
 
 logger = logging.getLogger(__name__)
 
-# ── Process-wide lock ──────────────────────────────────────────────────────
-# A single REENTRANT lock shared by every call site in the API process.
-# Must be RLock (not Lock) because xarray also acquires it internally
-# for data reads when we pass lock=_nc_lock to open_dataset().
-_nc_lock = threading.RLock()
+# ── Per-file lock store ───────────────────────────────────────────────────
+# Maps canonical file path → RLock. Allows concurrent access to DIFFERENT
+# files while serialising concurrent access to the SAME file.
+_file_locks: dict[str, threading.RLock] = {}
+_file_locks_meta = threading.Lock()  # protects the _file_locks dict itself
+
+
+def get_file_lock(path: str) -> threading.RLock:
+    """Return (or create) the per-file RLock for *path*.
+
+    Uses the canonical (realpath) form so that symlinks to the same file share
+    a single lock. Exported for use by modules that open NC files directly
+    with netCDF4 (e.g. extractSensorTimeseries, pngGenerator).
+    """
+    canonical = os.path.realpath(path)
+    with _file_locks_meta:
+        if canonical not in _file_locks:
+            _file_locks[canonical] = threading.RLock()
+        return _file_locks[canonical]
+
+
+# ── Cache lock ────────────────────────────────────────────────────────────
+# Protects the LRU cache dict (add/evict operations).
+_cache_lock = threading.Lock()
 
 # ── LRU cache ──────────────────────────────────────────────────────────────
 _cache: OrderedDict[str, xr.Dataset] = OrderedDict()
@@ -49,10 +63,11 @@ def open_nc(path: str) -> Optional[xr.Dataset]:
     """Return a (possibly cached) ``xr.Dataset`` for *path*.
 
     The dataset is kept open in an LRU cache so that repeat requests for the
-    same file are nearly free.  When the cache exceeds ``MAX_CACHED`` entries
+    same file are nearly free. When the cache exceeds ``MAX_CACHED`` entries
     the least-recently-used dataset is closed and evicted.
 
-    Thread-safe: the HDF5 open call is serialised behind ``_nc_lock``.
+    All HDF5 operations are serialized using a global RLock passed to xarray,
+    ensuring thread-safe concurrent access.
 
     Parameters
     ----------
@@ -67,7 +82,7 @@ def open_nc(path: str) -> Optional[xr.Dataset]:
     # Fast path – cache hit (no lock needed for dict lookup)
     if path in _cache:
         # Move to end (most recently used)
-        with _nc_lock:
+        with _cache_lock:
             if path in _cache:
                 _cache.move_to_end(path)
                 logger.debug("cache hit: %s", os.path.basename(path))
@@ -77,8 +92,8 @@ def open_nc(path: str) -> Optional[xr.Dataset]:
         logger.warning("file not found: %s", path)
         return None
 
-    with _nc_lock:
-        # Double-check after acquiring lock
+    with _cache_lock:
+        # Double-check if cached
         if path in _cache:
             _cache.move_to_end(path)
             return _cache[path]
@@ -94,7 +109,10 @@ def open_nc(path: str) -> Optional[xr.Dataset]:
 
         logger.info("opening (cached): %s", os.path.basename(path))
         try:
-            ds = xr.open_dataset(path, lock=_nc_lock)
+            # Per-file lock: allows different files to open concurrently
+            # while serialising concurrent opens of the SAME file.
+            with get_file_lock(path):
+                ds = xr.open_dataset(path)
             _cache[path] = ds
             return ds
         except Exception:
@@ -103,9 +121,11 @@ def open_nc(path: str) -> Optional[xr.Dataset]:
 
 
 def open_nc_uncached(path: str) -> Optional[xr.Dataset]:
-    """Open a NetCDF file **without** caching.  Caller must close it.
+    """Open a NetCDF file **without** caching. Caller must close it.
 
-    Thread-safe: the HDF5 open is serialised behind ``_nc_lock``.
+    Each call gets its own independent Dataset instance. The entire open operation
+    is protected by a global RLock to ensure thread-safe concurrent access, preventing
+    HDF5 attribute read races during the initial file open.
 
     Parameters
     ----------
@@ -121,17 +141,24 @@ def open_nc_uncached(path: str) -> Optional[xr.Dataset]:
         logger.warning("file not found: %s", path)
         return None
 
-    with _nc_lock:
-        logger.info("opening (uncached): %s", os.path.basename(path))
-        try:
-            return xr.open_dataset(path, lock=_nc_lock)
-        except Exception:
-            logger.exception("failed to open %s", path)
-            return None
+    logger.info("opening (uncached): %s", os.path.basename(path))
+    
+    try:
+        # Per-file lock: allows different files to open concurrently
+        # while serialising concurrent opens of the SAME file.
+        with get_file_lock(path):
+            return xr.open_dataset(path)
+    except Exception:
+        logger.exception("failed to open %s", path)
+        return None
 
 
 def close_nc(ds: Optional[xr.Dataset]) -> None:
-    """Safely close a dataset (for uncached opens)."""
+    """Safely close a dataset (for uncached opens).
+
+    No lock is needed — xarray close() is safe to call from the thread
+    that opened the Dataset.
+    """
     if ds is not None:
         try:
             ds.close()

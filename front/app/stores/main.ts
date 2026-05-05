@@ -20,7 +20,7 @@ export const useMainStore = defineStore('main', {
 
         dfnDays: 5, // days from now for climate timeseries
         variables: [] as Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: { depth: number, hasImage: boolean }[], precision: number }>,
-        selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null },
+        selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null, colormapStops: [null, null, null] as (number | null)[] },
         showBathymetryContours: false,
         colormaps: {} as Record<string, any>,
         autoRangeDisabled: false,
@@ -30,8 +30,8 @@ export const useMainStore = defineStore('main', {
          */
         midDate: null as moment.Moment | null,
 
-        sensors : [] as Array<{ id: number, name: string, latitude: number, longitude: number, depth: number, variables: string[], active: boolean }>,
-        selectedSensorID: null as number | null,
+        sensors: [] as Array<{ id: number, name: string, latitude: number, longitude: number, depth: number[], device_config: {}, variables: {}, active: boolean }>,
+        selectedSensor: {} as { id: number, depth: number } | null,
 
         lastClickedMapPoint: null as { lat: number, lng: number } | null,
 
@@ -41,6 +41,8 @@ export const useMainStore = defineStore('main', {
 
         controlPanel_width: 300,
         isControlPanelOpen: true,
+
+        showColorbarSettings: false,
     }),
 
     actions: {
@@ -71,11 +73,31 @@ export const useMainStore = defineStore('main', {
             this.midDate = date;
         },
 
-        setSensors(sensors: Array<{ id: number, name: string, latitude: number, longitude: number, depth: number, variables: string[], active: boolean }>) {
+        setSensors(sensors: Array<{ id: number, name: string, latitude: number, longitude: number, depth: number[], device_config: {}, variables: {}, active: boolean }>) {
             this.sensors = sensors;
         },
-        setSelectedSensorID(sensorID: number | null) {
-            this.selectedSensorID = sensorID;
+        setSelectedSensor(sensor: { id: number, depth: number } | null) {
+            this.selectedSensor = sensor;
+        },
+        /**
+         * Select a sensor: snap to closest available depth and set as active sensor.
+         * Can be called from any component (sensorInfo, map click handler, etc.)
+         */
+        selectSensor(sensor_id: number, depth: number) {
+            console.log("Selecting sensor", sensor_id, "at depth", depth);
+            const variable = this.selected_variable.var;
+            const depthsArray = this.variables.find((v) => v.var === variable)?.depths;
+            const closestDepth = depthsArray
+                ? [...depthsArray].sort((a, b) => Math.abs(a.depth - depth) - Math.abs(b.depth - depth))
+                : [];
+            if (closestDepth.length > 0) {
+                const newDepth = closestDepth[0].depth;
+                if (newDepth !== this.selected_variable.depth) {
+                    this.snackMessages.push({ color: 'warning', text: `Switched to closest available depth: ${newDepth}m` });
+                    this.updateSelectedVariable({ depth: newDepth });
+                }
+            }
+            this.setSelectedSensor({ id: sensor_id, depth: depth });
         },
 
         setLastClickedMapPoint(point: { lat: number, lng: number } | null) {
@@ -90,28 +112,12 @@ export const useMainStore = defineStore('main', {
             this.snackMessages.push(message);
         },
 
-        /**
-         * Select a sensor: snap to closest available depth and set as active sensor.
-         * Can be called from any component (sensorInfo, map click handler, etc.)
-         */
-        selectSensor(sensor_id: number, depth: number) {
-            const variable = this.selected_variable.var;
-            const depthsArray = this.variables.find((v) => v.var === variable)?.depths;
-            const closestDepth = depthsArray
-                ? [...depthsArray].sort((a, b) => Math.abs(a.depth - depth) - Math.abs(b.depth - depth))
-                : [];
-            if (closestDepth.length > 0) {
-                const newDepth = closestDepth[0].depth;
-                if (newDepth !== this.selected_variable.depth) {
-                    this.snackMessages.push({ color: 'warning', text: `Switched to closest available depth: ${newDepth}m` });
-                    this.updateSelectedVariable({ depth: newDepth });
-                }
-            }
-            this.setSelectedSensorID(sensor_id);
-        },
-
         toggleIsControlPanelOpen() {
             this.isControlPanelOpen = !this.isControlPanelOpen;
+        },
+
+        setShowColorbarSettings(value: boolean) {
+            this.showColorbarSettings = value;
         }
     }
 })

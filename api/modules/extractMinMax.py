@@ -18,7 +18,7 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 import psycopg2
-from nc_reader import open_nc_uncached, close_nc, _nc_lock as _io_lock
+from nc_reader import open_nc_uncached, close_nc
 
 logger = logging.getLogger(__name__)
 
@@ -139,9 +139,8 @@ def extract_minmax(
             row_indices = None
             col_indices = None
     
-    # Open dataset (thread-safe)
-    with _io_lock:
-        ds = open_nc_uncached(nc_file)
+    # Open dataset (thread-safe via xarray independent instances)
+    ds = open_nc_uncached(nc_file)
     
     try:
         # Find the variable

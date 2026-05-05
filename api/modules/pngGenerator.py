@@ -23,6 +23,7 @@ from shared.nc2tile import (
     build_target_grid,
     _process_task,
 )
+from nc_reader import get_file_lock
 
 logger = logging.getLogger(__name__)
 
@@ -45,31 +46,34 @@ def get_time_index_from_nc(nc_path: str, dt_requested: str) -> Tuple[int, str]:
         # Parse requested datetime
         dt_req = datetime.fromisoformat(dt_requested.replace('Z', '+00:00'))
         
-        with xr.open_dataset(nc_path) as ds:
-            # Find time dimension
-            time_dim = None
-            for dim in ds.dims:
-                if 'time' in dim.lower():
-                    time_dim = dim
-                    break
-            
-            if time_dim is None:
-                raise ValueError(f"No time dimension found in {nc_path}")
-            
-            # Get time values and convert to datetime
-            times = ds[time_dim].values
-            times_dt = pd.to_datetime(times).to_pydatetime()
-            
-            # Find closest time index
-            time_diffs = np.array([abs((t - dt_req).total_seconds()) for t in times_dt])
-            closest_idx = int(np.argmin(time_diffs))
-            closest_time = times_dt[closest_idx]
-            
-            # Format time string like process_variable does (YYYY-MM-DDTHHMMSS no colons)
-            time_str = closest_time.strftime("%Y-%m-%dT%H%M%S")
-            
-            logger.info(f"Requested {dt_requested}, found closest time at index {closest_idx}: {closest_time}")
-            return closest_idx, time_str
+        # Per-file lock: serialises concurrent opens of the same file
+        with get_file_lock(nc_path):
+            with xr.open_dataset(nc_path) as ds:
+                # Find time dimension
+                time_dim = None
+                for dim in ds.dims:
+                    if 'time' in dim.lower():
+                        time_dim = dim
+                        break
+                
+                if time_dim is None:
+                    raise ValueError(f"No time dimension found in {nc_path}")
+                
+                # Get time values and convert to datetime
+                times = ds[time_dim].values
+        
+        times_dt = pd.to_datetime(times).to_pydatetime()
+        
+        # Find closest time index
+        time_diffs = np.array([abs((t - dt_req).total_seconds()) for t in times_dt])
+        closest_idx = int(np.argmin(time_diffs))
+        closest_time = times_dt[closest_idx]
+        
+        # Format time string like process_variable does (YYYY-MM-DDTHHMMSS no colons)
+        time_str = closest_time.strftime("%Y-%m-%dT%H%M%S")
+        
+        logger.info(f"Requested {dt_requested}, found closest time at index {closest_idx}: {closest_time}")
+        return closest_idx, time_str
     
     except Exception as e:
         logger.error(f"Error finding time index in {nc_path}: {e}")
@@ -90,22 +94,24 @@ def get_depth_index_from_nc(nc_path: str, depth_value: float) -> int:
         Exception: If NC file cannot be read or no depth coordinate found
     """
     try:
-        with xr.open_dataset(nc_path) as ds:
-            # Find depth dimension
-            depth_coord = None
-            for coord_name in ('depth', 'z', 'lev', 'level', 'deptht', 'depthu', 'altitude'):
-                if coord_name in ds.coords:
-                    depth_coord = ds.coords[coord_name].values
-                    break
-            
-            if depth_coord is None:
-                # No depth coordinate found, assume 2D variable
-                logger.warning(f"No depth coordinate found in {nc_path}; using index 0")
-                return 0
-            
-            # Find nearest depth index
-            idx = int(np.argmin(np.abs(depth_coord - float(depth_value))))
-            return idx
+        # Per-file lock: serialises concurrent opens of the same file
+        with get_file_lock(nc_path):
+            with xr.open_dataset(nc_path) as ds:
+                # Find depth dimension
+                depth_coord = None
+                for coord_name in ('depth', 'z', 'lev', 'level', 'deptht', 'depthu', 'altitude'):
+                    if coord_name in ds.coords:
+                        depth_coord = ds.coords[coord_name].values
+                        break
+
+                if depth_coord is None:
+                    # No depth coordinate found, assume 2D variable
+                    logger.warning(f"No depth coordinate found in {nc_path}; using index 0")
+                    return 0
+
+                # Find nearest depth index
+                idx = int(np.argmin(np.abs(depth_coord - float(depth_value))))
+        return idx
     except Exception as e:
         logger.error(f"Error finding depth index in {nc_path}: {e}")
         raise
@@ -196,16 +202,26 @@ async def generate_png_for_variable(
     except Exception as e:
         raise ValueError(f"Invalid datetime format: {dt}") from e
 
-    # Check all image roots before doing any heavy work
+    # Check all image roots before doing any heavy work.
+    # Run in threadpool — os.path.isfile is a blocking syscall and must never
+    # run on the event loop thread (a slow/stalled filesystem would freeze all
+    # other requests).
     img_list = [image_roots] if isinstance(image_roots, str) else list(image_roots)
-    for ir in img_list:
-        candidate = os.path.join(ir, safe_var, dt_folder, f"{safe_depth}.webp")
-        if os.path.isfile(candidate):
-            logger.info(f"PNG already exists: {candidate}")
-            return candidate
+
+    def _find_existing():
+        for ir in img_list:
+            candidate = os.path.join(ir, safe_var, dt_folder, f"{safe_depth}.webp")
+            if os.path.isfile(candidate):
+                return candidate
+        return None
+
+    existing = await run_in_threadpool(_find_existing)
+    if existing:
+        logger.info(f"PNG already exists: {existing}")
+        return existing
 
     import asyncio
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     try:
         async with png_gen_semaphore:

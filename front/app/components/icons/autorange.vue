@@ -1,6 +1,6 @@
 
 <template>
-  <svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" viewBox="0 0 24 24">
+  <svg xmlns="http://www.w3.org/2000/svg" width="14px" height="14px" viewBox="0 0 24 24">
   <defs>
     <linearGradient id="rainbow" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%"   stop-color="#ff8080"/>

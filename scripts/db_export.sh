@@ -5,7 +5,7 @@ set -euo pipefail
 # Exports a compressed pg dump to ./DB/oa.dump
 
 # Ensure docker compose services are up (db)
-docker compose up -d db
+# docker compose up -d db
 
 OUT="./oa.dump"
 TABLES=""

@@ -1,1 +1,3 @@
-curl -H "Content-Type: application/json" -X POST -d '{ "var": "temperature", "lat": 49.2, "lon": -123.5, "depth": 0.5000003, "fromDate": "2026-04-04T204600", "toDate": "2026-04-14T204600" }' localhost:9011/extractTimeseries
+curl -H "Content-Type: application/json" -X POST -d '{"var": "temperature","lat": 48.31993859683416,"lon": -123.06052312192077,"depth": 0.5000003,"fromDate": "2026-04-24T151954","toDate": "2026-05-04T151954"}' localhost:9011/extractTimeseries
+
+curl -H "Content-Type: application/json" -X POST -d '{ "sensorId":12 , "modelVariable": "temperature", "fromDate": "2026-04-04T204600", "toDate": "2027-04-24T204600" }' localhost:9011/sensorTimeseries

@@ -9,6 +9,7 @@ function makeSvg(fill: string) {
 
 const SOURCE_ID = 'stations';
 const LAYER_ID = 'stations-circles';
+const LAYER_BADGE_ID = 'stations-badge';
 const IMAGE_ACTIVE = 'buoy-active';
 const IMAGE_INACTIVE = 'buoy-inactive';
 
@@ -22,7 +23,6 @@ async function loadImage(map: any, id: string, svg: string): Promise<void> {
             canvas.width = 30;
             canvas.height = 30;
             canvas.getContext('2d')!.drawImage(img, 0, 0);
-            // sdf: false — colours are baked in, black stroke is preserved
             map.addImage(id, canvas.getContext('2d')!.getImageData(0, 0, 30, 30));
             resolve();
         };
@@ -30,6 +30,8 @@ async function loadImage(map: any, id: string, svg: string): Promise<void> {
         img.src = dataUrl;
     });
 }
+
+export type MultiSensorCandidate = { id: number; name: string; depth: number };
 
 /**
  * Add (or replace) the buoy symbol layer for mooring stations.
@@ -39,13 +41,15 @@ export async function addBuoyLayer(
     map: any,
     geojson: FeatureCollection<Geometry, GeoJsonProperties>,
     onSensorClick: (sensor_id: number, depth: number) => void,
+    onMultiSensorClick: (sensors: MultiSensorCandidate[], screenX: number, screenY: number) => void,
 ): Promise<() => void> {
     await Promise.all([
         loadImage(map, IMAGE_ACTIVE,   makeSvg('#FFD700')),
         loadImage(map, IMAGE_INACTIVE, makeSvg('#888888')),
     ]);
 
-    // Remove existing layer/source before re-adding
+    // Remove existing layers/source before re-adding
+    try { if (map.getLayer(LAYER_BADGE_ID)) map.removeLayer(LAYER_BADGE_ID); } catch (e) { }
     try { if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID); } catch (e) { }
     try { if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID); } catch (e) { }
 
@@ -55,17 +59,41 @@ export async function addBuoyLayer(
         type: 'symbol',
         source: SOURCE_ID,
         layout: {
-            'icon-image': ['case', ['==', ['get', 'active'], true], IMAGE_ACTIVE, IMAGE_INACTIVE],
+            'icon-image': [
+                'case',
+                ['==', ['get', 'active'], true], IMAGE_ACTIVE,
+                IMAGE_INACTIVE,
+            ],
             'icon-size': 1,
             'icon-allow-overlap': true,
-            'icon-anchor': 'bottom',
+            'icon-anchor': 'center',
         },
         paint: {
             'icon-opacity': 0.95,
         },
     });
 
-    // Minimal adapter so useStationsInteraction can bind events to the symbol layer
+    // Badge layer: number label on top for multi-sensor locations
+    map.addLayer({
+        id: LAYER_BADGE_ID,
+        type: 'symbol',
+        source: SOURCE_ID,
+        filter: ['>', ['get', 'sensorCount'], 1],
+        layout: {
+            'text-field': ['to-string', ['get', 'sensorCount']],
+            'text-size': 9,
+            'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
+            'text-offset': [0.75, -0.75],
+            'text-allow-overlap': true,
+            'text-ignore-placement': true,
+        },
+        paint: {
+            'text-color': '#ffffff',
+            'text-halo-color': '#E64A19',
+            'text-halo-width': 4,
+        },
+    });
+
     const layerAdapter = {
         on: (event: string, handler: (evt: any) => void) => {
             map.on(event, LAYER_ID, handler);
@@ -73,7 +101,7 @@ export async function addBuoyLayer(
         },
     };
 
-    const stations = useStationsInteraction(() => map, onSensorClick);
+    const stations = useStationsInteraction(() => map, onSensorClick, onMultiSensorClick);
     return stations.attach(layerAdapter) ?? (() => {});
 }
 

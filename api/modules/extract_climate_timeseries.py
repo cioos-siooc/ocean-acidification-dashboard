@@ -136,16 +136,18 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, lo
     try:
         conn = connect_db(None, db_config["host"], db_config["port"], 
                           db_config["user"], db_config["password"], db_config["dbname"])
-        # Set a statement timeout to avoid hanging the thread if the DB is slow
         try:
-            with conn.cursor() as cur:
-                cur.execute("SET statement_timeout = 5000") # 5 seconds
-        except:
-            pass
-            
-        # query_nearest_rowcol returns (row_idx, col_idx, lat, lon)
-        yi, xi, lat_pt, lon_pt = query_nearest_rowcol(conn, db_config["table"], lat, lon)
-        conn.close()
+            # Set a statement timeout to avoid hanging the thread if the DB is slow
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SET statement_timeout = 5000") # 5 seconds
+            except Exception:
+                pass
+
+            # query_nearest_rowcol returns (row_idx, col_idx, lat, lon)
+            yi, xi, lat_pt, lon_pt = query_nearest_rowcol(conn, db_config["table"], lat, lon)
+        finally:
+            conn.close()
         db_elapsed = time_module.time() - db_start
         logger.info(f"✓ Found grid indices: row={yi}, col={xi}")
         logger.debug(f"Nearest point: lat={lat_pt:.4f}, lon={lon_pt:.4f}")
@@ -193,7 +195,9 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, lo
         logger.debug(f"Using dimensions: {y_dim}, {x_dim}")
         
         logger.info(f"Selecting pixel at [{yi}, {xi}] for all {len(found_vars)} variables")
-        ds_pixel = ds[found_vars].isel({y_dim: yi, x_dim: xi}).load()
+        from nc_reader import get_file_lock
+        with get_file_lock(file_path):
+            ds_pixel = ds[found_vars].isel({y_dim: yi, x_dim: xi}).load()
         
         extract_elapsed = time_module.time() - extract_start
         t_dim = 'virtual_time' if 'virtual_time' in ds_pixel.dims else 'time'
