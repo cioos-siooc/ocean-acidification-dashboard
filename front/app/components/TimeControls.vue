@@ -1,14 +1,14 @@
 <template>
   <v-row class="time-controls">
     <v-spacer></v-spacer>
-    <v-btn size="x-small" icon flat :title="'Move to start'" @click="moveToStart"><v-icon>mdi-skip-backward</v-icon></v-btn>
+    <!-- <v-btn size="x-small" icon flat :title="'Move to start'" @click="moveToStart"><v-icon>mdi-skip-backward</v-icon></v-btn> -->
     <v-btn size="x-small" icon flat :title="'Step backward'" @click="stepBackward"><v-icon>mdi-skip-previous</v-icon></v-btn>
     <v-btn size="x-small" icon flat :title="playing ? 'Pause' : 'Play'" @click="togglePlay"><v-icon v-if="!playing">mdi-play</v-icon><v-icon v-else>mdi-pause</v-icon></v-btn>
     <v-btn size="x-small" icon flat :title="'Step forward'" @click="stepForward"><v-icon>mdi-skip-next</v-icon></v-btn>
-    <v-btn size="x-small" icon flat :title="'Move to end'" @click="moveToEnd"><v-icon>mdi-skip-forward</v-icon></v-btn>
+    <!-- <v-btn size="x-small" icon flat :title="'Move to end'" @click="moveToEnd"><v-icon>mdi-skip-forward</v-icon></v-btn> -->
     <v-divider vertical class="mx-2" style="height: 24px"></v-divider>
 
-    <v-btn size="x-small" icon flat :color="loop ? 'primary' : undefined" :title="'Loop: ' + (loop ? 'on' : 'off')" @click="loop = !loop"><v-icon>mdi-repeat</v-icon></v-btn>
+    <!-- <v-btn size="x-small" icon flat :color="loop ? 'primary' : undefined" :title="'Loop: ' + (loop ? 'on' : 'off')" @click="loop = !loop"><v-icon>mdi-repeat</v-icon></v-btn> -->
 
     <v-menu offset-y>
       <template #activator="{ props }">

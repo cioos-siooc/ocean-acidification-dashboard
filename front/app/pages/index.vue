@@ -67,7 +67,11 @@
             <v-container minWidth="100%" class="ma-0 pa-0">
                 <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)`, position: 'relative' }"
                     gap="0">
-                    <TimeControls />
+                    <TimeControls 
+                        :timestamps="mainStore.variables.find(v => v.var === mainStore.selected_variable.var)?.dts || []" 
+                        :currentDt="mainStore.selected_variable.dt" 
+                        @update:dt="(newDt) => mainStore.updateSelectedVariable({dt: newDt})" 
+                    />
 
                     <TimeseriesChart ref="timeseriesChart" style="width: 100%; height: calc(100% - 32px);" />
                     <!-- <HeatmapChart style="width: 100%; height: calc(100% - 32px);" /> -->
@@ -83,10 +87,10 @@
 
                 <!-- VERY BOTTOM BAR -->
                 <v-row class="my-0 mx-2 pa-0" style="height:20px; ">
-                    <v-col cols="auto" class="my-0 mx-1 pa-0 text-label-small" style="height:20px">
+                    <!-- <v-col cols="auto" class="my-0 mx-1 pa-0 text-label-small" style="height:20px">
                         Server Status
                         <v-icon size="10px" color="green">mdi-circle</v-icon>
-                    </v-col>
+                    </v-col> -->
                     <v-spacer></v-spacer>
                     <v-col cols="auto" class="my-0 mx-1 pa-0 text-label-small" style="height:20px">
                         <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>

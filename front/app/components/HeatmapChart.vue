@@ -19,7 +19,6 @@
                     <v-btn size="small" @click="setPresetDateRange(30)">1M</v-btn>
                     <v-btn size="small" @click="setPresetDateRange(90)">3M</v-btn>
                     <v-btn size="small" @click="setPresetDateRange(365)">1Y</v-btn>
-                    <v-btn size="small" @click="setPresetDateRange(730)">2Y</v-btn>
                 </v-btn-group>
             </v-col>
 
@@ -189,7 +188,15 @@ function toTriplets(): [number, number, number | null][] {
 function dataMinMax(): [number, number] {
     const values = resolvedData().filter((v): v is number => v !== null && isFinite(v));
     if (!values.length) return [0, 1];
-    return [Math.min(...values), Math.max(...values)];
+    
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 0; i < values.length; i++) {
+        if (values[i] < min) min = values[i];
+        if (values[i] > max) max = values[i];
+    }
+    
+    return [min, max];
 }
 
 // ── Sensor Gridded Data Fetcher ───────────────────────────────────────────────
@@ -319,6 +326,8 @@ function buildOption(): echarts.EChartsOption {
             {
                 type: 'heatmap',
                 data: toTriplets(),
+                progressive: 1000,
+                progressiveThreshold: 3000,
                 emphasis: {
                     itemStyle: { borderColor: '#fff', borderWidth: 1 },
                 },
@@ -381,11 +390,11 @@ function confirmDatePicker() {
         const start = moment(pendingDateRange.value[0]);
         const end = moment(pendingDateRange.value[1]);
         const daysDiff = end.diff(start, 'days');
-        const maxDays = 730; // ~2 years
+        const maxDays = 370; // ~1 year
 
-        // Check if date range exceeds 2 years
+        // Check if date range exceeds 1 year
         if (daysDiff > maxDays) {
-            dateWarning.value = `Date range exceeds 2 years (${daysDiff} days selected). Please select a shorter range to avoid performance issues.`;
+            dateWarning.value = `Date range exceeds 1 year (${daysDiff} days selected). Please select a shorter range to avoid performance issues.`;
             showDateWarning.value = true;
             datePickerMenuOpen.value = false;
             return;

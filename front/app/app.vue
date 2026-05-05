@@ -105,6 +105,18 @@ async function getColormaps() {
 }
 </script>
 
+<style>
+/* Global font application for Vuetify and general elements */
+html, body, .v-application, .v-application .text-body-1, .v-application .text-body-2, .v-application .text-h1, .v-application .text-h2, .v-application .text-h3, .v-application .text-h4, .v-application .text-h5, .v-application .text-h6, .v-application .text-subtitle-1, .v-application .text-subtitle-2, .v-application .text-button, .v-application .text-caption, .v-application .text-overline {
+  font-family: 'Inter', sans-serif !important;
+}
+
+/* Preserve monospace for code and specific monospace classes */
+code, pre, kbd, samp, .text-monospace {
+  font-family: monospace !important;
+}
+</style>
+
 <style scoped>
 .logo-link {
   display: flex;
