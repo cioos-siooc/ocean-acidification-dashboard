@@ -768,8 +768,8 @@ def main():
         base = os.path.basename(f)
         match = None
         # reuse matching logic from other scripts: search for TA/Temp/Sal by token
-        m = re.search(r"\d{8}T\d{4}", base)
-        token = m.group(0) if m else None
+        m = re.search(r"(\d{8}T\d{4}|\d{8})", base)
+        token = m.group(1) if m else None
         if token:
             candidates = glob(os.path.join(args.base_dir, '*', f'*{token}*.nc'))
             found = {}

@@ -165,14 +165,16 @@ def extract_timeseries(
         conn = None
 
     # find candidate files
-    # For depth=-1 (bottom layer), use the pre-extracted bottom NC files exclusively.
-    # Those files are named {var}_bottom_{YYYYMMDD}.nc and have a single depth level at -1.0.
+    # For depth=-1 (bottom layer), prioritize files with "bottom" in the name.
+    # Daily: {var}_{YYYYMMDD}_bottom.nc
+    # Yearly/Merged: {var}_{YYYY}_bottom.nc
     use_bottom = (depth is not None and float(depth) == -1.0)
     files = list_nc_files(data_dir, var)
     if use_bottom:
-        files = [f for f in files if os.path.basename(f).startswith(f"{var}_") and os.path.basename(f).endswith("_bottom.nc")]
+        files = [f for f in files if "_bottom" in os.get_basename(f)]
     else:
-        files = [f for f in files if not os.path.basename(f).endswith("_bottom.nc")]
+        files = [f for f in files if "_bottom" not in os.get_basename(f)]
+    
     if verbose:
         print(f"DEBUG: Found {len(files)} candidate files for variable '{var}'" + (" (bottom)" if use_bottom else ""))
         if files:
@@ -180,9 +182,9 @@ def extract_timeseries(
 
     # Filter files by date range. Extract dates from filenames.
     # Handles daily files:  {var}_{YYYYMMDD}.nc, {var}_{YYYYMMDD}T{HHMM}.nc, {var}_{YYYYMMDD}_bottom.nc
-    # Handles yearly files: {var}_{YYYY}.nc  (4-digit year — always included if year overlaps range)
+    # Handles yearly files: {var}_{YYYY}.nc, {var}_{YYYY}_bottom.nc
     date_pattern = re.compile(r"(\d{8})(?:T\d{4,6})?(?:_\w+)?\.nc$")
-    year_pattern = re.compile(r"_(\d{4})\.nc$")
+    year_pattern = re.compile(r"_(\d{4})(?:_\w+)?\.nc$")
 
     # Parse from_date and to_date (mandatory parameters)
     try:
