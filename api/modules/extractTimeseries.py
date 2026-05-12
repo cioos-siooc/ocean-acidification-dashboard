@@ -114,7 +114,7 @@ def extract_timeseries(
     lat: float,
     lon: float,
     depth: Optional[float] = None,
-    data_dir: str = "/opt/data/nc",
+    data_dir: str = os.getenv("SSC_NC_DIR", "/opt/data/SSC/nc"),
     db_dsn: Optional[str] = None,
     db_host: Optional[str] = "db",
     db_port: int = 5432,
@@ -171,9 +171,9 @@ def extract_timeseries(
     use_bottom = (depth is not None and float(depth) == -1.0)
     files = list_nc_files(data_dir, var)
     if use_bottom:
-        files = [f for f in files if "_bottom" in os.get_basename(f)]
+        files = [f for f in files if "_bottom" in os.path.basename(f)]
     else:
-        files = [f for f in files if "_bottom" not in os.get_basename(f)]
+        files = [f for f in files if "_bottom" not in os.path.basename(f)]
     
     if verbose:
         print(f"DEBUG: Found {len(files)} candidate files for variable '{var}'" + (" (bottom)" if use_bottom else ""))
@@ -181,9 +181,11 @@ def extract_timeseries(
             print("DEBUG: Sample files:", files[:5])
 
     # Filter files by date range. Extract dates from filenames.
-    # Handles daily files:  {var}_{YYYYMMDD}.nc, {var}_{YYYYMMDD}T{HHMM}.nc, {var}_{YYYYMMDD}_bottom.nc
-    # Handles yearly files: {var}_{YYYY}.nc, {var}_{YYYY}_bottom.nc
+    # Handles daily files:   {var}_{YYYYMMDD}.nc, {var}_{YYYYMMDD}T{HHMM}.nc, {var}_{YYYYMMDD}_bottom.nc
+    # Handles monthly files: {var}_{YYYYMM}.nc, {var}_{YYYYMM}_bottom.nc
+    # Handles yearly files:  {var}_{YYYY}.nc, {var}_{YYYY}_bottom.nc
     date_pattern = re.compile(r"(\d{8})(?:T\d{4,6})?(?:_\w+)?\.nc$")
+    month_pattern = re.compile(r"_(\d{6})(?:_\w+)?\.nc$")
     year_pattern = re.compile(r"_(\d{4})(?:_\w+)?\.nc$")
 
     # Parse from_date and to_date (mandatory parameters)
@@ -227,6 +229,20 @@ def extract_timeseries(
             if allowed_date_set is not None and file_dt not in allowed_date_set:
                 if verbose:
                     print(f"Skipping file {fp}: date {file_dt} not in allowed_dates")
+                continue
+            filtered_files.append(fp)
+            continue
+
+        # Try monthly filename (YYYYMM) — include if the month overlaps the requested range
+        mm = month_pattern.search(fp)
+        if mm:
+            month_str = mm.group(1)
+            try:
+                file_month_start = pd.to_datetime(month_str, format="%Y%m").date()
+                file_month_end = (pd.to_datetime(month_str, format="%Y%m") + pd.offsets.MonthEnd(0)).date()
+            except Exception:
+                continue
+            if file_month_end < start_date or file_month_start > end_date:
                 continue
             filtered_files.append(fp)
             continue
@@ -459,7 +475,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # start/end selection removed — function now returns all available times
     # p.add_argument("--from", dest="from_dt", required=True, help="Start datetime (inclusive), ISO-8601")
     # p.add_argument("--to", dest="to_dt", required=True, help="End datetime (inclusive), ISO-8601")
-    p.add_argument("--data-dir", default=os.environ.get("DATA_DIR", "/opt/data/nc"), help="Directory containing daily NetCDF files (default: /opt/data/nc)")
+    p.add_argument("--data-dir", default=os.environ.get("SSC_NC_DIR", "/opt/data/SSC/nc"), help="Directory containing daily NetCDF files (default: /opt/data/SSC/nc)")
     p.add_argument("--lat", "-a", type=float, required=True, help="Latitude (required)")
     p.add_argument("--lon", "-o", type=float, required=True, help="Longitude (required)")
     p.add_argument("--depth", type=float, default=None,

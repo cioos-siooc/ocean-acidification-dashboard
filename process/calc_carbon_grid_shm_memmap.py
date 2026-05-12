@@ -746,7 +746,7 @@ def process_file_set_with_mode(files, out_base_dir, mode='sharedmem', workers=2,
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--base-dir', default='/opt/data/nc')
+    parser.add_argument('--base-dir', default=os.getenv('SSC_NC_DIR', '/opt/data/SSC/nc'))
     parser.add_argument('--date')
     parser.add_argument('--mode', choices=['sharedmem', 'memmap'], default='sharedmem')
     parser.add_argument('--workers', type=int, default=2)

@@ -259,7 +259,7 @@ def main(argv=None):
         process_pending_bottom(
             conn,
             limit=args.limit,
-            base_dir=os.getenv("DATA_DIR", "/opt/data/nc"),
+            base_dir=os.getenv("SSC_NC_DIR", "/opt/data/SSC/nc"),
         )
         logger.info("bottom_layer: Processing complete")
         return
@@ -294,7 +294,7 @@ def main(argv=None):
                 conn,
                 args.id,
                 workers=args.workers,
-                base_dir=os.getenv("DATA_DIR", "/opt/data/nc"),
+                base_dir=os.getenv("SSC_NC_DIR", "/opt/data/SSC/nc"),
             )
             return
 
@@ -303,7 +303,7 @@ def main(argv=None):
             conn,
             workers=args.workers,
             limit=args.limit,
-            base_dir=os.getenv("DATA_DIR", "/opt/data/nc"),
+            base_dir=os.getenv("SSC_NC_DIR", "/opt/data/SSC/nc"),
         )
         return
 

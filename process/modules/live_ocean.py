@@ -11,7 +11,7 @@ import requests
 from psycopg2.extras import Json  # type: ignore[import]
 
 from .db import ensure_variable, get_dataset_meta, upsert_dataset
-from dl_LO.main import process_live_ocean
+from liveOcean.main import process_live_ocean
 
 logger = logging.getLogger("dl2.live_ocean")
 

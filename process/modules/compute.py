@@ -143,7 +143,7 @@ def compute_for_group(
             # Use consistent naming: {variable}_{YYYYMMDD}.nc (format required by calc_carbon regex)
             out_fname = f"{var_name}_{start_time.strftime('%Y%m%d')}.nc"
             out_dir = os.path.join(
-                base_dir or os.getenv("DATA_DIR", "/opt/data/nc"), var_name
+                base_dir or os.getenv("DATA_DIR", os.getenv("SSC_NC_DIR", "/opt/data/SSC/nc")), var_name
             )
             out_path = os.path.join(out_dir, out_fname)
 
@@ -312,7 +312,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--limit", type=int, default=10)
-    parser.add_argument("--base-dir", default=os.getenv("DATA_DIR", "/opt/data/nc"))
+    parser.add_argument("--base-dir", default=os.getenv("SSC_NC_DIR", "/opt/data/SSC/nc"))
     args = parser.parse_args()
 
     conn = get_db_conn()

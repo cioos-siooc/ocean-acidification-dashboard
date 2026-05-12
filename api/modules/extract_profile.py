@@ -85,7 +85,7 @@ def extract_profile(
     lat: float,
     lng: float,
     dt: str,
-    data_dir: str = "/opt/data/nc",
+    data_dir: str = os.getenv("SSC_NC_DIR", "/opt/data/SSC/nc"),
     db_dsn: Optional[str] = None,
     db_host: Optional[str] = "db",
     db_port: int = 5432,

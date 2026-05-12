@@ -207,7 +207,7 @@ def download_nc(conn, row, erddap_base):
                     if not chunk:
                         continue
                     fh.write(chunk)
-        nc_root = os.getenv('NC_ROOT', '/opt/data/nc')
+        nc_root = os.getenv('SSC_NC_DIR', '/opt/data/SSC/nc')
         out_dir = os.path.join(nc_root, variable)
         os.makedirs(out_dir, exist_ok=True)
         

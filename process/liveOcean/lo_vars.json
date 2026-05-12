@@ -1,0 +1,30 @@
+{
+    "temperature": {
+        "ncVariable": "temp",
+        "depths": ["surface", 10, 20, 30, 50, 100, 500, 1000, 1500, 2000, 2500, "bottom"]
+    },
+    "salinity": {
+        "ncVariable": "salt",
+        "depths": ["surface", 10, 20, 30, 50, 100, 500, 1000, 1500, 2000, 2500, "bottom"]
+    },
+    "ph_total": {
+        "ncVariable": "PH",
+        "depths": ["surface", 10, 20, 30, 50, 100, 500, 1000, 1500, 2000, 2500, "bottom"]
+    },
+    "omega_arag": {
+        "ncVariable": "ARAG",
+        "depths": ["surface", 10, 20, 30, 50, 100, 500, 1000, 1500, 2000, 2500, "bottom"]
+    },
+    "dissolved_oxygen": {
+        "ncVariable": "oxygen",
+        "depths": ["surface", 10, 20, 30, 50, 100, 500, 1000, 1500, 2000, 2500, "bottom"]
+    },
+    "phytoplankton": {
+        "ncVariable": "phytoplankton",
+        "depths": ["surface", 10, 20, 30, 50, 100, 500, 1000, 1500, 2000, 2500, "bottom"]
+    },
+    "nitrate": {
+        "ncVariable": "NO3",
+        "depths": ["surface", 10, 20, 30, 50, 100, 500, 1000, 1500, 2000, 2500, "bottom"]
+    }
+}

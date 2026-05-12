@@ -70,30 +70,35 @@ app.add_middleware(
 # app.mount("/png", StaticFiles(directory="/opt/data/png"), name="png")
 
 # Explicit PNG route that sets cache-control for compatibility with Mapbox and browsers
-IMAGE_ROOT = os.environ.get("IMAGE_ROOT", "/opt/data/images")
+SSC_IMAGE_DIR = os.environ.get("SSC_IMAGE_DIR", "/opt/data/SSC/images")
+LO_IMAGE_DIR = os.environ.get("LO_IMAGE_DIR", "/opt/data/LO/images")
 
 
 def _get_image_roots() -> list:
     """Return list of image root directories to search when serving tiles.
 
-    IMAGE_ROOT (default /opt/data/image) is the primary directory and the
-    only one used for on-demand generation writes.
-    IMAGE_ROOT_ARCHIVE (optional) is a second read-only directory, e.g. an
-    external disk where older tiles have been moved.
+    Searches SSC_IMAGE_DIR, LO_IMAGE_DIR, and optional archive counterparts.
+    All directories are searched in order when looking up a tile file.
     """
-    archive = os.getenv("IMAGE_ROOT_ARCHIVE", "")
-    return [IMAGE_ROOT, archive] if archive else [IMAGE_ROOT]
+    roots = [SSC_IMAGE_DIR, LO_IMAGE_DIR]
+    archive_ssc = os.getenv("SSC_IMAGE_DIR_ARCHIVE", "")
+    archive_lo = os.getenv("LO_IMAGE_DIR_ARCHIVE", "")
+    if archive_ssc:
+        roots.append(archive_ssc)
+    if archive_lo:
+        roots.append(archive_lo)
+    return [r for r in roots if r]
 
 
 def _get_nc_data_dirs():
-    """Return the NC data directory spec (str or list) from environment.
+    """Return the SSC NC data directory spec (str or list) from environment.
 
-    Set NC_DATA_DIR for the primary directory (default /opt/data/nc).
-    Optionally set NC_DATA_DIR_ARCHIVE to a second directory that is searched
+    Set SSC_NC_DIR for the primary directory (default /opt/data/SSC/nc).
+    Optionally set SSC_NC_DIR_ARCHIVE to a second directory that is searched
     when a file is not found in the primary (e.g. an external disk mount).
     """
-    primary = os.getenv("NC_DATA_DIR", "/opt/data/nc")
-    archive = os.getenv("NC_DATA_DIR_ARCHIVE", "")
+    primary = os.getenv("SSC_NC_DIR", "/opt/data/SSC/nc")
+    archive = os.getenv("SSC_NC_DIR_ARCHIVE", "")
     return [primary, archive] if archive else primary
 
 # Read DB config from environment at import time so route handlers can access it
@@ -656,7 +661,7 @@ async def fn_get_monthly_climatology(request: monthlyClimRequest):
 
     try:
         from modules.monthly_climatology import get_monthly_climatology_at_coord
-        ssc_root = os.getenv("SSC_DATA_DIR", "/opt/data/SalishSeaCast")
+        ssc_root = os.getenv("SSC_CLIM_DIR", "/opt/data/SSC/climatology")
         ssc_archive = os.getenv("SSC_DATA_DIR_ARCHIVE", "")
         data_root = [ssc_root, ssc_archive] if ssc_archive else ssc_root
         result = await run_in_threadpool(
@@ -742,7 +747,8 @@ class evalRequest(BaseModel):
 async def fn_get_eval(request: evalRequest):
     logger.info(f"START getEval: sensor={request.sensor}, variable={request.variable}, model={request.model}")
     
-    eval_nc_path = f"/opt/data/eval/{request.sensor}.nc"
+    eval_data_dir = os.getenv("EVAL_DATA_DIR", "/opt/data/eval")
+    eval_nc_path = os.path.join(eval_data_dir, f"{request.sensor}.nc")
     
     # Validate model parameter
     valid_models = ["SSC", "LiveOcean"]
