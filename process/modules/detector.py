@@ -73,7 +73,7 @@ def ensure_pending_nc_file(conn, ds_id, variable, start_time, end_time, force=Fa
                 """
                 INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, status)
                 VALUES (%s,%s,%s,%s,'pending_download')
-                ON CONFLICT (dataset_id, variable_id, start_time, end_time)
+                ON CONFLICT (dataset_id, variable_id, start_time)
                 DO UPDATE SET status = 'pending_download', attempts = 0
                 RETURNING id
                 """,

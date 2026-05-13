@@ -38,33 +38,39 @@ def extract_source_date_from_url(url: str) -> str:
     raise ValueError(f"Could not extract date from URL: {url}")
 
 
+# Live Ocean dataset ID
+LO_DATASET_ID = 4
+
+
 def get_last_processed_date(conn, db_name: str = "oa") -> Optional[str]:
     """Get the last successfully processed source_date (YYYY-MM-DD)."""
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT DISTINCT source_date FROM live_ocean_data
-                WHERE status = 'success'
-                ORDER BY source_date DESC
+                SELECT DISTINCT misc->>'source_date' AS source_date FROM nc_jobs
+                WHERE status = 'success_image' AND dataset_id = %s
+                  AND misc->>'source_date' IS NOT NULL
+                ORDER BY misc->>'source_date' DESC
                 LIMIT 1
-                """
+                """,
+                (LO_DATASET_ID,),
             )
             row = cur.fetchone()
-            return row[0].isoformat() if row else None
+            return row[0] if row else None
     except Exception as e:
         logger.warning(f"Could not fetch last processed date: {e}")
         return None
 
 
-def update_file_status(conn, source_date: str, variable: str, file_date: str, status: str, error_message: str = None):
-    """Update the status of a single live_ocean_data record.
-    
+def update_file_status(conn, source_date: str, variable_id: int, start_time: str, status: str, error_message: str = None):
+    """Update the status of a single nc_jobs record (Live Ocean).
+
     Args:
         conn: Database connection
         source_date: Source date (YYYY-MM-DD)
-        variable: Variable name
-        file_date: File date (YYYY-MM-DD)
+        variable_id: Field ID (foreign key to fields table)
+        start_time: Start time (ISO 8601 timestamp)
         status: New status
         error_message: Error message if applicable
     """
@@ -72,52 +78,88 @@ def update_file_status(conn, source_date: str, variable: str, file_date: str, st
         with conn.cursor() as cur:
             cur.execute(
                 """
-                UPDATE live_ocean_data
-                SET status = %s, error_message = %s, updated_at = NOW()
-                WHERE source_date = %s AND variable = %s AND file_date = %s
+                UPDATE nc_jobs
+                SET status = %s::nc_file_status, error_message = %s, updated_at = NOW()
+                WHERE misc->>'source_date' = %s AND variable_id = %s AND start_time = %s AND dataset_id = %s
                 """,
-                (status, error_message, source_date, variable, file_date),
+                (status, error_message, source_date, variable_id, start_time, LO_DATASET_ID),
             )
         conn.commit()
     except Exception as e:
-        logger.error(f"Failed to update file status for {source_date}/{variable}/{file_date}: {e}")
+        logger.error(f"Failed to update file status for source_date={source_date}, variable_id={variable_id}, start_time={start_time}: {e}")
         raise
 
 
-def insert_processed_dates(conn, source_date: str, outputs: List[dict]):
-    """Insert extracted daily files into live_ocean_data.
+def insert_processed_dates(conn, source_date: str, outputs: List[dict]) -> List[dict]:
+    """Insert extracted daily files into nc_jobs.
     
     Args:
         conn: Database connection
         source_date: Source date (YYYY-MM-DD)
-        outputs: List of output dicts from write_daily_outputs with keys: variable, date (YYYYMMDD), path
+        outputs: List of output dicts from write_daily_outputs with keys: variable (name), path, start_time, end_time
+    
+    Returns:
+        Updated outputs list with variable_id added to each dict
     """
     try:
         records = []
+        updated_outputs = []
         for output in outputs:
-            # Convert YYYYMMDD to YYYY-MM-DD
-            date_str = output["date"]
-            file_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+            variable_name = output["variable"]
+            
+            # Look up field_id by variable name and dataset_id=4
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id FROM fields
+                    WHERE variable = %s AND dataset_id = %s
+                    LIMIT 1
+                    """,
+                    (variable_name, LO_DATASET_ID),
+                )
+                result = cur.fetchone()
+                if not result:
+                    logger.warning(f"Could not find field_id for variable '{variable_name}' in dataset {LO_DATASET_ID}, skipping")
+                    continue
+                variable_id = result[0]
+            
+            # Extract start_time and end_time from output (set by write_daily_outputs)
+            start_time = output.get("start_time")
+            end_time = output.get("end_time")
+            if not start_time or not end_time:
+                logger.warning(f"Output missing start_time or end_time for {variable_name}, skipping")
+                continue
+            
+            import json
             records.append(
                 (
-                    source_date,
-                    output["variable"],
-                    file_date,
-                    output["path"],
-                    "extracted",
+                    LO_DATASET_ID,  # dataset_id
+                    variable_id,
+                    json.dumps({"source_date": source_date}),  # misc
+                    start_time,
+                    end_time,
+                    output["path"], # nc_path
+                    "extracted",    # status
                 )
             )
+
+            # Add variable_id to output dict for use in imaging stage
+            output_with_id = output.copy()
+            output_with_id["variable_id"] = variable_id
+            updated_outputs.append(output_with_id)
 
         if records:
             with conn.cursor() as cur:
                 execute_values(
                     cur,
                     """
-                    INSERT INTO live_ocean_data
-                    (source_date, variable, file_date, file_path, status)
+                    INSERT INTO nc_jobs
+                    (dataset_id, variable_id, misc, start_time, end_time, nc_path, status)
                     VALUES %s
-                    ON CONFLICT (source_date, variable, file_date) DO UPDATE SET
-                        file_path = EXCLUDED.file_path,
+                    ON CONFLICT (dataset_id, variable_id, start_time) DO UPDATE SET
+                        end_time = EXCLUDED.end_time,
+                        misc = EXCLUDED.misc,
+                        nc_path = EXCLUDED.nc_path,
                         status = 'extracted',
                         updated_at = NOW()
                     """,
@@ -125,6 +167,8 @@ def insert_processed_dates(conn, source_date: str, outputs: List[dict]):
                 )
             conn.commit()
             logger.info(f"Inserted or updated {len(records)} files for source_date {source_date}")
+
+        return updated_outputs
     except Exception as e:
         logger.error(f"Failed to insert processed dates for source_date {source_date}: {e}")
         raise
@@ -138,36 +182,55 @@ def get_extracted_files_for_source_date(conn, source_date: str) -> List[dict]:
         source_date: Source date (YYYY-MM-DD)
     
     Returns:
-        List of dicts with keys: variable, file_date, file_path
+        List of dicts with keys: variable, variable_id, start_time, end_time, file_path
     """
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT variable, file_date, file_path FROM live_ocean_data
-                WHERE source_date = %s AND status IN ('extracted', 'pending_image', 'imaging_failed', 'success')
-                ORDER BY variable, file_date
+                SELECT nj.variable_id, f.variable, nj.start_time, nj.end_time, nj.nc_path
+                FROM nc_jobs nj
+                JOIN fields f ON nj.variable_id = f.id
+                WHERE nj.misc->>'source_date' = %s AND nj.dataset_id = %s
+                  AND nj.status IN ('extracted', 'pending_image', 'imaging_failed', 'success_image')
+                ORDER BY f.variable, nj.start_time
                 """,
-                (source_date,),
+                (source_date, LO_DATASET_ID),
             )
             rows = cur.fetchall()
-            return [{"variable": r[0], "file_date": r[1].isoformat(), "path": r[2]} for r in rows]
+            return [{"variable_id": r[0], "variable": r[1], "start_time": r[2].isoformat(), "end_time": r[3].isoformat(), "path": r[4]} for r in rows]
     except Exception as e:
         logger.error(f"Failed to get extracted files for source_date {source_date}: {e}")
         return []
 
 
 def get_available_dates_for_variable(conn, variable: str) -> List[str]:
-    """Get list of available file_dates for a variable (YYYY-MM-DD format)."""
+    """Get list of available start_times for a variable (ISO 8601 format)."""
     try:
         with conn.cursor() as cur:
+            # First get field_id for this variable in dataset 4
             cur.execute(
                 """
-                SELECT DISTINCT file_date FROM live_ocean_data
-                WHERE variable = %s
-                ORDER BY file_date DESC
+                SELECT id FROM fields
+                WHERE variable = %s AND dataset_id = 4
+                LIMIT 1
                 """,
                 (variable,),
+            )
+            result = cur.fetchone()
+            if not result:
+                logger.warning(f"Variable '{variable}' not found in dataset 4")
+                return []
+            variable_id = result[0]
+            
+            # Get distinct start_times for this variable
+            cur.execute(
+                """
+                SELECT DISTINCT start_time FROM nc_jobs
+                WHERE variable_id = %s AND dataset_id = %s
+                ORDER BY start_time DESC
+                """,
+                (variable_id, LO_DATASET_ID),
             )
             return [row[0].isoformat() for row in cur.fetchall()]
     except Exception as e:
@@ -176,58 +239,47 @@ def get_available_dates_for_variable(conn, variable: str) -> List[str]:
 
 
 def init_schema(conn):
-    """Create unified live_ocean_data table for tracking daily files through their lifecycle."""
+    """Ensure nc_jobs has the columns and enum values needed for Live Ocean data.
+
+    Idempotent: safe to call on an already-migrated database.
+    """
     try:
         with conn.cursor() as cur:
-            # Drop old tables if they exist (clean start)
-            # Uncomment these if you want automatic migration:
-            # cur.execute("DROP TABLE IF EXISTS live_ocean_processed_dates CASCADE")
-            # cur.execute("DROP TABLE IF EXISTS live_ocean_files CASCADE")
-            
-            # Create unified live_ocean_data table
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS live_ocean_data (
-                    id SERIAL PRIMARY KEY,
-                    source_date DATE NOT NULL,
-                    variable VARCHAR(50) NOT NULL,
-                    file_date DATE NOT NULL,
-                    file_path TEXT NOT NULL,
-                    status VARCHAR(20) NOT NULL DEFAULT 'extracted',
-                    error_message TEXT,
-                    created_at TIMESTAMP DEFAULT NOW(),
-                    updated_at TIMESTAMP DEFAULT NOW(),
-                    UNIQUE (source_date, variable, file_date)
+            # Add LO-specific columns to nc_jobs if not already present
+            for col, defn in [
+                ("error_message", "TEXT"),
+                ("created_at", "TIMESTAMPTZ DEFAULT NOW()"),
+                ("updated_at", "TIMESTAMPTZ DEFAULT NOW()"),
+                ("misc", "JSONB"),
+            ]:
+                cur.execute(
+                    f"ALTER TABLE nc_jobs ADD COLUMN IF NOT EXISTS {col} {defn}"
                 )
-                """
-            )
-            
-            # Create indexes for performance
+
+            # Ensure 'extracted' and 'imaging_failed' enum values exist
+            for enum_name in ('nc_file_status', 'nc_job_status'):
+                cur.execute("SELECT 1 FROM pg_type WHERE typname = %s", (enum_name,))
+                if cur.fetchone():
+                    for val in ('extracted', 'imaging_failed'):
+                        cur.execute(
+                            f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS %s", (val,)
+                        )
+
+            # GIN index on misc for efficient JSONB lookups
             cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_live_ocean_data_source_date ON live_ocean_data(source_date)"
+                "CREATE INDEX IF NOT EXISTS idx_nc_jobs_misc ON nc_jobs USING GIN (misc)"
             )
+            # Drop legacy source_date column if it exists from a previous migration
             cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_live_ocean_data_status ON live_ocean_data(status)"
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='nc_jobs' AND column_name='source_date'"
             )
-            cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_live_ocean_data_variable ON live_ocean_data(variable)"
-            )
-            cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_live_ocean_data_file_date ON live_ocean_data(file_date)"
-            )
-            
+            if cur.fetchone():
+                cur.execute("ALTER TABLE nc_jobs DROP COLUMN source_date")
+
         conn.commit()
-        logger.info("Database schema initialized successfully")
-    except psycopg2.Error as e:
-        if "already exists" in str(e):
-            logger.info("Schema already initialized")
-            try:
-                conn.commit()
-            except:
-                pass
-        else:
-            logger.error(f"Failed to initialize schema: {e}")
-            raise
+        logger.info("nc_jobs schema updated for Live Ocean")
     except Exception as e:
-        logger.error(f"Failed to initialize schema: {e}")
+        conn.rollback()
+        logger.error(f"Failed to update schema: {e}")
         raise

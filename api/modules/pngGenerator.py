@@ -176,6 +176,7 @@ def _pick_image_root(nc_path: str, data_dirs, image_roots) -> str:
 
 
 async def generate_png_for_variable(
+    source: str,
     var: str, dt: str, depth_value: float,
     data_dir, image_roots,
     png_gen_semaphore,

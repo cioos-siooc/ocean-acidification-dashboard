@@ -148,7 +148,7 @@ def process_pending_live_ocean(conn, limit: int = 1):
                         """
                         INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, status, nc_path, attempts, last_attempt)
                         VALUES (%s, %s, %s, %s, 'pending_image', %s, 0, NOW())
-                        ON CONFLICT (dataset_id, variable_id, start_time, end_time)
+                        ON CONFLICT (dataset_id, variable_id, start_time)
                         DO UPDATE SET status = EXCLUDED.status, nc_path = EXCLUDED.nc_path, last_attempt = NOW()
                         """,
                         (ds_id, var_id, start_time, end_time, path),

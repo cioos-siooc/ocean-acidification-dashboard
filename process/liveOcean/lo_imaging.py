@@ -346,7 +346,7 @@ def image_live_ocean(outputs: List[dict], image_root: str = "/opt/data/images") 
                     alpha_mask = np.where(np.isfinite(regridded), 255, 0).astype(np.uint8)
                     rgb_arr = pack_to_rgb(regridded, vmin, vmax, precision)
                     
-                    out_dir = os.path.join(image_root, variable, time_iso)
+                    out_dir = os.path.join(image_root, variable_name, time_iso)
                     out_path = os.path.join(out_dir, f"{depth_str}.webp")
                     write_webp(rgb_arr, alpha_mask, out_path)
                     all_paths.append(out_path)
@@ -406,7 +406,7 @@ def _process_single_slice(args: Tuple) -> str:
     Also updates database status as the file progresses.
     
     Args:
-        args: (source_date, variable, file_date, nc_path, time_idx, depth_idx, image_root, 
+        args: (source_date, variable_id, start_time, end_time, nc_path, time_idx, depth_idx, image_root, 
                time_val, depth_val, vmin, vmax, precision)
     
     Returns:
@@ -414,7 +414,7 @@ def _process_single_slice(args: Tuple) -> str:
     """
     global _worker_mercator_cache
     
-    (source_date, variable, file_date, nc_path, time_idx, depth_idx, image_root, 
+    (source_date, variable_id, start_time, end_time, nc_path, time_idx, depth_idx, image_root, 
      time_val, depth_val, vmin, vmax, precision) = args
     
     # Get prebuilt interpolator from worker cache (built once by initializer)
@@ -430,12 +430,13 @@ def _process_single_slice(args: Tuple) -> str:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    UPDATE live_ocean_data 
+                    UPDATE nc_jobs
                     SET status = 'imaging', updated_at = NOW()
-                    WHERE source_date = %s AND variable = %s AND file_date = %s 
+                    WHERE misc->>'source_date' = %s AND variable_id = %s AND start_time = %s
+                      AND dataset_id = 4
                       AND status IN ('extracted', 'pending_image')
                     """,
-                    (source_date, variable, file_date)
+                    (source_date, variable_id, start_time)
                 )
                 conn.commit()
         finally:
@@ -444,8 +445,21 @@ def _process_single_slice(args: Tuple) -> str:
         # Load only this specific time/depth slice
         ds = xr.open_dataset(nc_path)
         
+        # Get variable name from field_id (for accessing data)
+        # We need to query the database to get the variable name from field_id
+        var_conn = get_db_conn()
+        try:
+            with var_conn.cursor() as cur:
+                cur.execute("SELECT variable FROM fields WHERE id = %s LIMIT 1", (variable_id,))
+                result = cur.fetchone()
+                if not result:
+                    raise ValueError(f"Could not find variable name for field_id {variable_id}")
+                variable_name = result[0]
+        finally:
+            var_conn.close()
+        
         # Get dimension names
-        dims = ds[variable].dims
+        dims = ds[variable_name].dims
         time_dim = next((d for d in dims if 'time' in str(d).lower()), None)
         depth_dim = next((d for d in dims if 'depth' in str(d).lower()), None)
         
@@ -454,7 +468,7 @@ def _process_single_slice(args: Tuple) -> str:
             return ""
         
         # Load only this slice
-        data_slice = ds[variable].isel({time_dim: time_idx, depth_dim: depth_idx}).values
+            data_slice = ds[variable_name].isel({time_dim: time_idx, depth_dim: depth_idx}).values
         ds.close()
         
         # Determine depth filename
@@ -486,7 +500,7 @@ def _process_single_slice(args: Tuple) -> str:
         return out_path
     
     except Exception as e:
-        logger.error(f"Error processing {variable} slice (t={time_idx}, d={depth_idx}): {e}")
+        logger.error(f"Error processing {variable_name} slice (t={time_idx}, d={depth_idx}): {e}")
         # Mark file as imaging_failed
         try:
             conn = get_db_conn()
@@ -494,11 +508,12 @@ def _process_single_slice(args: Tuple) -> str:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        UPDATE live_ocean_data 
+                        UPDATE nc_jobs
                         SET status = 'imaging_failed', error_message = %s, updated_at = NOW()
-                        WHERE source_date = %s AND variable = %s AND file_date = %s
+                        WHERE misc->>'source_date' = %s AND variable_id = %s AND start_time = %s
+                          AND dataset_id = 4
                         """,
-                        (str(e), source_date, variable, file_date)
+                        (str(e), source_date, variable_id, start_time)
                     )
                     conn.commit()
             finally:
@@ -523,10 +538,10 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
     
     Database tracking:
     - Worker updates status to 'imaging' on first slice of a file
-    - Main process updates to 'success' after all slices complete
+    - Main process updates to 'success_image' after all slices complete
     
     Args:
-        outputs: List of dicts with keys: variable, path, file_date, date (YYYYMMDD)
+        outputs: List of dicts with keys: variable, variable_id, path, start_time, end_time
         workers: Number of parallel processes
         image_root: Root directory for image output
         source_date: Source date (YYYY-MM-DD) for database status tracking
@@ -541,12 +556,14 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
     minx, miny, maxx, maxy = compute_mercator_bounds(lon_src, lat_src)
     xx_merc, yy_merc, w, h = build_mercator_grid(minx, miny, maxx, maxy)
     
-    # Build task queue: one task per (variable, time, depth) triple
+    # Build task queue: one task per (variable_id, time, depth) triple
     tasks = []
     for out in outputs:
         variable = out['variable']
+        variable_id = out.get('variable_id')
         nc_path = out['path']
-        file_date = out['file_date']  # YYYY-MM-DD
+        start_time = out['start_time']  # ISO timestamp
+        end_time = out['end_time']      # ISO timestamp
         
         # Open dataset to get time/depth info
         if not os.path.exists(nc_path):
@@ -578,11 +595,11 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
             depths = ds[depth_dim].values
             
             # Create task for each time/depth pair
-            # Include source_date and file_date for database status updates in worker
+            # Include source_date and start_time/end_time for database status updates in worker
             for t_idx, t_val in enumerate(times):
                 for d_idx, d_val in enumerate(depths):
                     tasks.append((
-                        source_date, variable, file_date, nc_path, t_idx, d_idx, image_root,
+                        source_date, variable_id, start_time, end_time, nc_path, t_idx, d_idx, image_root,
                         t_val, d_val, vmin, vmax, precision
                     ))
             
@@ -593,8 +610,8 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
     
     logger.info(f"Created {len(tasks)} tasks for {len(outputs)} file(s)")
     
-    # Track task completion per file: {(source_date, var, file_date): (completed_count, total_count)}
-    # This allows us to update to 'success' as soon as each file's slices are all done
+    # Track task completion per file: {(source_date, variable_id, start_time, end_time): (completed_count, total_count)}
+    # This allows us to update to 'success_image' as soon as each file's slices are all done
     file_task_counts = {}
     
     all_paths = []
@@ -607,8 +624,8 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
         
         # Pre-populate task counts per file
         for task in tasks:
-            source_date_t, variable, file_date, *_ = task
-            key = (source_date_t, variable, file_date)
+            source_date_t, variable_id, start_time, end_time, *_ = task
+            key = (source_date_t, variable_id, start_time, end_time)
             if key not in file_task_counts:
                 file_task_counts[key] = [0, 0]  # [completed, total]
             file_task_counts[key][1] += 1
@@ -624,34 +641,35 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
                 
                 # Extract file key from task
                 task = futures[future]
-                source_date_t, variable, file_date, *_ = task
-                key = (source_date_t, variable, file_date)
+                source_date_t, variable_id, start_time, end_time, *_ = task
+                key = (source_date_t, variable_id, start_time, end_time)
                 
                 # Increment completion count for this file
                 file_task_counts[key][0] += 1
                 completed_for_file, total_for_file = file_task_counts[key]
                 
-                # If all slices for this file are done, update to 'success'
+                # If all slices for this file are done, update to 'success_image'
                 if completed_for_file == total_for_file:
-                    logger.info(f"All slices completed for {variable}/{file_date}. Updating to 'success'.")
+                    logger.info(f"All slices completed for variable_id={variable_id}/{start_time}. Updating to 'success_image'.")
                     try:
                         db_conn = get_db_conn()
                         try:
                             with db_conn.cursor() as cur:
                                 cur.execute(
                                     """
-                                    UPDATE live_ocean_data 
-                                    SET status = 'success', updated_at = NOW()
-                                    WHERE source_date = %s AND variable = %s AND file_date = %s 
+                                    UPDATE nc_jobs
+                                    SET status = 'success_image', updated_at = NOW()
+                                    WHERE misc->>'source_date' = %s AND variable_id = %s AND start_time = %s
+                                      AND dataset_id = 4
                                       AND status = 'imaging'
                                     """,
-                                    (source_date_t, variable, file_date)
+                                    (source_date_t, variable_id, start_time)
                                 )
                                 db_conn.commit()
                         finally:
                             db_conn.close()
                     except Exception as db_err:
-                        logger.error(f"Failed to mark {variable}/{file_date} as success: {db_err}")
+                        logger.error(f"Failed to mark variable_id={variable_id}/{start_time} as success_image: {db_err}")
                 
                 completed += 1
                 if completed % max(1, len(tasks) // 10) == 0:

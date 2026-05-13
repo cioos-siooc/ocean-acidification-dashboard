@@ -268,10 +268,17 @@ def write_daily_outputs(
             encoding = {field_name: {"zlib": True, "complevel": 4}}
             day_ds.to_netcdf(out_path, encoding=encoding)
             
+            # Extract start and end times as ISO 8601 strings
+            import pandas as pd
+            start_time = pd.Timestamp(day_times_sorted[0]).isoformat()
+            end_time = pd.Timestamp(day_times_sorted[-1]).isoformat()
+            
             outputs.append({
                 "variable": field_name,
                 "date": token,
                 "path": out_path,
+                "start_time": start_time,
+                "end_time": end_time,
             })
             
             # Explicit cleanup
@@ -362,7 +369,8 @@ def stage_extract(input_path: str, out_dir: str, vars_json: str, source_date: st
         logger.info(f"Extraction complete: {len(outputs)} output files")
         
         # Insert into database (creates records with status='extracted')
-        insert_processed_dates(conn, source_date, outputs)
+        # This also returns outputs enriched with variable_id for use in imaging stage
+        outputs = insert_processed_dates(conn, source_date, outputs)
         
         # Aggressive cleanup: delete input file and force garbage collection
         if os.path.exists(input_path):

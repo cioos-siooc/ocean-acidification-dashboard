@@ -1,10 +1,12 @@
 <template>
   <v-card v-if="selectedVariableName" class="colorbar">
     <div class="label">
+      <!-- VARIABLES -->
       <v-select v-model="selectedVarName" label="Field" :items="variableItems" :disabled="variableItems.length === 0"
         item-title="label" item-value="var" density="compact" hide-details variant="outlined" class="my-4"
         :menu-props="{ location: 'end', offset: 35, zIndex: 9999 }" style="width: 100%"></v-select>
 
+      <!-- SOURCES -->
       <v-select v-model="selectedSource" :items="sourceItems" label="Source" item-title="label" item-value="source"
         :disabled="sourceItems.length === 0" density="compact" hide-details variant="outlined" class="my-4"
         :menu-props="{ location: 'end', offset: 35, zIndex: 9999 }" style="width: 100%">
@@ -15,6 +17,7 @@
         </template>
       </v-select>
 
+      <!-- DEPTHS -->
       <v-select v-if="depths && depths.length > 0" v-model="selectedDepth" :items="depths" label="Depth"
         item-title="label" item-value="depth" :disabled="!depths || depths.length === 0" density="compact" hide-details
         variant="outlined" class="my-4" :menu-props="{ location: 'end', offset: 75, zIndex: 9999 }" style="width: 100%">
@@ -116,7 +119,7 @@ const showSourceInfo = ref(false);
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 
 const variables = computed(() => mainStore.variables);
-const variableItems = computed(() => variables.value.map((v) => ({ var: v.var, label: var2name(v.var), colormapMin: v.colormapMin, colormapMax: v.colormapMax })));
+const variableItems = computed(() => variables.value.filter(v => v.source === selectedSource.value).map((v) => ({ var: v.var, label: var2name(v.var), colormapMin: v.colormapMin, colormapMax: v.colormapMax })));
 const selectedVariable = computed(() => mainStore.selected_variable);
 const sourceItems = computed(() => {
   const sources = variables.value.filter(v => v.var == selectedVariable.value.var).map(v => ({ source: v.source, label: v.source }));

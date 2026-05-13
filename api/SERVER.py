@@ -70,23 +70,28 @@ app.add_middleware(
 # app.mount("/png", StaticFiles(directory="/opt/data/png"), name="png")
 
 # Explicit PNG route that sets cache-control for compatibility with Mapbox and browsers
-SSC_IMAGE_DIR = os.environ.get("SSC_IMAGE_DIR", "/opt/data/SSC/images")
-LO_IMAGE_DIR = os.environ.get("LO_IMAGE_DIR", "/opt/data/LO/images")
+SSC_IMAGE_DIR = os.environ.get("SSC_IMAGE_DIR", "/opt/data/SalishSeaCast/images")
+LO_IMAGE_DIR = os.environ.get("LO_IMAGE_DIR", "/opt/data/LiveOcean/images")
 
 
-def _get_image_roots() -> list:
+def _get_image_roots(source: str) -> list:
     """Return list of image root directories to search when serving tiles.
 
     Searches SSC_IMAGE_DIR, LO_IMAGE_DIR, and optional archive counterparts.
     All directories are searched in order when looking up a tile file.
     """
-    roots = [SSC_IMAGE_DIR, LO_IMAGE_DIR]
-    archive_ssc = os.getenv("SSC_IMAGE_DIR_ARCHIVE", "")
-    archive_lo = os.getenv("LO_IMAGE_DIR_ARCHIVE", "")
-    if archive_ssc:
-        roots.append(archive_ssc)
-    if archive_lo:
-        roots.append(archive_lo)
+    roots = []
+    if(source == "SalishSeaCast"):
+        roots = [SSC_IMAGE_DIR]
+        archive_ssc = os.getenv("SSC_IMAGE_DIR_ARCHIVE", "")
+        if archive_ssc:
+            roots.append(archive_ssc)
+    elif(source == "LiveOcean"):
+        roots = [LO_IMAGE_DIR]
+        archive_lo = os.getenv("LO_IMAGE_DIR_ARCHIVE", "")
+        if archive_lo:
+            roots.append(archive_lo)
+
     return [r for r in roots if r]
 
 
@@ -323,17 +328,19 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
 #     content = await run_in_threadpool(_read)
 #     return JSONResponse(content=content)
 
-@app.get("/png/{var}/{dt}/{depth}")
-async def get_png(var: str, dt: str, depth: str):
+@app.get("/png/{source}/{var}/{dt}/{depth}")
+async def get_png(source: str, var: str, dt: str, depth: str):
     """Serve PNG for variable/datetime/depth, generating on-demand if needed."""
     # Serve the PNG file for a specific variable, datetime, and depth
+    safe_source = os.path.basename(source)
     safe_var = os.path.basename(var)
     safe_dt = os.path.basename(dt)
     safe_depth = depth.replace('.', 'p')
 
     # Try both .webp (from on-demand generation) and .png (legacy), across all image roots
-    for image_root in _get_image_roots():
+    for image_root in _get_image_roots(safe_source):
         path = os.path.join(image_root, safe_var, safe_dt)
+        print("##" , path, flush=True)  # Debug log to verify path construction
         for ext in ['.webp', '.png']:
             filename = f"{safe_depth}{ext}"
             full_path = os.path.join(path, filename)
@@ -356,7 +363,7 @@ async def get_png(var: str, dt: str, depth: str):
         depth_value = float(depth)
         data_dir = _get_nc_data_dirs()
         full_path = await generate_png_for_variable(
-            var, dt, depth_value, data_dir, _get_image_roots(), _png_gen_semaphore, _png_executor
+            source, var, dt, depth_value, data_dir, _get_image_roots(source), _png_gen_semaphore, _png_executor
         )
         
         headers = {
@@ -428,6 +435,7 @@ async def get_raster_tiles(z: int, x: int, y: int):
 #######################################
 
 class timeseriesRequest(BaseModel):
+    source: str
     var: str
     lat: float
     lon: float
@@ -438,7 +446,7 @@ class timeseriesRequest(BaseModel):
 @app.post("/extractTimeseries")
 async def fn_extract_timeseries(request: timeseriesRequest):
     # Reject requests if we are already at concurrency limit
-    logger.info(f"START extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate}")
+    logger.info(f"START extractTimeseries: {request.source}, {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate}")
     try:
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
     except (asyncio.TimeoutError, Exception):

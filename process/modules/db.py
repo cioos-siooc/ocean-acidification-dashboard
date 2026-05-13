@@ -36,7 +36,8 @@ def ensure_schema(conn):
         # Add new values to all matching enum names (handles both nc_file_status and nc_job_status)
         for enum_name in existing_enums:
             for val in ('downloading', 'computing', 'imaging',
-                        'pending_bottom', 'bottoming', 'success_bottom', 'failed_bottom'):
+                        'pending_bottom', 'bottoming', 'success_bottom', 'failed_bottom',
+                        'extracted', 'imaging_failed'):
                 cur.execute(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS %s", (val,))
 
         # Live Ocean status enum
@@ -78,7 +79,11 @@ def ensure_schema(conn):
             status nc_file_status DEFAULT 'pending_download',
             nc_path TEXT,
             attempts INT DEFAULT 0,
-            last_attempt TIMESTAMPTZ
+            last_attempt TIMESTAMPTZ,
+            error_message TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            misc JSONB
         );
 
         CREATE TABLE IF NOT EXISTS live_ocean_runs (
@@ -94,25 +99,42 @@ def ensure_schema(conn):
         );
 
         CREATE INDEX IF NOT EXISTS idx_nc_jobs_var_start ON nc_jobs(variable_id, start_time);
-        -- create index on unified status column
         CREATE INDEX IF NOT EXISTS idx_nc_jobs_status ON nc_jobs(status);
-        -- Prevent duplicate rows for NULL dataset_id: add a partial unique index for rows where dataset_id IS NULL
-        -- Partial unique index for rows where dataset_id IS NULL will be created below
-            -- (created separately to avoid multi-statement parsing issues)
             """)
-        # Create the full and partial unique indexes (created separately to avoid parser issues)
-        # Wrapped in try/except: if duplicate rows already exist the index cannot be created,
-        # but we must not crash — the pipeline can still run without the unique constraint.
+        # Add new columns to existing nc_jobs tables (idempotent for already-running DBs)
+        for col, defn in [
+            ("error_message", "TEXT"),
+            ("created_at", "TIMESTAMPTZ DEFAULT NOW()"),
+            ("updated_at", "TIMESTAMPTZ DEFAULT NOW()"),
+            ("misc", "JSONB"),
+        ]:
+            cur.execute(f"ALTER TABLE nc_jobs ADD COLUMN IF NOT EXISTS {col} {defn}")
+        # GIN index on misc for efficient JSONB key lookups
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_nc_jobs_misc ON nc_jobs USING GIN (misc)")
+        # Drop old source_date column if it exists (replaced by misc)
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='nc_jobs' AND column_name='source_date'"
+        )
+        if cur.fetchone():
+            cur.execute("ALTER TABLE nc_jobs DROP COLUMN source_date")
+        # Replace 4-column unique index (dataset_id, variable_id, start_time, end_time)
+        # with 3-column (dataset_id, variable_id, start_time) to support unified SSC+LO table.
         try:
-            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_jobs_dataset_variable_time ON nc_jobs (dataset_id, variable_id, start_time, end_time)")
+            cur.execute("SELECT indexdef FROM pg_indexes WHERE indexname = 'ux_nc_jobs_dataset_variable_time'")
+            idx_row = cur.fetchone()
+            if idx_row and 'end_time' in idx_row[0]:
+                # Old 4-column index — drop and recreate as 3-column
+                cur.execute("DROP INDEX IF EXISTS ux_nc_jobs_dataset_variable_time")
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_jobs_dataset_variable_time ON nc_jobs (dataset_id, variable_id, start_time)")
         except Exception:
             conn.rollback()
-            logger.warning("Could not create unique index ux_nc_jobs_dataset_variable_time (duplicate rows exist); continuing without it")
+            logger.warning("Could not update unique index ux_nc_jobs_dataset_variable_time; continuing without it")
+        # Remove old partial-null index (superseded by the 3-column constraint above)
         try:
-            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_jobs_null_dataset_variable_time ON nc_jobs (variable_id, start_time, end_time) WHERE dataset_id IS NULL")
+            cur.execute("DROP INDEX IF EXISTS ux_nc_jobs_null_dataset_variable_time")
         except Exception:
             conn.rollback()
-            logger.warning("Could not create unique index ux_nc_jobs_null_dataset_variable_time (duplicate rows exist); continuing without it")
 
         # If older schema used dataset_id column name, rename to base_url
         cur.execute(

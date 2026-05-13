@@ -54,7 +54,7 @@
 
             <div class="px-2 pt-2"
                 style="width:250px; position: absolute; bottom:0; z-index: 999; background-color: #11111199; border-top-left-radius: 20px; border-top-right-radius: 20px; margin:auto; right:0; "
-                :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap + 50 : overlayGap + 50) + 'px', transition: 'left 0.3s ease'  }">
+                :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap + 50 : overlayGap + 50) + 'px', transition: 'left 0.3s ease' }">
                 <ColormapBar class="ma-2" />
             </div>
 
@@ -67,11 +67,10 @@
             <v-container minWidth="100%" class="ma-0 pa-0">
                 <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)`, position: 'relative' }"
                     gap="0">
-                    <TimeControls 
-                        :timestamps="mainStore.variables.find(v => v.var === mainStore.selected_variable.var)?.dts || []" 
-                        :currentDt="mainStore.selected_variable.dt" 
-                        @update:dt="(newDt) => mainStore.updateSelectedVariable({dt: newDt})" 
-                    />
+                    <TimeControls
+                        :timestamps="mainStore.variables.find(v => v.var === mainStore.selected_variable.var)?.dts || []"
+                        :currentDt="mainStore.selected_variable.dt"
+                        @update:dt="(newDt) => mainStore.updateSelectedVariable({ dt: newDt })" />
 
                     <TimeseriesChart ref="timeseriesChart" style="width: 100%; height: calc(100% - 32px);" />
                     <!-- <HeatmapChart style="width: 100%; height: calc(100% - 32px);" /> -->
@@ -95,7 +94,7 @@
                     <v-col cols="auto" class="my-0 mx-1 pa-0 text-label-small" style="height:20px">
                         <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
                         <span>{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
-                            }}</span>
+                        }}</span>
                     </v-col>
                 </v-row>
 
@@ -375,7 +374,7 @@ watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth,
                     try {
                         const lat = lastClicked.value!.lat;
                         const lon = lastClicked.value!.lng;
-                        const varId = mainStore.selected_variable.var;
+                        const varName = mainStore.selected_variable.var;
 
                         // abort previous request if any
                         try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
@@ -531,8 +530,8 @@ watch(() => mainStore.lastClickedMapPoint, (point) => {
 ///////////////////////////////////  MEDTHODS  ///////////////////////////////////
 async function getMetadata() {
     try {
-        const varId = mainStore.selected_variable.var;
-        const metaPath = `${apiBaseUrl}/metadata/${varId}`;
+        const varName = mainStore.selected_variable.var;
+        const metaPath = `${apiBaseUrl}/metadata/${varName}`;
 
         const r = await axios.get(metaPath);
         meta.value = JSON.parse(r.data);
@@ -594,7 +593,8 @@ async function getTimeseriesPromises(lat: number, lon: number) {
 }
 
 async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {
-    return axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth, fromDate, toDate }, { signal: tsRequestController.signal });
+    const payload = { source: mainStore.selected_variable.source, var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth, fromDate, toDate }
+    return axios.post(`${apiBaseUrl}/extractTimeseries`, payload, { signal: tsRequestController.signal });
     // const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
     // const json = r.data;
     // if (json && Array.isArray(json.time) && Array.isArray(json.value)) {
@@ -700,12 +700,13 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     if (!map) throw new Error('map not initialized');
     // if (!meta.value || !meta.value.bounds) throw new Error('metadata not loaded');
 
-    const varId = mainStore.selected_variable.var;
+    const source = mainStore.selected_variable.source.replace(/\s+/g, ''); // Remove spaces from source name for URL
+    const varName = mainStore.selected_variable.var;
     const dt = mainStore.selected_variable.dt?.format('YYYY-MM-DDTHHmmss') || '';
     const depth = formatDepth(mainStore.selected_variable.depth);
-    const pngPath = `${apiBaseUrl}/png/${varId}/${dt}/${depth}`;
+    const pngPath = `${apiBaseUrl}/png/${source}/${varName}/${dt}/${depth}`;
 
-    const varMeta = mainStore.variables.find(v => v.var === varId);
+    const varMeta = mainStore.variables.find(v => v.var === varName);
     const [lonmin, latmin, lonmax, latmax] = varMeta.bounds;
     const coords = [
         [lonmin, latmax], // top-left
@@ -733,7 +734,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
     // Get packing params from metadata, default to 0.1 precision and 0 base if missing
     // Note: base might be equal to colormapMin if it was dynamic
-    const precision = mainStore.variables.find(v => v.var === varId)?.precision ?? 0.1;
+    const precision = mainStore.variables.find(v => v.var === varName)?.precision ?? 0.1;
     const base = 0
 
     // Use colormap if available, otherwise fall back to default ramp
@@ -804,7 +805,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     }
 
     // save active overlay metadata on the map instance for access by click handler
-    const overlayObj: any = { bounds: [lonmin, latmin, lonmax, latmax], coords, varId, depth: depth, pngPath, meta, clickHandler: null };
+    const overlayObj: any = { bounds: [lonmin, latmin, lonmax, latmax], coords, varName, depth: depth, pngPath, meta, clickHandler: null };
     // remove previous click handler if present
     const prev = (map as any).__activePngOverlay;
     if (prev && prev.clickHandler) {
