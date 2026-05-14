@@ -4,6 +4,17 @@
         <div v-if="loading" class="global-chart-overlay">
             <v-progress-circular indeterminate color="warning" :size="64" :width="12" class="progress" />
         </div>
+
+        <v-btn icon variant="text" flat size="18px" class="chart-info" @click="showChartInfo = true">
+            <v-icon color="yellow" size="14px">mdi-information-variant</v-icon>
+        </v-btn>
+
+        <!-- CHART USAGE AND PLOTS HELP DIALOG -->
+        <v-dialog v-model="showChartInfo" max-width="75%">
+            <v-card class="pa-5">
+                <v-img :src="timeseriesChartHelpImg" alt="Timeseries Chart Help" ></v-img>
+            </v-card>
+        </v-dialog>
     </div>
 </template>
 
@@ -14,8 +25,9 @@ import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
 import { computeNightRanges } from '../../composables/useSunCalc';
 import moment from 'moment-timezone';
 import colors from 'vuetify/util/colors';
-import { useMainStore } from '../stores/main';
+import timeseriesChartHelpImg from '../../public/timeseriesChartHelp.png';
 
+import { useMainStore } from '../stores/main';
 const mainStore = useMainStore();
 
 const chartContainer = ref<HTMLDivElement | null>(null);
@@ -28,6 +40,8 @@ const loading = ref(false);
 
 const DFN = computed(() => mainStore.dfnDays);
 const midDate = computed(() => mainStore.midDate ?? moment.utc());
+
+const showChartInfo = ref(false);
 
 ///////////////////////////////////  LIFECYCLE  ///////////////////////////////////
 
@@ -427,7 +441,6 @@ defineExpose({ plot, fetchAndPlot, resize, loading });
 .global-chart-overlay {
     position: absolute;
     inset: 0;
-    background: #33333366;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -441,5 +454,27 @@ defineExpose({ plot, fetchAndPlot, resize, loading });
     justify-content: center;
     align-items: center;
     place-self: center;
+}
+
+.chart-info {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    z-index: 10;
+    color: #e0e0e0;
+    border-radius: 4px;
+    padding: 4px;
+    animation: glow 2s ease-in-out infinite;
+}
+
+@keyframes glow {
+    0%, 100% {
+        text-shadow: 0 0 5px #ffff00, 0 0 15px rgba(255, 255, 0, 0.5);
+        filter: brightness(1.2);
+    }
+    50% {
+        text-shadow: 0 0 15px #ffff00, 0 0 25px rgba(255, 255, 0, 0.7);
+        filter: brightness(1.4);
+    }
 }
 </style>

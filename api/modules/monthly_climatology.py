@@ -19,7 +19,7 @@ import pandas as pd
 from nc_reader import open_nc_uncached, close_nc
 
 # Import helpers from extractTimeseries
-from api.modules.extractTimeseries import (
+from modules.extractTimeseries import (
     connect_db,
     query_nearest_rowcol,
     get_grid_shape_from_db,
@@ -99,7 +99,9 @@ def get_monthly_climatology_at_coord(
             db_name=db_name,
             db_table=db_table,
             verbose=verbose,
-            recent_days=None,  # include all monthly/yearly files for climatology
+            from_date=None,  # include all monthly/yearly files for climatology
+            to_date=None,  # include all monthly/yearly files for climatology
+            # recent_days=None,  # include all monthly/yearly files for climatology
         )
         times_index = pd.to_datetime(times_pd)
         # Ensure we have a DatetimeIndex so `.year` attribute works even when a Series is returned
