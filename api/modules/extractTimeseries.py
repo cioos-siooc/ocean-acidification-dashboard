@@ -123,8 +123,8 @@ def extract_timeseries(
     db_name: str = "oa",
     db_table: str = "grid",
     verbose: bool = False,
-    from_date: str,
-    to_date: str,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
     allowed_dates: Optional[Sequence] = None,
 ) -> Union[Tuple[pd.Series, pd.Series], pd.DataFrame]:
     """Extract a time series across available files.
@@ -184,18 +184,24 @@ def extract_timeseries(
     date_pattern = re.compile(r"(\d{8})(?:T\d{4,6})?(?:_\w+)?\.nc$")
     year_pattern = re.compile(r"_(\d{4})\.nc$")
 
-    # Parse from_date and to_date (mandatory parameters)
-    try:
-        start_date = pd.to_datetime(from_date).date()
-    except Exception as e:
-        raise ValueError(f"Invalid from_date format: {from_date}. Use ISO-8601 date format (YYYY-MM-DD)") from e
-    try:
-        end_date = pd.to_datetime(to_date).date()
-    except Exception as e:
-        raise ValueError(f"Invalid to_date format: {to_date}. Use ISO-8601 date format (YYYY-MM-DD)") from e
+    # Parse from_date and to_date (optional for monthly/yearly files)
+    # When both are None, all files and times are included with no filtering.
+    if from_date is not None and to_date is not None:
+        try:
+            start_date = pd.to_datetime(from_date).date()
+        except Exception as e:
+            raise ValueError(f"Invalid from_date format: {from_date}. Use ISO-8601 date format (YYYY-MM-DD)") from e
+        try:
+            end_date = pd.to_datetime(to_date).date()
+        except Exception as e:
+            raise ValueError(f"Invalid to_date format: {to_date}. Use ISO-8601 date format (YYYY-MM-DD)") from e
 
-    if start_date > end_date:
-        raise ValueError(f"from_date ({start_date}) cannot be after to_date ({end_date})")
+        if start_date > end_date:
+            raise ValueError(f"from_date ({start_date}) cannot be after to_date ({end_date})")
+    else:
+        # No date range specified; extract all files and times
+        start_date = None
+        end_date = None
 
     # Normalise allowed_dates to a set of date objects for O(1) lookup
     allowed_date_set = None
@@ -219,24 +225,28 @@ def extract_timeseries(
                 if verbose:
                     print(f"Skipping file with invalid date in name: {fp}")
                 continue
-            if file_dt < start_date or file_dt > end_date:
-                continue
-            # allowed_dates whitelist applies only to daily files
-            if allowed_date_set is not None and file_dt not in allowed_date_set:
-                if verbose:
-                    print(f"Skipping file {fp}: date {file_dt} not in allowed_dates")
-                continue
+            # Only apply date range filter if dates were specified
+            if start_date is not None and end_date is not None:
+                if file_dt < start_date or file_dt > end_date:
+                    continue
+                # allowed_dates whitelist applies only to daily files
+                if allowed_date_set is not None and file_dt not in allowed_date_set:
+                    if verbose:
+                        print(f"Skipping file {fp}: date {file_dt} not in allowed_dates")
+                    continue
             filtered_files.append(fp)
             continue
 
-        # Try yearly filename (YYYY) — include if the year overlaps the requested range
+        # Try yearly filename (YYYY) — include if year overlaps range (if specified), otherwise include all
         ym = year_pattern.search(fp)
         if ym:
             year = int(ym.group(1))
-            file_year_start = pd.Timestamp(year=year, month=1, day=1).date()
-            file_year_end   = pd.Timestamp(year=year, month=12, day=31).date()
-            if file_year_end < start_date or file_year_start > end_date:
-                continue
+            # Only check year overlap if date range is specified
+            if start_date is not None and end_date is not None:
+                file_year_start = pd.Timestamp(year=year, month=1, day=1).date()
+                file_year_end   = pd.Timestamp(year=year, month=12, day=31).date()
+                if file_year_end < start_date or file_year_start > end_date:
+                    continue
             filtered_files.append(fp)
             continue
 
@@ -462,8 +472,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--lon", "-o", type=float, required=True, help="Longitude (required)")
     p.add_argument("--depth", type=float, default=None,
                    help="Depth value to select; omit to extract all depth levels")
-    p.add_argument("--from-date", required=True, help="Start date (ISO-8601 format, e.g., 2023-01-01)")
-    p.add_argument("--to-date", required=True, help="End date (ISO-8601 format, e.g., 2023-12-31)")
+    p.add_argument("--from-date", required=False, default=None, help="Start date (ISO-8601 format, e.g., 2023-01-01); omit to extract all times")
+    p.add_argument("--to-date", required=False, default=None, help="End date (ISO-8601 format, e.g., 2023-12-31); omit to extract all times")
     p.add_argument("--output", "-O", default=None, help="CSV output file (time,value)")
     p.add_argument("--verbose", "-V", action="store_true", help="Verbose output")
 

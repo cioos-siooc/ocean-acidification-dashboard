@@ -43,6 +43,7 @@ export const useMainStore = defineStore('main', {
         isControlPanelOpen: true,
 
         showColorbarSettings: false,
+        showClimatologyDialog: false,
     }),
 
     actions: {
@@ -118,6 +119,10 @@ export const useMainStore = defineStore('main', {
 
         setShowColorbarSettings(value: boolean) {
             this.showColorbarSettings = value;
+        },
+
+        setShowClimatologyDialog(value: boolean) {
+            this.showClimatologyDialog = value;
         }
     }
 })

@@ -102,8 +102,8 @@
             </v-container>
 
             <!-- Dialog component for monthly chart -->
-            <!-- <EchartsLineDialog v-model="dialogOpen" :coord="lastClicked" :variable="selectedVariable.var"
-                :depth="selectedVariable.depth" /> -->
+            <EchartsLineDialog :coord="lastClicked" :variable="selectedVariable.var"
+                :depth="selectedVariable.depth" />
 
         </v-footer>
         <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
@@ -219,6 +219,8 @@ const mapCenter = computed(() => mainStore.mapCenter);
 const showColorbarSettings = computed(() => mainStore.showColorbarSettings);
 
 
+
+
 ///////////////////////////////////  WATCHERS  ///////////////////////////////////
 
 // When colormap, min, or max change in store, update overlay
@@ -264,7 +266,7 @@ onMounted(async () => {
         bounds,
         // zoom: 9.5,
         // pitch: 45,
-        minZoom: 7,
+        minZoom: 5,
         maxZoom: 14,
         antialias: true,
         preserveDrawingBuffer: true, // needed for exporting canvas

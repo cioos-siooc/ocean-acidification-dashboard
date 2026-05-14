@@ -4,8 +4,7 @@
       <!-- <v-row class="mx-1 my-1 px-0"> -->
       <v-btn icon size="20px" flat :variant="showBathymetryContours ? 'elevated' : 'text'"
         :color="showBathymetryContours ? 'primary' : undefined"
-        @click="mainStore.setShowBathymetryContours(!showBathymetryContours)"
-        title="Bathymetry Contours" class="ma-2">
+        @click="mainStore.setShowBathymetryContours(!showBathymetryContours)" title="Bathymetry Contours" class="ma-2">
         <IconsContour />
       </v-btn>
       <!-- </v-row> -->
@@ -16,6 +15,12 @@
       </v-btn>
       <!-- </v-row> -->
 
+      <v-btn icon size="20px" flat title="Long-term climatology" class="ma-2" 
+        @click="mainStore.setShowClimatologyDialog(true)">
+        <!-- <v-icon size="14px">mdi-chart-line</v-icon> -->
+         <IconsStats />
+      </v-btn>
+
       <v-divider></v-divider>
 
       <v-btn icon size="20px" flat
@@ -24,16 +29,17 @@
         <IconsAutorange />
       </v-btn>
 
-      <v-btn size="20px" flat icon @click="showColorbarSettings = !showColorbarSettings" title="Color Settings" class="ma-2">
+      <v-btn size="20px" flat icon @click="showColorbarSettings = !showColorbarSettings" title="Color Settings"
+        class="ma-2">
         <IconsConfig />
       </v-btn>
 
       <v-divider></v-divider>
 
       <!-- <v-row class="mx-1 my-1 px-0"> -->
-      <v-btn icon size="20px" flat @click="showHow" title="How to Use" class="ma-2" disabled>
+      <!-- <v-btn icon size="20px" flat @click="showHow" title="How to Use" class="ma-2" disabled>
         <IconsHelp />
-      </v-btn>
+      </v-btn> -->
       <!-- </v-row> -->
     </v-col>
   </v-card>

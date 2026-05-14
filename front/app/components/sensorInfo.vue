@@ -6,17 +6,17 @@
             </div>
             <div v-else>
                 <!-- FILTERS -->
-                <v-row class="ma-1 pa-0">
+                <!-- <v-row class="ma-1 pa-0">
                     <v-col class="ma-0 pa-0">
                         <v-btn size="16px" icon flat disabled title="Filter by visible area">
                             <iconsMap />
                         </v-btn>
                     </v-col>
-                </v-row>
+                </v-row> -->
 
                 <!-- SEARCH BAR -->
-                <v-text-field v-model="searchQuery" disabled label="Search Sensors" variant="outlined" density="compact"
-                    hide-details clearable rounded=""></v-text-field>
+                <!-- <v-text-field v-model="searchQuery" disabled label="Search Sensors" variant="outlined" density="compact"
+                    hide-details clearable rounded=""></v-text-field> -->
 
                 <!-- SENSOR LIST -->
                 <v-list-item v-for="(sensor, i) in sensors" :key="sensor.id" :active="sensor.id === selectedSensor?.id"

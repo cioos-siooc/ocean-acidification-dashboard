@@ -1,5 +1,5 @@
 <template>
-    <v-dialog v-model="modelValue" style="z-index: 9999;">
+    <v-dialog v-model="showClimatologyDialog" style="z-index: 9999;">
         <v-card>
             <v-card-title class="d-flex align-center">
                 <v-spacer />
@@ -10,6 +10,7 @@
 
             <v-card-text>
                 <div ref="chartRef" style="width:100%; height:70vh;"></div>
+                <v-progress-circular v-if="loading" indeterminate color="warning" :size="64" :width="12" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);" />
             </v-card-text>
         </v-card>
     </v-dialog>
@@ -21,13 +22,15 @@ import * as echarts from 'echarts';
 import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
 import axios from 'axios';
 
+import { useMainStore } from '../stores/main'
+const mainStore = useMainStore();
+
 const config = useRuntimeConfig();
 const apiBaseUrl = config.public.apiBaseUrl;
 
 ///////////////////////////////////  PROP  ///////////////////////////////////
 
 const props = defineProps({
-    modelValue: { type: Boolean, required: true },
     // Fetch by coord/variable/depth
     coord: { type: Object, required: true },
     variable: { type: String, required: true },
@@ -42,12 +45,18 @@ const emit = defineEmits(['update:modelValue']);
 
 const modelValue = ref(props.modelValue);
 const chartRef = ref(null);
+const loading = ref(false);
 let chartInstance = null;
 
 ///////////////////////////////////  COMPUTE  ///////////////////////////////////
 
+const showClimatologyDialog = computed({
+    get: () => mainStore.showClimatologyDialog,
+    set: (val) => mainStore.setShowClimatologyDialog(val)
+});
+
 const title = computed(() => {
-    return `${props.variable} climatology at (${props.coord.lat?.toFixed(2)}, ${props.coord.lon?.toFixed(2)}) at depth ${props.depth}m`;
+    return `${props.variable} climatology at (${props.coord.lat?.toFixed(2)}, ${props.coord.lng?.toFixed(2)}) at depth ${props.depth}m`;
 });
 
 ///////////////////////////////////  LIFECYCLE  ///////////////////////////////////
@@ -114,8 +123,7 @@ onUnmounted(() => {
  *
  * @param {any} v - The updated value from the prop.
  */
-watch(() => props.modelValue, (v) => {
-    modelValue.value = v
+watch(() => showClimatologyDialog.value, (v) => {
     if (v) {
         ensureChartInit()
             .then(() => getDataForCoord())
@@ -151,18 +159,21 @@ const close = () => {
 };
 
 const getDataForCoord = async () => {
-    if (!props.coord || props.coord.lat === undefined || props.coord.lon === undefined || !props.variable) return null;
+    if (!props.coord || props.coord.lat === undefined || props.coord.lng === undefined || !props.variable) return null;
+    loading.value = true;
     try {
         const response = await axios.post(`${apiBaseUrl}/getMonthlyClimatologyAtCoord`, {
             variable: props.variable,
             depth: props.depth,
             lat: props.coord.lat,
-            lon: props.coord.lon,
+            lon: props.coord.lng,
         });
         return response;
     } catch (e) {
         console.warn('API fetch failed:', e);
         return null;
+    } finally {
+        // loading.value = false;
     }
 };
 
@@ -310,6 +321,7 @@ const renderFromSeries = (data) => {
     };
 
     chartInstance.setOption(option, { notMerge: true });
+    loading.value = false;
 };
 
 
