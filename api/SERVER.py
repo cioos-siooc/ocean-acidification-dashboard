@@ -669,16 +669,14 @@ async def fn_get_monthly_climatology(request: monthlyClimRequest):
 
     try:
         from modules.monthly_climatology import get_monthly_climatology_at_coord
-        ssc_root = os.getenv("SSC_CLIM_DIR", "/opt/data/SSC/climatology")
-        ssc_archive = os.getenv("SSC_DATA_DIR_ARCHIVE", "")
-        data_root = [ssc_root, ssc_archive] if ssc_archive else ssc_root
+        ssc_root = os.getenv("SSC_MAIN_DIR", "/opt/data/SalishSeaCast")
         result = await run_in_threadpool(
             get_monthly_climatology_at_coord,
             lat=request.lat,
             lon=request.lon,
             depth=request.depth,
             variable=request.variable,
-            data_root=data_root,
+            data_root=ssc_root,
             # Let module pick DB environment vars
         )
         logger.info(f"FINISH getMonthlyClimatologyAtCoord: {request.variable}, {request.lat}, {request.lon}, depth={request.depth}")

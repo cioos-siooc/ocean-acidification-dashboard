@@ -110,7 +110,7 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, lo
         return None
     
     from modules.nc_finder import find_file
-    ssc_root = os.getenv("SSC_CLIM_DIR", "/opt/data/SSC/climatology")
+    ssc_root = os.getenv("SSC_CLIM_DIR", "/opt/data/SalishSeaCast/climatology")
     file_path = find_file(ssc_root, f"{variable}/{variable}_{depth}.nc")
     climatology_variables = ['mean', 'median', 'q1', 'q3', 'min', 'max']
 

@@ -43,7 +43,7 @@ def get_monthly_climatology_at_coord(
     lon: float,
     depth: float,
     variable: str,
-    data_root: str = os.getenv("SSC_CLIM_DIR", "/opt/data/SSC/climatology"),
+    data_root: str = os.getenv("SSC_MAIN_DIR", "/opt/data/SalishSeaCast"),
     db_dsn: Optional[str] = None,
     db_host: str = "db",
     db_port: int = 5432,
