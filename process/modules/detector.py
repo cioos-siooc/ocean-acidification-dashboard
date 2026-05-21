@@ -40,7 +40,7 @@ def create_nc_file_row(conn, ds_id, variable, start_time, end_time, meta=None):
     with conn.cursor() as cur:
         try:
             cur.execute(
-                "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time) VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING RETURNING id",
+                "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time) VALUES (%s,%s,%s,%s) ON CONFLICT (dataset_id, variable_id, start_time, end_time) DO NOTHING RETURNING id",
                 (
                     ds_id,
                     var_id,
@@ -73,7 +73,7 @@ def ensure_pending_nc_file(conn, ds_id, variable, start_time, end_time, force=Fa
                 """
                 INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time, status)
                 VALUES (%s,%s,%s,%s,'pending_download')
-                ON CONFLICT (dataset_id, variable_id, start_time)
+                ON CONFLICT (dataset_id, variable_id, start_time, end_time)
                 DO UPDATE SET status = 'pending_download', attempts = 0
                 RETURNING id
                 """,
@@ -88,7 +88,7 @@ def ensure_pending_nc_file(conn, ds_id, variable, start_time, end_time, force=Fa
         else:
             var_id = ensure_variable(conn, ds_id, variable)
             cur.execute(
-                "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time) VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING RETURNING id",
+                "INSERT INTO nc_jobs (dataset_id, variable_id, start_time, end_time) VALUES (%s,%s,%s,%s) ON CONFLICT (dataset_id, variable_id, start_time, end_time) DO NOTHING RETURNING id",
                 (ds_id, var_id, start_time, end_time),
             )
             res = cur.fetchone()

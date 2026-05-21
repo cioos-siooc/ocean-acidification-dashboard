@@ -432,11 +432,12 @@ def _process_single_slice(args: Tuple) -> str:
                     """
                     UPDATE nc_jobs
                     SET status = 'imaging', updated_at = NOW()
-                    WHERE misc->>'source_date' = %s AND variable_id = %s AND start_time = %s
+                    WHERE misc->>'source_date' = %s AND variable_id = %s 
+                      AND start_time <= %s AND end_time >= %s
                       AND dataset_id = 4
                       AND status IN ('extracted', 'pending_image')
                     """,
-                    (source_date, variable_id, start_time)
+                    (source_date, variable_id, start_time, start_time)
                 )
                 conn.commit()
         finally:
@@ -510,10 +511,11 @@ def _process_single_slice(args: Tuple) -> str:
                         """
                         UPDATE nc_jobs
                         SET status = 'imaging_failed', error_message = %s, updated_at = NOW()
-                        WHERE misc->>'source_date' = %s AND variable_id = %s AND start_time = %s
+                        WHERE misc->>'source_date' = %s AND variable_id = %s 
+                          AND start_time <= %s AND end_time >= %s
                           AND dataset_id = 4
                         """,
-                        (str(e), source_date, variable_id, start_time)
+                        (str(e), source_date, variable_id, start_time, start_time)
                     )
                     conn.commit()
             finally:
@@ -659,11 +661,12 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
                                     """
                                     UPDATE nc_jobs
                                     SET status = 'success_image', updated_at = NOW()
-                                    WHERE misc->>'source_date' = %s AND variable_id = %s AND start_time = %s
+                                    WHERE misc->>'source_date' = %s AND variable_id = %s 
+                                      AND start_time <= %s AND end_time >= %s
                                       AND dataset_id = 4
                                       AND status = 'imaging'
                                     """,
-                                    (source_date_t, variable_id, start_time)
+                                    (source_date_t, variable_id, start_time, start_time)
                                 )
                                 db_conn.commit()
                         finally:

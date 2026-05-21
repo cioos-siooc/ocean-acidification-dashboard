@@ -118,19 +118,19 @@ def ensure_schema(conn):
         )
         if cur.fetchone():
             cur.execute("ALTER TABLE nc_jobs DROP COLUMN source_date")
-        # Replace 4-column unique index (dataset_id, variable_id, start_time, end_time)
-        # with 3-column (dataset_id, variable_id, start_time) to support unified SSC+LO table.
+        # Replace unique index with 4-column (dataset_id, variable_id, start_time, end_time)
+        # to uniquely identify each file by its time range coverage.
         try:
             cur.execute("SELECT indexdef FROM pg_indexes WHERE indexname = 'ux_nc_jobs_dataset_variable_time'")
             idx_row = cur.fetchone()
-            if idx_row and 'end_time' in idx_row[0]:
-                # Old 4-column index — drop and recreate as 3-column
+            if idx_row and 'end_time' not in idx_row[0]:
+                # Old 3-column index — drop and recreate as 4-column
                 cur.execute("DROP INDEX IF EXISTS ux_nc_jobs_dataset_variable_time")
-            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_jobs_dataset_variable_time ON nc_jobs (dataset_id, variable_id, start_time)")
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_jobs_dataset_variable_time ON nc_jobs (dataset_id, variable_id, start_time, end_time)")
         except Exception:
             conn.rollback()
             logger.warning("Could not update unique index ux_nc_jobs_dataset_variable_time; continuing without it")
-        # Remove old partial-null index (superseded by the 3-column constraint above)
+        # Remove old partial-null index (superseded by the 4-column constraint above)
         try:
             cur.execute("DROP INDEX IF EXISTS ux_nc_jobs_null_dataset_variable_time")
         except Exception:

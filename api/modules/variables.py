@@ -9,7 +9,16 @@ import datetime
 
 def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> List[Dict]:
     # Get metadata from fields table and available dates from the unified nc_jobs table
+    # Use a CTE to expand date ranges cleanly
     query = """
+        WITH date_ranges AS (
+            SELECT DISTINCT
+                pd.variable_id,
+                (pd.start_time + i * INTERVAL '1 day')::date as date_val
+            FROM nc_jobs pd
+            CROSS JOIN generate_series(0, (pd.end_time::date - pd.start_time::date)) i
+            WHERE pd.status = 'success_image'
+        )
         SELECT
             f.variable,
             f.id as field_id,
@@ -22,10 +31,10 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
             d.depths,
             d.source,
             f.dataset_id,
-            ARRAY_AGG(DISTINCT pd.start_time ORDER BY pd.start_time) as available_dates
+            ARRAY_AGG(DISTINCT dr.date_val ORDER BY dr.date_val) as available_dates
         FROM fields f
         LEFT JOIN datasets d ON f.dataset_id = d.id
-        LEFT JOIN nc_jobs pd ON f.id = pd.variable_id AND pd.status = 'success_image'
+        LEFT JOIN date_ranges dr ON f.id = dr.variable_id
         GROUP BY f.id, f.variable, f.dataset_id, d.id, d.source;
     """
     
@@ -55,7 +64,7 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
                     expanded_datetimes = []
                     for dt in available_dates:
                         # Convert to date if it's a timestamp
-                        date = dt.date() if hasattr(dt, 'date') else dt
+                        date = dt if isinstance(dt, datetime.date) and not isinstance(dt, datetime.datetime) else dt.date() if hasattr(dt, 'date') else dt
 
                         if dataset_id != 4:
                             # SSC: hourly datetimes at half-hour marks (00:30 to 23:30)

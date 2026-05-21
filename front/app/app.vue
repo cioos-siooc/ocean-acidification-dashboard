@@ -49,6 +49,7 @@ async function getVariables() {
   try {
     const r = await axios.get(`${apiBaseUrl}/variables`);
     const data = r.data;
+    console.log('data: ', data);
 
     // Convert datetimes to epoch ms numbers (plain numbers avoid deep Vue proxy overhead)
     data.forEach((v: any) => {
