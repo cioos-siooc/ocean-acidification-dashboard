@@ -85,14 +85,14 @@ def extract_profile(
     lat: float,
     lng: float,
     dt: str,
-    data_dir: str = os.getenv("SSC_NC_DIR", "/opt/data/SSC/nc"),
+    data_dir: str,
     db_dsn: Optional[str] = None,
     db_host: Optional[str] = "db",
     db_port: int = 5432,
     db_user: str = "postgres",
     db_password: str = "postgres",
     db_name: str = "oa",
-    db_table: str = "grid",
+    db_table: str,
     verbose: bool = False,
 ) -> List[dict]:
     """
@@ -232,8 +232,8 @@ def extract_profile(
             for d_idx, depth_val in enumerate(depths):
                 if d_idx < len(values):
                     val = values[d_idx]
-                    # Skip NaN/masked values
-                    if not np.isnan(val) and val is not None and val != 0:
+                    # Skip NaN/masked values and depth marker 99999
+                    if not np.isnan(val) and val is not None and val != 0 and depth_val != 99999:
                         profile_data.append({
                             "depth": float(depth_val),
                             "value": float(val)

@@ -188,16 +188,22 @@ def write_daily_outputs(
     ds: xr.Dataset,
     out_root: str,
     vars_config: dict[str, Any],
+    extraction_date: str | None = None,
 ) -> List[dict]:
     time_dim = find_time_dim(ds)
     times = ds[time_dim].values
     day_map = split_times_by_day(times)
+    
+    # Filter to specific date if provided (format: YYYY-MM-DD)
+    if extraction_date:
+        day_map = {k: v for k, v in day_map.items() if k == extraction_date}
 
     outputs: List[dict] = []
 
     for field_name, cfg in vars_config.items():
         nc_base = cfg.get("ncVariable", field_name)
         depth_list = cfg.get("depths", [])
+        logger.info(f"Extracting field: {field_name} (nc_base={nc_base}, {len(depth_list)} depths)")
         
         out_dir = os.path.join(out_root, field_name)
         os.makedirs(out_dir, exist_ok=True)
@@ -255,6 +261,7 @@ def write_daily_outputs(
                 continue
 
             # Merge all depths into one DataArray
+            logger.info(f"  Concatenating {len(arrays)} depth arrays for {field_name}/{day}...")
             merged_da = xr.concat(arrays, dim="depth")
             merged_da.name = field_name
             
@@ -265,8 +272,10 @@ def write_daily_outputs(
             day_ds[field_name] = day_ds[field_name].transpose("time", "depth", "eta_rho", "xi_rho")
             
             # Use compression
+            logger.info(f"  Writing {out_path}...")
             encoding = {field_name: {"zlib": True, "complevel": 4}}
             day_ds.to_netcdf(out_path, encoding=encoding)
+            logger.info(f"  Written: {out_path}")
             
             # Extract start and end times as ISO 8601 strings
             import pandas as pd
@@ -338,10 +347,21 @@ def stage_download(url: str, input_path: str) -> bool:
         raise
 
 
-def stage_extract(input_path: str, out_dir: str, vars_json: str, source_date: str, conn) -> List[dict]:
-    """Extract stage. Returns list of output file dicts."""
+def stage_extract(input_path: str, out_dir: str, vars_json: str, source_date: str, conn, extraction_date: str | None = None) -> List[dict]:
+    """Extract stage. Returns list of output file dicts.
+    
+    Args:
+        input_path: Path to layers.nc file
+        out_dir: Output directory for NC files
+        vars_json: Path to variables config JSON
+        source_date: Date of the source file (YYYY-MM-DD)
+        conn: Database connection
+        extraction_date: Specific date to extract (YYYY-MM-DD format). If None, extract all dates.
+    """
     try:
         logger.info(f"Starting extraction for source_date: {source_date}...")
+        if extraction_date:
+            logger.info(f"Filtering to extraction_date: {extraction_date}")
         
         if not os.path.exists(input_path):
             raise RuntimeError(f"Input file not found: {input_path}")
@@ -349,9 +369,11 @@ def stage_extract(input_path: str, out_dir: str, vars_json: str, source_date: st
         with open(vars_json, "r") as f:
             vars_config = json.load(f)
         
+        logger.info(f"Opening dataset: {input_path} ...")
         ds = xr.open_dataset(input_path)
+        logger.info(f"Dataset opened: {len(ds.data_vars)} variables, dims={dict(ds.dims)}")
         try:
-            outputs = write_daily_outputs(ds, out_dir, vars_config=vars_config)
+            outputs = write_daily_outputs(ds, out_dir, vars_config=vars_config, extraction_date=extraction_date)
         finally:
             # Aggressive xarray cleanup
             ds.close()
@@ -421,6 +443,7 @@ def run_pipeline(
     stage: str = "all",
     workers: int = 4,
     date: str | None = None,
+    extraction_date: str | None = None,
 ) -> None:
     """Run the Live Ocean pipeline with fixed paths and automatic date progression.
     
@@ -429,6 +452,7 @@ def run_pipeline(
         workers: Number of parallel workers for imaging (default: 4)
         date: Specific date to process (YYYY-MM-DD). Required for 'extract' and 'image' stages.
               If None with 'download' or 'all', uses day after last processed date in DB.
+        extraction_date: Specific date to extract from the NC file (YYYY-MM-DD format). If None, extract all dates.
     """
     conn = None
     outputs = []
@@ -470,7 +494,7 @@ def run_pipeline(
                 if stage == "extract":
                     raise RuntimeError(f"Input file not found: {INPUT_FILE_TEMP}. Run download stage first.")
                 # For all, download will have happened above
-            outputs = stage_extract(INPUT_FILE_TEMP, NC_OUTPUT_DIR, VARS_JSON_PATH, source_date, conn)
+            outputs = stage_extract(INPUT_FILE_TEMP, NC_OUTPUT_DIR, VARS_JSON_PATH, source_date, conn, extraction_date=extraction_date)
             logger.info(f"After extraction: {len(outputs)} files to process")
             gc.collect()
         
@@ -479,9 +503,9 @@ def run_pipeline(
             if not outputs:
                 logger.info("Querying database for extracted files...")
                 outputs = get_extracted_files_for_source_date(conn, source_date)
-                # Convert file_date to date format expected by imaging
+                # Extract date from start_time ISO format (YYYY-MM-DDTHH:MM:SS.ffffff+00:00 -> YYYYMMDD)
                 for out in outputs:
-                    out["date"] = out["file_date"].replace("-", "")
+                    out["date"] = out["start_time"][:10].replace("-", "")
                 logger.info(f"Loaded from DB: {len(outputs)} files to process")
             
             # Aggressive cleanup before imaging
@@ -527,12 +551,19 @@ def main(argv: List[str] | None = None) -> int:
         default=4,
         help="Number of parallel workers for imaging (default: 4)"
     )
+    p.add_argument(
+        "--extraction-date",
+        type=str,
+        default=None,
+        help="Specific date to extract from the NC file (YYYY-MM-DD format). If not provided, extracts all dates available in the file."
+    )
     args = p.parse_args(argv)
 
     run_pipeline(
         stage=args.stage,
         workers=args.workers,
         date=args.date,
+        extraction_date=args.extraction_date,
     )
 
     return 0

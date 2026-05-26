@@ -100,6 +100,7 @@ def init_lo_grid_table(conn, lon_2d: np.ndarray, lat_2d: np.ndarray) -> None:
                     col_idx INTEGER NOT NULL,
                     lat FLOAT NOT NULL,
                     lon FLOAT NOT NULL,
+                    geom GEOMETRY(Point, 4326),
                     UNIQUE(row_idx, col_idx)
                 )
                 """
@@ -121,15 +122,13 @@ def init_lo_grid_table(conn, lon_2d: np.ndarray, lat_2d: np.ndarray) -> None:
             )
             logger.info(f"Inserted {len(records)} grid points")
             
+            # Populate geometry column and create spatial index
+            cur.execute("UPDATE lo_grid SET geom = ST_SetSRID(ST_MakePoint(lon, lat), 4326)")
+            logger.info("Populated geom column")
+
             # Create indexes
             cur.execute("CREATE INDEX idx_lo_grid_row_col ON lo_grid(row_idx, col_idx)")
-            logger.info("Created indexes")
-        
-        conn.commit()
-        logger.info("lo_grid table initialization complete")
-    
-    except Exception as e:
-        logger.error(f"Failed to initialize lo_grid table: {e}")
+            cur.execute("CREATE INDEX idx_lo_grid_geom ON lo_grid USING GIST(geom)")
         conn.rollback()
         raise
 

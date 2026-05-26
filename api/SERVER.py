@@ -95,16 +95,15 @@ def _get_image_roots(source: str) -> list:
     return [r for r in roots if r]
 
 
-def _get_nc_data_dirs():
+def _get_nc_data_dirs(source: str) -> str | None:
     """Return the SSC NC data directory spec (str or list) from environment.
 
     Set SSC_NC_DIR for the primary directory (default /opt/data/SSC/nc).
     Optionally set SSC_NC_DIR_ARCHIVE to a second directory that is searched
     when a file is not found in the primary (e.g. an external disk mount).
     """
-    primary = os.getenv("SSC_NC_DIR", "/opt/data/SSC/nc")
-    archive = os.getenv("SSC_NC_DIR_ARCHIVE", "")
-    return [primary, archive] if archive else primary
+    return f"/opt/data/{source.replace(' ', '')}/nc"
+
 
 # Read DB config from environment at import time so route handlers can access it
 db_host = os.getenv("DB_HOST", "db")
@@ -335,7 +334,7 @@ async def get_png(source: str, var: str, dt: str, depth: str):
     safe_source = os.path.basename(source)
     safe_var = os.path.basename(var)
     safe_dt = os.path.basename(dt)
-    safe_depth = depth.replace('.', 'p')
+    safe_depth = depth # .replace('.', 'p')
 
     # Try both .webp (from on-demand generation) and .png (legacy), across all image roots
     for image_root in _get_image_roots(safe_source):
@@ -361,7 +360,7 @@ async def get_png(source: str, var: str, dt: str, depth: str):
     # File doesn't exist; try to generate it
     try:
         depth_value = float(depth)
-        data_dir = _get_nc_data_dirs()
+        data_dir = _get_nc_data_dirs(safe_source)
         full_path = await generate_png_for_variable(
             source, var, dt, depth_value, data_dir, _get_image_roots(source), _png_gen_semaphore, _png_executor
         )
@@ -486,7 +485,7 @@ async def fn_extract_timeseries(request: timeseriesRequest):
             raise HTTPException(status_code=422, detail="No processed data available for the requested date range")
 
         result = await asyncio.wait_for(
-            run_in_process(extract_timeseries, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate, data_dir=_get_nc_data_dirs(), allowed_dates=allowed_dates),
+            run_in_process(extract_timeseries, source=request.source, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate),
             timeout=THREADPOOL_TIMEOUT,
         )
         import pandas as pd
@@ -545,7 +544,7 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
         lat = request.lat
         lon = request.lon
         variable = request.var
-        depth = request.depth.replace('.', 'p')  # Pass depth as string (e.g., "0p5") since that's what the module expects for file naming
+        depth = request.depth  # depth_image is already the correct string for file naming
         from_date = request.fromDate  # Pass fromDate string (ISO format) to the extraction function
         to_date = request.toDate  # Pass toDate string (ISO format) to the extraction function
         
@@ -586,6 +585,7 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
 #######################################
 
 class minmaxRequest(BaseModel):
+    source: str
     var: str
     dt: str
     depth: Optional[float] = None
@@ -597,7 +597,7 @@ class minmaxRequest(BaseModel):
 @app.post("/getMinMax")
 async def fn_get_minmax(request: minmaxRequest):
     """Extract min and max values for a variable at a specific datetime and depth."""
-    logger.info(f"START getMinMax: {request.var}, dt={request.dt}, depth={request.depth}")
+    logger.info(f"START getMinMax: source={request.source}, var={request.var}, dt={request.dt}, depth={request.depth}")
     try:
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
     except (asyncio.TimeoutError, Exception):
@@ -607,6 +607,7 @@ async def fn_get_minmax(request: minmaxRequest):
     try:
         from datetime import datetime
         
+        source = request.source
         var = request.var
         depth = request.depth
         dt_str = request.dt
@@ -615,7 +616,18 @@ async def fn_get_minmax(request: minmaxRequest):
         dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
         
         # Get data directory from environment
-        data_dir = _get_nc_data_dirs()
+        data_dir = _get_nc_data_dirs(source)
+        if data_dir is None:
+            logger.error(f"Unsupported source: {source}")
+            raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
+        
+        if source == "SalishSeaCast":
+            db_gridTable = "grid"
+        elif source == "Live Ocean":
+            db_gridTable = "lo_grid"
+        else:
+            logger.error(f"Unsupported source: {source}")
+            raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
         
         # Extract bounds if provided
         north = request.north
@@ -638,11 +650,12 @@ async def fn_get_minmax(request: minmaxRequest):
                 db_port=db_port,
                 db_user=db_user,
                 db_password=db_password,
-                db_name=db_name),
+                db_name=db_name,
+                db_table=db_gridTable),
             timeout=THREADPOOL_TIMEOUT,
         )
         
-        logger.info(f"FINISH getMinMax: {request.var}, range=[{min_val}, {max_val}]")
+        logger.info(f"FINISH getMinMax: source={request.source}, var={request.var}, range=[{min_val}, {max_val}]")
         return {"min": min_val, "max": max_val}
     except Exception as exc:
         logger.exception("getMinMax failed")
@@ -693,14 +706,15 @@ async def fn_get_monthly_climatology(request: monthlyClimRequest):
 #######################################
 
 class profileRequest(BaseModel):
+    source: str
+    var: Optional[str] = None
+    dt: str
     lat: float
     lng: float
-    dt: str
-    var: Optional[str] = None
 
 @app.post("/getProfile")
 async def fn_get_profile(request: profileRequest):
-    logger.info(f"START getProfile: {request.var}, {request.lat}, {request.lng}, {request.dt}")
+    logger.info(f"START getProfile: source={request.source}, var={request.var}, lat={request.lat}, lng={request.lng}, dt={request.dt}")
     try:
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
     except (asyncio.TimeoutError, Exception):
@@ -708,10 +722,19 @@ async def fn_get_profile(request: profileRequest):
         raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
 
     try:
+        source = request.source
         var = request.var or "temperature"  # Default to temperature if not specified
         lat = request.lat
         lng = request.lng
         dt = request.dt
+        
+        if source == "SalishSeaCast":
+            db_gridTable = "grid"
+        elif source == "Live Ocean":
+            db_gridTable = "lo_grid"
+        else:
+            logger.error(f"Unsupported source: {source}")
+            raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
 
         profile = await run_in_threadpool(
             extract_profile,
@@ -719,14 +742,15 @@ async def fn_get_profile(request: profileRequest):
             lat=lat,
             lng=lng,
             dt=dt,
-            data_dir=_get_nc_data_dirs(),
+            data_dir=_get_nc_data_dirs(source),
             db_host=db_host,
             db_port=db_port,
             db_name=db_name,
             db_user=db_user,
             db_password=db_password,
+            db_table=db_gridTable
         )
-        logger.info(f"FINISH getProfile: {var}, {lat}, {lng}, {dt} - returned {len(profile)} points")
+        logger.info(f"FINISH getProfile: source={source}, var={var}, lat={lat}, lng={lng}, dt={dt} - returned {len(profile)} points")
         return profile
     except RuntimeError as exc:
         # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)

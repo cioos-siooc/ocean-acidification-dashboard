@@ -110,18 +110,19 @@ def pick_time_slice(ds: xr.Dataset, time_dim: str, from_arg: Optional[str], to_a
 
 def extract_timeseries(
     *,
+    source: str,
     var: str,
     lat: float,
     lon: float,
     depth: Optional[float] = None,
-    data_dir: str = os.getenv("SSC_NC_DIR", "/opt/data/SSC/nc"),
+    data_dir: Optional[Union[str, List[str]]] = None,
     db_dsn: Optional[str] = None,
     db_host: Optional[str] = "db",
     db_port: int = 5432,
     db_user: str = "postgres",
     db_password: str = "postgres",
     db_name: str = "oa",
-    db_table: str = "grid",
+    db_table: Optional[str] = None,
     verbose: bool = False,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
@@ -140,6 +141,31 @@ def extract_timeseries(
     Exceptions are raised on errors; caller should catch and handle them.
     """
     
+    # Resolve data_dir and db_table from source when not explicitly provided
+    print("########### Extracting timeseries with parameters: ###########", flush=True)
+    print(f"Source: {source}", flush=True)
+    print(f"Variable: {var}", flush=True)
+    print(f"Latitude: {lat}", flush=True)
+    print(f"Longitude: {lon}", flush=True)
+    print(f"Depth: {depth}", flush=True)
+    print(f"From date: {from_date}", flush=True)
+    print(f"To date: {to_date}", flush=True)
+    if data_dir is None:
+        if source == "Live Ocean":
+            data_dir = os.getenv("LO_NC_DIR", "/opt/data/LiveOcean/nc")
+        elif source == "SalishSeaCast":
+            data_dir = os.getenv("SSC_NC_DIR", "/opt/data/SalishSeaCast/nc")
+        else:
+            raise ValueError(f"Unknown source '{source}'; cannot resolve data directory. Specify data_dir explicitly or set environment variable for the source (LO_NC_DIR or SSC_NC_DIR)")
+            
+    if db_table is None:
+        if source == "Live Ocean":
+            db_table = "lo_grid"
+        elif source == "SalishSeaCast":
+            db_table = "grid"
+        else:
+            raise ValueError(f"Unknown source '{source}'; cannot resolve database table. Specify db_table explicitly or set environment variable for the source (LO_NC_DIR or SSC_NC_DIR)")
+
     if db_dsn is None and not db_host:
         raise RuntimeError("No database host or DSN provided. Specify db_dsn or db_host")
 
@@ -170,6 +196,7 @@ def extract_timeseries(
     # Yearly/Merged: {var}_{YYYY}_bottom.nc
     use_bottom = (depth is not None and float(depth) == -1.0)
     files = list_nc_files(data_dir, var)
+    print(f"Found {len(files)} total files for variable '{var}' in data directory '{data_dir}' before filtering by depth and date", flush=True)
     if use_bottom:
         files = [f for f in files if "_bottom" in os.path.basename(f)]
     else:

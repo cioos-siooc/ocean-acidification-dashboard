@@ -231,11 +231,11 @@ def get_variable_precision(conn, variable_id: int) -> float:
                 pass
     raise RuntimeError(f"Invalid precision for variable_id={variable_id}")
 
-def get_variable_depths_image(conn, variable_id: int) -> Optional[list]:
+def get_variable_depths_image(conn, variable_id: int) -> list:
     """Get the depth values that should be rendered as PNGs for a variable.
 
-    Reads from ``datasets.depths`` (a JSONB array of ``{value, hasImage}`` objects)
-    and returns only the values where ``hasImage`` is true.
+    Reads from ``datasets.depths`` (a JSONB array of ``{depth_nc, depth_image, hasImage}`` objects)
+    and returns only the entries where ``hasImage`` is true as a list of ``(depth_nc, depth_image)`` tuples.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -252,14 +252,15 @@ def get_variable_depths_image(conn, variable_id: int) -> Optional[list]:
             try:
                 depths_arr = r[0]  # already a Python list of dicts via psycopg2 JSONB
                 if isinstance(depths_arr, list):
-                    values = [
-                        float(entry.get("value") or entry.get("depth"))
+                    pairs = [
+                        (float(entry["depth_nc"]), str(entry["depth_image"]))
                         for entry in depths_arr
                         if entry.get("hasImage", True)
-                           and (entry.get("value") is not None or entry.get("depth") is not None)
+                           and entry.get("depth_nc") is not None
+                           and entry.get("depth_image") is not None
                     ]
-                    if values:
-                        return values
+                    if pairs:
+                        return pairs
             except Exception:
                 pass
     raise RuntimeError(f"No depths with hasImage=true found for variable_id={variable_id}")
@@ -333,14 +334,19 @@ def process_image(conn, row, workers: int | None = None):
         
         precision = get_variable_precision(conn, variable_id)
         
-        # Get depths from database — depth value -1 is a sentinel meaning "bottom layer file"
-        desired_depths = get_variable_depths_image(conn, variable_id)
-        has_bottom = -1.0 in desired_depths
-        real_depths = [d for d in desired_depths if d != -1.0]
+        # Get depths from database as (depth_nc, depth_image) pairs
+        # depth_image == "bottom" indicates a companion bottom-layer NC file
+        desired_pairs = get_variable_depths_image(conn, variable_id)
+        has_bottom = any(depth_image == "bottom" for _, depth_image in desired_pairs)
+        real_pairs = [(d_nc, d_img) for d_nc, d_img in desired_pairs if d_img != "bottom"]
 
-        if real_depths:
-            depth_indices = get_depth_indices_from_values(src, real_depths)
-            args = ["--data", src, "--vars", variable, "--precision", str(precision), "--depth-indices", ','.join(str(i) for i in depth_indices)]
+        if real_pairs:
+            nc_depths = [d_nc for d_nc, _ in real_pairs]
+            depth_images_list = [d_img for _, d_img in real_pairs]
+            depth_indices = get_depth_indices_from_values(src, nc_depths)
+            args = ["--data", src, "--vars", variable, "--precision", str(precision),
+                    "--depth-indices", ','.join(str(i) for i in depth_indices),
+                    "--depth-images", ','.join(depth_images_list)]
             if workers is not None:
                 args.extend(["--workers", str(int(workers))])
             processed_times = None
@@ -353,7 +359,7 @@ def process_image(conn, row, workers: int | None = None):
                 elif e.code != 0:
                     raise
 
-        # Process companion bottom-layer file if depths include -1 sentinel or file exists alongside the main NC.
+        # Process companion bottom-layer file if any depth_image is "bottom".
         if has_bottom:
             try:
                 from .bottom_layer_worker import _get_bottom_nc_path
@@ -363,7 +369,8 @@ def process_image(conn, row, workers: int | None = None):
                         "--data", bottom_src,
                         "--vars", variable,        # same var name → output goes to png/{variable}/{t}/
                         "--precision", str(precision),
-                        "--depth-indices", "0",    # depth coord in bottom file is -1.0 → writes bottom.webp
+                        "--depth-indices", "0",    # depth coord in bottom file is -1.0
+                        "--depth-images", "bottom",  # filename: bottom.webp
                     ]
                     if workers is not None:
                         bottom_args.extend(["--workers", str(int(workers))])

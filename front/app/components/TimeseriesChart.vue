@@ -316,12 +316,12 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
                 {
                     xAxis: moment.tz(moment(), tz).format(),
                     lineStyle: { color: colors.green.lighten2, width: 1, type: 'dashed' },
-                    label: { show: true, position: 'end', formatter: 'Now', color: colors.green.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.green.lighten2 }
+                    label: { show: true, position: 'insideStartBottom', formatter: 'NOW', color: colors.green.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.green.lighten2 }
                 },
                 {
                     xAxis: selectedXLocal,
                     lineStyle: { color: colors.orange.lighten2, width: 1, type: 'dashed' },
-                    label: { show: true, position: 'end', formatter: 'Map', color: colors.orange.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.orange.lighten2 }
+                    label: { show: true, position: 'insideEndBottom', formatter: 'MAP', color: colors.orange.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.orange.lighten2 }
                 }
             ]
         },
@@ -379,6 +379,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     option.legend.data = seriesArr.filter((s: any) => s.name && !s.name.startsWith('_')).map((s: any) => s.name);
 
     chart.setOption(option, true);
+    console.log(option);
     chart.resize();
 
     // Stats legend toggle — clicking 'Stats' shows/hides internal series
@@ -411,12 +412,12 @@ watch(() => mainStore.selected_variable.dt, (newDt) => {
                         {
                             xAxis: moment.tz(moment(), tz).format(),
                             lineStyle: { color: colors.green.lighten2, width: 1, type: 'dashed' },
-                            label: { show: true, position: 'end', formatter: 'Now', backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.green.lighten2 }
+                            label: { show: true, position: 'insideStartBottom', formatter: 'NOW', backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.green.lighten2 }
                         },
                         {
                             xAxis: sel,
                             lineStyle: { color: colors.orange.lighten2, width: 1, type: 'dashed' },
-                            label: { show: true, position: 'end', formatter: 'Map', backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.orange.lighten2 }
+                            label: { show: true, position: 'insideEndBottom', formatter: 'MAP', backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.orange.lighten2 }
                         }
                     ]
                 }

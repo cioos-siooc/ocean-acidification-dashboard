@@ -83,7 +83,7 @@ const selectedDatetime = computed(() => {
 });
 
 const dts = computed(() => {
-  return mainStore.variables.find(v => v.name === selectedVariable.value.name)?.dts
+  return mainStore.variables.find(v =>  v.source === selectedVariable.value.source && v.var === selectedVariable.value.var)?.dts
     .map(ts => moment.utc(ts))
   // .format('YYYY-MM-DD'))
   // .reduce((set, key) => set.add(key), new Set<string>());

@@ -102,7 +102,7 @@
 
             <!-- Dialog component for monthly chart -->
             <EchartsLineDialog :coord="lastClicked" :variable="selectedVariable.var"
-                :depth="selectedVariable.depth" />
+                :depth="selectedVariable.depth_nc ?? undefined" />
 
         </v-footer>
         <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
@@ -127,7 +127,6 @@ import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 import { var2name } from '../../composables/useVar2Name'
 import { utc2pst } from '../../composables/useUTC2PST'
-import { formatDepth } from '../../composables/useFormatDepth'
 import useStationsInteraction from '../../composables/useStationsInteraction';
 import { addBuoyLayer, type MultiSensorCandidate } from '../../composables/useBuoyLayer';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
@@ -217,39 +216,6 @@ const mapCenter = computed(() => mainStore.mapCenter);
 
 const showColorbarSettings = computed(() => mainStore.showColorbarSettings);
 
-
-
-
-///////////////////////////////////  WATCHERS  ///////////////////////////////////
-
-// When colormap, min, or max change in store, update overlay
-watch([
-    () => mainStore.selected_variable.colormap,
-    () => mainStore.selected_variable.colormapMin,
-    () => mainStore.selected_variable.colormapMax
-], async () => {
-    if (!map || !mapLoaded.value) return;
-    if (mainStore.selected_variable.var === 'bathymetry') {
-        updateBathymetryTilesLayerColorization();
-    } else {
-        try {
-            await updatePngOverlay();
-        } catch (e) {
-            console.warn('Failed to update overlay after colormap/min/max change', e);
-        }
-    }
-}, { immediate: false });
-
-// Handler for time controls component
-// function onTimeControlDt(dt: any) {
-//     // dt is a moment object (UTC)
-//     mainStore.updateSelectedVariable({ dt });
-// }
-
-watch(() => mapCenter.value, (newCenter) => {
-    if (!map || !newCenter) return;
-    map.easeTo({ center: [newCenter.lng, newCenter.lat] });
-}, { immediate: true })
 
 ///////////////////////////////////  HOOKS  ///////////////////////////////////
 onMounted(async () => {
@@ -344,7 +310,7 @@ onBeforeUnmount(() => {
 ///////////////////////////////////  WATCH  ///////////////////////////////////
 
 // Watcher: add/update/remove overlay when selected variable or depth changes
-watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth, mainStore.midDate], async ([v, depth]) => {
+watch(() => [mainStore.selected_variable.source, mainStore.selected_variable.var, mainStore.selected_variable.depth, mainStore.midDate], async ([v, depth]) => {
     if (!map) return;
 
     if (!v) {
@@ -529,6 +495,35 @@ watch(() => mainStore.lastClickedMapPoint, (point) => {
     trigger_mapClick(point.lat, point.lng);
 }, { immediate: true });
 
+// When colormap, min, or max change in store, update overlay
+watch([
+    () => mainStore.selected_variable.colormap,
+    () => mainStore.selected_variable.colormapMin,
+    () => mainStore.selected_variable.colormapMax
+], async () => {
+    if (!map || !mapLoaded.value) return;
+    if (mainStore.selected_variable.var === 'bathymetry') {
+        updateBathymetryTilesLayerColorization();
+    } else {
+        try {
+            await updatePngOverlay();
+        } catch (e) {
+            console.warn('Failed to update overlay after colormap/min/max change', e);
+        }
+    }
+}, { immediate: false });
+
+// Handler for time controls component
+// function onTimeControlDt(dt: any) {
+//     // dt is a moment object (UTC)
+//     mainStore.updateSelectedVariable({ dt });
+// }
+
+watch(() => mapCenter.value, (newCenter) => {
+    if (!map || !newCenter) return;
+    map.easeTo({ center: [newCenter.lng, newCenter.lat] });
+}, { immediate: true })
+
 ///////////////////////////////////  MEDTHODS  ///////////////////////////////////
 async function getMetadata() {
     try {
@@ -595,7 +590,7 @@ async function getTimeseriesPromises(lat: number, lon: number) {
 }
 
 async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {
-    const payload = { source: mainStore.selected_variable.source, var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth, fromDate, toDate }
+    const payload = { source: mainStore.selected_variable.source, var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth_nc, fromDate, toDate }
     return axios.post(`${apiBaseUrl}/extractTimeseries`, payload, { signal: tsRequestController.signal });
     // const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
     // const json = r.data;
@@ -609,7 +604,7 @@ async function getClimateTimeseries(lat: number, lon: number, fromDate: string, 
         var: mainStore.selected_variable.var,
         lat,
         lon,
-        depth: formatDepth(mainStore.selected_variable.depth),
+        depth: mainStore.selected_variable.depth,
         fromDate,
         toDate
     });
@@ -705,11 +700,12 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     const source = mainStore.selected_variable.source.replace(/\s+/g, ''); // Remove spaces from source name for URL
     const varName = mainStore.selected_variable.var;
     const dt = mainStore.selected_variable.dt?.format('YYYY-MM-DDTHHmmss') || '';
-    const depth = formatDepth(mainStore.selected_variable.depth);
+    const depth = mainStore.selected_variable.depth
     const pngPath = `${apiBaseUrl}/png/${source}/${varName}/${dt}/${depth}`;
 
-    const varMeta = mainStore.variables.find(v => v.var === varName);
-    const [lonmin, latmin, lonmax, latmax] = varMeta.bounds;
+    const bounds = mainStore.variables.find(v => v.source === mainStore.selected_variable.source && v.var === varName)?.bounds;
+    if (!bounds) throw new Error('bounds not found');
+    const [lonmin, latmin, lonmax, latmax] = bounds;
     const coords = [
         [lonmin, latmax], // top-left
         [lonmax, latmax], // top-right
@@ -774,7 +770,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
         map.getSource(sourceId)?.updateImage({
             type: 'image',
             url: pngPath,
-            // coordinates: coords
+            coordinates: coords
         })
         map.setPaintProperty(layerId, 'raster-color', [
             'interpolate',
@@ -1048,9 +1044,10 @@ async function autorange() {
     }
 
     try {
+        const selectedSource = mainStore.selected_variable.source;
         const selectedVar = mainStore.selected_variable.var;
         const selectedDt = mainStore.selected_variable.dt;
-        const selectedDepth = mainStore.selected_variable.depth;
+        const selectedDepth = mainStore.selected_variable.depth_nc;
 
         if (!selectedVar || !selectedDt) {
             console.warn('No variable or datetime selected');
@@ -1069,6 +1066,7 @@ async function autorange() {
 
         // Call the new getMinMax endpoint to extract min/max directly from the NC file
         const response = await axios.post(`${apiBaseUrl}/getMinMax`, {
+            source: selectedSource,
             var: selectedVar,
             dt: dtStr,
             depth: selectedDepth,

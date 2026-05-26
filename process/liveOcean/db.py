@@ -6,6 +6,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 from typing import Optional, List
+import uuid
 import psycopg2
 from psycopg2.extras import execute_values
 
@@ -38,13 +39,49 @@ def extract_source_date_from_url(url: str) -> str:
     raise ValueError(f"Could not extract date from URL: {url}")
 
 
-# Live Ocean dataset ID
-LO_DATASET_ID = 4
+# Cache for Live Ocean dataset UUID
+_live_ocean_dataset_id_cache = None
+
+def get_live_ocean_dataset_id(conn):
+    """Get the Live Ocean dataset UUID from the datasets table.
+    
+    Caches the result after first query for efficiency.
+    
+    Args:
+        conn: Database connection
+    
+    Returns:
+        The Live Ocean dataset UUID
+        
+    Raises:
+        ValueError: If Live Ocean dataset not found
+    """
+    global _live_ocean_dataset_id_cache
+    
+    if _live_ocean_dataset_id_cache is not None:
+        return _live_ocean_dataset_id_cache
+    
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM datasets WHERE source = %s LIMIT 1",
+                ("Live Ocean",)
+            )
+            result = cur.fetchone()
+            if not result:
+                raise ValueError("Live Ocean dataset not found in datasets table")
+            _live_ocean_dataset_id_cache = result[0]
+            logger.info(f"Found Live Ocean dataset_id: {_live_ocean_dataset_id_cache}")
+            return _live_ocean_dataset_id_cache
+    except Exception as e:
+        logger.error(f"Failed to get Live Ocean dataset_id: {e}")
+        raise
 
 
 def get_last_processed_date(conn, db_name: str = "oa") -> Optional[str]:
     """Get the last successfully processed source_date (YYYY-MM-DD)."""
     try:
+        dataset_id = get_live_ocean_dataset_id(conn)
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -54,7 +91,7 @@ def get_last_processed_date(conn, db_name: str = "oa") -> Optional[str]:
                 ORDER BY misc->>'source_date' DESC
                 LIMIT 1
                 """,
-                (LO_DATASET_ID,),
+                (dataset_id,),
             )
             row = cur.fetchone()
             return row[0] if row else None
@@ -75,14 +112,15 @@ def update_file_status(conn, source_date: str, variable_id: int, start_time: str
         error_message: Error message if applicable
     """
     try:
+        dataset_id = get_live_ocean_dataset_id(conn)
         with conn.cursor() as cur:
             cur.execute(
                 """
                 UPDATE nc_jobs
-                SET status = %s::nc_file_status, error_message = %s, updated_at = NOW()
+                SET status = %s, error_message = %s, updated_at = NOW()
                 WHERE misc->>'source_date' = %s AND variable_id = %s AND start_time = %s AND dataset_id = %s
                 """,
-                (status, error_message, source_date, variable_id, start_time, LO_DATASET_ID),
+                (status, error_message, source_date, variable_id, start_time, dataset_id),
             )
         conn.commit()
     except Exception as e:
@@ -102,12 +140,13 @@ def insert_processed_dates(conn, source_date: str, outputs: List[dict]) -> List[
         Updated outputs list with variable_id added to each dict
     """
     try:
+        dataset_id = get_live_ocean_dataset_id(conn)
         records = []
         updated_outputs = []
         for output in outputs:
             variable_name = output["variable"]
             
-            # Look up field_id by variable name and dataset_id=4
+            # Look up field_id by variable name and dataset_id
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -115,11 +154,11 @@ def insert_processed_dates(conn, source_date: str, outputs: List[dict]) -> List[
                     WHERE variable = %s AND dataset_id = %s
                     LIMIT 1
                     """,
-                    (variable_name, LO_DATASET_ID),
+                    (variable_name, dataset_id),
                 )
                 result = cur.fetchone()
                 if not result:
-                    logger.warning(f"Could not find field_id for variable '{variable_name}' in dataset {LO_DATASET_ID}, skipping")
+                    logger.warning(f"Could not find field_id for variable '{variable_name}' in dataset {dataset_id}, skipping")
                     continue
                 variable_id = result[0]
             
@@ -133,7 +172,8 @@ def insert_processed_dates(conn, source_date: str, outputs: List[dict]) -> List[
             import json
             records.append(
                 (
-                    LO_DATASET_ID,  # dataset_id
+                    str(uuid.uuid4()),  # id (UUID as string)
+                    dataset_id,  # dataset_id
                     variable_id,
                     json.dumps({"source_date": source_date}),  # misc
                     start_time,
@@ -154,10 +194,9 @@ def insert_processed_dates(conn, source_date: str, outputs: List[dict]) -> List[
                     cur,
                     """
                     INSERT INTO nc_jobs
-                    (dataset_id, variable_id, misc, start_time, end_time, nc_path, status)
+                    (id, dataset_id, variable_id, misc, start_time, end_time, nc_path, status)
                     VALUES %s
-                    ON CONFLICT (dataset_id, variable_id, start_time) DO UPDATE SET
-                        end_time = EXCLUDED.end_time,
+                    ON CONFLICT ON CONSTRAINT ux_nc_jobs_dataset_variable_time DO UPDATE SET
                         misc = EXCLUDED.misc,
                         nc_path = EXCLUDED.nc_path,
                         status = 'extracted',
@@ -185,6 +224,7 @@ def get_extracted_files_for_source_date(conn, source_date: str) -> List[dict]:
         List of dicts with keys: variable, variable_id, start_time, end_time, file_path
     """
     try:
+        dataset_id = get_live_ocean_dataset_id(conn)
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -195,7 +235,7 @@ def get_extracted_files_for_source_date(conn, source_date: str) -> List[dict]:
                   AND nj.status IN ('extracted', 'pending_image', 'imaging_failed', 'success_image')
                 ORDER BY f.variable, nj.start_time
                 """,
-                (source_date, LO_DATASET_ID),
+                (source_date, dataset_id),
             )
             rows = cur.fetchall()
             return [{"variable_id": r[0], "variable": r[1], "start_time": r[2].isoformat(), "end_time": r[3].isoformat(), "path": r[4]} for r in rows]
@@ -208,18 +248,21 @@ def get_available_dates_for_variable(conn, variable: str) -> List[str]:
     """Get list of available start_times for a variable (ISO 8601 format)."""
     try:
         with conn.cursor() as cur:
-            # First get field_id for this variable in dataset 4
+            # First get the Live Ocean dataset_id
+            dataset_id = get_live_ocean_dataset_id(conn)
+            
+            # Get field_id for this variable in Live Ocean dataset
             cur.execute(
                 """
                 SELECT id FROM fields
-                WHERE variable = %s AND dataset_id = 4
+                WHERE variable = %s AND dataset_id = %s
                 LIMIT 1
                 """,
-                (variable,),
+                (variable, dataset_id),
             )
             result = cur.fetchone()
             if not result:
-                logger.warning(f"Variable '{variable}' not found in dataset 4")
+                logger.warning(f"Variable '{variable}' not found in Live Ocean dataset")
                 return []
             variable_id = result[0]
             
@@ -230,7 +273,7 @@ def get_available_dates_for_variable(conn, variable: str) -> List[str]:
                 WHERE variable_id = %s AND dataset_id = %s
                 ORDER BY start_time DESC
                 """,
-                (variable_id, LO_DATASET_ID),
+                (variable_id, dataset_id),
             )
             return [row[0].isoformat() for row in cur.fetchall()]
     except Exception as e:
@@ -269,6 +312,7 @@ def init_schema(conn):
             cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_nc_jobs_misc ON nc_jobs USING GIN (misc)"
             )
+            
             # Drop legacy source_date column if it exists from a previous migration
             cur.execute(
                 "SELECT column_name FROM information_schema.columns "
@@ -277,6 +321,24 @@ def init_schema(conn):
             if cur.fetchone():
                 cur.execute("ALTER TABLE nc_jobs DROP COLUMN source_date")
 
+        conn.commit()
+        
+        # Handle constraint creation in separate transaction to avoid transaction abortion
+        with conn.cursor() as cur:
+            # Drop constraint first (which will also drop the associated index)
+            cur.execute("ALTER TABLE nc_jobs DROP CONSTRAINT IF EXISTS ux_nc_jobs_dataset_variable_time")
+            
+            # Drop old indexes if they exist
+            cur.execute("DROP INDEX IF EXISTS ux_nc_jobs_dataset_variable_time CASCADE")
+            cur.execute("DROP INDEX IF EXISTS ux_nc_jobs_null_dataset_variable_time CASCADE")
+            
+            # Create the UNIQUE constraint
+            cur.execute(
+                "ALTER TABLE nc_jobs ADD CONSTRAINT ux_nc_jobs_dataset_variable_time "
+                "UNIQUE (dataset_id, variable_id, start_time, end_time)"
+            )
+            logger.info("Created UNIQUE CONSTRAINT ux_nc_jobs_dataset_variable_time on nc_jobs")
+        
         conn.commit()
         logger.info("nc_jobs schema updated for Live Ocean")
     except Exception as e:

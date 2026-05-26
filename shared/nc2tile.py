@@ -310,6 +310,7 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
         *_extra,
     ) = task
     image_root_override = _extra[0] if _extra else None
+    depth_image_override = _extra[1] if len(_extra) > 1 else None
 
     # Open dataset in worker process
     ds_data = xr.open_dataset(ds_data_path)
@@ -484,6 +485,8 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
 
     if d_val is None:
         fname = 'time.webp'
+    elif depth_image_override is not None:
+        fname = f"{depth_image_override}.webp"
     elif float(d_val) == -1.0:
         fname = 'bottom.webp'
     else:
@@ -637,6 +640,7 @@ def process_variable(
     verbose: bool = True,
     workers: int = 1,
     pack_precision: float = 0.1,
+    depth_images: Optional[list[str]] = None,
 ):
     # Load curvilinear grid from DB table 'grid'. Fail hard if unavailable.
     lon_src, lat_src = get_grid_from_db('grid')
@@ -726,12 +730,13 @@ def process_variable(
         t_iso = str(np.datetime_as_string(tval, unit="s"))
         tstr_to_iso[str(tstr)] = t_iso
 
-        for didx in depth_indices:
+        for di, didx in enumerate(depth_indices):
             # prepare vmin/vmax to send to worker if using global scale; else pass None
             send_vmin = vmin if global_scale else None
             send_vmax = vmax if global_scale else None
             
             depth = depths[int(didx)]
+            depth_image = depth_images[di] if depth_images and di < len(depth_images) else None
 
             # include any absolute min/max stored in fields for this variable
             tasks.append((
@@ -755,6 +760,8 @@ def process_variable(
                 clip_percentile,
                 verbose,
                 pack_precision,
+                None,         # image_root_override (reserved)
+                depth_image,  # depth_image string for output filename
             ))
 
     processed_tstrs = set()
@@ -813,6 +820,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--workers", type=int, default=None, help="Number of parallel worker processes to use (default: cpu_count()-1)")
     p.add_argument("--precision", type=float, default=0.1, help="Precision for PNG packing (default: 0.1)")
     p.add_argument("--depth-indices", required=True, help="Comma-separated depth indices to process.")
+    p.add_argument("--depth-images", default=None, help="Comma-separated depth image strings parallel to --depth-indices (used as output filename stem, e.g. '0.5,surface,bottom').")
     p.add_argument("--quiet", action="store_true", help="Less verbose")
     return p.parse_args(argv)
 
@@ -844,6 +852,10 @@ def main(argv: Optional[list[str]] = None) -> list[int]:
     else:
         workers = max(1, int(args.workers))
 
+    depth_images = None
+    if args.depth_images:
+        depth_images = [s.strip() for s in args.depth_images.split(",")]
+
     all_processed = []
     for var in varnames:
         print(f"Processing variable: {var} (workers={workers})")
@@ -858,6 +870,7 @@ def main(argv: Optional[list[str]] = None) -> list[int]:
             verbose=not args.quiet,
             workers=workers,
             pack_precision=args.precision,
+            depth_images=depth_images,
         )
         if processed:
             all_processed.extend(processed)

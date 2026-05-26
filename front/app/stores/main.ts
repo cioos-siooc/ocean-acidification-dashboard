@@ -19,8 +19,8 @@ export const useMainStore = defineStore('main', {
         },
 
         dfnDays: 5, // days from now for climate timeseries
-        variables: [] as Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: { depth: number, hasImage: boolean }[], precision: number }>,
-        selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null, colormapStops: [null, null, null] as (number | null)[] },
+        variables: [] as Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: { depth_nc: number, depth_image: string, hasImage: boolean }[], precision: number, bounds: [number, number, number, number] }>,
+        selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as string | null, depth_nc: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null, colormapStops: [null, null, null] as (number | null)[] },
         showBathymetryContours: false,
         colormaps: {} as Record<string, any>,
         autoRangeDisabled: false,
@@ -47,7 +47,7 @@ export const useMainStore = defineStore('main', {
     }),
 
     actions: {
-        setVariables(vars: Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: { depth: number, hasImage: boolean }[], precision: number }>) {
+        setVariables(vars: Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: { depth_nc: number, depth_image: string, hasImage: boolean }[], precision: number, bounds: [number, number, number, number] }>) {
             this.variables = vars;
         },
 
@@ -89,13 +89,15 @@ export const useMainStore = defineStore('main', {
             const variable = this.selected_variable.var;
             const depthsArray = this.variables.find((v) => v.var === variable)?.depths;
             const closestDepth = depthsArray
-                ? [...depthsArray].sort((a, b) => Math.abs(a.depth - depth) - Math.abs(b.depth - depth))
+                ? [...depthsArray].sort((a, b) => Math.abs(a.depth_nc - depth) - Math.abs(b.depth_nc - depth))
                 : [];
             if (closestDepth.length > 0) {
-                const newDepth = closestDepth[0].depth;
-                if (newDepth !== this.selected_variable.depth) {
+                const entry = closestDepth[0];
+                const newDepth = entry?.depth_image;
+                const newDepthNc = entry?.depth_nc ?? null;
+                if (newDepth && newDepth !== this.selected_variable.depth) {
                     this.snackMessages.push({ color: 'warning', text: `Switched to closest available depth: ${newDepth}m` });
-                    this.updateSelectedVariable({ depth: newDepth });
+                    this.updateSelectedVariable({ depth: newDepth, depth_nc: newDepthNc });
                 }
             }
             this.setSelectedSensor({ id: sensor_id, depth: depth });

@@ -32,8 +32,66 @@ except Exception:
 
 logger = logging.getLogger("lo_imaging")
 
-# Dataset ID for Live Ocean in the datasets table
-LO_DATASET_ID = 4
+# Cache for Live Ocean dataset UUID
+_live_ocean_dataset_id_cache = None
+# Cache for Live Ocean depths config
+_lo_depths_config_cache = None
+
+
+def get_live_ocean_dataset_id(conn):
+    """Get the Live Ocean dataset UUID from the datasets table."""
+    global _live_ocean_dataset_id_cache
+    if _live_ocean_dataset_id_cache is not None:
+        return _live_ocean_dataset_id_cache
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM datasets WHERE source = %s LIMIT 1", ("Live Ocean",))
+        result = cur.fetchone()
+        if not result:
+            raise ValueError("Live Ocean dataset not found in datasets table")
+        _live_ocean_dataset_id_cache = result[0]
+    return _live_ocean_dataset_id_cache
+
+
+def get_lo_depths_config() -> list:
+    """Fetch Live Ocean depths config from DB.
+
+    Returns a list of ``(depth_nc, depth_image, has_image)`` tuples, one per depth entry.
+    Only entries with ``hasImage=true`` are relevant for imaging but all are returned
+    so callers can decide what to skip.
+    """
+    global _lo_depths_config_cache
+    if _lo_depths_config_cache is not None:
+        return _lo_depths_config_cache
+    conn = get_db_conn()
+    try:
+        lo_id = get_live_ocean_dataset_id(conn)
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT depths FROM datasets WHERE id = %s", (lo_id,))
+            row = cur.fetchone()
+            if not row or not row['depths']:
+                raise ValueError("No depths config for Live Ocean dataset")
+            config = [
+                (float(d['depth_nc']), str(d['depth_image']), bool(d.get('hasImage', True)))
+                for d in row['depths']
+            ]
+            _lo_depths_config_cache = config
+            return config
+    finally:
+        conn.close()
+
+
+def _find_depth_image(depths_config: list, d_val: float):
+    """Return ``(depth_image, has_image)`` for the closest matching ``depth_nc`` value.
+
+    Returns ``(None, False)`` if no entry is within tolerance (0.01).
+    """
+    if not depths_config:
+        return None, False
+    closest = min(depths_config, key=lambda x: abs(x[0] - d_val))
+    if abs(closest[0] - d_val) < 0.01:
+        return closest[1], closest[2]
+    return None, False
+
 
 # Grid cache file
 GRID_CACHE_PATH = os.getenv("GRID_CACHE_PATH", "/opt/data/cache/lo_grid_cache.npz")
@@ -58,13 +116,14 @@ def get_db_conn(db_host: str = None, db_user: str = None, db_password: str = Non
 
 
 def get_field_metadata(variable: str) -> Tuple[float, float, float]:
-    """Fetch min, max, precision from fields table for dataset_id=4.
+    """Fetch min, max, precision from fields table for Live Ocean dataset.
     
     Returns (min_val, max_val, precision).
     Raises ValueError if not found.
     """
     conn = get_db_conn()
     try:
+        dataset_id = get_live_ocean_dataset_id(conn)
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
@@ -73,11 +132,11 @@ def get_field_metadata(variable: str) -> Tuple[float, float, float]:
                 WHERE dataset_id = %s AND variable = %s
                 LIMIT 1
                 """,
-                (LO_DATASET_ID, variable),
+                (dataset_id, variable),
             )
             row = cur.fetchone()
             if not row:
-                raise ValueError(f"No field metadata found for variable '{variable}' in dataset {LO_DATASET_ID}")
+                raise ValueError(f"No field metadata found for variable '{variable}' in Live Ocean dataset {dataset_id}")
             return float(row['min']), float(row['max']), float(row['precision'])
     finally:
         conn.close()
@@ -219,10 +278,10 @@ def regrid_to_mercator(data_src: np.ndarray, lon_src: np.ndarray, lat_src: np.nd
 
 
 def pack_to_rgb(float_arr: np.ndarray, vmin: float, vmax: float, precision: float, base: float = 0.0) -> np.ndarray:
-    """Pack float values into RGB channels using fixed-point quantization.
+    """Pack float values into RGB channels using precision-based quantization.
     
-    Values are scaled from [vmin, vmax] to [base, base + precision * 2^24).
-    The quantized integer is split into 3 bytes (R, G, B).
+    Values are scaled from [vmin, vmax] to [0, (vmax-vmin)/precision) range,
+    then encoded into 24 bits (RGB channels).
     
     Returns array of shape (h, w, 3) with uint8 RGB values.
     """
@@ -231,11 +290,19 @@ def pack_to_rgb(float_arr: np.ndarray, vmin: float, vmax: float, precision: floa
     # Clamp values to [vmin, vmax]
     clamped = np.clip(float_arr, vmin, vmax)
     
-    # Scale to [0, 2^24-1] range
-    # Map [vmin, vmax] -> [0, 2^24-1]
+    # Calculate number of levels based on precision
+    # max_quantized = (vmax - vmin) / precision
+    range_span = vmax - vmin
+    num_levels = int(np.ceil(range_span / precision)) + 1
     max_uint24 = 2**24 - 1
-    normalized = (clamped - vmin) / (vmax - vmin + 1e-10)
-    q = np.rint(normalized * max_uint24).astype(np.int64)
+    
+    # Scale to [0, num_levels-1], then map to [0, 2^24-1] for RGB packing
+    normalized = (clamped - vmin) / (range_span + 1e-10)
+    quantized = np.rint(normalized * (num_levels - 1)).astype(np.int64)
+    q = np.clip(quantized, 0, num_levels - 1)
+    
+    # Map to 24-bit space for RGB encoding
+    # q = (q * max_uint24 // (num_levels - 1)).astype(np.int64)
     
     # Handle NaNs -> pack as 0
     q = np.where(np.isnan(float_arr), 0, q)
@@ -311,7 +378,10 @@ def image_live_ocean(outputs: List[dict], image_root: str = "/opt/data/images") 
             
             # Get field metadata
             vmin, vmax, precision = get_field_metadata(variable)
-            
+
+            # Get depths config for filename lookup and hasImage filtering (cached after first call)
+            depths_config = get_lo_depths_config()
+
             # Get dimensions
             dims = ds[variable].dims
             time_dim = next((d for d in dims if 'time' in str(d).lower()), None)
@@ -327,16 +397,13 @@ def image_live_ocean(outputs: List[dict], image_root: str = "/opt/data/images") 
             
             # Process each time/depth slice
             for t_idx, t_val in enumerate(times):
-                time_iso = str(np.datetime_as_string(t_val, unit='m')).replace(':', '')
+                time_iso = str(np.datetime_as_string(t_val, unit='s')).replace(':', '')
                 
                 for d_idx, d_val in enumerate(depths):
-                    # Determine depth filename
-                    if np.isclose(d_val, 0.0):
-                        depth_str = "surface"
-                    elif np.isclose(d_val, 99999.0):
-                        depth_str = "bottom"
-                    else:
-                        depth_str = f"{d_val:.0f}"
+                    # Determine depth filename from DB config
+                    depth_str, has_image = _find_depth_image(depths_config, float(d_val))
+                    if depth_str is None or not has_image:
+                        continue  # skip depths not configured for imaging
                     
                     # Load this slice
                     data_slice = ds[variable].isel({time_dim: t_idx, depth_dim: d_idx}).values
@@ -346,7 +413,7 @@ def image_live_ocean(outputs: List[dict], image_root: str = "/opt/data/images") 
                     alpha_mask = np.where(np.isfinite(regridded), 255, 0).astype(np.uint8)
                     rgb_arr = pack_to_rgb(regridded, vmin, vmax, precision)
                     
-                    out_dir = os.path.join(image_root, variable_name, time_iso)
+                    out_dir = os.path.join(image_root, variable, time_iso)
                     out_path = os.path.join(out_dir, f"{depth_str}.webp")
                     write_webp(rgb_arr, alpha_mask, out_path)
                     all_paths.append(out_path)
@@ -406,16 +473,16 @@ def _process_single_slice(args: Tuple) -> str:
     Also updates database status as the file progresses.
     
     Args:
-        args: (source_date, variable_id, start_time, end_time, nc_path, time_idx, depth_idx, image_root, 
-               time_val, depth_val, vmin, vmax, precision)
+        args: (source_date, variable_id, variable_name, start_time, end_time, nc_path, time_idx, depth_idx, image_root, 
+               time_val, depth_val, vmin, vmax, precision, dataset_id, depth_image)
     
     Returns:
         Path of written WebP file
     """
     global _worker_mercator_cache
     
-    (source_date, variable_id, start_time, end_time, nc_path, time_idx, depth_idx, image_root, 
-     time_val, depth_val, vmin, vmax, precision) = args
+    (source_date, variable_id, variable_name, start_time, end_time, nc_path, time_idx, depth_idx, image_root, 
+     time_val, depth_val, vmin, vmax, precision, dataset_id, depth_image) = args
     
     # Get prebuilt interpolator from worker cache (built once by initializer)
     interp = _worker_mercator_cache['interp']
@@ -434,10 +501,10 @@ def _process_single_slice(args: Tuple) -> str:
                     SET status = 'imaging', updated_at = NOW()
                     WHERE misc->>'source_date' = %s AND variable_id = %s 
                       AND start_time <= %s AND end_time >= %s
-                      AND dataset_id = 4
+                      AND dataset_id = %s
                       AND status IN ('extracted', 'pending_image')
                     """,
-                    (source_date, variable_id, start_time, start_time)
+                    (source_date, variable_id, start_time, start_time, dataset_id)
                 )
                 conn.commit()
         finally:
@@ -445,19 +512,6 @@ def _process_single_slice(args: Tuple) -> str:
         
         # Load only this specific time/depth slice
         ds = xr.open_dataset(nc_path)
-        
-        # Get variable name from field_id (for accessing data)
-        # We need to query the database to get the variable name from field_id
-        var_conn = get_db_conn()
-        try:
-            with var_conn.cursor() as cur:
-                cur.execute("SELECT variable FROM fields WHERE id = %s LIMIT 1", (variable_id,))
-                result = cur.fetchone()
-                if not result:
-                    raise ValueError(f"Could not find variable name for field_id {variable_id}")
-                variable_name = result[0]
-        finally:
-            var_conn.close()
         
         # Get dimension names
         dims = ds[variable_name].dims
@@ -469,16 +523,12 @@ def _process_single_slice(args: Tuple) -> str:
             return ""
         
         # Load only this slice
-            data_slice = ds[variable_name].isel({time_dim: time_idx, depth_dim: depth_idx}).values
+        data_slice = ds[variable_name].isel({time_dim: time_idx, depth_dim: depth_idx}).values
         ds.close()
         
         # Determine depth filename
-        if np.isclose(depth_val, 0.0):
-            depth_str = "surface"
-        elif np.isclose(depth_val, 99999.0):
-            depth_str = "bottom"
-        else:
-            depth_str = f"{depth_val:.0f}"
+        # Use depth_image from task tuple for filename
+        depth_str = depth_image
         
         # Regrid and write (fast: just apply prebuilt interpolator, no Delaunay recompute)
         data_flat = data_slice.ravel()[coord_valid]
@@ -487,9 +537,9 @@ def _process_single_slice(args: Tuple) -> str:
         rgb_arr = pack_to_rgb(regridded, vmin, vmax, precision)
         
         # Determine time string
-        time_iso = str(np.datetime_as_string(time_val, unit='m')).replace(':', '')
+        time_iso = str(np.datetime_as_string(time_val, unit='s')).replace(':', '')
         
-        out_dir = os.path.join(image_root, variable, time_iso)
+        out_dir = os.path.join(image_root, variable_name, time_iso)
         out_path = os.path.join(out_dir, f"{depth_str}.webp")
         write_webp(rgb_arr, alpha_mask, out_path)
         
@@ -513,9 +563,9 @@ def _process_single_slice(args: Tuple) -> str:
                         SET status = 'imaging_failed', error_message = %s, updated_at = NOW()
                         WHERE misc->>'source_date' = %s AND variable_id = %s 
                           AND start_time <= %s AND end_time >= %s
-                          AND dataset_id = 4
+                          AND dataset_id = %s
                         """,
-                        (str(e), source_date, variable_id, start_time, start_time)
+                        (str(e), source_date, variable_id, start_time, start_time, dataset_id)
                     )
                     conn.commit()
             finally:
@@ -558,8 +608,18 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
     minx, miny, maxx, maxy = compute_mercator_bounds(lon_src, lat_src)
     xx_merc, yy_merc, w, h = build_mercator_grid(minx, miny, maxx, maxy)
     
+    # Fetch Live Ocean dataset UUID once
+    _db_conn = get_db_conn()
+    try:
+        lo_dataset_id = get_live_ocean_dataset_id(_db_conn)
+    finally:
+        _db_conn.close()
+    
     # Build task queue: one task per (variable_id, time, depth) triple
     tasks = []
+    # Load depths config once for all variables (cached after first call)
+    depths_config = get_lo_depths_config()
+
     for out in outputs:
         variable = out['variable']
         variable_id = out.get('variable_id')
@@ -596,13 +656,16 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
             times = ds[time_dim].values
             depths = ds[depth_dim].values
             
-            # Create task for each time/depth pair
+            # Create task for each time/depth pair; skip depths where hasImage=False
             # Include source_date and start_time/end_time for database status updates in worker
             for t_idx, t_val in enumerate(times):
                 for d_idx, d_val in enumerate(depths):
+                    depth_image, has_image = _find_depth_image(depths_config, float(d_val))
+                    if depth_image is None or not has_image:
+                        continue  # skip depths not configured for imaging
                     tasks.append((
-                        source_date, variable_id, start_time, end_time, nc_path, t_idx, d_idx, image_root,
-                        t_val, d_val, vmin, vmax, precision
+                        source_date, variable_id, variable, start_time, end_time, nc_path, t_idx, d_idx, image_root,
+                        t_val, d_val, vmin, vmax, precision, lo_dataset_id, depth_image
                     ))
             
             ds.close()
@@ -626,7 +689,7 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
         
         # Pre-populate task counts per file
         for task in tasks:
-            source_date_t, variable_id, start_time, end_time, *_ = task
+            source_date_t, variable_id, variable_name, start_time, end_time, *_ = task
             key = (source_date_t, variable_id, start_time, end_time)
             if key not in file_task_counts:
                 file_task_counts[key] = [0, 0]  # [completed, total]
@@ -643,7 +706,7 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
                 
                 # Extract file key from task
                 task = futures[future]
-                source_date_t, variable_id, start_time, end_time, *_ = task
+                source_date_t, variable_id, variable_name, start_time, end_time, *_ = task
                 key = (source_date_t, variable_id, start_time, end_time)
                 
                 # Increment completion count for this file
@@ -663,10 +726,10 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
                                     SET status = 'success_image', updated_at = NOW()
                                     WHERE misc->>'source_date' = %s AND variable_id = %s 
                                       AND start_time <= %s AND end_time >= %s
-                                      AND dataset_id = 4
+                                      AND dataset_id = %s
                                       AND status = 'imaging'
                                     """,
-                                    (source_date_t, variable_id, start_time, start_time)
+                                    (source_date_t, variable_id, start_time, start_time, lo_dataset_id)
                                 )
                                 db_conn.commit()
                         finally:

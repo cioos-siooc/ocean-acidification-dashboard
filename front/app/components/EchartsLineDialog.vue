@@ -34,7 +34,7 @@ const props = defineProps({
     // Fetch by coord/variable/depth
     coord: { type: Object, required: true },
     variable: { type: String, required: true },
-    depth: { type: Number, required: true },
+    depth: { type: Number, default: null },
 });
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
@@ -147,15 +147,14 @@ watch(() => showClimatologyDialog.value, (v) => {
         }
     }
 });
+
 watch(modelValue, (v) => emit('update:modelValue', v));
-
-
 
 
 ///////////////////////////////////  METHODS  ///////////////////////////////////
 
 const close = () => {
-    modelValue.value = false;
+    mainStore.setShowClimatologyDialog(false);
 };
 
 const getDataForCoord = async () => {

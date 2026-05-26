@@ -8,16 +8,16 @@ import datetime
 
 
 def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> List[Dict]:
-    # Get metadata from fields table and available dates from the unified nc_jobs table
-    # Use a CTE to expand date ranges cleanly
+    # Get metadata from fields table and actual time ranges from nc_jobs
+    # Query actual start/end times instead of synthesizing them
     query = """
-        WITH date_ranges AS (
-            SELECT DISTINCT
-                pd.variable_id,
-                (pd.start_time + i * INTERVAL '1 day')::date as date_val
-            FROM nc_jobs pd
-            CROSS JOIN generate_series(0, (pd.end_time::date - pd.start_time::date)) i
-            WHERE pd.status = 'success_image'
+        WITH time_ranges AS (
+            SELECT DISTINCT ON (variable_id, start_time, end_time)
+                variable_id,
+                start_time,
+                end_time
+            FROM nc_jobs
+            WHERE status = 'success_image'
         )
         SELECT
             f.variable,
@@ -31,10 +31,10 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
             d.depths,
             d.source,
             f.dataset_id,
-            ARRAY_AGG(DISTINCT dr.date_val ORDER BY dr.date_val) as available_dates
+            ARRAY_AGG(jsonb_build_object('start', tr.start_time, 'end', tr.end_time) ORDER BY tr.start_time) as time_ranges
         FROM fields f
         LEFT JOIN datasets d ON f.dataset_id = d.id
-        LEFT JOIN date_ranges dr ON f.id = dr.variable_id
+        LEFT JOIN time_ranges tr ON f.id = tr.variable_id
         GROUP BY f.id, f.variable, f.dataset_id, d.id, d.source;
     """
     
@@ -55,37 +55,48 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
         variables = []
         for row in rows:
             variable = row.get("variable")
-            dataset_id = row.get("dataset_id")  # 4 = LiveOcean, 1-3 = SSC
+            source = row.get("source")
 
-            # Expand dates to appropriate resolution
-            available_dates = row.get("available_dates")
-            if available_dates is not None:
+            # Generate actual datetimes from time ranges
+            time_ranges = row.get("time_ranges")
+            if time_ranges is not None:
                 try:
                     expanded_datetimes = []
-                    for dt in available_dates:
-                        # Convert to date if it's a timestamp
-                        date = dt if isinstance(dt, datetime.date) and not isinstance(dt, datetime.datetime) else dt.date() if hasattr(dt, 'date') else dt
-
-                        if dataset_id != 4:
-                            # SSC: hourly datetimes at half-hour marks (00:30 to 23:30)
-                            for hour in range(24):
-                                hourly_dt = datetime.datetime.combine(
-                                    date,
-                                    datetime.time(hour=hour, minute=30)
-                                )
-                                expanded_datetimes.append(hourly_dt)
+                    
+                    for time_range in time_ranges:
+                        start_dt = time_range.get("start")
+                        end_dt = time_range.get("end")
+                        
+                        if start_dt is None or end_dt is None:
+                            continue
+                        
+                        # Convert to datetime if needed
+                        if isinstance(start_dt, str):
+                            start_dt = datetime.datetime.fromisoformat(start_dt)
+                        if isinstance(end_dt, str):
+                            end_dt = datetime.datetime.fromisoformat(end_dt)
+                        
+                        if source != 'Live Ocean':
+                            # SSC: hourly datetimes at half-hour marks
+                            # Generate all hourly times from start to end
+                            current = start_dt.replace(minute=30, second=0, microsecond=0)
+                            while current <= end_dt:
+                                expanded_datetimes.append(current)
+                                current += datetime.timedelta(hours=1)
                         else:
-                            # LiveOcean: 4-hourly datetimes (00:00, 04:00, 08:00, 12:00, 16:00, 20:00)
-                            for hour in [0, 4, 8, 12, 16, 20]:
-                                hourly_dt = datetime.datetime.combine(
-                                    date,
-                                    datetime.time(hour=hour, minute=0)
-                                )
-                                expanded_datetimes.append(hourly_dt)
-                    available_dates = expanded_datetimes
+                            # LiveOcean: 4-hourly datetimes
+                            # Generate all 4-hourly times from start to end
+                            current = start_dt.replace(minute=0, second=0, microsecond=0)
+                            while current <= end_dt:
+                                expanded_datetimes.append(current)
+                                current += datetime.timedelta(hours=4)
+                    
+                    available_datetimes = sorted(set(expanded_datetimes))  # Remove duplicates and sort
                 except Exception as e:
-                    print(f"Error processing datetimes for variable {variable}: {e}")
-                    available_dates = None
+                    print(f"Error processing time ranges for variable {variable}: {e}")
+                    available_datetimes = None
+            else:
+                available_datetimes = None
             
             colormap_min = row.get("min")
             colormap_max = row.get("max")
@@ -94,7 +105,7 @@ def get_variables(db_host: str, db_port: int, db_name: str, db_user: str, db_pas
             
             variables.append({
                 "var": variable,
-                "dts": available_dates,
+                "dts": available_datetimes,
                 "colormapMin": colormap_min,
                 "colormapMax": colormap_max,
                 "depths": depths,

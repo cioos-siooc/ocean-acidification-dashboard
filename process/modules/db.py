@@ -48,7 +48,7 @@ def ensure_schema(conn):
         cur.execute(
             """
         CREATE TABLE IF NOT EXISTS datasets (
-            id SERIAL PRIMARY KEY,
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             base_url TEXT UNIQUE NOT NULL,
             title TEXT,
             last_checked_at TIMESTAMPTZ,
@@ -58,8 +58,8 @@ def ensure_schema(conn):
             meta JSONB
         );
         CREATE TABLE IF NOT EXISTS fields (
-            id SERIAL PRIMARY KEY,
-            dataset_id INT REFERENCES datasets(id) ON DELETE SET NULL,
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            dataset_id UUID REFERENCES datasets(id) ON DELETE SET NULL,
             variable TEXT NOT NULL,
             last_downloaded_at TIMESTAMPTZ,
             meta JSONB,
@@ -71,9 +71,9 @@ def ensure_schema(conn):
         -- enum type ensured above
 
         CREATE TABLE IF NOT EXISTS nc_jobs (
-            id SERIAL PRIMARY KEY,
-            dataset_id INT NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
-            variable_id INT NOT NULL REFERENCES fields(id) ON DELETE CASCADE,
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            dataset_id UUID NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
+            variable_id UUID NOT NULL REFERENCES fields(id) ON DELETE CASCADE,
             start_time TIMESTAMPTZ NOT NULL,
             end_time TIMESTAMPTZ NOT NULL,
             status nc_file_status DEFAULT 'pending_download',
@@ -118,22 +118,58 @@ def ensure_schema(conn):
         )
         if cur.fetchone():
             cur.execute("ALTER TABLE nc_jobs DROP COLUMN source_date")
-        # Replace unique index with 4-column (dataset_id, variable_id, start_time, end_time)
+        # Add 4-column UNIQUE CONSTRAINT (dataset_id, variable_id, start_time, end_time)
         # to uniquely identify each file by its time range coverage.
         try:
-            cur.execute("SELECT indexdef FROM pg_indexes WHERE indexname = 'ux_nc_jobs_dataset_variable_time'")
-            idx_row = cur.fetchone()
-            if idx_row and 'end_time' not in idx_row[0]:
-                # Old 3-column index — drop and recreate as 4-column
-                cur.execute("DROP INDEX IF EXISTS ux_nc_jobs_dataset_variable_time")
-            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_nc_jobs_dataset_variable_time ON nc_jobs (dataset_id, variable_id, start_time, end_time)")
+            # Drop old index if it exists (will be replaced by constraint)
+            cur.execute("DROP INDEX IF EXISTS ux_nc_jobs_dataset_variable_time CASCADE")
         except Exception:
-            conn.rollback()
-            logger.warning("Could not update unique index ux_nc_jobs_dataset_variable_time; continuing without it")
-        # Remove old partial-null index (superseded by the 4-column constraint above)
+            pass  # Index may not exist
+        
         try:
-            cur.execute("DROP INDEX IF EXISTS ux_nc_jobs_null_dataset_variable_time")
+            # Drop old partial-null index if it exists
+            cur.execute("DROP INDEX IF EXISTS ux_nc_jobs_null_dataset_variable_time CASCADE")
         except Exception:
+            pass  # Index may not exist
+        
+        try:
+            # Drop constraint if it already exists (to recreate cleanly)
+            cur.execute("ALTER TABLE nc_jobs DROP CONSTRAINT IF EXISTS ux_nc_jobs_dataset_variable_time")
+        except Exception:
+            pass  # Constraint may not exist
+        
+        # Create the UNIQUE constraint
+        cur.execute(
+            "ALTER TABLE nc_jobs ADD CONSTRAINT ux_nc_jobs_dataset_variable_time "
+            "UNIQUE (dataset_id, variable_id, start_time, end_time)"
+        )
+        logger.info("Created UNIQUE CONSTRAINT ux_nc_jobs_dataset_variable_time on nc_jobs")
+
+        # Migrate existing nc_jobs with SERIAL id to UUID (idempotent)
+        try:
+            cur.execute("SELECT data_type FROM information_schema.columns WHERE table_name='nc_jobs' AND column_name='id'")
+            id_type = cur.fetchone()
+            if id_type and 'integer' in id_type[0].lower():
+                # Current id is SERIAL (integer), need to migrate to UUID
+                logger.info("Migrating nc_jobs.id from SERIAL to UUID...")
+                
+                # Add temporary uuid column if it doesn't exist
+                cur.execute("ALTER TABLE nc_jobs ADD COLUMN IF NOT EXISTS id_uuid UUID DEFAULT gen_random_uuid()")
+                
+                # Drop old constraints that reference id
+                try:
+                    cur.execute("ALTER TABLE nc_jobs DROP CONSTRAINT IF EXISTS nc_jobs_pkey")
+                except Exception:
+                    pass
+                
+                # Drop old id column and rename uuid to id
+                cur.execute("ALTER TABLE nc_jobs DROP COLUMN id CASCADE")
+                cur.execute("ALTER TABLE nc_jobs RENAME COLUMN id_uuid TO id")
+                cur.execute("ALTER TABLE nc_jobs ADD PRIMARY KEY (id)")
+                
+                logger.info("Successfully migrated nc_jobs.id to UUID")
+        except Exception as e:
+            logger.warning(f"Could not migrate nc_jobs.id to UUID; this is normal for new installations: {e}")
             conn.rollback()
 
         # If older schema used dataset_id column name, rename to base_url

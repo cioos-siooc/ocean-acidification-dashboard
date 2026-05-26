@@ -1,40 +1,41 @@
 <template>
   <v-card class="colorbar" width="40px">
     <v-col class="pa-0">
-      <!-- <v-row class="mx-1 my-1 px-0"> -->
+      
+      <!-- BATHYMETRY CONTOURS -->
       <v-btn icon size="20px" flat :variant="showBathymetryContours ? 'elevated' : 'text'"
         :color="showBathymetryContours ? 'primary' : undefined"
         @click="mainStore.setShowBathymetryContours(!showBathymetryContours)" title="Bathymetry Contours" class="ma-2">
         <IconsContour />
       </v-btn>
-      <!-- </v-row> -->
 
-      <!-- <v-row class="mx-1 my-1 px-0"> -->
+      <!-- VERTICAL PROFILE -->
       <v-btn icon size="20px" flat @click="toggleVerticalProfile" title="Vertical Profile" class="ma-2">
         <IconsProfile />
       </v-btn>
-      <!-- </v-row> -->
 
+      <!-- MONTHLY CLIMATOLOGY -->
       <v-btn icon size="20px" flat title="Long-term climatology" class="ma-2" 
         @click="mainStore.setShowClimatologyDialog(true)">
-        <!-- <v-icon size="14px">mdi-chart-line</v-icon> -->
          <IconsStats />
       </v-btn>
 
       <v-divider></v-divider>
 
+      <!-- AUTO COLOR -->
       <v-btn icon size="20px" flat
         :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled"
         @click="autorange" title="Auto Color" class="ma-2">
         <IconsAutorange />
       </v-btn>
 
+      <!-- COLOR SETTINGS -->
       <v-btn size="20px" flat icon @click="showColorbarSettings = !showColorbarSettings" title="Color Settings"
         class="ma-2">
         <IconsConfig />
       </v-btn>
 
-      <v-divider></v-divider>
+      <!-- <v-divider></v-divider> -->
 
       <!-- <v-row class="mx-1 my-1 px-0"> -->
       <!-- <v-btn icon size="20px" flat @click="showHow" title="How to Use" class="ma-2" disabled>

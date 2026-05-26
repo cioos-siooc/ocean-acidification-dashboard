@@ -13,6 +13,7 @@ from glob import glob
 from typing import Optional, Tuple
 from datetime import datetime
 import logging
+import sys
 
 import numpy as np
 import xarray as xr
@@ -21,6 +22,15 @@ import psycopg2
 from nc_reader import open_nc_uncached, close_nc
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Ensure logger has a handler (subprocess doesn't inherit parent handlers)
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 TIME_CANDIDATES = ("time",)
 DEPTH_CANDIDATES = ("depth", "lev", "level", "z", "deptht", "depthu", "depths")
@@ -120,7 +130,7 @@ def extract_minmax(
         nc_file = find_nc_file_for_date(data_dir, variable, dt)
         if not nc_file:
             raise FileNotFoundError(f"No NC file found for {variable} on {dt.strftime('%Y-%m-%d')}")
-    
+
     logger.debug(f"Loading NC file: {nc_file}")
     logger.debug(f"Bounds: north={north}, south={south}, east={east}, west={west}")
     logger.debug(f"Variable: {variable}, DateTime: {dt}, Depth: {depth}")
@@ -187,13 +197,13 @@ def extract_minmax(
         # Now var should be purely spatial (2D grid with gridY and gridX dimensions)
         # If we have row/col indices from database bounds query, use them
         if row_indices is not None and col_indices is not None and len(row_indices) > 0:
-            # Find gridY and gridX dimensions
+            # Find gridY and gridX dimensions (handles both SSC and LiveOcean naming)
             grid_y_dim = None
             grid_x_dim = None
             for dim in var.dims:
-                if dim.lower() in ('gridy', 'y', 'eta'):
+                if dim.lower() in ('gridy', 'y', 'eta', 'eta_rho'):
                     grid_y_dim = dim
-                elif dim.lower() in ('gridx', 'x', 'xi'):
+                elif dim.lower() in ('gridx', 'x', 'xi', 'xi_rho'):
                     grid_x_dim = dim
             
             if grid_y_dim and grid_x_dim:

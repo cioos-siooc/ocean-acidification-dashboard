@@ -28,7 +28,6 @@ import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
 import type { PropType } from 'vue';
 import moment, { type MomentInput } from 'moment-timezone';
 import { var2name } from '../../composables/useVar2Name';
-import { formatDepth } from '../../composables/useFormatDepth';
 import { utc2pst } from '../../composables/useUTC2PST';
 import { useMainStore } from '../stores/main';
 
@@ -38,6 +37,7 @@ type SelectedPoint = {
 } | null;
 
 interface ProfileRequest {
+    source: string;
     var: string;
     lat: number;
     lng: number;
@@ -105,12 +105,14 @@ const requestParams = computed<ProfileRequest | null>(() => {
     const lng = props.selectedPoint?.lng;
     const dt = mainStore.selected_variable?.dt;
     const variable = mainStore.selected_variable?.var;
-    if (typeof lat !== 'number' || typeof lng !== 'number' || !dt) {
+    const source = mainStore.selected_variable?.source;
+    if (typeof lat !== 'number' || typeof lng !== 'number' || !dt || !variable || !source) {
         return null;
     }
     const parsed = moment(dt);
     if (!parsed.isValid()) return null;
     return {
+        source: source,
         var: variable,
         lat,
         lng,
@@ -188,7 +190,8 @@ function renderChart(points: ProfilePoint[]) {
             nameLocation: 'middle',
             nameGap: 24,
             axisLine: { show: true },
-            scale: true
+            scale: true,
+            axisLabel: { color: '#e0e0e0' }
         },
         yAxis: {
             type: 'value',
@@ -197,6 +200,7 @@ function renderChart(points: ProfilePoint[]) {
             inverse: true,
             axisLine: { show: true },
             scale: true,
+            axisLabel: { color: '#e0e0e0' }
         },
         series: [
             {
@@ -207,20 +211,22 @@ function renderChart(points: ProfilePoint[]) {
                 smooth: true,
                 showSymbol: true,
                 data,
-                lineStyle: {
-                    width: 2,
-                    color: mainStore.colors.model.line,
-                    shadowColor: mainStore.colors.model.shadow,
-                    shadowBlur: 3,
-                },
-                // areaStyle: { opacity: data.length ? 0.25 : 0 }
-                itemStyle: {
-                    color: mainStore.colors.model.line,
-                    borderColor: mainStore.colors.model.line,
-                    borderWidth: 1,
-                    shadowColor: mainStore.colors.model.shadow,
-                    shadowBlur: 3,
-                },
+                // lineStyle: {
+                //     width: 1,
+                //     color: mainStore.colors.model.line,
+                //     shadowColor: mainStore.colors.model.shadow,
+                //     shadowBlur: 3,
+                // },
+                // // areaStyle: { opacity: data.length ? 0.25 : 0 }
+                // itemStyle: {
+                //     color: mainStore.colors.model.line,
+                //     borderColor: mainStore.colors.model.line,
+                //     borderWidth: 1,
+                //     shadowColor: mainStore.colors.model.shadow,
+                //     shadowBlur: 3,
+                // },
+                lineStyle: { width: 1, color: mainStore.colors.model.line, shadowColor: mainStore.colors.model.shadow, shadowBlur: mainStore.colors.model.shadowBlur, opacity: 0.8 },
+                itemStyle: { color: mainStore.colors.model.line },
             }
         ],
         animation: false
@@ -289,7 +295,7 @@ async function fetchProfile(params: ProfileRequest) {
     const currentRequest = ++requestSequence;
 
     try {
-        const payload: Record<string, any> = { var: params.var, lat: params.lat, lng: params.lng, dt: params.dt };
+        const payload: Record<string, any> = { source: params.source, var: params.var, lat: params.lat, lng: params.lng, dt: params.dt };
         const response = await axios.post(`${apiBaseUrl}/getProfile`, payload, { signal: currentController.signal });
 
         if (currentRequest !== requestSequence) return;
