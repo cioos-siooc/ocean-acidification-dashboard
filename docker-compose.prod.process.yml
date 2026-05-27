@@ -1,0 +1,26 @@
+services:
+  process:
+    build:
+      context: .
+      dockerfile: process/Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
+    profiles: ["tools"]
+    environment:
+      - PGHOST=${DB_HOST:-localhost}
+      - PGPORT=${DB_PORT:-19012}
+      - PGDATABASE=oa
+      - PGUSER=postgres
+      - PGPASSWORD=postgres
+      - UV_CACHE_DIR=/tmp/uv-cache
+      - UV_NO_SYNC=1
+      - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
+      - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
+      - LO_NC_DIR=${LO_NC_DIR:-/opt/data/LO/nc}
+      - LO_IMAGE_DIR=${LO_IMAGE_DIR:-/opt/data/LO/images}
+      - LO_GRID_CACHE=${LO_GRID_CACHE:-/opt/data/cache/lo_grid_cache.npz}
+    volumes:
+      - ./shared:/app/shared
+      - ./data:/opt/data
+    network_mode: "host"
+    restart: unless-stopped
+
