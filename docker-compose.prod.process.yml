@@ -27,7 +27,7 @@ services:
     build:
       context: .
       dockerfile: process/Dockerfile
-    user: "${UID:-1000}:${GID:-1000}"
+    # user: "${UID:-1000}:${GID:-1000}"
     profiles: ["tools"]
     environment:
       # Machine A database (read via cloudflared tunnel on Machine B)

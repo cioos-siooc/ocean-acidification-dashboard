@@ -577,6 +577,7 @@ def run_pipeline(
     date: str | None = None,
     extraction_date: str | None = None,
     remote_mode: bool = False,
+    input_file: str = INPUT_FILE_TEMP,
 ) -> None:
     """Run the Live Ocean pipeline with fixed paths and automatic date progression.
     
@@ -587,17 +588,23 @@ def run_pipeline(
               If None with 'download' or 'all', uses day after last processed date in DB.
         extraction_date: Specific date to extract from the NC file (YYYY-MM-DD format). If None, extract all dates.
         remote_mode: If True, write to local scratch dirs and JSON state; skip all DB writes until 'transfer' stage.
+          input_file: Input layers.nc path used by extract stage (and as download destination for download/all).
     """
     conn = None
     outputs = []
     
     try:
-        # Connect to Machine A's DB (read-only in remote mode until transfer stage)
-        conn = get_db_conn()
-        
-        if not remote_mode:
-            # Schema migrations only run on the local (non-remote) machine
-            init_schema(conn)
+        # Decide whether DB is required for this invocation.
+        # In remote mode, extract/image/all with explicit --date can run without DB.
+        needs_db = (not remote_mode) or (stage == "transfer") or (date is None)
+
+        if needs_db:
+            # Connect to Machine A's DB (read-only in remote mode until transfer stage)
+            conn = get_db_conn()
+
+            if not remote_mode:
+                # Schema migrations only run on the local (non-remote) machine
+                init_schema(conn)
         
         # Validate date requirement
         if stage in ("extract", "image", "transfer") and not date:
@@ -608,6 +615,8 @@ def run_pipeline(
             source_date = date
             logger.info(f"Using provided date: {source_date}")
         else:
+            if conn is None:
+                raise RuntimeError("DB connection is required to auto-select next date; provide --date explicitly.")
             source_date = get_next_source_date_from_db(conn)
             logger.info(f"Using next date from DB: {source_date}")
         
@@ -625,18 +634,18 @@ def run_pipeline(
         # Run requested stages
         if stage in ("download", "all"):
             if not skip_download:
-                stage_download(url, INPUT_FILE_TEMP)
+                stage_download(url, input_file)
             else:
                 logger.info("Skipping download stage")
         
         if stage in ("extract", "all"):
             # Ensure file exists
-            if not os.path.exists(INPUT_FILE_TEMP):
+            if not os.path.exists(input_file):
                 if stage == "extract":
-                    raise RuntimeError(f"Input file not found: {INPUT_FILE_TEMP}. Run download stage first.")
+                    raise RuntimeError(f"Input file not found: {input_file}. Run download stage first.")
                 # For all, download will have happened above
             outputs = stage_extract(
-                INPUT_FILE_TEMP, nc_dir, VARS_JSON_PATH, source_date,
+                input_file, nc_dir, VARS_JSON_PATH, source_date,
                 conn=None if remote_mode else conn,
                 extraction_date=extraction_date,
                 state_dir=LOCAL_STATE_DIR if remote_mode else None,
@@ -738,6 +747,12 @@ def main(argv: List[str] | None = None) -> int:
         help="Specific date to extract from the NC file (YYYY-MM-DD format). If not provided, extracts all dates available in the file."
     )
     p.add_argument(
+        "--input-file",
+        type=str,
+        default=INPUT_FILE_TEMP,
+        help="Input layers.nc path for extract stage. Defaults to /tmp/layers.nc."
+    )
+    p.add_argument(
         "--remote",
         action="store_true",
         default=False,
@@ -753,6 +768,7 @@ def main(argv: List[str] | None = None) -> int:
         date=args.date,
         extraction_date=args.extraction_date,
         remote_mode=args.remote,
+        input_file=args.input_file,
     )
 
     return 0
