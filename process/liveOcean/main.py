@@ -59,7 +59,7 @@ REMOTE_IMAGE_DIR = os.getenv("REMOTE_IMAGE_DIR", IMAGE_OUTPUT_DIR)
 REMOTE_SSH_HOST = os.getenv("REMOTE_SSH_HOST", "localhost")
 REMOTE_SSH_PORT = int(os.getenv("REMOTE_SSH_PORT", "12022"))
 REMOTE_SSH_USER = os.getenv("REMOTE_SSH_USER", "ubuntu")
-REMOTE_SSH_KEY_PATH = os.getenv("REMOTE_SSH_KEY_PATH", "/run/secrets/machineA_rsync")
+REMOTE_SSH_KEY_PATH = os.getenv("REMOTE_SSH_KEY_PATH", "/run/secrets/ONC_OA_rsync")
 REMOTE_SSH_KNOWN_HOSTS = os.getenv("REMOTE_SSH_KNOWN_HOSTS", "/run/secrets/known_hosts")
 
 BASE_NAME_MAP = {
