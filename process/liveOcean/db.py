@@ -13,15 +13,17 @@ from psycopg2.extras import execute_values
 logger = logging.getLogger("liveocean.db")
 
 
-def get_db_conn(db_host: str = None, db_user: str = None, db_password: str = None, db_name: str = None):
+def get_db_conn(db_host: str = None, db_port: int = None, db_user: str = None, db_password: str = None, db_name: str = None):
     """Create a database connection, using environment variables if args not provided."""
     host = db_host or os.getenv("DB_HOST", "db")
+    port = db_port or int(os.getenv("DB_PORT", os.getenv("PGPORT", "5432")))
     user = db_user or os.getenv("DB_USER", "postgres")
     password = db_password or os.getenv("DB_PASSWORD", "postgres")
     database = db_name or os.getenv("DB_NAME", "oa")
     
     return psycopg2.connect(
         host=host,
+        port=port,
         user=user,
         password=password,
         database=database,

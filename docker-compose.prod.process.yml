@@ -1,4 +1,28 @@
 services:
+  db_tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tools"]
+    network_mode: "host"
+    command: >
+      access tcp
+      --hostname ${CF_DB_HOSTNAME:-db-prod.cioospacificlabs.ca}
+      --listener ${CF_DB_LISTENER:-localhost:19012}
+      --service-token-id ${CF_DB_TOKEN_ID}
+      --service-token-secret ${CF_DB_TOKEN_SECRET}
+    restart: unless-stopped
+
+  ssh_tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tools"]
+    network_mode: "host"
+    command: >
+      access tcp
+      --hostname ${CF_SSH_HOSTNAME:-ssh.cioospacificlabs.ca}
+      --listener ${CF_SSH_LISTENER:-localhost:12022}
+      --service-token-id ${CF_SSH_TOKEN_ID}
+      --service-token-secret ${CF_SSH_TOKEN_SECRET}
+    restart: unless-stopped
+
   process:
     build:
       context: .
@@ -6,21 +30,38 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     profiles: ["tools"]
     environment:
+      # Machine A database (read via cloudflared tunnel on Machine B)
       - PGHOST=${DB_HOST:-localhost}
       - PGPORT=${DB_PORT:-19012}
       - PGDATABASE=oa
       - PGUSER=postgres
       - PGPASSWORD=postgres
+      - DB_HOST=${DB_HOST:-localhost}
+      - DB_PORT=${DB_PORT:-19012}
+      # Python/uv
       - UV_CACHE_DIR=/tmp/uv-cache
       - UV_NO_SYNC=1
-      - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
-      - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
-      - LO_NC_DIR=${LO_NC_DIR:-/opt/data/LO/nc}
-      - LO_IMAGE_DIR=${LO_IMAGE_DIR:-/opt/data/LO/images}
+      # Machine A remote paths (rsync destination)
+      - REMOTE_NC_DIR=${REMOTE_NC_DIR:-/opt/data/LO/nc}
+      - REMOTE_IMAGE_DIR=${REMOTE_IMAGE_DIR:-/opt/data/LO/images}
+      # SSH tunnel to Machine A (second cloudflared tunnel for file transfer)
+      - REMOTE_SSH_HOST=${REMOTE_SSH_HOST:-localhost}
+      - REMOTE_SSH_PORT=${REMOTE_SSH_PORT:-12022}
+      - REMOTE_SSH_USER=${REMOTE_SSH_USER:-ubuntu}
+      # Machine B local scratch dirs (processing output before transfer)
+      - LOCAL_NC_DIR=${LOCAL_NC_DIR:-/opt/data/local/LO/nc}
+      - LOCAL_IMAGE_DIR=${LOCAL_IMAGE_DIR:-/opt/data/local/LO/images}
+      - LOCAL_STATE_DIR=${LOCAL_STATE_DIR:-/opt/data/local/LO/state}
+      # Grid cache
       - LO_GRID_CACHE=${LO_GRID_CACHE:-/opt/data/cache/lo_grid_cache.npz}
     volumes:
       - ./shared:/app/shared
       - ./data:/opt/data
+    depends_on:
+      db_tunnel:
+        condition: service_started
+      ssh_tunnel:
+        condition: service_started
     network_mode: "host"
     restart: unless-stopped
 

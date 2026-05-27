@@ -100,15 +100,17 @@ GRID_CACHE_PATH = os.getenv("GRID_CACHE_PATH", "/opt/data/cache/lo_grid_cache.np
 _worker_mercator_cache = {}
 
 
-def get_db_conn(db_host: str = None, db_user: str = None, db_password: str = None, db_name: str = None):
+def get_db_conn(db_host: str = None, db_port: int = None, db_user: str = None, db_password: str = None, db_name: str = None):
     """Create a database connection, using environment variables if args not provided."""
     host = db_host or os.getenv("DB_HOST", "db")
+    port = db_port or int(os.getenv("DB_PORT", os.getenv("PGPORT", "5432")))
     user = db_user or os.getenv("DB_USER", "postgres")
     password = db_password or os.getenv("DB_PASSWORD", "postgres")
     database = db_name or os.getenv("DB_NAME", "oa")
     
     return psycopg2.connect(
         host=host,
+        port=port,
         user=user,
         password=password,
         database=database,
@@ -482,7 +484,7 @@ def _process_single_slice(args: Tuple) -> str:
     global _worker_mercator_cache
     
     (source_date, variable_id, variable_name, start_time, end_time, nc_path, time_idx, depth_idx, image_root, 
-     time_val, depth_val, vmin, vmax, precision, dataset_id, depth_image) = args
+     time_val, depth_val, vmin, vmax, precision, dataset_id, depth_image, skip_db) = args
     
     # Get prebuilt interpolator from worker cache (built once by initializer)
     interp = _worker_mercator_cache['interp']
@@ -492,23 +494,24 @@ def _process_single_slice(args: Tuple) -> str:
     try:
         # Update status to 'imaging' when first slice from this file starts
         # (Use conditional update to avoid race conditions: only update if currently extracted/pending_image)
-        conn = get_db_conn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE nc_jobs
-                    SET status = 'imaging', updated_at = NOW()
-                    WHERE misc->>'source_date' = %s AND variable_id = %s 
-                      AND start_time <= %s AND end_time >= %s
-                      AND dataset_id = %s
-                      AND status IN ('extracted', 'pending_image')
-                    """,
-                    (source_date, variable_id, start_time, start_time, dataset_id)
-                )
-                conn.commit()
-        finally:
-            conn.close()
+        if not skip_db:
+            conn = get_db_conn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE nc_jobs
+                        SET status = 'imaging', updated_at = NOW()
+                        WHERE misc->>'source_date' = %s AND variable_id = %s 
+                          AND start_time <= %s AND end_time >= %s
+                          AND dataset_id = %s
+                          AND status IN ('extracted', 'pending_image')
+                        """,
+                        (source_date, variable_id, start_time, start_time, dataset_id)
+                    )
+                    conn.commit()
+            finally:
+                conn.close()
         
         # Load only this specific time/depth slice
         ds = xr.open_dataset(nc_path)
@@ -553,29 +556,30 @@ def _process_single_slice(args: Tuple) -> str:
     except Exception as e:
         logger.error(f"Error processing {variable_name} slice (t={time_idx}, d={depth_idx}): {e}")
         # Mark file as imaging_failed
-        try:
-            conn = get_db_conn()
+        if not skip_db:
             try:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        UPDATE nc_jobs
-                        SET status = 'imaging_failed', error_message = %s, updated_at = NOW()
-                        WHERE misc->>'source_date' = %s AND variable_id = %s 
-                          AND start_time <= %s AND end_time >= %s
-                          AND dataset_id = %s
-                        """,
-                        (str(e), source_date, variable_id, start_time, start_time, dataset_id)
-                    )
-                    conn.commit()
-            finally:
-                conn.close()
-        except Exception as db_err:
-            logger.error(f"Failed to update error status in DB: {db_err}")
+                conn = get_db_conn()
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE nc_jobs
+                            SET status = 'imaging_failed', error_message = %s, updated_at = NOW()
+                            WHERE misc->>'source_date' = %s AND variable_id = %s 
+                              AND start_time <= %s AND end_time >= %s
+                              AND dataset_id = %s
+                            """,
+                            (str(e), source_date, variable_id, start_time, start_time, dataset_id)
+                        )
+                        conn.commit()
+                finally:
+                    conn.close()
+            except Exception as db_err:
+                logger.error(f"Failed to update error status in DB: {db_err}")
         return ""
 
 
-def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root: str = "/opt/data/images", source_date: str = None) -> List[str]:
+def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root: str = "/opt/data/images", source_date: str = None, skip_db: bool = False) -> List[str]:
     """
     Process extracted Live Ocean files in parallel at the time/depth slice level.
     
@@ -591,12 +595,14 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
     Database tracking:
     - Worker updates status to 'imaging' on first slice of a file
     - Main process updates to 'success_image' after all slices complete
+    - Set skip_db=True to suppress all DB writes (for remote processing mode)
     
     Args:
         outputs: List of dicts with keys: variable, variable_id, path, start_time, end_time
         workers: Number of parallel processes
         image_root: Root directory for image output
         source_date: Source date (YYYY-MM-DD) for database status tracking
+        skip_db: If True, suppress all database writes (used in remote processing mode)
     
     Returns:
         List of written WebP paths
@@ -609,11 +615,14 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
     xx_merc, yy_merc, w, h = build_mercator_grid(minx, miny, maxx, maxy)
     
     # Fetch Live Ocean dataset UUID once
-    _db_conn = get_db_conn()
-    try:
-        lo_dataset_id = get_live_ocean_dataset_id(_db_conn)
-    finally:
-        _db_conn.close()
+    if not skip_db:
+        _db_conn = get_db_conn()
+        try:
+            lo_dataset_id = get_live_ocean_dataset_id(_db_conn)
+        finally:
+            _db_conn.close()
+    else:
+        lo_dataset_id = None
     
     # Build task queue: one task per (variable_id, time, depth) triple
     tasks = []
@@ -665,7 +674,7 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
                         continue  # skip depths not configured for imaging
                     tasks.append((
                         source_date, variable_id, variable, start_time, end_time, nc_path, t_idx, d_idx, image_root,
-                        t_val, d_val, vmin, vmax, precision, lo_dataset_id, depth_image
+                        t_val, d_val, vmin, vmax, precision, lo_dataset_id, depth_image, skip_db
                     ))
             
             ds.close()
@@ -716,26 +725,27 @@ def image_live_ocean_parallel(outputs: List[dict], workers: int = 4, image_root:
                 # If all slices for this file are done, update to 'success_image'
                 if completed_for_file == total_for_file:
                     logger.info(f"All slices completed for variable_id={variable_id}/{start_time}. Updating to 'success_image'.")
-                    try:
-                        db_conn = get_db_conn()
+                    if not skip_db:
                         try:
-                            with db_conn.cursor() as cur:
-                                cur.execute(
-                                    """
-                                    UPDATE nc_jobs
-                                    SET status = 'success_image', updated_at = NOW()
-                                    WHERE misc->>'source_date' = %s AND variable_id = %s 
-                                      AND start_time <= %s AND end_time >= %s
-                                      AND dataset_id = %s
-                                      AND status = 'imaging'
-                                    """,
-                                    (source_date_t, variable_id, start_time, start_time, lo_dataset_id)
-                                )
-                                db_conn.commit()
-                        finally:
-                            db_conn.close()
-                    except Exception as db_err:
-                        logger.error(f"Failed to mark variable_id={variable_id}/{start_time} as success_image: {db_err}")
+                            db_conn = get_db_conn()
+                            try:
+                                with db_conn.cursor() as cur:
+                                    cur.execute(
+                                        """
+                                        UPDATE nc_jobs
+                                        SET status = 'success_image', updated_at = NOW()
+                                        WHERE misc->>'source_date' = %s AND variable_id = %s 
+                                          AND start_time <= %s AND end_time >= %s
+                                          AND dataset_id = %s
+                                          AND status = 'imaging'
+                                        """,
+                                        (source_date_t, variable_id, start_time, start_time, lo_dataset_id)
+                                    )
+                                    db_conn.commit()
+                            finally:
+                                db_conn.close()
+                        except Exception as db_err:
+                            logger.error(f"Failed to mark variable_id={variable_id}/{start_time} as success_image: {db_err}")
                 
                 completed += 1
                 if completed % max(1, len(tasks) // 10) == 0:

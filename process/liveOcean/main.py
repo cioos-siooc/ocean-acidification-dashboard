@@ -5,9 +5,12 @@ Stages:
 - download: Fetch layers.nc from URL
 - extract: Extract variables into daily NetCDF files
 - image: Generate WebP tiles
-- all: Run all stages (default)
+- transfer: rsync NC + images to remote Machine A, then update its database (remote mode only)
+- all: Run download + extract + image (transfer must be run separately)
 
-Each stage has its own status tracking in the database for resumability.
+Each stage has its own status tracking. In normal mode, status is written to the
+database as stages complete. In remote mode (--remote flag), stages write to a local
+JSON state file and only update the remote database during the 'transfer' stage.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from db import (
     get_extracted_files_for_source_date,
 )
 from lo_imaging import image_live_ocean, image_live_ocean_parallel
+from state import load_state, save_state, get_pending_transfer_dates
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -45,6 +49,16 @@ NC_OUTPUT_DIR = os.getenv("LO_NC_DIR", "/opt/data/LO/nc")
 IMAGE_OUTPUT_DIR = os.getenv("LO_IMAGE_DIR", "/opt/data/LO/images")
 VARS_JSON_PATH = os.path.join(os.path.dirname(__file__), "lo_vars.json")
 INPUT_FILE_TEMP = "/tmp/layers.nc"
+
+# Remote mode paths (Machine B local scratch + SSH target on Machine A)
+LOCAL_NC_DIR = os.getenv("LOCAL_NC_DIR", "/opt/data/local/LO/nc")
+LOCAL_IMAGE_DIR = os.getenv("LOCAL_IMAGE_DIR", "/opt/data/local/LO/images")
+LOCAL_STATE_DIR = os.getenv("LOCAL_STATE_DIR", "/opt/data/local/LO/state")
+REMOTE_NC_DIR = os.getenv("REMOTE_NC_DIR", NC_OUTPUT_DIR)
+REMOTE_IMAGE_DIR = os.getenv("REMOTE_IMAGE_DIR", IMAGE_OUTPUT_DIR)
+REMOTE_SSH_HOST = os.getenv("REMOTE_SSH_HOST", "localhost")
+REMOTE_SSH_PORT = int(os.getenv("REMOTE_SSH_PORT", "12022"))
+REMOTE_SSH_USER = os.getenv("REMOTE_SSH_USER", "ubuntu")
 
 BASE_NAME_MAP = {
     "temp": "temperature",
@@ -347,7 +361,15 @@ def stage_download(url: str, input_path: str) -> bool:
         raise
 
 
-def stage_extract(input_path: str, out_dir: str, vars_json: str, source_date: str, conn, extraction_date: str | None = None) -> List[dict]:
+def stage_extract(
+    input_path: str,
+    out_dir: str,
+    vars_json: str,
+    source_date: str,
+    conn,
+    extraction_date: str | None = None,
+    state_dir: str | None = None,
+) -> List[dict]:
     """Extract stage. Returns list of output file dicts.
     
     Args:
@@ -355,13 +377,16 @@ def stage_extract(input_path: str, out_dir: str, vars_json: str, source_date: st
         out_dir: Output directory for NC files
         vars_json: Path to variables config JSON
         source_date: Date of the source file (YYYY-MM-DD)
-        conn: Database connection
+        conn: Database connection (may be None in remote mode)
         extraction_date: Specific date to extract (YYYY-MM-DD format). If None, extract all dates.
+        state_dir: If set, save progress to local JSON state instead of writing to DB (remote mode).
     """
     try:
         logger.info(f"Starting extraction for source_date: {source_date}...")
         if extraction_date:
             logger.info(f"Filtering to extraction_date: {extraction_date}")
+        if state_dir:
+            logger.info(f"Remote mode: writing state to {state_dir}")
         
         if not os.path.exists(input_path):
             raise RuntimeError(f"Input file not found: {input_path}")
@@ -390,9 +415,26 @@ def stage_extract(input_path: str, out_dir: str, vars_json: str, source_date: st
         
         logger.info(f"Extraction complete: {len(outputs)} output files")
         
-        # Insert into database (creates records with status='extracted')
-        # This also returns outputs enriched with variable_id for use in imaging stage
-        outputs = insert_processed_dates(conn, source_date, outputs)
+        if state_dir:
+            # Remote mode: save to local state JSON, skip DB insert
+            state = load_state(state_dir, source_date)
+            state["extract_status"] = "success"
+            state["files"] = [
+                {
+                    "variable": out["variable"],
+                    "local_nc_path": out["path"],
+                    "start_time": out["start_time"],
+                    "end_time": out["end_time"],
+                    "date": out["date"],
+                }
+                for out in outputs
+            ]
+            save_state(state_dir, source_date, state)
+            logger.info(f"State saved for {source_date}: {len(outputs)} files")
+        else:
+            # Normal mode: insert into database (creates records with status='extracted')
+            # This also returns outputs enriched with variable_id for use in imaging stage
+            outputs = insert_processed_dates(conn, source_date, outputs)
         
         # Aggressive cleanup: delete input file and force garbage collection
         if os.path.exists(input_path):
@@ -412,13 +454,17 @@ def stage_extract(input_path: str, out_dir: str, vars_json: str, source_date: st
         raise
 
 
-def stage_image(outputs: List[dict], workers: int, image_root: str, source_date: str, conn) -> List[str]:
-    """Image generation stage. Returns list of generated WebP paths."""
+def stage_image(outputs: List[dict], workers: int, image_root: str, source_date: str, conn, skip_db: bool = False) -> List[str]:
+    """Image generation stage. Returns list of generated WebP paths.
+    
+    Args:
+        skip_db: If True, suppress all database writes (remote mode).
+    """
     try:
         logger.info(f"Starting image generation with {workers} worker(s)...")
         
         if workers > 1:
-            image_paths = image_live_ocean_parallel(outputs, workers=workers, image_root=image_root, source_date=source_date)
+            image_paths = image_live_ocean_parallel(outputs, workers=workers, image_root=image_root, source_date=source_date, skip_db=skip_db)
         else:
             image_paths = image_live_ocean(outputs, image_root=image_root)
         
@@ -439,31 +485,122 @@ def stage_image(outputs: List[dict], workers: int, image_root: str, source_date:
         raise
 
 
+def stage_transfer(
+    source_date: str,
+    state_dir: str,
+    local_nc_dir: str,
+    local_image_dir: str,
+    remote_nc_dir: str,
+    remote_image_dir: str,
+    ssh_host: str,
+    ssh_port: int,
+    ssh_user: str,
+    conn,
+) -> None:
+    """Transfer local files to Machine A and update its database.
+
+    Reads the local state JSON for source_date, rsyncs NC and image files
+    to the remote machine via SSH, then inserts records into Machine A's database.
+    
+    Args:
+        source_date: Date to transfer (YYYY-MM-DD)
+        state_dir: Directory containing local JSON state files
+        local_nc_dir: Local NC output directory (source for rsync)
+        local_image_dir: Local image output directory (source for rsync)
+        remote_nc_dir: Remote NC directory on Machine A (rsync destination)
+        remote_image_dir: Remote image directory on Machine A (rsync destination)
+        ssh_host: SSH hostname/IP for Machine A (cloudflared tunnel)
+        ssh_port: SSH port for Machine A (cloudflared tunnel)
+        ssh_user: SSH username on Machine A
+        conn: Database connection to Machine A (for final DB updates)
+    """
+    import subprocess
+
+    state = load_state(state_dir, source_date)
+    if state.get("image_status") != "success":
+        raise RuntimeError(
+            f"Cannot transfer {source_date}: image stage not complete "
+            f"(image_status={state.get('image_status')})"
+        )
+    if state.get("transfer_status") == "transferred":
+        logger.warning(f"{source_date} already transferred. Re-running will overwrite remote files.")
+
+    ssh_opts = f"ssh -p {ssh_port} -o StrictHostKeyChecking=no -o BatchMode=yes"
+
+    # rsync NC files
+    logger.info(f"Transferring NC files → {ssh_user}@{ssh_host}:{remote_nc_dir} ...")
+    subprocess.run(
+        ["rsync", "-avz", "--progress", "-e", ssh_opts,
+         f"{local_nc_dir.rstrip('/')}/",
+         f"{ssh_user}@{ssh_host}:{remote_nc_dir.rstrip('/')}/"],
+        check=True,
+    )
+    logger.info("NC files transferred")
+
+    # rsync image files
+    logger.info(f"Transferring image files → {ssh_user}@{ssh_host}:{remote_image_dir} ...")
+    subprocess.run(
+        ["rsync", "-avz", "--progress", "-e", ssh_opts,
+         f"{local_image_dir.rstrip('/')}/",
+         f"{ssh_user}@{ssh_host}:{remote_image_dir.rstrip('/')}/"],
+        check=True,
+    )
+    logger.info("Image files transferred")
+
+    # Update Machine A's DB: rewrite local paths to remote paths
+    outputs = []
+    for file_info in state["files"]:
+        remote_nc_path = file_info["local_nc_path"].replace(
+            local_nc_dir.rstrip("/"), remote_nc_dir.rstrip("/"), 1
+        )
+        outputs.append({
+            "variable": file_info["variable"],
+            "path": remote_nc_path,
+            "start_time": file_info["start_time"],
+            "end_time": file_info["end_time"],
+            "date": file_info["date"],
+        })
+
+    logger.info(f"Updating remote DB for {len(outputs)} file(s)...")
+    outputs = insert_processed_dates(conn, source_date, outputs)
+    for out in outputs:
+        update_file_status(conn, source_date, out["variable_id"], out["start_time"], "success_image")
+
+    state["transfer_status"] = "transferred"
+    save_state(state_dir, source_date, state)
+    logger.info(f"Transfer complete for {source_date}")
+
+
 def run_pipeline(
     stage: str = "all",
     workers: int = 4,
     date: str | None = None,
     extraction_date: str | None = None,
+    remote_mode: bool = False,
 ) -> None:
     """Run the Live Ocean pipeline with fixed paths and automatic date progression.
     
     Args:
-        stage: Which stage to run ('download', 'extract', 'image', or 'all')
+        stage: Which stage to run ('download', 'extract', 'image', 'transfer', or 'all')
         workers: Number of parallel workers for imaging (default: 4)
-        date: Specific date to process (YYYY-MM-DD). Required for 'extract' and 'image' stages.
+        date: Specific date to process (YYYY-MM-DD). Required for 'extract', 'image', 'transfer'.
               If None with 'download' or 'all', uses day after last processed date in DB.
         extraction_date: Specific date to extract from the NC file (YYYY-MM-DD format). If None, extract all dates.
+        remote_mode: If True, write to local scratch dirs and JSON state; skip all DB writes until 'transfer' stage.
     """
     conn = None
     outputs = []
     
     try:
-        # Initialize database
+        # Connect to Machine A's DB (read-only in remote mode until transfer stage)
         conn = get_db_conn()
-        init_schema(conn)
+        
+        if not remote_mode:
+            # Schema migrations only run on the local (non-remote) machine
+            init_schema(conn)
         
         # Validate date requirement
-        if stage in ("extract", "image") and not date:
+        if stage in ("extract", "image", "transfer") and not date:
             raise ValueError(f"--date is required for stage '{stage}'. Specify YYYY-MM-DD format.")
         
         # Get date to process
@@ -475,11 +612,15 @@ def run_pipeline(
             logger.info(f"Using next date from DB: {source_date}")
         
         url = date_to_url(source_date)
-        logger.info(f"Processing Live Ocean for source date: {source_date}, stage: {stage}")
+        logger.info(f"Processing Live Ocean for source date: {source_date}, stage: {stage}, remote_mode: {remote_mode}")
         logger.info(f"URL: {url}")
         
-        # Auto-determine skip_download: skip if stage is extract or image
-        skip_download = stage in ("extract", "image")
+        # Determine effective output directories
+        nc_dir = LOCAL_NC_DIR if remote_mode else NC_OUTPUT_DIR
+        image_dir = LOCAL_IMAGE_DIR if remote_mode else IMAGE_OUTPUT_DIR
+
+        # Auto-determine skip_download: skip if stage is extract, image, or transfer
+        skip_download = stage in ("extract", "image", "transfer")
         
         # Run requested stages
         if stage in ("download", "all"):
@@ -494,28 +635,66 @@ def run_pipeline(
                 if stage == "extract":
                     raise RuntimeError(f"Input file not found: {INPUT_FILE_TEMP}. Run download stage first.")
                 # For all, download will have happened above
-            outputs = stage_extract(INPUT_FILE_TEMP, NC_OUTPUT_DIR, VARS_JSON_PATH, source_date, conn, extraction_date=extraction_date)
+            outputs = stage_extract(
+                INPUT_FILE_TEMP, nc_dir, VARS_JSON_PATH, source_date,
+                conn=None if remote_mode else conn,
+                extraction_date=extraction_date,
+                state_dir=LOCAL_STATE_DIR if remote_mode else None,
+            )
             logger.info(f"After extraction: {len(outputs)} files to process")
             gc.collect()
         
         if stage in ("image", "all"):
-            # Load outputs from database if we didn't just extract
+            # Load outputs: from local state (remote mode) or from DB (normal mode)
             if not outputs:
-                logger.info("Querying database for extracted files...")
-                outputs = get_extracted_files_for_source_date(conn, source_date)
-                # Extract date from start_time ISO format (YYYY-MM-DDTHH:MM:SS.ffffff+00:00 -> YYYYMMDD)
-                for out in outputs:
-                    out["date"] = out["start_time"][:10].replace("-", "")
-                logger.info(f"Loaded from DB: {len(outputs)} files to process")
+                if remote_mode:
+                    logger.info("Loading extracted files from local state...")
+                    local_state = load_state(LOCAL_STATE_DIR, source_date)
+                    outputs = [
+                        {
+                            "variable": f["variable"],
+                            "path": f["local_nc_path"],
+                            "start_time": f["start_time"],
+                            "end_time": f["end_time"],
+                            "date": f["date"],
+                        }
+                        for f in local_state.get("files", [])
+                    ]
+                else:
+                    logger.info("Querying database for extracted files...")
+                    outputs = get_extracted_files_for_source_date(conn, source_date)
+                    # Extract date from start_time ISO format (YYYY-MM-DDTHH:MM:SS.ffffff+00:00 -> YYYYMMDD)
+                    for out in outputs:
+                        out["date"] = out["start_time"][:10].replace("-", "")
+                logger.info(f"Loaded {len(outputs)} files to process")
             
             # Aggressive cleanup before imaging
             gc.collect()
             logger.info("Pre-imaging garbage collection completed")
             
             if outputs:
-                stage_image(outputs, workers, IMAGE_OUTPUT_DIR, source_date, conn)
+                stage_image(outputs, workers, image_dir, source_date, conn, skip_db=remote_mode)
+                if remote_mode:
+                    local_state = load_state(LOCAL_STATE_DIR, source_date)
+                    local_state["image_status"] = "success"
+                    save_state(LOCAL_STATE_DIR, source_date, local_state)
+                    logger.info(f"Image stage complete. Run --stage transfer --date {source_date} to push to Machine A.")
             else:
                 logger.warning("No extracted files to image. Check that extraction completed successfully.")
+        
+        if stage == "transfer":
+            stage_transfer(
+                source_date=source_date,
+                state_dir=LOCAL_STATE_DIR,
+                local_nc_dir=LOCAL_NC_DIR,
+                local_image_dir=LOCAL_IMAGE_DIR,
+                remote_nc_dir=REMOTE_NC_DIR,
+                remote_image_dir=REMOTE_IMAGE_DIR,
+                ssh_host=REMOTE_SSH_HOST,
+                ssh_port=REMOTE_SSH_PORT,
+                ssh_user=REMOTE_SSH_USER,
+                conn=conn,
+            )
         
         logger.info(f"Pipeline complete for source_date {source_date}")
     
@@ -537,13 +716,14 @@ def main(argv: List[str] | None = None) -> int:
         "--date",
         type=str,
         default=None,
-        help="Date to process in YYYY-MM-DD format. Required for 'extract' and 'image' stages. If not provided with 'download' or 'all', uses day after last processed date in DB."
+        help="Date to process in YYYY-MM-DD format. Required for 'extract', 'image', and 'transfer' stages. If not provided with 'download' or 'all', uses day after last processed date in DB."
     )
     p.add_argument(
         "--stage",
-        choices=["download", "extract", "image", "all"],
+        choices=["download", "extract", "image", "transfer", "all"],
         default="all",
-        help="Which stage(s) to run: 'download', 'extract', 'image', or 'all' (default)"
+        help="Which stage(s) to run: 'download', 'extract', 'image', 'transfer', or 'all' (default). "
+             "'transfer' rsyncs local files to Machine A and updates its DB (remote mode only)."
     )
     p.add_argument(
         "--workers",
@@ -557,6 +737,14 @@ def main(argv: List[str] | None = None) -> int:
         default=None,
         help="Specific date to extract from the NC file (YYYY-MM-DD format). If not provided, extracts all dates available in the file."
     )
+    p.add_argument(
+        "--remote",
+        action="store_true",
+        default=False,
+        help="Remote processing mode: write NC and image files to LOCAL_NC_DIR/LOCAL_IMAGE_DIR, "
+             "track progress in local JSON state (no DB writes). Use --stage transfer to push "
+             "completed files to Machine A and update its database."
+    )
     args = p.parse_args(argv)
 
     run_pipeline(
@@ -564,6 +752,7 @@ def main(argv: List[str] | None = None) -> int:
         workers=args.workers,
         date=args.date,
         extraction_date=args.extraction_date,
+        remote_mode=args.remote,
     )
 
     return 0
