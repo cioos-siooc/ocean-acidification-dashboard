@@ -7,8 +7,8 @@ services:
       access tcp
       --hostname ${CF_DB_HOSTNAME:-db-prod.cioospacificlabs.ca}
       --listener ${CF_DB_LISTENER:-localhost:19012}
-      --service-token-id ${CF_DB_TOKEN_ID}
-      --service-token-secret ${CF_DB_TOKEN_SECRET}
+      --service-token-id ${CF_TOKEN_ID}
+      --service-token-secret ${CF_TOKEN_SECRET}
     restart: unless-stopped
 
   ssh_tunnel:
@@ -19,8 +19,8 @@ services:
       access tcp
       --hostname ${CF_SSH_HOSTNAME:-ssh.cioospacificlabs.ca}
       --listener ${CF_SSH_LISTENER:-localhost:12022}
-      --service-token-id ${CF_SSH_TOKEN_ID}
-      --service-token-secret ${CF_SSH_TOKEN_SECRET}
+      --service-token-id ${CF_TOKEN_ID}
+      --service-token-secret ${CF_TOKEN_SECRET}
     restart: unless-stopped
 
   process:
