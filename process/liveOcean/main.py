@@ -573,7 +573,7 @@ def stage_transfer(
 
 def run_pipeline(
     stage: str = "all",
-    workers: int = 4,
+    image_workers: int = 4,
     date: str | None = None,
     extraction_date: str | None = None,
     remote_mode: bool = False,
@@ -583,7 +583,7 @@ def run_pipeline(
     
     Args:
         stage: Which stage to run ('download', 'extract', 'image', 'transfer', or 'all')
-        workers: Number of parallel workers for imaging (default: 4)
+        image_workers: Number of parallel workers for imaging (default: 4)
         date: Specific date to process (YYYY-MM-DD). Required for 'extract', 'image', 'transfer'.
               If None with 'download' or 'all', uses day after last processed date in DB.
         extraction_date: Specific date to extract from the NC file (YYYY-MM-DD format). If None, extract all dates.
@@ -594,6 +594,12 @@ def run_pipeline(
     outputs = []
     
     try:
+        if stage in ("download", "extract", "transfer"):
+            logger.info("--image-workers only affects image stage; ignored for stage '%s'", stage)
+
+        if not remote_mode:
+            logger.info("Running in DB mode: extract/image stages will write status to DB.")
+
         # Decide whether DB is required for this invocation.
         # In remote mode, extract/image/all with explicit --date can run without DB.
         needs_db = (not remote_mode) or (stage == "transfer") or (date is None)
@@ -682,7 +688,7 @@ def run_pipeline(
             logger.info("Pre-imaging garbage collection completed")
             
             if outputs:
-                stage_image(outputs, workers, image_dir, source_date, conn, skip_db=remote_mode)
+                stage_image(outputs, image_workers, image_dir, source_date, conn, skip_db=remote_mode)
                 if remote_mode:
                     local_state = load_state(LOCAL_STATE_DIR, source_date)
                     local_state["image_status"] = "success"
@@ -735,10 +741,10 @@ def main(argv: List[str] | None = None) -> int:
              "'transfer' rsyncs local files to Machine A and updates its DB (remote mode only)."
     )
     p.add_argument(
-        "--workers",
+        "--image-workers",
         type=int,
         default=4,
-        help="Number of parallel workers for imaging (default: 4)"
+        help="Number of parallel workers for image stage (default: 4)"
     )
     p.add_argument(
         "--extraction-date",
@@ -753,21 +759,20 @@ def main(argv: List[str] | None = None) -> int:
         help="Input layers.nc path for extract stage. Defaults to /tmp/layers.nc."
     )
     p.add_argument(
-        "--remote",
+        "--local",
         action="store_true",
         default=False,
-        help="Remote processing mode: write NC and image files to LOCAL_NC_DIR/LOCAL_IMAGE_DIR, "
-             "track progress in local JSON state (no DB writes). Use --stage transfer to push "
-             "completed files to Machine A and update its database."
+        help="Local DB mode: extract/image stages write directly to DB. "
+             "If omitted, remote mode is used by default (no DB writes until transfer stage)."
     )
     args = p.parse_args(argv)
 
     run_pipeline(
         stage=args.stage,
-        workers=args.workers,
+        image_workers=args.image_workers,
         date=args.date,
         extraction_date=args.extraction_date,
-        remote_mode=args.remote,
+        remote_mode=not args.local,
         input_file=args.input_file,
     )
 

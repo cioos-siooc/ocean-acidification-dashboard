@@ -2,6 +2,11 @@ FROM python:3.13.13-slim
 
 WORKDIR /app
 
+# System packages needed by transfer stage (rsync over SSH)
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends rsync openssh-client \
+	&& rm -rf /var/lib/apt/lists/*
+
 # Install uv
 RUN pip install --no-cache-dir uv
 
