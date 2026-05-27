@@ -516,6 +516,7 @@ def stage_transfer(
         ssh_user: SSH username on Machine A
         conn: Database connection to Machine A (for final DB updates)
     """
+    import shlex
     import subprocess
 
     state = load_state(state_dir, source_date)
@@ -544,12 +545,24 @@ def stage_transfer(
         ssh_opts_parts.extend(["-o", f"UserKnownHostsFile={REMOTE_SSH_KNOWN_HOSTS}"])
     ssh_opts = " ".join(ssh_opts_parts)
 
+    # Ensure remote destination directories exist before rsync
+    remote_nc_dir_norm = remote_nc_dir.rstrip("/")
+    remote_image_dir_norm = remote_image_dir.rstrip("/")
+    mkdir_cmd = (
+        f"mkdir -p {shlex.quote(remote_nc_dir_norm)} {shlex.quote(remote_image_dir_norm)}"
+    )
+    logger.info("Ensuring remote directories exist: %s, %s", remote_nc_dir_norm, remote_image_dir_norm)
+    subprocess.run(
+        ssh_opts_parts + [f"{ssh_user}@{ssh_host}", mkdir_cmd],
+        check=True,
+    )
+
     # rsync NC files
     logger.info(f"Transferring NC files → {ssh_user}@{ssh_host}:{remote_nc_dir} ...")
     subprocess.run(
         ["rsync", "-avz", "--progress", "-e", ssh_opts,
          f"{local_nc_dir.rstrip('/')}/",
-         f"{ssh_user}@{ssh_host}:{remote_nc_dir.rstrip('/')}/"],
+         f"{ssh_user}@{ssh_host}:{remote_nc_dir_norm}/"],
         check=True,
     )
     logger.info("NC files transferred")
@@ -559,7 +572,7 @@ def stage_transfer(
     subprocess.run(
         ["rsync", "-avz", "--progress", "-e", ssh_opts,
          f"{local_image_dir.rstrip('/')}/",
-         f"{ssh_user}@{ssh_host}:{remote_image_dir.rstrip('/')}/"],
+         f"{ssh_user}@{ssh_host}:{remote_image_dir_norm}/"],
         check=True,
     )
     logger.info("Image files transferred")
