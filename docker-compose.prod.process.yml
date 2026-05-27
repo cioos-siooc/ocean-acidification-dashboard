@@ -42,8 +42,8 @@ services:
       - UV_CACHE_DIR=/tmp/uv-cache
       - UV_NO_SYNC=1
       # Machine A remote paths (rsync destination)
-      - REMOTE_NC_DIR=${REMOTE_NC_DIR:-/opt/data/LO/nc}
-      - REMOTE_IMAGE_DIR=${REMOTE_IMAGE_DIR:-/opt/data/LO/images}
+      - REMOTE_NC_DIR=${REMOTE_NC_DIR:-/home/cioos/OA_data/LO/nc}
+      - REMOTE_IMAGE_DIR=${REMOTE_IMAGE_DIR:-/home/cioos/OA_data/LO/images}
       # SSH tunnel to Machine A (second cloudflared tunnel for file transfer)
       - REMOTE_SSH_HOST=${REMOTE_SSH_HOST:-localhost}
       - REMOTE_SSH_PORT=${REMOTE_SSH_PORT:-12022}
