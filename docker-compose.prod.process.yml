@@ -48,6 +48,8 @@ services:
       - REMOTE_SSH_HOST=${REMOTE_SSH_HOST:-localhost}
       - REMOTE_SSH_PORT=${REMOTE_SSH_PORT:-12022}
       - REMOTE_SSH_USER=${REMOTE_SSH_USER:-cioos}
+      - REMOTE_SSH_KEY_PATH=${REMOTE_SSH_KEY_PATH:-/run/secrets/machineA_rsync}
+      - REMOTE_SSH_KNOWN_HOSTS=${REMOTE_SSH_KNOWN_HOSTS:-/run/secrets/known_hosts}
       # Machine B local scratch dirs (processing output before transfer)
       - LOCAL_NC_DIR=${LOCAL_NC_DIR:-/opt/data/local/LO/nc}
       - LOCAL_IMAGE_DIR=${LOCAL_IMAGE_DIR:-/opt/data/local/LO/images}
@@ -57,6 +59,7 @@ services:
     volumes:
       - ./shared:/app/shared
       - ./data:/opt/data
+      - ./secrets:/run/secrets:ro
     depends_on:
       db_tunnel:
         condition: service_started

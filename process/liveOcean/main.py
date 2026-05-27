@@ -59,6 +59,8 @@ REMOTE_IMAGE_DIR = os.getenv("REMOTE_IMAGE_DIR", IMAGE_OUTPUT_DIR)
 REMOTE_SSH_HOST = os.getenv("REMOTE_SSH_HOST", "localhost")
 REMOTE_SSH_PORT = int(os.getenv("REMOTE_SSH_PORT", "12022"))
 REMOTE_SSH_USER = os.getenv("REMOTE_SSH_USER", "ubuntu")
+REMOTE_SSH_KEY_PATH = os.getenv("REMOTE_SSH_KEY_PATH", "/run/secrets/machineA_rsync")
+REMOTE_SSH_KNOWN_HOSTS = os.getenv("REMOTE_SSH_KNOWN_HOSTS", "/run/secrets/known_hosts")
 
 BASE_NAME_MAP = {
     "temp": "temperature",
@@ -525,7 +527,22 @@ def stage_transfer(
     if state.get("transfer_status") == "transferred":
         logger.warning(f"{source_date} already transferred. Re-running will overwrite remote files.")
 
-    ssh_opts = f"ssh -p {ssh_port} -o StrictHostKeyChecking=no -o BatchMode=yes"
+    ssh_opts_parts = [
+        "ssh",
+        "-p", str(ssh_port),
+        "-o", "BatchMode=yes",
+        "-o", "StrictHostKeyChecking=accept-new",
+    ]
+    if REMOTE_SSH_KEY_PATH and os.path.exists(REMOTE_SSH_KEY_PATH):
+        ssh_opts_parts.extend(["-i", REMOTE_SSH_KEY_PATH])
+    else:
+        logger.warning(
+            "REMOTE_SSH_KEY_PATH not found at %s; rsync may prompt/fail if passwordless auth is not already configured.",
+            REMOTE_SSH_KEY_PATH,
+        )
+    if REMOTE_SSH_KNOWN_HOSTS:
+        ssh_opts_parts.extend(["-o", f"UserKnownHostsFile={REMOTE_SSH_KNOWN_HOSTS}"])
+    ssh_opts = " ".join(ssh_opts_parts)
 
     # rsync NC files
     logger.info(f"Transferring NC files → {ssh_user}@{ssh_host}:{remote_nc_dir} ...")
