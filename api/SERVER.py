@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
@@ -11,6 +11,10 @@ import os
 import logging
 import asyncio
 from concurrent.futures import ProcessPoolExecutor
+from datetime import datetime
+from urllib import request as urllib_request
+from urllib import error as urllib_error
+import json
 from typing import Optional
 from functools import partial
 import contextvars
@@ -111,6 +115,176 @@ db_port = int(os.getenv("DB_PORT", 5432))
 db_name = os.getenv("DB_NAME", "oa")
 db_user = os.getenv("DB_USER", "postgres")
 db_password = os.getenv("DB_PASSWORD", "postgres")
+
+# Federation config (phase-1: SSC only)
+FEDERATION_ENABLED = os.getenv("FEDERATION_ENABLED", "true").lower() in {"true", "1", "yes"}
+REMOTE_B_API_BASE = os.getenv("REMOTE_B_API_BASE", "").rstrip("/") if FEDERATION_ENABLED else ""
+REMOTE_B_TIMEOUT = int(os.getenv("REMOTE_B_TIMEOUT", "25"))
+FED_SSC_OWNER_MISC_KEYS = ("location", "storage_location", "server", "node")
+
+
+def _parse_iso_utc(dt_str: str) -> datetime:
+    return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+
+
+def _resolve_nc_job_owner(nc_path: str | None, misc) -> str:
+    """Resolve owner node for an nc_jobs record.
+
+    Resolution order:
+    1) misc JSON keys location/storage_location/server/node (A/B values)
+    2) local file existence check on nc_path
+    3) default A
+    """
+    if isinstance(misc, str):
+        try:
+            misc = json.loads(misc)
+        except Exception:
+            misc = None
+    if isinstance(misc, dict):
+        for key in FED_SSC_OWNER_MISC_KEYS:
+            value = str(misc.get(key, "")).strip().upper()
+            if value in {"A", "B"}:
+                return value
+    if nc_path and os.path.isfile(nc_path):
+        return "A"
+    if REMOTE_B_API_BASE:
+        return "B"
+    return "A"
+
+
+def _fetch_ssc_nc_jobs(var: str, from_date: str, to_date: str) -> list[dict]:
+    """Fetch SSC nc_jobs rows overlapping requested range for routing decisions."""
+    import psycopg2
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            host=db_host,
+            port=db_port,
+            dbname=db_name,
+            user=db_user,
+            password=db_password,
+            connect_timeout=5,
+        )
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT nj.start_time, nj.end_time, nj.nc_path, nj.misc
+            FROM nc_jobs nj
+            JOIN fields f ON nj.variable_id = f.id
+            JOIN datasets d ON f.dataset_id = d.id
+            WHERE d.source = 'SalishSeaCast'
+              AND f.variable = %s
+              AND nj.status = 'success_image'
+              AND nj.start_time <= %s::timestamp
+              AND nj.end_time >= %s::timestamp
+            ORDER BY nj.start_time
+            """,
+            (var, to_date, from_date),
+        )
+        rows = cur.fetchall()
+        return [
+            {
+                "start_time": r[0],
+                "end_time": r[1],
+                "nc_path": r[2],
+                "misc": r[3],
+                "owner": _resolve_nc_job_owner(r[2], r[3]),
+            }
+            for r in rows
+        ]
+    finally:
+        if conn:
+            conn.close()
+
+
+def _route_ssc_point(var: str, dt_str: str) -> str:
+    """Route a point request to A/B based on nc_jobs overlap at dt."""
+    rows = _fetch_ssc_nc_jobs(var, dt_str, dt_str)
+    if not rows:
+        return "A"
+    owners = {r["owner"] for r in rows}
+    if owners == {"B"}:
+        return "B"
+    return "A"
+
+
+def _route_ssc_range(var: str, from_date: str, to_date: str) -> dict:
+    """Route a range request; returns whether A and/or B should be queried."""
+    rows = _fetch_ssc_nc_jobs(var, from_date, to_date)
+    if not rows:
+        return {"has_a": False, "has_b": False}
+    owners = {r["owner"] for r in rows}
+    return {"has_a": "A" in owners, "has_b": "B" in owners}
+
+
+def _call_remote_b_extract_timeseries(payload: dict) -> dict:
+    if not REMOTE_B_API_BASE:
+        raise RuntimeError("REMOTE_B_API_BASE is not configured")
+    url = f"{REMOTE_B_API_BASE}/extractTimeseries"
+    req = urllib_request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib_request.urlopen(req, timeout=REMOTE_B_TIMEOUT) as resp:
+        body = resp.read().decode("utf-8")
+    return json.loads(body)
+
+
+def _format_timeseries_result(result):
+    import pandas as pd
+    if isinstance(result, pd.DataFrame):
+        def _clean(v):
+            return None if (isinstance(v, float) and np.isnan(v)) else v
+        return {
+            "time": [t.isoformat() if hasattr(t, "isoformat") else t for t in result["time"].tolist()],
+            "depth": result["depth"].tolist(),
+            "value": [_clean(v) for v in result["value"].tolist()],
+        }
+    time, value = result
+    time_list = [None if (isinstance(t, float) and np.isnan(t)) else t for t in time.tolist()]
+    value_list = [None if (isinstance(v, float) and np.isnan(v)) else v for v in value.tolist()]
+    return {"time": time_list, "value": value_list}
+
+
+def _merge_timeseries_payloads(parts: list[dict]) -> dict:
+    if not parts:
+        return {"time": [], "value": []}
+
+    # all-depth response shape
+    if any("depth" in p for p in parts):
+        rows = []
+        for p in parts:
+            for t, d, v in zip(p.get("time", []), p.get("depth", []), p.get("value", [])):
+                rows.append((str(t), float(d), v))
+        # de-duplicate by (time, depth), keep first non-null encountered
+        best = {}
+        for t, d, v in rows:
+            key = (t, d)
+            if key not in best or (best[key] is None and v is not None):
+                best[key] = v
+        merged = sorted([(t, d, v) for (t, d), v in best.items()], key=lambda x: (x[0], x[1]))
+        return {
+            "time": [r[0] for r in merged],
+            "depth": [r[1] for r in merged],
+            "value": [r[2] for r in merged],
+        }
+
+    # single-depth response shape
+    rows = []
+    for p in parts:
+        for t, v in zip(p.get("time", []), p.get("value", [])):
+            rows.append((str(t), v))
+    best = {}
+    for t, v in rows:
+        if t not in best or (best[t] is None and v is not None):
+            best[t] = v
+    merged = sorted(best.items(), key=lambda x: x[0])
+    return {
+        "time": [r[0] for r in merged],
+        "value": [r[1] for r in merged],
+    }
 
 
 #######################################
@@ -336,6 +510,16 @@ async def get_png(source: str, var: str, dt: str, depth: str):
     safe_dt = os.path.basename(dt)
     safe_depth = depth # .replace('.', 'p')
 
+    # Federation routing (phase-1: SSC only): redirect to B when ownership is remote
+    if FEDERATION_ENABLED and safe_source == "SalishSeaCast" and REMOTE_B_API_BASE:
+        try:
+            owner = await run_in_threadpool(_route_ssc_point, safe_var, safe_dt)
+            if owner == "B":
+                target = f"{REMOTE_B_API_BASE}/png/{safe_source}/{safe_var}/{safe_dt}/{safe_depth}"
+                return RedirectResponse(url=target, status_code=307)
+        except Exception as exc:
+            logger.warning("SSC png routing fallback to local due to resolver error: %s", exc)
+
     # Try both .webp (from on-demand generation) and .png (legacy), across all image roots
     for image_root in _get_image_roots(safe_source):
         path = os.path.join(image_root, safe_var, safe_dt)
@@ -456,55 +640,82 @@ async def fn_extract_timeseries(request: timeseriesRequest):
         # use provided depth exactly (float value passed from frontend); None means all depths
         depth = float(request.depth) if request.depth is not None else None
 
-        # Fetch the success_image dates for this variable in the requested range.
-        # Only NC files whose date is in this set will be read.
-        def _fetch_allowed_dates():
-            import psycopg2
-            conn = None
-            try:
-                conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password, connect_timeout=5)
-                cur = conn.cursor()
-                cur.execute(
-                    """
-                    SELECT DISTINCT nj.start_time FROM nc_jobs nj
-                    JOIN fields f ON nj.variable_id = f.id
-                    WHERE f.variable = %s
-                      AND DATE(nj.start_time) >= DATE(%s::timestamp)
-                      AND DATE(nj.start_time) <= DATE(%s::timestamp)
-                      AND nj.status = 'success_image'
-                    """,
-                    (request.var, request.fromDate, request.toDate),
+        # Federation routing (phase-1: SSC only)
+        if FEDERATION_ENABLED and request.source == "SalishSeaCast" and REMOTE_B_API_BASE:
+            route = await run_in_threadpool(_route_ssc_range, request.var, request.fromDate, request.toDate)
+            if not route["has_a"] and not route["has_b"]:
+                raise HTTPException(status_code=422, detail="No processed data available for the requested date range")
+
+            parts = []
+            warnings = []
+
+            if route["has_a"]:
+                local_result = await asyncio.wait_for(
+                    run_in_process(
+                        extract_timeseries,
+                        source=request.source,
+                        var=request.var,
+                        lat=request.lat,
+                        lon=request.lon,
+                        depth=depth,
+                        from_date=request.fromDate,
+                        to_date=request.toDate,
+                    ),
+                    timeout=THREADPOOL_TIMEOUT,
                 )
-                return [row[0] for row in cur.fetchall()]
-            finally:
-                if conn:
-                    conn.close()
+                parts.append(_format_timeseries_result(local_result))
 
-        allowed_dates = await asyncio.wait_for(run_in_threadpool(_fetch_allowed_dates), timeout=15.0)
-        if not allowed_dates:
-            raise HTTPException(status_code=422, detail="No processed data available for the requested date range")
+            if route["has_b"]:
+                try:
+                    remote_payload = {
+                        "source": request.source,
+                        "var": request.var,
+                        "lat": request.lat,
+                        "lon": request.lon,
+                        "depth": request.depth,
+                        "fromDate": request.fromDate,
+                        "toDate": request.toDate,
+                    }
+                    remote_result = await run_in_threadpool(_call_remote_b_extract_timeseries, remote_payload)
+                    parts.append(remote_result)
+                except Exception as exc:
+                    if route["has_a"]:
+                        warnings.append(f"Remote archive server unavailable: {exc}")
+                        logger.warning("B unavailable; returning A partial data for extractTimeseries: %s", exc)
+                    else:
+                        raise HTTPException(status_code=503, detail=f"Remote archive server unavailable: {exc}")
 
+            merged = _merge_timeseries_payloads(parts)
+            if warnings:
+                merged["warnings"] = warnings
+            logger.info(
+                "FINISH extractTimeseries (federated): %s, %s, %s, from=%s, to=%s - returned %s points",
+                request.var,
+                request.lat,
+                request.lon,
+                request.fromDate,
+                request.toDate,
+                len(merged.get("time", [])),
+            )
+            return merged
+
+        # non-federated flow
         result = await asyncio.wait_for(
             run_in_process(extract_timeseries, source=request.source, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate),
             timeout=THREADPOOL_TIMEOUT,
         )
-        import pandas as pd
-        if isinstance(result, pd.DataFrame):
-            # All-depths response: return time, depth, value arrays
-            logger.info(f"FINISH extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth=all, from={request.fromDate}, to={request.toDate} - returned {len(result)} points")
-            def _clean(v): return None if (isinstance(v, float) and np.isnan(v)) else v
-            return {
-                "time":  [t.isoformat() if hasattr(t, "isoformat") else t for t in result["time"].tolist()],
-                "depth": result["depth"].tolist(),
-                "value": [_clean(v) for v in result["value"].tolist()],
-            }
-        else:
-            time, value = result
-            logger.info(f"FINISH extractTimeseries: {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate} - returned {len(time)} points")
-            # Replace NaN values with None (serializes to null in JSON)
-            time_list = [None if (isinstance(t, float) and np.isnan(t)) else t for t in time.tolist()]
-            value_list = [None if (isinstance(v, float) and np.isnan(v)) else v for v in value.tolist()]
-            return {"time": time_list, "value": value_list}
+        payload = _format_timeseries_result(result)
+        logger.info(
+            "FINISH extractTimeseries: %s, %s, %s, depth=%s, from=%s, to=%s - returned %s points",
+            request.var,
+            request.lat,
+            request.lon,
+            request.depth if request.depth is not None else "all",
+            request.fromDate,
+            request.toDate,
+            len(payload.get("time", [])),
+        )
+        return payload
     except RuntimeError as exc:
         # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
         if "km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc):

@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  clickhouse:
+    build: .
+    container_name: my-ch-env
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ./clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse_logs:/var/log/clickhouse-server
+      - ./data:/data
+    environment:
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
+    restart: unless-stopped

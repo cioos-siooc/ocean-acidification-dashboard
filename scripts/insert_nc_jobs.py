@@ -9,7 +9,7 @@ Usage
 -----
     python insert_nc_jobs.py --date 2026-03-30
     python insert_nc_jobs.py --date 2026-03-30 --status pending_compute
-    python insert_nc_jobs.py --date 2026-03-30 --dataset-id 1
+    python insert_nc_jobs.py --date 2026-03-30 --dataset SalishSeaCast
     python insert_nc_jobs.py --date 2026-03-30 --dry-run
 """
 
@@ -34,9 +34,9 @@ def main():
         help="Initial status for new rows (default: pending_download)",
     )
     p.add_argument(
-        "--dataset-id",
+        "--dataset",
         default=None,
-        help="Comma-separated dataset_id(s) to restrict (default: all datasets)",
+        help="Comma-separated dataset source name(s) to restrict (default: all datasets)",
     )
     p.add_argument(
         "--dry-run",
@@ -59,28 +59,44 @@ def main():
     end_time = date.replace(hour=23, minute=30, second=0)
 
     dataset_ids = None
-    if args.dataset_id is not None:
-        try:
-            dataset_ids = [int(x.strip()) for x in args.dataset_id.split(",") if x.strip()]
-        except ValueError:
-            sys.exit(f"Invalid --dataset-id value: {args.dataset_id!r}. Expected comma-separated integers.")
 
     conn = get_conn(args.pghost, args.pgport, args.pgdatabase, args.pguser, args.pgpassword)
 
     try:
+        # Resolve dataset sources to IDs if restricted
+        if args.dataset is not None:
+            dataset_sources = [x.strip() for x in args.dataset.split(",") if x.strip()]
+            if not dataset_sources:
+                sys.exit("Invalid --dataset value. Expected comma-separated dataset source name(s).")
+            
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, source FROM datasets WHERE source = ANY(%s)",
+                    (dataset_sources,),
+                )
+                rows = cur.fetchall()
+                found_sources = {row[1]: row[0] for row in rows}
+                missing = [s for s in dataset_sources if s not in found_sources]
+                if missing:
+                    sys.exit(f"Dataset(s) not found in datasets table: {', '.join(missing)}")
+                dataset_ids = list(found_sources.values())
+
         # Reset sequence to 1 if table is empty
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM nc_jobs")
             count = cur.fetchone()[0]
             if count == 0:
-                cur.execute("ALTER SEQUENCE nc_jobs_id_seq RESTART WITH 1")
-                conn.commit()
-                print("Reset nc_jobs_id_seq to 1 (table is empty).")
+                try:
+                    cur.execute("ALTER SEQUENCE nc_jobs_id_seq RESTART WITH 1")
+                    conn.commit()
+                    print("Reset nc_jobs_id_seq to 1 (table is empty).")
+                except psycopg2.Error:
+                    conn.rollback()
 
         with conn.cursor() as cur:
             if dataset_ids is not None:
                 cur.execute(
-                    "SELECT id, dataset_id, variable FROM fields WHERE dataset_id = ANY(%s) ORDER BY dataset_id, variable",
+                    "SELECT id, dataset_id, variable FROM fields WHERE dataset_id = ANY(%s::uuid[]) ORDER BY dataset_id, variable",
                     (dataset_ids,),
                 )
             else:

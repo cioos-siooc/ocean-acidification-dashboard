@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Add rows to nc_jobs table with automatic variable_id lookup.
+"""Add rows to nc_jobs table with automatic dataset_id and variable_id lookup.
 
 Usage:
-    python add_nc_jobs_rows.py --dataset-id <uuid> --variable <var_name> \
-                               --start <YYYY-MM-DD HH:MM:SS> --end <YYYY-MM-DD HH:MM:SS>
+    python add_nc_jobs_rows.py --dataset SalishSeaCast --variable temperature \
+                               --start 2026-01-01 --end 2026-01-01
     
-    Or programmatically:
-    from add_nc_jobs_rows import add_nc_job_row
-    add_nc_job_row(conn, '123e4567-e89b-12d3-a456-426614174000', 'temperature', '2026-05-20 00:00:00', '2026-05-20 23:59:59')
+    Or with full timestamps and optional nc_path:
+    python add_nc_jobs_rows.py --dataset SalishSeaCast --variable temperature \
+                               --start "2026-01-01 06:00:00" --end "2026-01-01 18:00:00" \
+                               --nc-path /opt/data/SalishSeaCast/temperature_2026-01-01.nc \
+                               --status success_image
 """
 
 import argparse
@@ -30,9 +32,51 @@ def get_db_conn(host: str = 'db', port: int = 5432, db: str = 'oa',
     )
 
 
+def get_dataset_id(conn, source: str) -> str:
+    """Resolve dataset_id from dataset source name.
+    
+    Args:
+        conn: Database connection
+        source: Dataset source name (e.g., 'SalishSeaCast', 'LiveOcean')
+    
+    Returns:
+        The dataset UUID
+        
+    Raises:
+        ValueError: If dataset not found
+    """
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            "SELECT id FROM datasets WHERE source = %s LIMIT 1",
+            (source,)
+        )
+        row = cur.fetchone()
+        if not row:
+            raise ValueError(f"Dataset source '{source}' not found in datasets table")
+    return row['id']
+
+
+def format_datetime(dt_str: str, is_end_time: bool = False) -> str:
+    """Format datetime string, auto-appending time if only date provided.
+    
+    Args:
+        dt_str: DateTime string (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+        is_end_time: If True, append 23:59:59 to dates; else append 00:00:00
+    
+    Returns:
+        Formatted datetime string (YYYY-MM-DD HH:MM:SS)
+    """
+    dt_str = dt_str.strip()
+    # If only date provided, append time
+    if len(dt_str) == 10 and dt_str.count('-') == 2:
+        time_part = "23:59:59" if is_end_time else "00:00:00"
+        return f"{dt_str} {time_part}"
+    return dt_str
+
+
 def add_nc_job_row(
     conn,
-    dataset_id: str,
+    dataset_source: str,
     variable_name: str,
     start_time: str,
     end_time: str,
@@ -44,10 +88,10 @@ def add_nc_job_row(
     
     Args:
         conn: Database connection
-        dataset_id: Dataset UUID (e.g., '123e4567-e89b-12d3-a456-426614174000')
+        dataset_source: Dataset source name (e.g., 'SalishSeaCast', 'LiveOcean')
         variable_name: Variable name (e.g., 'temperature', 'salinity')
-        start_time: Start time as string (YYYY-MM-DD HH:MM:SS or ISO format)
-        end_time: End time as string (YYYY-MM-DD HH:MM:SS or ISO format)
+        start_time: Start time as string (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+        end_time: End time as string (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
         nc_path: Optional path to NetCDF file
         status: Status (default 'success_image')
     
@@ -55,9 +99,16 @@ def add_nc_job_row(
         The generated UUID of the inserted row
         
     Raises:
-        ValueError: If variable not found
+        ValueError: If dataset or variable not found
         psycopg2.Error: If database operation fails
     """
+    # Format datetimes
+    start_formatted = format_datetime(start_time, is_end_time=False)
+    end_formatted = format_datetime(end_time, is_end_time=True)
+    
+    # Resolve dataset_id
+    dataset_id = get_dataset_id(conn, dataset_source)
+    
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Get variable_id from fields table
         cur.execute(
@@ -67,7 +118,7 @@ def add_nc_job_row(
         variable_row = cur.fetchone()
         if not variable_row:
             raise ValueError(
-                f"Variable '{variable_name}' not found for dataset_id '{dataset_id}'"
+                f"Variable '{variable_name}' not found for dataset source '{dataset_source}'"
             )
         variable_id = variable_row['id']
         
@@ -80,7 +131,7 @@ def add_nc_job_row(
             VALUES (gen_random_uuid(), %s, %s, %s, %s, %s::nc_job_status, %s, 0, NULL, NOW(), NOW(), NULL)
             RETURNING id
             """,
-            (dataset_id, variable_id, start_time, end_time, status, nc_path)
+            (dataset_id, variable_id, start_formatted, end_formatted, status, nc_path)
         )
         result = cur.fetchone()
         row_id = result['id']
@@ -92,12 +143,16 @@ def add_nc_job_row(
 def main(argv=None):
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description='Add rows to nc_jobs table with automatic variable lookup'
+        description='Add rows to nc_jobs table with automatic dataset and variable lookup',
+        epilog='Examples:\n'
+               '  python add_nc_jobs_rows.py --dataset SalishSeaCast --variable temperature --start 2026-01-01 --end 2026-01-01\n'
+               '  python add_nc_jobs_rows.py --dataset LiveOcean --variable salinity --start 2026-01-15 --end 2026-01-20 --nc-path /path/to/file.nc',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument('--dataset-id', required=True, help='Dataset UUID')
+    parser.add_argument('--dataset', required=True, help='Dataset source name (e.g., SalishSeaCast, LiveOcean)')
     parser.add_argument('--variable', required=True, help='Variable name')
-    parser.add_argument('--start', required=True, help='Start time (YYYY-MM-DD HH:MM:SS)')
-    parser.add_argument('--end', required=True, help='End time (YYYY-MM-DD HH:MM:SS)')
+    parser.add_argument('--start', required=True, help='Start date/time (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)')
+    parser.add_argument('--end', required=True, help='End date/time (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)')
     parser.add_argument('--nc-path', default=None, help='Path to NetCDF file')
     parser.add_argument('--status', default='success_image', help='Status (default: success_image)')
     parser.add_argument('--db-host', default='db', help='Database host')
@@ -119,7 +174,7 @@ def main(argv=None):
         
         row_id = add_nc_job_row(
             conn,
-            dataset_id=args.dataset_id,
+            dataset_source=args.dataset,
             variable_name=args.variable,
             start_time=args.start,
             end_time=args.end,
@@ -127,13 +182,18 @@ def main(argv=None):
             status=args.status,
         )
         
+        start_formatted = format_datetime(args.start, is_end_time=False)
+        end_formatted = format_datetime(args.end, is_end_time=True)
+        
         print(f"✓ Successfully added nc_jobs row")
         print(f"  ID: {row_id}")
-        print(f"  Dataset ID: {args.dataset_id}")
+        print(f"  Dataset: {args.dataset}")
         print(f"  Variable: {args.variable}")
-        print(f"  Start: {args.start}")
-        print(f"  End: {args.end}")
+        print(f"  Start: {start_formatted}")
+        print(f"  End: {end_formatted}")
         print(f"  Status: {args.status}")
+        if args.nc_path:
+            print(f"  NC Path: {args.nc_path}")
         
         conn.close()
         return 0
