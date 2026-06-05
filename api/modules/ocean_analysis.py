@@ -69,7 +69,7 @@ def lookup_grid_cells_for_polygon(polygon_coords: List[Tuple[float, float]]) -> 
 
     # 3. Connect to ClickHouse
     # (In production, pull this client from your app state/pool)
-    client = clickhouse_connect.get_client(host="localhost", port=8123)
+    client = _get_ch_client()
 
     # 4. Execute the optimized coordinate lookup
     query = f"""
