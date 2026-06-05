@@ -85,32 +85,93 @@ def lookup_grid_cells_for_polygon(polygon_coords: List[Tuple[float, float]]) -> 
     # 5. Return the rows as a clean list of python tuples [(gridX, gridY), ...]
     return result.result_rows
 
-
-def query_overlay_timeseries(grid_x_range, grid_y_range, depth_range, variable, stat, year_range, season):
-    """Return per-year timeseries for overlay plotting.
+def query_overlay_timeseries(
+    grid_points: List[Tuple[int, int]], 
+    depth_range: Tuple[float, float], 
+    variable: str, 
+    stat: str, 
+    year_range: List[int], 
+    season: str
+) -> dict:
+    """
+    Calculates per-year on-the-fly regional timeseries for overlay plotting
+    using an optimized multi-point primary index lookup.
+    
     Returns: {"series": [{"year": 2015, "data": [{"time": "...", "value": ...}, ...]}]}
     """
-    col = f"{variable}_{stat}"
-    where, params = _build_base_where(grid_x_range, grid_y_range, depth_range, year_range, season)
-    query = (
-        f"SELECT toYear(time) AS year, time, avg({col}) AS val "
-        f"FROM SalishSeaCast_daily WHERE {where} "
-        f"GROUP BY year, time ORDER BY year, time"
-    )
-    client = _get_ch_client()
+    # 1. Map the incoming API stat string to native ClickHouse SQL functions
+    STAT_MAP = {
+        "mean": "avg",
+        "avg": "avg",
+        "std": "stdDevPop",
+        "stddev": "stdDevPop",
+        "min": "min",
+        "max": "max"
+    }
+    ch_function = STAT_MAP.get(stat.lower(), "avg")
+    
+    # 2. Build parameterized query dictionary to prevent SQL injection 
+    # and allow ClickHouse to optimize parameter caching
+    params = {
+        "grid_points": grid_points,
+        "min_depth": depth_range[0],
+        "max_depth": depth_range[1],
+        "min_year": year_range[0],
+        "max_year": year_range[1]
+    }
+    
+    # 3. Formulate the core conditions utilizing the primary index columns
+    where_conditions = [
+        "(gridX, gridY) IN %(grid_points)s",              # 🚀 Triggers fast sparse-index skips
+        "depth BETWEEN %(min_depth)s AND %(max_depth)s",  # Slices targeted depths
+        "toYear(time) BETWEEN %(min_year)s AND %(max_year)s" # Targets specific year partitions
+    ]
+    
+    # 4. Handle seasonal sub-filtering if requested
+    SEASON_MAP = {
+        "winter": [12, 1, 2],
+        "spring": [3, 4, 5],
+        "summer": [6, 7, 8],
+        "autumn": [9, 10, 11],
+        "fall": [9, 10, 11]
+    }
+    if season != "full_year" and season.lower() in SEASON_MAP:
+        params["months"] = SEASON_MAP[season.lower()]
+        where_conditions.append("toMonth(time) IN %(months)s")
+        
+    where_clause = " AND ".join(where_conditions)
+    
+    # 5. Build the clean, vectorized aggregation statement
+    query = f"""
+        SELECT 
+            toYear(time) AS year, 
+            time, 
+            {ch_function}({variable}) AS val
+        FROM ocean_4d_fact 
+        WHERE {where_clause}
+        GROUP BY year, time 
+        ORDER BY year, time
+    """
+    
+    # 6. Execute against ClickHouse
+    client = _get_ch_client() # Uses your internal client connection utility
     result = client.query(query, parameters=params)
+    
+    # 7. Format the structural output block exactly as your frontend chart expects
     series_map = {}
     for row in result.result_rows:
         year, time_val, val = row
         year = int(year)
+        
         if year not in series_map:
             series_map[year] = []
+            
         series_map[year].append({
             "time": str(time_val),
             "value": round(float(val), 6) if val is not None else None,
         })
+        
     return {"series": [{"year": y, "data": series_map[y]} for y in sorted(series_map)]}
-
 
 def query_climatology(grid_x_range, grid_y_range, depth_range, variable, stat, year_range):
     """Return averaged monthly climatology over the full year range.
