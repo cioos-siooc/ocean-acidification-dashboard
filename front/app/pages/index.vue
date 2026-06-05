@@ -23,6 +23,7 @@
             :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }">
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
+            <!-- <Analytics /> -->
             <Overlays @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
                 @autorange="autorange" class="overlay"
                 :style="{ top: `${overlayGap}px`, left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap : overlayGap) + 'px' }" />
@@ -94,7 +95,7 @@
                     <v-col cols="auto" class="my-0 mx-1 pa-0 text-label-small" style="height:20px">
                         <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
                         <span>{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
-                        }}</span>
+                            }}</span>
                     </v-col>
                 </v-row>
 
@@ -119,12 +120,14 @@ import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import { useRuntimeConfig } from '#app';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import MapboxDraw from '@mapbox/mapbox-gl-draw';
+import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import axios from 'axios'
 import moment from 'moment-timezone'
 import TimeControls from '../components/TimeControls.vue'
 import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
-import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
+import type { FeatureCollection, Geometry, GeoJsonProperties, Feature, Polygon } from 'geojson';
 import { var2name } from '../../composables/useVar2Name'
 import { utc2pst } from '../../composables/useUTC2PST'
 import useStationsInteraction from '../../composables/useStationsInteraction';
@@ -132,10 +135,12 @@ import { addBuoyLayer, type MultiSensorCandidate } from '../../composables/useBu
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
 import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 import TimeseriesChart from '../components/TimeseriesChart.vue';
+// import VuiOverlayComponent from '../components/VuiOverlayComponent.vue';
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
+import Analytics from '~/components/analytics.vue';
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
@@ -151,6 +156,10 @@ const timeseriesChart = ref<InstanceType<typeof TimeseriesChart> | null>(null);
 let map: mapboxgl.Map | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
+
+const drawControl = ref<MapboxDraw | null>(null);
+const isRectangleDrawing = ref(false);
+const drawnRectangle = ref<Feature<Polygon> | null>(null);
 const footerHeight = ref<string>('300px');
 
 const sensorPicker = ref<{ visible: boolean; x: number; y: number; sensors: MultiSensorCandidate[] }>({
@@ -252,6 +261,7 @@ onMounted(async () => {
             if (map) zoom.value = map.getZoom().toFixed(2);
         });
 
+        setupMapboxDraw();
     });
 
 
@@ -548,6 +558,69 @@ async function init() {
     // For the new flow we don't use station points. Instead, we start with NO PNG overlay.
 
     // Chart is initialized by the TimeseriesChart component itself
+}
+
+function setupMapboxDraw() {
+    if (!map) return;
+
+    const draw = new MapboxDraw({
+        displayControlsDefault: false,
+        controls: {
+            trash: true
+        }
+    });
+
+    drawControl.value = draw;
+    map.addControl(draw, 'top-right');
+
+    map.on('draw.create', (evt: any) => {
+        const feature = evt.features?.[0] as Feature<Polygon> | undefined;
+        if (feature) {
+            drawnRectangle.value = feature;
+        }
+        isRectangleDrawing.value = false;
+        draw.changeMode('simple_select');
+    });
+
+    map.on('draw.update', (evt: any) => {
+        const feature = evt.features?.[0] as Feature<Polygon> | undefined;
+        if (feature) {
+            drawnRectangle.value = feature;
+        }
+    });
+
+    map.on('draw.delete', () => {
+        drawnRectangle.value = null;
+    });
+}
+
+function toggleDrawMode() {
+    if (!map || !drawControl.value) return;
+
+    if (isRectangleDrawing.value) {
+        drawControl.value.changeMode('simple_select');
+        isRectangleDrawing.value = false;
+    } else {
+        const existingIds = drawControl.value.getAll().features.map((feature) => String(feature.id));
+        if (existingIds.length) {
+            drawControl.value.delete(existingIds);
+            drawnRectangle.value = null;
+        }
+        const modeToActivate = MapboxDraw.modes?.draw_rectangle ? 'draw_rectangle' : 'draw_polygon';
+        drawControl.value.changeMode(modeToActivate);
+        isRectangleDrawing.value = true;
+    }
+}
+
+function clearRectangle() {
+    if (!drawControl.value) return;
+    const ids = drawControl.value.getAll().features.map((feature) => String(feature.id));
+    if (ids.length) drawControl.value.delete(ids);
+    drawnRectangle.value = null;
+    if (isRectangleDrawing.value) {
+        drawControl.value.changeMode('simple_select');
+    }
+    isRectangleDrawing.value = false;
 }
 
 function maybeInitClick() {

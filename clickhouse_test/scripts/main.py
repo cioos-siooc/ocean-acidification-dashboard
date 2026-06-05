@@ -8,21 +8,34 @@ import clickhouse_connect
 # ==============================================================================
 # CONFIGURATION
 # ==============================================================================
-START_DATE = 20260510
-END_DATE = 20260519
+START_DATE = 202601
+END_DATE = 202604
 CH_HOST = "localhost"
 CH_PORT = 8123
 CH_USER = "default"
 CH_PASS = os.environ.get("CLICKHOUSE_PASSWORD", "")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
 VAR_MAP = {
     'time_var': 'time',
     'depth_var': 'depth',
     'lat_var': 'gridY',
-    'lon_var': 'gridX',
-    'temp_var': 'temperature',
-    'salt_var': 'salinity'
+    'lon_var': 'gridX'
 }
+
+VARNAMES = [
+    'temperature',
+    'salinity',
+    'total_alkalinity',
+    'omega_arag',
+    'omega_cal',
+    'ph_total',
+    'dissolved_oxygen',
+    'dissolved_inorganic_carbon'
+]
+
+BATCH_SIZE_THRESHOLD = 500000
+MAX_TIME_SLICE_BATCHES = 24
 
 # ==============================================================================
 # 1. ESTABLISH CLICKHOUSE CONNECTION
@@ -35,19 +48,24 @@ client = clickhouse_connect.get_client(
     password=CH_PASS
 )
 
-print("Creating storage-optimized table...")
-client.command("DROP TABLE IF EXISTS ocean_4d_efficient")
+print("Creating storage-optimized table if needed...")
 client.command("""
-CREATE TABLE ocean_4d_efficient (
+CREATE TABLE IF NOT EXISTS ocean_4d_efficient (
     time DateTime64(0) CODEC(DoubleDelta, ZSTD(4)),
     depth Float32 CODEC(Gorilla, ZSTD(4)),
-    latitude Float32 CODEC(Gorilla, ZSTD(4)),
-    longitude Float32 CODEC(Gorilla, ZSTD(4)),
+    gridX UInt16 CODEC(DoubleDelta, ZSTD(4)),
+    gridY UInt16 CODEC(DoubleDelta, ZSTD(4)),
     temperature Float32 CODEC(Gorilla, ZSTD(4)),
-    salinity Float32 CODEC(Gorilla, ZSTD(4))
+    salinity Float32 CODEC(Gorilla, ZSTD(4)),
+    total_alkalinity Float32 CODEC(Gorilla, ZSTD(4)),
+    omega_arag Float32 CODEC(Gorilla, ZSTD(4)),
+    omega_cal Float32 CODEC(Gorilla, ZSTD(4)),
+    ph_total Float32 CODEC(Gorilla, ZSTD(4)),
+    dissolved_oxygen Float32 CODEC(Gorilla, ZSTD(4)),
+    dissolved_inorganic_carbon Float32 CODEC(Gorilla, ZSTD(4))
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(time)
-ORDER BY (time, depth, latitude, longitude)
+ORDER BY (time, depth, gridY, gridX)
 SETTINGS old_parts_lifetime = 10;
 """)
 
@@ -77,21 +95,23 @@ total_start_time = time.time()
 # 3. STREAM & FLATTEN 4D DATA (OPTIMIZED)
 # ==============================================================================
 for date_int in range(START_DATE, END_DATE + 1):
-    temp_file = f"temperature_{date_int}.nc"
-    salt_file = f"salinity_{date_int}.nc"
-    
-    if not (os.path.exists(temp_file) and os.path.exists(salt_file)):
-        print(f"Skipping {date_int}, files not found.")
+    datasets = {}
+    for variable in VARNAMES:
+        data_path = os.path.join(DATA_DIR, f"{variable}_{date_int}.nc")
+        if not os.path.exists(data_path):
+            print(f"Skipping {date_int}, missing {variable} file: {data_path}.")
+            datasets = {}
+            break
+        datasets[variable] = xr.open_dataset(data_path, chunks={VAR_MAP['time_var']: 1})
+    if not datasets:
         continue
-        
-    print(f"\nOpening NetCDF files for {date_int}: {temp_file} & {salt_file}...")
-    ds_temp = xr.open_dataset(temp_file, chunks={VAR_MAP['time_var']: 1})
-    ds_salt = xr.open_dataset(salt_file, chunks={VAR_MAP['time_var']: 1})
-    
-    times = ds_temp[VAR_MAP['time_var']].values
-    depths = ds_temp[VAR_MAP['depth_var']].values
-    lats = ds_temp[VAR_MAP['lat_var']].values
-    lons = ds_temp[VAR_MAP['lon_var']].values
+
+    print(f"\nOpening NetCDF files for {date_int}: {', '.join(f'{variable}_{date_int}.nc' for variable in VARNAMES)}")
+    ds_ref = datasets[VARNAMES[0]]
+    times = ds_ref[VAR_MAP['time_var']].values
+    depths = ds_ref[VAR_MAP['depth_var']].values
+    lats = ds_ref[VAR_MAP['lat_var']].values
+    lons = ds_ref[VAR_MAP['lon_var']].values
     
     print(f"Dataset Dimensions: Time({len(times)}) x Depth({len(depths)}) x Lat({len(lats)}) x Lon({len(lons)})")
     
@@ -105,49 +125,13 @@ for date_int in range(START_DATE, END_DATE + 1):
     start_time = time.time()
     batch_dfs = []
     batch_rows = 0
-    BATCH_SIZE_THRESHOLD = 500000  # Flush to DB once we accumulate 500k rows
+    batch_count = 0
     
-    for t_idx, t_val in enumerate(times):
-        p_time = pd.Timestamp(t_val)
-        
-        # Load 3D slices directly as flat numpy blocks
-        temp_block = ds_temp[VAR_MAP['temp_var']].isel({VAR_MAP['time_var']: t_idx}).values.flatten()
-        salt_block = ds_salt[VAR_MAP['salt_var']].isel({VAR_MAP['time_var']: t_idx}).values.flatten()
-        
-        # 🔥 SPEEDUP 2: Mask out NaNs using high-speed NumPy vector operations
-        valid_mask = ~np.isnan(temp_block) & ~np.isnan(salt_block)
-        if not np.any(valid_mask):
-            continue  
-            
-        # 🔥 SPEEDUP 3: Swap out slow list(zip) with a native Pandas DataFrame block
-        # Pandas will automatically broadcast the scalar 'p_time' to match the array lengths
-        df_batch = pd.DataFrame({
-            'time': p_time,
-            'depth': flat_depth[valid_mask],
-            'latitude': flat_lat[valid_mask],
-            'longitude': flat_lon[valid_mask],
-            'temperature': temp_block[valid_mask],
-            'salinity': salt_block[valid_mask]
-        })
-        
-        batch_dfs.append(df_batch)
-        batch_rows += len(df_batch)
-        print(f" -> Prepared Time Step {t_idx + 1}/{len(times)} ({len(df_batch)} rows)...")
-        
-        if batch_rows >= BATCH_SIZE_THRESHOLD:
-            print(f" -> Committing batch of {batch_rows} rows to ClickHouse...")
-            df_to_insert = pd.concat(batch_dfs, ignore_index=True)
-            client.insert(
-                table='ocean_4d_efficient', 
-                data=df_to_insert,
-                column_names=list(df_to_insert.columns)
-            )
-            # Clear memory immediately
-            batch_dfs = []
-            batch_rows = 0
-
-    if batch_dfs:
-        print(f" -> Committing final day batch of {batch_rows} rows to ClickHouse...")
+    def flush_batch():
+        nonlocal batch_dfs, batch_rows, batch_count
+        if not batch_dfs:
+            return
+        print(f" -> Flushing batch of {batch_rows} rows to ClickHouse...")
         df_to_insert = pd.concat(batch_dfs, ignore_index=True)
         client.insert(
             table='ocean_4d_efficient', 
@@ -156,13 +140,49 @@ for date_int in range(START_DATE, END_DATE + 1):
         )
         batch_dfs = []
         batch_rows = 0
+        batch_count += 1
     
-    print(f"Migration for {date_int} complete in {time.time() - start_time:.2f} seconds!")
+    for t_idx, t_val in enumerate(times):
+        p_time = pd.Timestamp(t_val)
+        
+        # Load 3D slices directly as flat numpy blocks
+        blocks = {
+            variable: datasets[variable][variable].isel({VAR_MAP['time_var']: t_idx}).values.flatten()
+            for variable in VARNAMES
+        }
+        
+        # 🔥 SPEEDUP 2: Mask out NaNs using high-speed NumPy vector operations
+        valid_mask = np.ones_like(next(iter(blocks.values())), dtype=bool)
+        for block in blocks.values():
+            valid_mask &= ~np.isnan(block)
+        if not np.any(valid_mask):
+            continue  
+            
+        # 🔥 SPEEDUP 3: Build one DataFrame per time slice and commit periodically
+        df_batch = pd.DataFrame({
+            'time': p_time,
+            'depth': flat_depth[valid_mask],
+            'gridY': flat_lat[valid_mask],
+            'gridX': flat_lon[valid_mask],
+            **{variable: blocks[variable][valid_mask] for variable in VARNAMES}
+        })
+        
+        batch_dfs.append(df_batch)
+        batch_rows += len(df_batch)
+        print(f" -> Prepared Time Step {t_idx + 1}/{len(times)} ({len(df_batch)} rows)...")
+
+        if batch_rows >= BATCH_SIZE_THRESHOLD or len(batch_dfs) >= MAX_TIME_SLICE_BATCHES:
+            flush_batch()
+
+    if batch_dfs:
+        flush_batch()
+    
+    print(f"Migration for {date_int} complete in {time.time() - start_time:.2f} seconds! (flushed {batch_count} time(s))")
 
 print(f"\nTotal Migration complete in {time.time() - total_start_time:.2f} seconds!")
 
-# Optimize table parts to merge data on disk for clean final measurement metrics
-print("Running final table optimization pass...")
-client.command("OPTIMIZE TABLE ocean_4d_efficient FINAL")
+# Final optimization is disabled by default; enable only when a full merge is required.
+print("Skipping final ClickHouse OPTIMIZE pass for normal ingestion.")
+# client.command("OPTIMIZE TABLE ocean_4d_efficient FINAL")
 
 print_storage_stats(client, "AFTER INGESTION AND MERGE")

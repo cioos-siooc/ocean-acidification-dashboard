@@ -10,3 +10,4 @@ pyproj>=3.7.2
 # required by xarray.open_mfdataset when used with parallel=True
 dask[complete]>=2024.0.0
 distributed>=2024.0.0
+clickhouse-connect>=1.1.1

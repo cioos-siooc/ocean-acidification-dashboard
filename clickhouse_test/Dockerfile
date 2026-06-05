@@ -20,21 +20,23 @@ RUN pip3 install --no-cache-dir \
     xarray \
     numpy \
     netcdf4 \
-    dask
+    dask \
+    h5netcdf \
+    h5py
 
 # COPY main.py /app/main.py
 # COPY temperature_20260520.nc /app/temperature_20260520.nc
 
 WORKDIR /app
 
-COPY clickhouse-entrypoint.sh /usr/local/bin/clickhouse-entrypoint.sh
-RUN chmod +x /usr/local/bin/clickhouse-entrypoint.sh
+# COPY clickhouse-entrypoint.sh /usr/local/bin/clickhouse-entrypoint.sh
+# RUN chmod +x /usr/local/bin/clickhouse-entrypoint.sh
 
 # ClickHouse default ports:
 # 8123 (HTTP interface/BI tools)
 # 9000 (Native client interface)
 EXPOSE 8123 9000
 
-ENTRYPOINT ["/usr/local/bin/clickhouse-entrypoint.sh"]
+ENTRYPOINT ["bash", "./clickhouse-entrypoint.sh"]
 # The base image's default entrypoint will automatically start the ClickHouse server
 # CMD ["python3", "/app/main.py"]

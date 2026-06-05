@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Tuple
 from functools import partial
 import contextvars
 import os
@@ -19,11 +19,6 @@ from typing import Optional
 from functools import partial
 import contextvars
 from starlette.concurrency import run_in_threadpool
-
-async def run_in_process(func, *args, **kwargs):
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_extract_executor, partial(func, *args, **kwargs))
-
 import numpy as np
 
 from modules.extractTimeseries import extract_timeseries
@@ -33,6 +28,15 @@ from modules.extract_climate_timeseries import extract_climate_timeseries
 from modules.extractMinMax import extract_minmax
 from modules.pngGenerator import generate_png_for_variable
 from modules.extractSensorTimeseries import extract_sensor_timeseries
+from modules.ocean_analysis import query_overlay_timeseries, query_climatology, query_threshold_count, query_trend, query_correlation
+
+async def run_in_process(func, *args, **kwargs):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_extract_executor, partial(func, *args, **kwargs))
+
+
+
+
 
 # Limit concurrent extract requests to avoid resource exhaustion (files + DB)
 MAX_CONCURRENT_EXTRACTS = int(os.getenv("MAX_CONCURRENT_EXTRACTS", "4"))
@@ -1018,6 +1022,157 @@ async def fn_get_eval(request: evalRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 #######################################
+
+
+# ---------------------------------------------------------------------------
+# Analysis Builder endpoints
+# ---------------------------------------------------------------------------
+
+class MetricSpec(BaseModel):
+    variable: str
+    stat: str
+
+class ThresholdSpec(BaseModel):
+    value: float
+    direction: str  # ">" or "<"
+
+class GridRange(BaseModel):
+    min: int
+    max: int
+
+class DepthRange(BaseModel):
+    min: float
+    max: float
+
+class AnalysisRequest(BaseModel):
+    gridX: GridRange
+    gridY: GridRange
+    depth: DepthRange
+    primaryMetric: MetricSpec
+    temporal: dict
+    threshold: Optional[ThresholdSpec] = None
+    secondMetric: Optional[MetricSpec] = None
+
+
+@app.post("/analysis/overlay")
+async def analysis_overlay(request: AnalysisRequest):
+    """Overlay Yearly Timeseries — per-year timeseries for overlay plotting."""
+    try:
+        result = await run_in_threadpool(
+            query_overlay_timeseries,
+            grid_x_range=(request.gridX.min, request.gridX.max),
+            grid_y_range=(request.gridY.min, request.gridY.max),
+            depth_range=(request.depth.min, request.depth.max),
+            variable=request.primaryMetric.variable,
+            stat=request.primaryMetric.stat,
+            year_range=request.temporal["yearRange"],
+            season=request.temporal.get("season", "full_year"),
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("analysis_overlay failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/analysis/climatology")
+async def analysis_climatology(request: AnalysisRequest):
+    """Aggregated Climatology Cycle — averaged monthly climatology."""
+    try:
+        result = await run_in_threadpool(
+            query_climatology,
+            grid_x_range=(request.gridX.min, request.gridX.max),
+            grid_y_range=(request.gridY.min, request.gridY.max),
+            depth_range=(request.depth.min, request.depth.max),
+            variable=request.primaryMetric.variable,
+            stat=request.primaryMetric.stat,
+            year_range=request.temporal["yearRange"],
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("analysis_climatology failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/analysis/threshold")
+async def analysis_threshold(request: AnalysisRequest):
+    """Extreme Event (Threshold) Count — days per year matching threshold."""
+    if not request.threshold:
+        raise HTTPException(status_code=400, detail="threshold is required for threshold mode")
+    try:
+        result = await run_in_threadpool(
+            query_threshold_count,
+            grid_x_range=(request.gridX.min, request.gridX.max),
+            grid_y_range=(request.gridY.min, request.gridY.max),
+            depth_range=(request.depth.min, request.depth.max),
+            variable=request.primaryMetric.variable,
+            stat=request.primaryMetric.stat,
+            year_range=request.temporal["yearRange"],
+            season=request.temporal.get("season", "full_year"),
+            threshold_value=request.threshold.value,
+            threshold_direction=request.threshold.direction,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("analysis_threshold failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/analysis/trend")
+async def analysis_trend(request: AnalysisRequest):
+    """Inter-Annual Trend Analysis — per-year annual means."""
+    try:
+        result = await run_in_threadpool(
+            query_trend,
+            grid_x_range=(request.gridX.min, request.gridX.max),
+            grid_y_range=(request.gridY.min, request.gridY.max),
+            depth_range=(request.depth.min, request.depth.max),
+            variable=request.primaryMetric.variable,
+            stat=request.primaryMetric.stat,
+            year_range=request.temporal["yearRange"],
+            season=request.temporal.get("season", "full_year"),
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("analysis_trend failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/analysis/correlation")
+async def analysis_correlation(request: AnalysisRequest):
+    """Multi-Variable Correlation — paired per-timestep values for two variables."""
+    if not request.secondMetric:
+        raise HTTPException(status_code=400, detail="secondMetric is required for correlation mode")
+    try:
+        result = await run_in_threadpool(
+            query_correlation,
+            grid_x_range=(request.gridX.min, request.gridX.max),
+            grid_y_range=(request.gridY.min, request.gridY.max),
+            depth_range=(request.depth.min, request.depth.max),
+            primary_variable=request.primaryMetric.variable,
+            primary_stat=request.primaryMetric.stat,
+            second_variable=request.secondMetric.variable,
+            second_stat=request.secondMetric.stat,
+            year_range=request.temporal["yearRange"],
+            season=request.temporal.get("season", "full_year"),
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("analysis_correlation failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+#######################################
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=4000)

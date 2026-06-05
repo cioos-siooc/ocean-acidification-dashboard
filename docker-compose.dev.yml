@@ -10,6 +10,7 @@ services:
       - "${FRONT_PORT:-3000}:3000"
     volumes:
       - ./front:/app
+      - /app/node_modules
     environment:
       - NUXT_PUBLIC_API_BASE_URL=${NUXT_PUBLIC_API_BASE_URL:-http://localhost:9011}
       - NUXT_PUBLIC_VERSION=${NUXT_PUBLIC_VERSION:-unknown}

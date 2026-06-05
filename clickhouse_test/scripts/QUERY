@@ -1,0 +1,33 @@
+# STORAGE STATS QUERY
+SELECT 
+    formatReadableQuantity(sum(rows)) AS total_rows,
+    formatReadableSize(sum(data_compressed_bytes)) AS disk_size_compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS raw_size_uncompressed,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS compression_ratio
+FROM system.parts
+WHERE table = 'SalishSeaCast_daily' AND active = 1;
+
+
+# RETURN TIMESERIES temperature_mean AVERAGE FOR gridX BETWEEN 100 AND 200, gridY BETWEEN 200 AND 400, AND depth BETWEEN 0 AND 10
+SELECT 
+    time,
+    avg(temperature_mean) AS avg_temperature_mean
+FROM SalishSeaCast_daily
+WHERE gridX BETWEEN 100 AND 200
+  AND gridY BETWEEN 200 AND 400
+  AND depth BETWEEN 0 AND 10
+GROUP BY time
+ORDER BY time;
+
+
+# RETURN NUMBER OF DAYS WITH AVERAGE temperature_max IN gridX BETWEEN 100 AND 200, gridY BETWEEN 200 AND 400, AND depth BETWEEN 0 AND 10 ABOVE 20C
+SELECT count(DISTINCT time) AS days_avg_above_20C
+FROM (
+    SELECT time
+    FROM SalishSeaCast_daily
+    WHERE gridX BETWEEN 100 AND 200 
+      AND gridY BETWEEN 200 AND 400 
+      AND depth BETWEEN 0 AND 10
+    GROUP BY time
+    HAVING AVG(temperature_max) > 20
+) AS monthly_or_daily_averages;

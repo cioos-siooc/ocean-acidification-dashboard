@@ -1,7 +1,5 @@
-version: '3.8'
-
 services:
-  clickhouse:
+  db:
     build: .
     container_name: my-ch-env
     ports:
@@ -10,7 +8,10 @@ services:
     volumes:
       - ./clickhouse_data:/var/lib/clickhouse
       - ./clickhouse_logs:/var/log/clickhouse-server
-      - ./data:/data
+      # - ./data:/app/data
+      - /media/taimaz/CIOOS/data:/app/data
+      - ./scripts:/app/scripts
+      - ./clickhouse-entrypoint.sh:/app/clickhouse-entrypoint.sh
     environment:
       CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
     restart: unless-stopped
