@@ -10,10 +10,10 @@ import clickhouse_connect
 # Replace this with the path to one of your netCDF files containing the grid
 SOURCE_NC_FILE = "SSC_grid.nc" 
 
-CH_HOST = "localhost"
-CH_PORT = 8123
-CH_USER = "default"
-CH_PASS = ""
+CH_HOST = os.getenv("CH_HOST", "192.168.18.33")
+CH_PORT = int(os.getenv("CH_PORT", "8123"))
+CH_USER = os.getenv("CH_USER", "default")
+CH_PASS = os.getenv("CH_PASSWORD", os.getenv("CLICKHOUSE_PASSWORD", ""))
 
 # Define the exact names of your dimensions and 2D variables inside the file
 DIM_X = 'gridX'
