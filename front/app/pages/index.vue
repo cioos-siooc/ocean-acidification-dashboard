@@ -157,7 +157,6 @@ let map: mapboxgl.Map | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
 
-const drawControl = ref<MapboxDraw | null>(null);
 const isRectangleDrawing = ref(false);
 const drawnRectangle = ref<Feature<Polygon> | null>(null);
 const footerHeight = ref<string>('300px');
@@ -566,61 +565,13 @@ function setupMapboxDraw() {
     const draw = new MapboxDraw({
         displayControlsDefault: false,
         controls: {
+            polygon: true,
             trash: true
         }
     });
 
-    drawControl.value = draw;
     map.addControl(draw, 'top-right');
 
-    map.on('draw.create', (evt: any) => {
-        const feature = evt.features?.[0] as Feature<Polygon> | undefined;
-        if (feature) {
-            drawnRectangle.value = feature;
-        }
-        isRectangleDrawing.value = false;
-        draw.changeMode('simple_select');
-    });
-
-    map.on('draw.update', (evt: any) => {
-        const feature = evt.features?.[0] as Feature<Polygon> | undefined;
-        if (feature) {
-            drawnRectangle.value = feature;
-        }
-    });
-
-    map.on('draw.delete', () => {
-        drawnRectangle.value = null;
-    });
-}
-
-function toggleDrawMode() {
-    if (!map || !drawControl.value) return;
-
-    if (isRectangleDrawing.value) {
-        drawControl.value.changeMode('simple_select');
-        isRectangleDrawing.value = false;
-    } else {
-        const existingIds = drawControl.value.getAll().features.map((feature) => String(feature.id));
-        if (existingIds.length) {
-            drawControl.value.delete(existingIds);
-            drawnRectangle.value = null;
-        }
-        const modeToActivate = MapboxDraw.modes?.draw_rectangle ? 'draw_rectangle' : 'draw_polygon';
-        drawControl.value.changeMode(modeToActivate);
-        isRectangleDrawing.value = true;
-    }
-}
-
-function clearRectangle() {
-    if (!drawControl.value) return;
-    const ids = drawControl.value.getAll().features.map((feature) => String(feature.id));
-    if (ids.length) drawControl.value.delete(ids);
-    drawnRectangle.value = null;
-    if (isRectangleDrawing.value) {
-        drawControl.value.changeMode('simple_select');
-    }
-    isRectangleDrawing.value = false;
 }
 
 function maybeInitClick() {

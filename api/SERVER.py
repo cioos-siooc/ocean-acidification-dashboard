@@ -28,7 +28,7 @@ from modules.extract_climate_timeseries import extract_climate_timeseries
 from modules.extractMinMax import extract_minmax
 from modules.pngGenerator import generate_png_for_variable
 from modules.extractSensorTimeseries import extract_sensor_timeseries
-from modules.ocean_analysis import query_overlay_timeseries, query_climatology, query_threshold_count, query_trend, query_correlation
+from modules.ocean_analysis import lookup_grid_cells_for_polygon, query_overlay_timeseries, query_climatology, query_threshold_count, query_trend, query_correlation
 
 async def run_in_process(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
@@ -1036,32 +1036,52 @@ class ThresholdSpec(BaseModel):
     value: float
     direction: str  # ">" or "<"
 
-class GridRange(BaseModel):
-    min: int
-    max: int
-
 class DepthRange(BaseModel):
     min: float
     max: float
 
 class AnalysisRequest(BaseModel):
-    gridX: GridRange
-    gridY: GridRange
+    # The API now exclusively expects a GeoJSON-style polygon coordinate array
+    # e.g., [[lon1, lat1], [lon2, lat2], [lon3, lat3], [lon1, lat1]]
+    polygon: List[Tuple[float, float]]
+    
     depth: DepthRange
     primaryMetric: MetricSpec
     temporal: dict
     threshold: Optional[ThresholdSpec] = None
     secondMetric: Optional[MetricSpec] = None
 
-
+# ==============================================================================
+# STREAMLINED ENDPOINT
+# ==============================================================================
 @app.post("/analysis/overlay")
 async def analysis_overlay(request: AnalysisRequest):
-    """Overlay Yearly Timeseries — per-year timeseries for overlay plotting."""
+    """Overlay Yearly Timeseries — Aggregates data strictly within a custom polygon."""
     try:
+        # 1. Enforce that the polygon has enough points to form a closed shape
+        if len(request.polygon) < 3:
+            raise HTTPException(
+                status_code=400, 
+                detail="Invalid polygon. A regional selection requires at least 3 coordinate pairs."
+            )
+
+        # 2. Method 2: Convert real-world coordinates to explicit grid integer tuples
+        # This queries the fast grid_SSC lookup table in the background
+        grid_points = await run_in_threadpool(
+            lookup_grid_cells_for_polygon, 
+            polygon_coords=request.polygon
+        )
+        
+        if not grid_points:
+            raise HTTPException(
+                status_code=400, 
+                detail="The selected polygon area does not cover any active marine grid cells."
+            )
+
+        # 3. Forward the resolved points list straight to your historical dataset
         result = await run_in_threadpool(
             query_overlay_timeseries,
-            grid_x_range=(request.gridX.min, request.gridX.max),
-            grid_y_range=(request.gridY.min, request.gridY.max),
+            grid_points=grid_points,  # 🚀 The only spatial argument needed now!
             depth_range=(request.depth.min, request.depth.max),
             variable=request.primaryMetric.variable,
             stat=request.primaryMetric.stat,
@@ -1069,12 +1089,15 @@ async def analysis_overlay(request: AnalysisRequest):
             season=request.temporal.get("season", "full_year"),
         )
         return result
+        
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.exception("analysis_overlay failed")
         raise HTTPException(status_code=500, detail=str(exc))
-
+    
 
 @app.post("/analysis/climatology")
 async def analysis_climatology(request: AnalysisRequest):
