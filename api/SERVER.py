@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 from functools import partial
 import contextvars
 import os
@@ -15,7 +15,6 @@ from datetime import datetime
 from urllib import request as urllib_request
 from urllib import error as urllib_error
 import json
-from typing import Optional
 from functools import partial
 import contextvars
 from starlette.concurrency import run_in_threadpool
@@ -1044,7 +1043,6 @@ class AnalysisRequest(BaseModel):
     # The API now exclusively expects a GeoJSON-style polygon coordinate array
     # e.g., [[lon1, lat1], [lon2, lat2], [lon3, lat3], [lon1, lat1]]
     polygon: List[Tuple[float, float]]
-    
     depth: DepthRange
     primaryMetric: MetricSpec
     temporal: dict
