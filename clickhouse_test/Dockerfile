@@ -29,7 +29,7 @@ RUN pip3 install --no-cache-dir \
 
 WORKDIR /app
 
-COPY . /app
+COPY clickhouse_test /app
 # COPY clickhouse-entrypoint.sh /usr/local/bin/clickhouse-entrypoint.sh
 # RUN chmod +x /usr/local/bin/clickhouse-entrypoint.sh
 
