@@ -23,7 +23,8 @@
             :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }">
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
-            <!-- <Analytics /> -->
+            <Analytics />
+
             <Overlays @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
                 @autorange="autorange" class="overlay"
                 :style="{ top: `${overlayGap}px`, left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap : overlayGap) + 'px' }" />
@@ -135,12 +136,11 @@ import { addBuoyLayer, type MultiSensorCandidate } from '../../composables/useBu
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
 import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 import TimeseriesChart from '../components/TimeseriesChart.vue';
-// import VuiOverlayComponent from '../components/VuiOverlayComponent.vue';
+import Analytics from '../components/analytics.vue'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
-import Analytics from '~/components/analytics.vue';
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();

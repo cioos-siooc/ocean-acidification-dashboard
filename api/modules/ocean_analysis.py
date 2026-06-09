@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_ch_client():
-    host = os.getenv("CH_HOST", "192.168.18.33")
+    host = os.getenv("CH_HOST", "localhost")
     port = int(os.getenv("CH_PORT", "8123"))
     user = os.getenv("CH_USER", "default")
     password = os.getenv("CH_PASSWORD", os.getenv("CLICKHOUSE_PASSWORD", ""))

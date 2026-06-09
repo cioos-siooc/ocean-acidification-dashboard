@@ -46,6 +46,24 @@ services:
       retries: 5
     restart: unless-stopped
 
+  db-ch:
+    build:
+      context: .
+      dockerfile: clickhouse_test/Dockerfile
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      # - ./clickhouse_data:/var/lib/clickhouse
+      # - ./clickhouse_logs:/var/log/clickhouse-server
+      # - ./data:/app/data
+      - /home/cioos/clickhouse_data:/app/data
+      # - ./scripts:/app/scripts
+      # - ./clickhouse-entrypoint.sh:/app/clickhouse-entrypoint.sh
+    environment:
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
+    restart: unless-stopped
+
   process:
     build:
       context: .

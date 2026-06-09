@@ -1,5 +1,5 @@
 <template>
-  <v-dialog v-model="showDialog" width="100%" max-width="1200" persistent scrollable>
+  <v-dialog v-model="showDialog" width="100%" max-width="1200"  scrollable>
     <v-card class="ocean-analysis-builder" elevation="0">
       <!-- Component Header with Reset Action -->
       <v-toolbar color="background" density="comfortable">
