@@ -157,7 +157,7 @@ def extract_timeseries(
 
         if depth is None:
             query = (
-                f"SELECT time, depth, {var} AS value FROM {table} "
+                f"SELECT time, depth, {var}_mean AS value FROM {table} "
                 f"WHERE {' AND '.join(where)} ORDER BY time, depth"
             )
             result = client.query(query, parameters=params)
@@ -183,7 +183,7 @@ def extract_timeseries(
 
         where.append("depth = %(depth)s")
         params["depth"] = depth_sel
-        query = f"SELECT time, {var} AS value FROM {table} WHERE {' AND '.join(where)} ORDER BY time"
+        query = f"SELECT time, {var}_mean AS value FROM {table} WHERE {' AND '.join(where)} ORDER BY time"
         result = client.query(query, parameters=params)
         if not result.result_rows:
             raise RuntimeError("No data found in ClickHouse for the requested time range")

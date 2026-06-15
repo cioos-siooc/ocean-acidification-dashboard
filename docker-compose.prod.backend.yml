@@ -28,7 +28,7 @@ services:
       - CH_HOST=${CH_HOST:-db-ch}
       - CH_PORT=${CH_PORT:-8123}
       - CH_USER=${CH_USER:-default}
-      - CH_PASSWORD=${CH_PASSWORD:-${CLICKHOUSE_PASSWORD:-}}
+      - CH_PASSWORD=${CH_PASSWORD:-}
       # Set CH_USE_REMOTE=true and CH_REMOTE_URL to query a remote ClickHouse instead
       - CH_USE_REMOTE=${CH_USE_REMOTE:-false}
       - CH_REMOTE_URL=${CH_REMOTE_URL:-}
