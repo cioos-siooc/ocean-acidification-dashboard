@@ -150,10 +150,10 @@ def extract_timeseries(
         params: dict = {"gx": grid_x, "gy": grid_y}
         if from_date is not None:
             where.append("time >= %(from_time)s")
-            params["from_time"] = pd.to_datetime(from_date).to_pydatetime()
+            params["from_time"] = pd.to_datetime(from_date).date()
         if to_date is not None:
             where.append("time <= %(to_time)s")
-            params["to_time"] = pd.to_datetime(to_date).to_pydatetime()
+            params["to_time"] = pd.to_datetime(to_date).date()
 
         if depth is None:
             query = (
