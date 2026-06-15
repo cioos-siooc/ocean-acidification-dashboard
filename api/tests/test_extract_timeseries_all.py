@@ -41,7 +41,7 @@ def test_extract_timeseries_single_depth(monkeypatch):
     )
     monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: fake)
 
-    times, values = extract_timeseries(source='SalishSeaCast', var='temperature', lat=49.0, lon=-123.0, depth=5.0)
+    times, values = extract_timeseries(source='SalishSeaCast', var='temperature', stat='mean', lat=49.0, lon=-123.0, depth=5.0)
 
     assert isinstance(times, pd.Series)
     assert isinstance(values, pd.Series)
@@ -72,7 +72,7 @@ def test_extract_timeseries_all_depths(monkeypatch):
     )
     monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: fake)
 
-    df = extract_timeseries(source='SalishSeaCast', var='temperature', lat=49.0, lon=-123.0, depth=None)
+    df = extract_timeseries(source='SalishSeaCast', var='temperature', stat='mean', lat=49.0, lon=-123.0, depth=None)
 
     assert isinstance(df, pd.DataFrame)
     assert list(df.columns) == ['time', 'depth', 'value']
@@ -84,18 +84,32 @@ def test_extract_timeseries_out_of_domain_raises(monkeypatch):
     monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: fake)
 
     with pytest.raises(RuntimeError, match="km from the nearest grid point"):
-        extract_timeseries(source='SalishSeaCast', var='temperature', lat=0.0, lon=0.0, depth=5.0)
+        extract_timeseries(source='SalishSeaCast', var='temperature', stat='mean', lat=0.0, lon=0.0, depth=5.0)
 
 
 def test_extract_timeseries_unsupported_source(monkeypatch):
     monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: FakeClient(grid_row=(0, 0, 0.0, 0.0, 0.0)))
 
     with pytest.raises(RuntimeError, match="not yet available via ClickHouse"):
-        extract_timeseries(source='Live Ocean', var='temperature', lat=49.0, lon=-123.0, depth=5.0)
+        extract_timeseries(source='Live Ocean', var='temperature', stat='mean', lat=49.0, lon=-123.0, depth=5.0)
 
 
 def test_extract_timeseries_unknown_variable(monkeypatch):
     monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: FakeClient(grid_row=(0, 0, 0.0, 0.0, 0.0)))
 
     with pytest.raises(ValueError, match="Unknown variable"):
-        extract_timeseries(source='SalishSeaCast', var='not_a_variable', lat=49.0, lon=-123.0, depth=5.0)
+        extract_timeseries(source='SalishSeaCast', var='not_a_variable', stat='mean', lat=49.0, lon=-123.0, depth=5.0)
+
+
+def test_extract_timeseries_missing_stat_raises(monkeypatch):
+    monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: FakeClient(grid_row=(0, 0, 0.0, 0.0, 0.0)))
+
+    with pytest.raises(TypeError):
+        extract_timeseries(source='SalishSeaCast', var='temperature', lat=49.0, lon=-123.0, depth=5.0)
+
+
+def test_extract_timeseries_unknown_stat_raises(monkeypatch):
+    monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: FakeClient(grid_row=(0, 0, 0.0, 0.0, 0.0)))
+
+    with pytest.raises(ValueError, match="Unknown stat"):
+        extract_timeseries(source='SalishSeaCast', var='temperature', stat='median', lat=49.0, lon=-123.0, depth=5.0)

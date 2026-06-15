@@ -614,7 +614,7 @@ async function getTimeseriesPromises(lat: number, lon: number) {
 }
 
 async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {
-    const payload = { source: mainStore.selected_variable.source, var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth_nc, fromDate, toDate }
+    const payload = { source: mainStore.selected_variable.source, var: mainStore.selected_variable.var, stat: 'mean', lat, lon, depth: mainStore.selected_variable.depth_nc, fromDate, toDate }
     return axios.post(`${apiBaseUrl}/extractTimeseries`, payload, { signal: tsRequestController.signal });
     // const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
     // const json = r.data;

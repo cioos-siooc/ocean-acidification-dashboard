@@ -14,7 +14,7 @@ value) series is returned. When `depth` is omitted, every depth level is
 returned as a DataFrame with `time`, `depth`, `value` columns.
 
 Examples:
-  python modules/extractTimeseries.py --source SalishSeaCast --var temperature \
+  python modules/extractTimeseries.py --source SalishSeaCast --var temperature --stat mean \
       --lat 49.2 --lon -123.5 --depth 5 \
       --from-date 2023-01-01T00:00:00 --to-date 2023-01-31T23:59:59
 """
@@ -49,6 +49,9 @@ ALLOWED_VARIABLES = {
     "dissolved_oxygen",
     "dissolved_inorganic_carbon",
 }
+
+# Suffix appended to `var` to form the data table column name, e.g. "temperature_mean"
+ALLOWED_STATS = {"mean", "min", "max"}
 
 MAX_GRID_DIST_KM = 25.0
 
@@ -104,6 +107,7 @@ def extract_timeseries(
     *,
     source: str,
     var: str,
+    stat: str,
     lat: float,
     lon: float,
     depth: Optional[float] = None,
@@ -111,7 +115,7 @@ def extract_timeseries(
     to_date: Optional[str] = None,
     verbose: bool = False,
 ) -> Union[Tuple[pd.Series, pd.Series], pd.DataFrame]:
-    """Extract a time series for `var` at (lat, lon) from ClickHouse.
+    """Extract a time series for `var`'s `stat` (mean/min/max) at (lat, lon) from ClickHouse.
 
     When `depth` is provided, returns `(times, values)` as a tuple of
     pd.Series. When `depth` is None, returns a `pd.DataFrame` with columns
@@ -123,6 +127,7 @@ def extract_timeseries(
         print("########### Extracting timeseries with parameters: ###########", flush=True)
         print(f"Source: {source}", flush=True)
         print(f"Variable: {var}", flush=True)
+        print(f"Stat: {stat}", flush=True)
         print(f"Latitude: {lat}", flush=True)
         print(f"Longitude: {lon}", flush=True)
         print(f"Depth: {depth}", flush=True)
@@ -136,6 +141,8 @@ def extract_timeseries(
         )
     if var not in ALLOWED_VARIABLES:
         raise ValueError(f"Unknown variable '{var}'. Supported variables: {sorted(ALLOWED_VARIABLES)}")
+    if stat not in ALLOWED_STATS:
+        raise ValueError(f"Unknown stat '{stat}'. Supported stats: {sorted(ALLOWED_STATS)}")
 
     table = DATA_TABLE_BY_SOURCE[source]
     grid_table = GRID_TABLE_BY_SOURCE[source]
@@ -157,7 +164,7 @@ def extract_timeseries(
 
         if depth is None:
             query = (
-                f"SELECT time, depth, {var}_mean AS value FROM {table} "
+                f"SELECT time, depth, {var}_{stat} AS value FROM {table} "
                 f"WHERE {' AND '.join(where)} ORDER BY time, depth"
             )
             result = client.query(query, parameters=params)
@@ -183,7 +190,7 @@ def extract_timeseries(
 
         where.append("depth = %(depth)s")
         params["depth"] = depth_sel
-        query = f"SELECT time, {var}_mean AS value FROM {table} WHERE {' AND '.join(where)} ORDER BY time"
+        query = f"SELECT time, {var}_{stat} AS value FROM {table} WHERE {' AND '.join(where)} ORDER BY time"
         result = client.query(query, parameters=params)
         if not result.result_rows:
             raise RuntimeError("No data found in ClickHouse for the requested time range")
@@ -201,6 +208,7 @@ def main(argv: Optional[list] = None) -> int:
     p = argparse.ArgumentParser(description="Extract a time series for an ocean variable at a coordinate from ClickHouse")
     p.add_argument("--source", default="SalishSeaCast", choices=sorted(DATA_TABLE_BY_SOURCE), help="Data source")
     p.add_argument("--var", "-v", required=True, choices=sorted(ALLOWED_VARIABLES), help="Variable name to extract")
+    p.add_argument("--stat", required=True, choices=sorted(ALLOWED_STATS), help="Statistic to extract (mean, min, or max)")
     p.add_argument("--lat", "-a", type=float, required=True, help="Latitude (required)")
     p.add_argument("--lon", "-o", type=float, required=True, help="Longitude (required)")
     p.add_argument("--depth", type=float, default=None,
@@ -215,6 +223,7 @@ def main(argv: Optional[list] = None) -> int:
     result = extract_timeseries(
         source=args.source,
         var=args.var,
+        stat=args.stat,
         lat=args.lat,
         lon=args.lon,
         depth=args.depth,
