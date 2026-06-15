@@ -1,290 +1,118 @@
 <template>
-  <v-dialog v-model="showDialog" width="100%" max-width="1200"  scrollable>
-    <v-card class="ocean-analysis-builder" elevation="0">
-      <!-- Component Header with Reset Action -->
-      <v-toolbar color="background" density="comfortable">
-        <v-toolbar-title class="text-subtitle-1 font-weight-bold ml-1">
-          Ocean Analysis Builder
-        </v-toolbar-title>
-        <v-spacer></v-spacer>
-        <v-btn icon="mdi-refresh" variant="text" @click="resetParameters" title="Reset all criteria"></v-btn>
+  <v-navigation-drawer v-model="isOpen" location="right" width="50%" class="pa-2" absolute persistent mobile
+    :scrim="false" style="height:100%; z-index:9999; top:0;">
+    <v-card class="ocean-analysis-builder pa-4" elevation="0">
+      <v-toolbar flat dense class="px-0 mb-4">
+        <v-toolbar-title class="text-h6 font-weight-bold">Ocean Analysis Builder</v-toolbar-title>
+        <v-spacer />
+        <v-btn icon="mdi-refresh" variant="text" @click="resetParameters" title="Reset all criteria" />
       </v-toolbar>
 
-      <!-- Main Content: Two Columns Split -->
-      <v-row no-gutters>
-        <!-- LEFT COLUMN: Parameter Sidebar (Fixed Width) -->
-        <v-col cols="12" md="4" class="parameters-sidebar border-e">
-          <v-container class="pa-4 pt-0">
+      <v-sheet class="chart-card rounded-lg mb-4" elevation="2">
+        <div class="chart-header d-flex align-center justify-space-between px-4 py-3">
+          <div>
+            <div class="text-subtitle-1 font-weight-bold">{{ generatedPlotTitle }}</div>
+            <div class="text-caption text-grey-darken-1">{{ props.volumeLabel }}</div>
+          </div>
+          <v-chip color="warning" variant="tonal">{{ selectedSeasonLabel }}</v-chip>
+        </div>
 
-            <!-- Fixed Volume Context Alert -->
-            <v-alert density="compact" color="info" variant="tonal" icon="mdi-cube-outline" class="mb-4 text-caption"
-              border="start">
-              Analyzing Volume: <span class="font-weight-bold">{{ props.volumeLabel }}</span>
-            </v-alert>
+        <div class="chart-body">
+          <div v-if="isGenerating" class="d-flex flex-column align-center justify-center fill-height">
+            <v-progress-circular indeterminate color="warning" size="64" class="mb-4" />
+            <div class="text-subtitle-2 font-weight-medium text-warning">Querying ClickHouse...</div>
+            <div class="text-body-2 text-grey mt-1">Aggregating data for selected bounds and period.</div>
+          </div>
 
-            <!-- 0. SPATIAL EXTENT: Latitude, Longitude, Depth -->
-            <v-list-subheader class="font-weight-bold px-1 text-uppercase text-grey">0. Spatial Extent</v-list-subheader>
+          <div v-else-if="hasActivePlot" ref="chartContainerRef" class="real-plot-area w-100 h-100" />
 
-            <!-- Latitude Range -->
-            <div class="px-1 mb-2">
-              <div class="text-caption font-weight-medium mb-1">Latitude Range:</div>
-              <v-row density="compact" no-gutters>
-                <v-col cols="6" class="pr-1">
-                  <v-text-field v-model.number="latitudeMin" type="number" variant="outlined" density="compact"
-                    hide-details single-line label="Min" color="warning" step="0.01"></v-text-field>
-                </v-col>
-                <v-col cols="6" class="pl-1">
-                  <v-text-field v-model.number="latitudeMax" type="number" variant="outlined" density="compact"
-                    hide-details single-line label="Max" color="warning" step="0.01"></v-text-field>
-                </v-col>
-              </v-row>
+          <v-alert v-else-if="plotErrorMessage" type="error" icon="mdi-alert-octagon" class="mx-4 my-8 pa-6"
+            variant="tonal" border="start">
+            <template #title>Analysis Failed</template>
+            {{ plotErrorMessage }} Please adjust your threshold or selected variables.
+          </v-alert>
+
+          <div v-else class="empty-plot-state d-flex flex-column align-center text-center px-6 py-10">
+            <v-icon size="96" icon="mdi-poll" />
+            <div class="text-h6 font-weight-regular mt-4 text-grey-darken-1">Statistical Visualization Canvas</div>
+            <div class="text-body-2 text-grey-darken-1 mt-2">Choose threshold and season settings below, then run the
+              analysis.
             </div>
+          </div>
+        </div>
+      </v-sheet>
 
-            <!-- Longitude Range -->
-            <div class="px-1 mb-2">
-              <div class="text-caption font-weight-medium mb-1">Longitude Range:</div>
-              <v-row density="compact" no-gutters>
-                <v-col cols="6" class="pr-1">
-                  <v-text-field v-model.number="longitudeMin" type="number" variant="outlined" density="compact"
-                    hide-details single-line label="Min" color="warning" step="0.01"></v-text-field>
-                </v-col>
-                <v-col cols="6" class="pl-1">
-                  <v-text-field v-model.number="longitudeMax" type="number" variant="outlined" density="compact"
-                    hide-details single-line label="Max" color="warning" step="0.01"></v-text-field>
-                </v-col>
-              </v-row>
-            </div>
+      <v-row dense>
+        <v-col cols="12" md="5">
+          <v-card class="analysis-control-panel pa-4" elevation="1">
+            <div class="text-subtitle-2 font-weight-bold mb-3">Threshold & Condition Controls</div>
 
-            <!-- Depth Range -->
-            <div class="px-1 mb-2">
-              <div class="text-caption font-weight-medium mb-1">Depth Range (m):</div>
-              <v-row density="compact" no-gutters>
-                <v-col cols="6" class="pr-1">
-                  <v-text-field v-model.number="depthMin" type="number" variant="outlined" density="compact"
-                    hide-details single-line label="Min" color="warning" step="1"></v-text-field>
-                </v-col>
-                <v-col cols="6" class="pl-1">
-                  <v-text-field v-model.number="depthMax" type="number" variant="outlined" density="compact"
-                    hide-details single-line label="Max" color="warning" step="1"></v-text-field>
-                </v-col>
-              </v-row>
-            </div>
-
-            <v-divider class="my-4"></v-divider>
-
-            <!-- 1. DATA SOURCE: Variable List & Stat Picker Combined -->
-            <v-list-subheader class="font-weight-bold px-1 text-uppercase text-grey">1. Define Data
-              Metric</v-list-subheader>
-            <v-row density="compact">
-              <v-col cols="8" class="pr-1">
-                <!-- Using v-select for variables as requested, it's efficient space-wise -->
-                <v-select v-model="variableListModel" :items="availableVariables" item-title="name" item-value="id"
-                  variant="outlined" density="compact" hide-details base-color="warning" label="Primary Variable">
-                  <template v-slot:item="{ props, item }">
-                    <v-list-item v-bind="props"></v-list-item>
-                  </template>
-                </v-select>
+            <v-row dense>
+              <v-col cols="12">
+                <v-select v-model="selectedAnalysisMode" :items="analysisModes" item-title="name" item-value="id"
+                  label="Analysis Mode" density="compact" variant="outlined" hide-details color="warning" />
               </v-col>
-              <v-col cols="4" class="pl-1">
-                <!-- Button Toggle is perfect for Min/Mean/Max, very visual -->
-                <v-btn-toggle v-model="primaryStat" color="warning" mandatory variant="outlined" density="compact"
-                  full-width>
-                  <v-btn v-for="stat in statsTypes" :key="stat.id" :value="stat.id">
-                    {{ stat.name }}
-                  </v-btn>
+
+              <v-col cols="12">
+                <v-text-field v-model.number="thresholdValue" type="number" label="Threshold Value" variant="outlined"
+                  density="compact" hide-details color="warning" />
+              </v-col>
+
+              <v-col cols="12">
+                <v-btn-toggle v-model="thresholdDirection" mandatory variant="tonal" density="compact" class="w-100">
+                  <v-btn value=">">Above</v-btn>
+                  <v-btn value="<">Below</v-btn>
+                </v-btn-toggle>
+              </v-col>
+
+              <v-col cols="12">
+                <v-select v-model="selectedSeason" :items="seasons" item-title="name" item-value="id" label="Season"
+                  variant="outlined" density="compact" hide-details color="warning" />
+              </v-col>
+
+              <v-col cols="12">
+                <v-select v-model="variableListModel" :items="availableVariables" item-title="name" item-value="id"
+                  label="Primary Variable" variant="outlined" density="compact" hide-details color="warning" />
+              </v-col>
+
+              <v-col cols="12">
+                <v-btn-toggle v-model="primaryStat" mandatory variant="outlined" density="compact" class="w-100">
+                  <v-btn v-for="stat in statsTypes" :key="stat.id" :value="stat.id">{{ stat.name }}</v-btn>
                 </v-btn-toggle>
               </v-col>
             </v-row>
 
-            <v-divider class="my-4"></v-divider>
-
-            <!-- 2. ANALYSIS MODE: Prominent Switcher -->
-            <v-list-subheader class="font-weight-bold px-1 text-uppercase text-grey">2. Select Analysis
-              Mode</v-list-subheader>
-            <v-select v-model="selectedAnalysisMode" :items="analysisModes" item-title="name" item-value="id"
-              variant="outlined" density="compact" color="warning" hide-details>
-              <template v-slot:item="{ props, item }">
-                <!-- <v-list-item v-bind="props" :prepend-icon="item.icon" :subtitle="item.desc"></v-list-item> -->
-                <v-list-item v-bind="props" :prepend-icon="item.icon">
-                  <template v-slot:subtitle>
-                    <div class="text-caption text-grey-darken-1">{{ item.desc }}</div>
-                  </template>
-                </v-list-item>
-              </template>
-            </v-select>
-
-            <!-- Dynamic Parameter Panel: Threshold (Progressive Disclosure) -->
-            <v-expand-transition>
-              <v-sheet v-if="showThresholdParams" class="pa-3 border border-alert bg-alert-lighten rounded mb-2"
-                variant="outlined">
-                <div class="text-caption font-weight-bold mb-2">Threshold Condition:</div>
-                <v-row density="compact" align="center" no-gutters>
-                  <v-col cols="8">
-                    <v-text-field v-model.number="thresholdValue" type="number" variant="outlined" density="compact"
-                      hide-details single-line label="Value" color="warning"></v-text-field>
-                  </v-col>
-                  <v-col cols="4" class="pl-1">
-                    <!-- Segmented button for direct selector like this -->
-                    <v-btn-toggle v-model="thresholdDirection" mandatory variant="tonal" density="compact" full-width>
-                      <v-btn value=">">Above</v-btn>
-                      <v-btn value="<">Below</v-btn>
-                    </v-btn-toggle>
-                  </v-col>
-                </v-row>
-              </v-sheet>
-            </v-expand-transition>
-
-            <!-- Dynamic Parameter Panel: Correlation Variables (Progressive Disclosure) -->
-            <v-expand-transition>
-              <v-sheet v-if="showCorrelationParams"
-                class="pa-3 border border-secondary bg-secondary-lighten rounded mb-2" variant="outlined">
-                <div class="text-caption font-weight-bold mb-2">Compare against:</div>
-                <v-row density="compact" no-gutters>
-                  <v-col cols="8">
-                    <v-select v-model="secondVariable" :items="availableVariables" item-title="name" item-value="id"
-                      variant="outlined" density="compact" hide-details label="Secondary Variable"
-                      color="secondary"></v-select>
-                  </v-col>
-                  <v-col cols="4" class="pl-1">
-                    <v-btn-toggle v-model="secondStat" color="secondary" mandatory variant="outlined" density="compact"
-                      full-width>
-                      <v-btn value="min" class="px-1 text-caption">Min</v-btn>
-                      <v-btn value="mean" class="px-1 text-caption">Mean</v-btn>
-                    </v-btn-toggle>
-                  </v-col>
-                </v-row>
-              </v-sheet>
-            </v-expand-transition>
-
-            <v-divider class="my-4"></v-divider>
-
-            <!-- 3. TEMPORAL FOCUS: Slider for Years, Select for Season -->
-            <v-list-subheader class="font-weight-bold px-1 text-uppercase text-grey">3. Set Temporal
-              Focus</v-list-subheader>
-
-            <div class="px-1 mb-2">
-              <div class="d-flex justify-space-between text-caption font-weight-medium mb-n1">
-                <span>Years Range:</span>
-                <span class="text-warning font-weight-bold">{{ yearRange[0] }} - {{ yearRange[1] }}</span>
-              </div>
-              <!-- Range Slider is undisputedly best for this visual range selection -->
-              <v-range-slider v-model="yearRange" :min="minYear" :max="maxYear" :step="1" hide-details color="warning"
-                density="compact" thumb-label="always" class="year-range-slider"></v-range-slider>
-            </div>
-
-            <v-select v-model="selectedSeason" :items="seasons" item-title="name" item-value="id"
-              label="Seasonality Filter" variant="outlined" density="compact" hide-details color="warning"
-              class="mb-1"></v-select>
-
-            <v-divider class="my-4"></v-divider>
-
-            <!-- 4. REFERENCE LINES (only for overlay mode) -->
-            <v-expand-transition>
-              <v-sheet v-if="selectedAnalysisMode === 'overlay'"
-                class="pa-3 border border-info bg-info-lighten rounded mb-2" variant="outlined">
-                <div class="d-flex align-center mb-2">
-                  <span class="text-caption font-weight-bold">4. Reference Lines</span>
-                  <v-spacer></v-spacer>
-                  <v-switch v-model="showHorizontalLines" hide-details density="compact" color="info" inset
-                    class="mt-n2"></v-switch>
-                </div>
-                <v-expand-transition>
-                  <div v-if="showHorizontalLines">
-                    <!-- Reference Line 1 -->
-                    <v-row density="compact" align="center" no-gutters class="mb-1">
-                      <v-col cols="5" class="pr-1">
-                        <v-text-field v-model="hline1Label" variant="outlined" density="compact" hide-details
-                          single-line label="Label 1" color="info" placeholder="Ref A"></v-text-field>
-                      </v-col>
-                      <v-col cols="7" class="pl-1">
-                        <v-text-field v-model.number="hline1Value" type="number" variant="outlined" density="compact"
-                          hide-details single-line label="Value 1" color="info"
-                          :step="variableListModel === 'temperature' ? 0.5 : 0.1"></v-text-field>
-                      </v-col>
-                    </v-row>
-                    <!-- Reference Line 2 -->
-                    <v-row density="compact" align="center" no-gutters class="mb-1">
-                      <v-col cols="5" class="pr-1">
-                        <v-text-field v-model="hline2Label" variant="outlined" density="compact" hide-details
-                          single-line label="Label 2" color="info" placeholder="Ref B"></v-text-field>
-                      </v-col>
-                      <v-col cols="7" class="pl-1">
-                        <v-text-field v-model.number="hline2Value" type="number" variant="outlined" density="compact"
-                          hide-details single-line label="Value 2" color="info"
-                          :step="variableListModel === 'temperature' ? 0.5 : 0.1"></v-text-field>
-                      </v-col>
-                    </v-row>
-                    <!-- Quick min/mean/max suggestion chips -->
-                    <div class="d-flex gap-1 mt-1 flex-wrap">
-                      <span class="text-caption text-grey mr-1">Snap:</span>
-                      <v-chip size="x-small" color="info" variant="tonal" @click="hline1Value = computedMin"
-                        class="text-caption">Min</v-chip>
-                      <v-chip size="x-small" color="info" variant="tonal" @click="hline1Value = computedMean"
-                        class="text-caption">Mean</v-chip>
-                      <v-chip size="x-small" color="info" variant="tonal" @click="hline1Value = computedMax"
-                        class="text-caption">Max</v-chip>
-                    </div>
-                  </div>
-                </v-expand-transition>
-              </v-sheet>
-            </v-expand-transition>
-
-            <v-divider class="my-4"></v-divider>
-
-            <!-- Action Button: Prominent Execution -->
-            <v-btn block color="warning" size="large" prepend-icon="mdi-chart-line"
-              class="mt-6 run-analysis-btn font-weight-bold" :loading="isGenerating" @click="runAnalysis">
+            <v-btn block color="warning" size="large" prepend-icon="mdi-chart-line" class="mt-4" :loading="isGenerating"
+              @click="runAnalysis">
               Run Statistical Analysis
             </v-btn>
-
-          </v-container>
+          </v-card>
         </v-col>
 
-        <!-- RIGHT COLUMN: Visualization Canvas -->
-        <v-col cols="12" md="8" class="visualization-canvas bg-background pl-md-2">
-
-          <!-- Plot Placeholder: Designed to look like a common Chart Empty State -->
-          <v-sheet
-            class="plot-placeholder rounded-lg ma-4 pa-8 border-dashed d-flex align-center justify-center flex-column text-center"
-            elevation="0" :height="500" :color="hasActivePlot ? 'white' : 'grey-lighten-4'" position="relative">
-            <!-- Dynamic Header provided by computed logic -->
-            <div v-if="hasActivePlot" class="plot-header w-100 pa-3 px-4 position-absolute top-0 left-0 text-start">
-              <div class="text-subtitle-2 font-weight-bold text-grey-darken-3">{{ generatedPlotTitle }}</div>
-              <div class="text-caption text-grey-darken-1">{{ props.volumeLabel }}</div>
+        <v-col cols="12" md="7">
+          <v-card class="analysis-results-panel pa-4" elevation="1">
+            <div class="d-flex align-center justify-space-between mb-3">
+              <div>
+                <div class="text-subtitle-2 font-weight-bold">Analysis Results</div>
+                <div class="text-caption text-grey-darken-1">Summary computed from chart data and current threshold.
+                </div>
+              </div>
+              <v-chip color="warning" variant="tonal">
+                {{ thresholdDirectionLabel }} {{ thresholdValue }} · {{ selectedSeasonLabel }}
+              </v-chip>
             </div>
 
-            <!-- GENERATING State -->
-            <div v-if="isGenerating" class="d-flex flex-column align-center animate-pulse">
-              <v-progress-circular indeterminate color="warning" size="64" class="mb-4"></v-progress-circular>
-              <div class="text-h6 font-weight-medium text-warning">Querying ClickHouse...</div>
-              <div class="text-caption text-grey mt-1">Aggregating 20 years of daily stats within chosen volume...</div>
+            <v-data-table :headers="summaryHeaders" :items="summaryRows" dense hide-default-footer
+              class="summary-table" />
+
+            <div v-if="summaryRows.length === 0" class="text-caption text-center text-grey-darken-1 py-8">
+              Run the analysis to populate threshold results.
             </div>
-
-            <!-- ACTIVE PLOT rendered with echarts -->
-            <div v-else-if="hasActivePlot" ref="chartContainerRef" class="real-plot-area w-100 h-100"></div>
-
-            <!-- ERROR state -->
-            <v-alert v-else-if="plotErrorMessage" type="error" icon="mdi-alert-octagon" class="w-75 pa-6"
-              variant="tonal" border="start">
-              <template v-slot:title> Analysis Failed </template>
-              {{ plotErrorMessage }} Please adjust your constraints or selected variables.
-            </v-alert>
-
-            <!-- INITIAL/EMPTY state -->
-            <div v-else
-              class="empty-plot-state d-flex flex-column align-center pa-10 text-grey border rounded-circle border-lg border-dashed">
-              <v-icon size="128" icon="mdi-poll"></v-icon>
-              <div class="text-h6 font-weight-regular mt-5 text-grey-darken-1">Statistical Visualization Canvas</div>
-              <div class="text-body-2 text-grey-darken-1 mt-1">Define your analytical constraints on the left
-                sidebar<br>and
-                click [Run Statistical Analysis] to visualize results here.</div>
-            </div>
-          </v-sheet>
-
+          </v-card>
         </v-col>
       </v-row>
     </v-card>
-  </v-dialog>
+  </v-navigation-drawer>
 </template>
 
 
@@ -336,14 +164,14 @@ const seasons = [
 ]
 
 // --- REACTIVE STATE (User Selections) ---
-const showDialog = ref(true)
-
 // Current Fixed Volume Context (Passed down as props in real app)
 const props = defineProps({
   volumeLabel: { type: String, default: 'Northern Strait of Georgia (Depth: 10-20m)' }
 })
 
 // UI State
+const isOpen = ref(true)
+
 const variableListModel = ref('temperature') // Default list selection
 const primaryStat = ref('mean') // Default stat toggle
 
@@ -412,6 +240,69 @@ const computedMean = computed(() => {
   return allValues.length > 0 ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0
 })
 
+const summaryHeaders = [
+  { title: 'Series', key: 'series' },
+  { title: 'Matches', key: 'matches' },
+  { title: 'Min', key: 'min' },
+  { title: 'Max', key: 'max' },
+  { title: 'Mean', key: 'mean' },
+  { title: 'Condition', key: 'condition' }
+]
+
+const selectedSeasonLabel = computed(() => {
+  return seasons.find(season => season.id === selectedSeason.value)?.name || 'Season'
+})
+
+const thresholdDirectionLabel = computed(() => (thresholdDirection.value === '>' ? 'Above' : 'Below'))
+
+const summaryRows = computed(() => {
+  if (!chartData) return []
+
+  const threshold = thresholdValue.value
+  const direction = thresholdDirection.value
+  const compare = (value: number) => direction === '>' ? value > threshold : value < threshold
+
+  if (Array.isArray(chartData.series)) {
+    return chartData.series.map((serie: any) => {
+      const values: number[] = Array.isArray(serie.data)
+        ? serie.data.map((d: any) => Number(d.value)).filter((v: number) => !Number.isNaN(v))
+        : []
+      const matches = values.filter(compare)
+      const min = values.length ? Math.min(...values) : null
+      const max = values.length ? Math.max(...values) : null
+      const mean = values.length ? (values.reduce((sum: number, v: number) => sum + v, 0) / values.length) : null
+
+      return {
+        series: `Year ${serie.year}`,
+        matches: matches.length,
+        min: min != null ? min.toFixed(2) : '—',
+        max: max != null ? max.toFixed(2) : '—',
+        mean: mean != null ? mean.toFixed(2) : '—',
+        condition: `${thresholdDirectionLabel.value} ${threshold}`
+      }
+    })
+  }
+
+  if (Array.isArray(chartData.data)) {
+    const values = chartData.data.map((d: any) => Number(d.value)).filter((v: number) => !Number.isNaN(v))
+    const matches = values.filter(compare)
+    const min = values.length ? Math.min(...values) : null
+    const max = values.length ? Math.max(...values) : null
+    const mean = values.length ? (values.reduce((sum: number, v: number) => sum + v, 0) / values.length) : null
+
+    return [{
+      series: 'Climatology Cycle',
+      matches: matches.length,
+      min: min != null ? min.toFixed(2) : '—',
+      max: max != null ? max.toFixed(2) : '—',
+      mean: mean != null ? mean.toFixed(2) : '—',
+      condition: `${thresholdDirectionLabel.value} ${threshold}`
+    }]
+  }
+
+  return []
+})
+
 // Plotting States
 const isGenerating = ref(false)
 const hasActivePlot = ref(false)
@@ -477,7 +368,7 @@ function renderOverlayChart(responseData: any) {
     ? series[0].data.map((d: any) => d.time)
     : []
 
-  const echartsSeries = series.map((serie: any) => ({
+  const echartsSeries: echarts.LineSeriesOption[] = series.map((serie: any) => ({
     name: String(serie.year),
     type: 'line',
     smooth: true,
@@ -525,8 +416,8 @@ function renderOverlayChart(responseData: any) {
 
   // Apply markLine to last series so it draws on top, or to all series
   if (markLineData.length > 0 && echartsSeries.length > 0) {
-    // Apply to the last series so it renders on top
-    echartsSeries[echartsSeries.length - 1].markLine = {
+    const lastSeries = echartsSeries[echartsSeries.length - 1]
+    lastSeries.markLine = {
       silent: false,
       symbol: 'none',
       animation: false,
@@ -605,7 +496,7 @@ function renderClimatologyChart(responseData: any) {
   const series = responseData.data || []
   const timePoints = series.map((d: any) => d.time)
 
-  const echartsSeries = {
+  const echartsSeries: echarts.LineSeriesOption = {
     name: "Climatology Cycle",
     type: 'line',
     smooth: true,
@@ -834,10 +725,25 @@ const resetParameters = () => {
   /* Kept tight to maximize chart space */
 }
 
-.visualization-canvas {
-  /* height: calc(100vh - 64px); */
-  /* Fills screen height minus toolbar, adjustable */
-  min-height: 580px;
+.chart-card {
+  min-height: 460px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-body {
+  flex: 1;
+  min-height: 360px;
+  position: relative;
+}
+
+.analysis-control-panel,
+.analysis-results-panel {
+  min-height: 420px;
+}
+
+.summary-table {
+  width: 100%;
 }
 
 .mode-selector :deep(.v-list-item-subtitle) {

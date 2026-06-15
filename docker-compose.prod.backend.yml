@@ -24,8 +24,19 @@ services:
       - LO_NC_DIR=${LO_NC_DIR:-/opt/data/LO/nc}
       - LO_IMAGE_DIR=${LO_IMAGE_DIR:-/opt/data/LO/images}
       - EVAL_DATA_DIR=${EVAL_DATA_DIR:-/opt/data/eval}
+      # ClickHouse: local docker-compose instance (db-ch service) by default
+      - CH_HOST=${CH_HOST:-db-ch}
+      - CH_PORT=${CH_PORT:-8123}
+      - CH_USER=${CH_USER:-default}
+      - CH_PASSWORD=${CH_PASSWORD:-${CLICKHOUSE_PASSWORD:-}}
+      # Set CH_USE_REMOTE=true and CH_REMOTE_URL to query a remote ClickHouse instead
+      - CH_USE_REMOTE=${CH_USE_REMOTE:-false}
+      - CH_REMOTE_URL=${CH_REMOTE_URL:-}
+      - CH_REMOTE_USER=${CH_REMOTE_USER:-}
+      - CH_REMOTE_PASSWORD=${CH_REMOTE_PASSWORD:-}
     depends_on:
       - db
+      - db-ch
     restart: unless-stopped
 
   db:
@@ -57,7 +68,7 @@ services:
       # - ./clickhouse_data:/var/lib/clickhouse
       # - ./clickhouse_logs:/var/log/clickhouse-server
       # - ./data:/app/data
-      - /home/cioos/clickhouse_data:/app/data
+      - /home/cioos/clickhouse_data:/var/lib/clickhouse
       # - ./scripts:/app/scripts
       # - ./clickhouse-entrypoint.sh:/app/clickhouse-entrypoint.sh
     environment:
