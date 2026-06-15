@@ -5,7 +5,7 @@ Extract a time series for an ocean variable at a coordinate from ClickHouse.
 
 For each supported `source`, the nearest grid cell to (lat, lon) is looked up
 in that source's grid table (e.g. `grid_SSC`), then the requested variable is
-read from the source's 4D data table (e.g. `ocean_4d_efficient`) for that
+read from the source's 4D data table (e.g. `SalishSeaCast_daily`) for that
 grid cell over the requested time range.
 
 When `depth` is given, the available depth level nearest to it is selected
@@ -30,7 +30,7 @@ from modules.clickhouse_helpers import get_ch_client
 
 # ClickHouse table holding the 4D (time, depth, gridX, gridY, <variables>) data per source
 DATA_TABLE_BY_SOURCE = {
-    "SalishSeaCast": "ocean_4d_efficient",
+    "SalishSeaCast": "SalishSeaCast_daily",
 }
 
 # ClickHouse table mapping gridX/gridY to longitude/latitude per source

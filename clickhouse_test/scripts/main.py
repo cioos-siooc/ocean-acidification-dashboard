@@ -50,7 +50,7 @@ client = clickhouse_connect.get_client(
 
 print("Creating storage-optimized table if needed...")
 client.command("""
-CREATE TABLE IF NOT EXISTS ocean_4d_efficient (
+CREATE TABLE IF NOT EXISTS SalishSeaCast_daily (
     time DateTime64(0) CODEC(DoubleDelta, ZSTD(4)),
     depth Float32 CODEC(Gorilla, ZSTD(4)),
     gridX UInt16 CODEC(DoubleDelta, ZSTD(4)),
@@ -77,7 +77,7 @@ def print_storage_stats(client, phase="CURRENT"):
             toUInt64(sum(data_compressed_bytes)),
             toUInt64(sum(data_uncompressed_bytes))
         FROM system.parts
-        WHERE table = 'ocean_4d_efficient' AND active = 1
+        WHERE table = 'SalishSeaCast_daily' AND active = 1
     """)
     row = stats.result_rows[0]
     c_bytes = row[2] if row[2] is not None else 0
@@ -134,7 +134,7 @@ for date_int in range(START_DATE, END_DATE + 1):
         print(f" -> Flushing batch of {batch_rows} rows to ClickHouse...")
         df_to_insert = pd.concat(batch_dfs, ignore_index=True)
         client.insert(
-            table='ocean_4d_efficient', 
+            table='SalishSeaCast_daily', 
             data=df_to_insert,
             column_names=list(df_to_insert.columns)
         )
@@ -183,6 +183,6 @@ print(f"\nTotal Migration complete in {time.time() - total_start_time:.2f} secon
 
 # Final optimization is disabled by default; enable only when a full merge is required.
 print("Skipping final ClickHouse OPTIMIZE pass for normal ingestion.")
-# client.command("OPTIMIZE TABLE ocean_4d_efficient FINAL")
+# client.command("OPTIMIZE TABLE SalishSeaCast_daily FINAL")
 
 print_storage_stats(client, "AFTER INGESTION AND MERGE")

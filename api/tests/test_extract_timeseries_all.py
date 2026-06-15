@@ -58,7 +58,7 @@ def test_extract_timeseries_bottom_depth_selects_max(monkeypatch):
     monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: fake)
 
     from extractTimeseries import _resolve_depth
-    assert _resolve_depth(fake, 'ocean_4d_efficient', 10, 20, -1) == 10.0
+    assert _resolve_depth(fake, 'SalishSeaCast_daily', 10, 20, -1) == 10.0
 
 
 def test_extract_timeseries_all_depths(monkeypatch):

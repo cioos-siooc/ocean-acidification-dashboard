@@ -21,7 +21,7 @@ VARIABLE_COLUMN_MAP = {
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Query a time series from the ClickHouse ocean_4d_efficient table",
+        description="Query a time series from the ClickHouse SalishSeaCast_daily table",
         epilog="Example: python query_timeseries.py --variable temperature --depth 5 --gridX -123.45 --gridY 48.5",
     )
     parser.add_argument("--variable", required=True, choices=VARIABLE_COLUMN_MAP.keys(), help="Variable to extract: temperature or salinity")
@@ -47,7 +47,7 @@ def format_iso(dt):
 
 
 def build_query(column: str, depth: float, lat: float, lon: float, from_time: str | None, to_time: str | None, limit: int, tolerance: float) -> tuple[str, list]:
-    sql = [f"SELECT time, {column} AS value FROM ocean_4d_efficient"]
+    sql = [f"SELECT time, {column} AS value FROM SalishSeaCast_daily"]
     sql.append("WHERE abs(depth - %s) <= %s AND abs(latitude - %s) <= %s AND abs(longitude - %s) <= %s")
     params = [depth, tolerance, lat, tolerance, lon, tolerance]
     if from_time is not None:
