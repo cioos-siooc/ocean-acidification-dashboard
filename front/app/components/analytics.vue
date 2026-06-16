@@ -383,10 +383,26 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
   const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   const fmtMD = (iso: string) => `${MONTH_ABBR[parseInt(iso.slice(5, 7)) - 1]} ${iso.slice(8, 10)}`
 
-  const timePoints = series[0]?.data.map(d => fmtMD(d.time)) || []
-  const total = series.length
+  // DJF crosses a year boundary: reorder each year's points Dec → Jan → Feb
+  // so the x-axis reads chronologically within the season rather than Jan-Feb-Dec.
+  const seasonOrder = (iso: string) => {
+    const m = parseInt(iso.slice(5, 7))
+    return m === 12 ? 0 : m   // Dec=0, Jan=1, Feb=2; other months unchanged
+  }
+  const orderedSeries = selectedSeason.value === 'djf'
+    ? series.map(({ year, data }) => ({
+        year,
+        data: [...data].sort((a, b) => {
+          const da = seasonOrder(a.time), db = seasonOrder(b.time)
+          return da !== db ? da - db : a.time.localeCompare(b.time)
+        })
+      }))
+    : series
 
-  const echartsSeries: any[] = series.map((s, idx) => {
+  const timePoints = orderedSeries[0]?.data.map(d => fmtMD(d.time)) || []
+  const total = orderedSeries.length
+
+  const echartsSeries: any[] = orderedSeries.map((s, idx) => {
     const t = total <= 1 ? 1 : idx / (total - 1)
     const color = yearColor(idx, total)
     const width = 1 + t * 1.5   // 1px (oldest) → 2.5px (newest)

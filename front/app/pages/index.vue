@@ -1160,7 +1160,7 @@ function updateAnalysisBox() {
       paint: { 'fill-color': 'rgba(255,193,7,0.08)' },
       layout: { visibility: show ? 'visible' : 'none' } })
     map.addLayer({ id: ABOX_LINE, type: 'line', source: ABOX_SOURCE,
-      paint: { 'line-color': 'rgba(255,193,7,0.85)', 'line-width': 1.5, 'line-dasharray': [4, 2] },
+      paint: { 'line-color': '#ff5722', 'line-width': 1.5, 'line-dasharray': [4, 2] },
       layout: { visibility: show ? 'visible' : 'none' } })
   }
 }
