@@ -20,10 +20,8 @@
         <!-- <div class="d-flex flex-column h-screen overflow-hidden"> -->
         <!-- Top: Map -->
         <div ref="mapContainer" class="flex-grow-1"
-            :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }">
+            :style="{ position: 'relative', height: `calc(100% - ${activeFooterHeight})` }">
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
-
-            <Analytics />
 
             <Overlays @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
                 @autorange="autorange" class="overlay"
@@ -64,41 +62,36 @@
         </div>
 
         <!-- Bottom: Global Chart Footer -->
-        <v-footer class="ma-0 pa-0" :style="{ maxHeight: footerHeight }">
-            <!-- <div ref="globalChartContainer" class="w-100" :style="{ height: `calc(${footerHeight} - 20px)` }"></div> -->
-            <v-container minWidth="100%" class="ma-0 pa-0">
-                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)`, position: 'relative' }"
-                    gap="0">
-                    <TimeControls
-                        :timestamps="mainStore.variables.find(v => v.var === mainStore.selected_variable.var)?.dts || []"
-                        :currentDt="mainStore.selected_variable.dt"
-                        @update:dt="(newDt) => mainStore.updateSelectedVariable({ dt: newDt })" />
+        <v-footer class="ma-0 pa-0" :style="{ height: activeFooterHeight, maxHeight: activeFooterHeight }">
+            <v-container minWidth="100%" class="ma-0 pa-0 d-flex flex-column" :style="{ height: activeFooterHeight }">
 
-                    <TimeseriesChart ref="timeseriesChart" style="width: 100%; height: calc(100% - 32px);" />
-                    <!-- <HeatmapChart style="width: 100%; height: calc(100% - 32px);" /> -->
+                <!-- Tab bar -->
+                <v-tabs v-model="activeTab" density="compact" height="28" bg-color="transparent" class="footer-tabs flex-shrink-0">
+                    <v-tab value="timeseries" prepend-icon="mdi-chart-line" size="small">Timeseries</v-tab>
+                    <v-tab value="analysis" prepend-icon="mdi-poll" size="small">Analysis Builder</v-tab>
+                    <v-spacer />
+                    <div class="d-flex align-center px-2 text-label-small" style="font-size:0.72rem; opacity:0.6;">
+                        <v-icon size="12px" class="mx-1">mdi-cursor-default-outline</v-icon>
+                        {{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5) }}
+                    </div>
+                </v-tabs>
 
-                    <!-- <div class="py-3"
-                        style="position: absolute; width:40px; height: 100%; bottom: 0px; right: 0px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:6px; padding-top:6px;">
-                        <v-btn title="Long-term climatology" flat size="20px" :disabled="!lastClicked" icon
-                            color="primary" @click="dialogOpen = true">
-                            <v-icon size="14px">mdi-chart-line</v-icon>
-                        </v-btn>
-                    </div> -->
-                </v-row>
+                <!-- Content area -->
+                <div class="flex-grow-1" style="min-height:0; overflow:hidden;">
+                    <!-- Timeseries tab -->
+                    <div v-show="activeTab === 'timeseries'" style="height:100%; position:relative;">
+                        <TimeControls
+                            :timestamps="mainStore.variables.find(v => v.var === mainStore.selected_variable.var)?.dts || []"
+                            :currentDt="mainStore.selected_variable.dt"
+                            @update:dt="(newDt) => mainStore.updateSelectedVariable({ dt: newDt })" />
+                        <TimeseriesChart ref="timeseriesChart" style="width:100%; height:calc(100% - 32px);" />
+                    </div>
 
-                <!-- VERY BOTTOM BAR -->
-                <v-row class="my-0 mx-2 pa-0" style="height:20px; ">
-                    <!-- <v-col cols="auto" class="my-0 mx-1 pa-0 text-label-small" style="height:20px">
-                        Server Status
-                        <v-icon size="10px" color="green">mdi-circle</v-icon>
-                    </v-col> -->
-                    <v-spacer></v-spacer>
-                    <v-col cols="auto" class="my-0 mx-1 pa-0 text-label-small" style="height:20px">
-                        <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
-                        <span>{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
-                            }}</span>
-                    </v-col>
-                </v-row>
+                    <!-- Analysis Builder tab -->
+                    <div v-show="activeTab === 'analysis'" style="height:100%;">
+                        <Analytics />
+                    </div>
+                </div>
 
             </v-container>
 
@@ -156,10 +149,12 @@ const timeseriesChart = ref<InstanceType<typeof TimeseriesChart> | null>(null);
 let map: mapboxgl.Map | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
+const activeTab = ref<'timeseries' | 'analysis'>('timeseries');
 
 const isRectangleDrawing = ref(false);
 const drawnRectangle = ref<Feature<Polygon> | null>(null);
 const footerHeight = ref<string>('300px');
+const activeFooterHeight = computed(() => activeTab.value === 'analysis' ? '440px' : footerHeight.value);
 
 const sensorPicker = ref<{ visible: boolean; x: number; y: number; sensors: MultiSensorCandidate[] }>({
     visible: false,
@@ -1140,9 +1135,16 @@ let _sensorClickPending = false;
     position: absolute;
     top: 12px;
     z-index: 2;
-    /* background: rgba(255, 255, 255, 0.85); */
     border-radius: 8px;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.footer-tabs :deep(.v-tab) {
+    font-size: 0.75rem;
+    letter-spacing: 0;
+    text-transform: none;
+    min-width: 0;
+    padding: 0 12px;
 }
 </style>
 

@@ -27,7 +27,7 @@ from modules.extract_climate_timeseries import extract_climate_timeseries
 from modules.extractMinMax import extract_minmax
 from modules.pngGenerator import generate_png_for_variable
 from modules.extractSensorTimeseries import extract_sensor_timeseries
-from modules.ocean_analysis import lookup_grid_cells_for_polygon, query_overlay_timeseries, query_climatology, query_threshold_count, query_trend, query_correlation
+from modules.ocean_analysis import lookup_grid_cells_for_polygon, query_region_timeseries
 
 async def run_in_process(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
@@ -1034,164 +1034,66 @@ class MetricSpec(BaseModel):
     variable: str
     stat: str
 
-class ThresholdSpec(BaseModel):
-    value: float
-    direction: str  # ">" or "<"
-
 class DepthRange(BaseModel):
     min: float
     max: float
 
 class AnalysisRequest(BaseModel):
-    # The API now exclusively expects a GeoJSON-style polygon coordinate array
+    # The API expects a GeoJSON-style polygon coordinate array
     # e.g., [[lon1, lat1], [lon2, lat2], [lon3, lat3], [lon1, lat1]]
     polygon: List[Tuple[float, float]]
     depth: DepthRange
     primaryMetric: MetricSpec
     temporal: dict
-    threshold: Optional[ThresholdSpec] = None
-    secondMetric: Optional[MetricSpec] = None
 
 # ==============================================================================
 # STREAMLINED ENDPOINT
 # ==============================================================================
-@app.post("/analysis/overlay")
-async def analysis_overlay(request: AnalysisRequest):
-    """Overlay Yearly Timeseries — Aggregates data strictly within a custom polygon."""
+@app.post("/analysis/timeseries")
+async def analysis_timeseries(request: AnalysisRequest):
+    """Regional Daily Timeseries — Aggregates data strictly within a custom polygon.
+
+    Returns a flat daily {time, value} series; the frontend derives
+    climatology, trend, threshold, streak, and extreme-value analytics
+    from this series.
+    """
     try:
         # 1. Enforce that the polygon has enough points to form a closed shape
         if len(request.polygon) < 3:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Invalid polygon. A regional selection requires at least 3 coordinate pairs."
             )
 
-        # 2. Method 2: Convert real-world coordinates to explicit grid integer tuples
-        # This queries the fast grid_SSC lookup table in the background
+        # 2. Convert real-world coordinates to explicit grid integer tuples
         grid_points = await run_in_threadpool(
-            lookup_grid_cells_for_polygon, 
+            lookup_grid_cells_for_polygon,
             polygon_coords=request.polygon
         )
-        
+
         if not grid_points:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="The selected polygon area does not cover any active marine grid cells."
             )
 
-        # 3. Forward the resolved points list straight to your historical dataset
+        # 3. Forward the resolved points list straight to the historical dataset
         result = await run_in_threadpool(
-            query_overlay_timeseries,
-            grid_points=grid_points,  # 🚀 The only spatial argument needed now!
+            query_region_timeseries,
+            grid_points=grid_points,
             depth_range=(request.depth.min, request.depth.max),
             variable=request.primaryMetric.variable,
             stat=request.primaryMetric.stat,
             year_range=request.temporal["yearRange"],
-            season=request.temporal.get("season", "full_year"),
         )
         return result
-        
+
     except HTTPException:
         raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
-        logger.exception("analysis_overlay failed")
-        raise HTTPException(status_code=500, detail=str(exc))
-    
-
-@app.post("/analysis/climatology")
-async def analysis_climatology(request: AnalysisRequest):
-    """Aggregated Climatology Cycle — averaged monthly climatology."""
-    try:
-        result = await run_in_threadpool(
-            query_climatology,
-            grid_x_range=(request.gridX.min, request.gridX.max),
-            grid_y_range=(request.gridY.min, request.gridY.max),
-            depth_range=(request.depth.min, request.depth.max),
-            variable=request.primaryMetric.variable,
-            stat=request.primaryMetric.stat,
-            year_range=request.temporal["yearRange"],
-        )
-        return result
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        logger.exception("analysis_climatology failed")
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@app.post("/analysis/threshold")
-async def analysis_threshold(request: AnalysisRequest):
-    """Extreme Event (Threshold) Count — days per year matching threshold."""
-    if not request.threshold:
-        raise HTTPException(status_code=400, detail="threshold is required for threshold mode")
-    try:
-        result = await run_in_threadpool(
-            query_threshold_count,
-            grid_x_range=(request.gridX.min, request.gridX.max),
-            grid_y_range=(request.gridY.min, request.gridY.max),
-            depth_range=(request.depth.min, request.depth.max),
-            variable=request.primaryMetric.variable,
-            stat=request.primaryMetric.stat,
-            year_range=request.temporal["yearRange"],
-            season=request.temporal.get("season", "full_year"),
-            threshold_value=request.threshold.value,
-            threshold_direction=request.threshold.direction,
-        )
-        return result
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        logger.exception("analysis_threshold failed")
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@app.post("/analysis/trend")
-async def analysis_trend(request: AnalysisRequest):
-    """Inter-Annual Trend Analysis — per-year annual means."""
-    try:
-        result = await run_in_threadpool(
-            query_trend,
-            grid_x_range=(request.gridX.min, request.gridX.max),
-            grid_y_range=(request.gridY.min, request.gridY.max),
-            depth_range=(request.depth.min, request.depth.max),
-            variable=request.primaryMetric.variable,
-            stat=request.primaryMetric.stat,
-            year_range=request.temporal["yearRange"],
-            season=request.temporal.get("season", "full_year"),
-        )
-        return result
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        logger.exception("analysis_trend failed")
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@app.post("/analysis/correlation")
-async def analysis_correlation(request: AnalysisRequest):
-    """Multi-Variable Correlation — paired per-timestep values for two variables."""
-    if not request.secondMetric:
-        raise HTTPException(status_code=400, detail="secondMetric is required for correlation mode")
-    try:
-        result = await run_in_threadpool(
-            query_correlation,
-            grid_x_range=(request.gridX.min, request.gridX.max),
-            grid_y_range=(request.gridY.min, request.gridY.max),
-            depth_range=(request.depth.min, request.depth.max),
-            primary_variable=request.primaryMetric.variable,
-            primary_stat=request.primaryMetric.stat,
-            second_variable=request.secondMetric.variable,
-            second_stat=request.secondMetric.stat,
-            year_range=request.temporal["yearRange"],
-            season=request.temporal.get("season", "full_year"),
-        )
-        return result
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        logger.exception("analysis_correlation failed")
+        logger.exception("analysis_timeseries failed")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
