@@ -89,7 +89,7 @@
 
                     <!-- Analysis Builder tab -->
                     <div v-show="activeTab === 'analysis'" style="height:100%;">
-                        <Analytics />
+                        <Analytics :variable="selectedVariable.var" :last-clicked="lastClicked" />
                     </div>
                 </div>
 

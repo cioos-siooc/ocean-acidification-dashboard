@@ -1,142 +1,132 @@
 <template>
-  <div class="analytics-panel d-flex h-100" style="overflow: hidden;">
+  <div class="analytics-panel d-flex h-100" style="overflow:hidden;">
 
-    <!-- LEFT: Controls sidebar -->
-    <div class="analytics-sidebar pa-3 d-flex flex-column" style="width:300px; min-width:300px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
+    <!-- LEFT: Controls -->
+    <div class="analytics-sidebar pa-2 d-flex flex-column"
+      style="width:190px; min-width:190px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
 
       <div class="d-flex align-center justify-space-between mb-2">
-        <span class="text-subtitle-2 font-weight-bold">Analysis Builder</span>
+        <span class="ctrl-label" style="margin-bottom:0;">ANALYSIS</span>
         <v-btn icon="mdi-refresh" size="x-small" variant="text" @click="resetParameters" title="Reset" />
       </div>
 
-      <v-row dense>
-        <v-col cols="12">
-          <v-select v-model="selectedAnalysisMode" :items="analysisModes" item-title="name" item-value="id"
-            label="Analysis Mode" density="compact" variant="outlined" hide-details color="warning" />
-        </v-col>
+      <div class="ctrl-label">View</div>
+      <v-btn-toggle v-model="chartView" mandatory direction="vertical" variant="tonal" density="compact"
+        class="w-100 mb-3">
+        <v-btn value="overlay" size="small">All Years Overlaid</v-btn>
+        <v-btn value="annual" size="small">Annual Summary</v-btn>
+      </v-btn-toggle>
 
-        <v-col cols="12">
-          <v-text-field v-model.number="thresholdValue" type="number" label="Threshold Value" variant="outlined"
-            density="compact" hide-details color="warning" />
-        </v-col>
+      <div class="ctrl-label">Season</div>
+      <v-btn-toggle v-model="selectedSeason" mandatory variant="tonal" density="compact" class="flex-wrap w-100 mb-3">
+        <v-btn value="full_year" size="x-small" class="season-btn">All</v-btn>
+        <v-btn value="jja" size="x-small" class="season-btn">JJA</v-btn>
+        <v-btn value="mam" size="x-small" class="season-btn">MAM</v-btn>
+        <v-btn value="son" size="x-small" class="season-btn">SON</v-btn>
+        <v-btn value="djf" size="x-small" class="season-btn">DJF</v-btn>
+      </v-btn-toggle>
 
-        <v-col cols="12">
-          <v-btn-toggle v-model="thresholdDirection" mandatory variant="tonal" density="compact" class="w-100">
-            <v-btn value=">">Above</v-btn>
-            <v-btn value="<">Below</v-btn>
-          </v-btn-toggle>
-        </v-col>
+      <div class="ctrl-label">Statistic</div>
+      <v-btn-toggle v-model="primaryStat" mandatory variant="outlined" density="compact" class="w-100 mb-3">
+        <v-btn value="min" size="small">Min</v-btn>
+        <v-btn value="mean" size="small">Mean</v-btn>
+        <v-btn value="max" size="small">Max</v-btn>
+      </v-btn-toggle>
 
-        <v-col cols="12">
-          <v-select v-model="selectedSeason" :items="seasons" item-title="name" item-value="id" label="Season"
-            variant="outlined" density="compact" hide-details color="warning" />
-        </v-col>
-
-        <v-col v-if="selectedSeason === 'custom'" cols="12">
-          <div class="text-caption text-grey-darken-1 mb-1">Select months</div>
-          <v-btn-toggle v-model="customMonths" multiple variant="tonal" density="compact" class="flex-wrap gap-1">
-            <v-btn v-for="(name, idx) in monthNames" :key="idx + 1" :value="idx + 1" size="small" class="month-btn">
-              {{ name }}
-            </v-btn>
-          </v-btn-toggle>
-        </v-col>
-
-        <v-col cols="12">
-          <v-select v-model="variableListModel" :items="availableVariables" item-title="name" item-value="id"
-            label="Primary Variable" variant="outlined" density="compact" hide-details color="warning" />
-        </v-col>
-
-        <v-col cols="12">
-          <v-btn-toggle v-model="primaryStat" mandatory variant="outlined" density="compact" class="w-100">
-            <v-btn v-for="stat in statsTypes" :key="stat.id" :value="stat.id">{{ stat.name }}</v-btn>
-          </v-btn-toggle>
-        </v-col>
-
-        <v-col v-if="selectedAnalysisMode === 'threshold' || selectedAnalysisMode === 'streak'" cols="12">
-          <v-switch v-model="useSecondCondition" label="Add second condition" color="warning" density="compact"
-            hide-details />
-        </v-col>
-
-        <template v-if="isCompoundMode">
-          <v-col cols="12"><v-divider /></v-col>
-          <v-col cols="12">
-            <div class="text-caption text-grey-darken-1 mb-1">Second Condition</div>
-            <v-btn-toggle v-model="compoundLogic" mandatory variant="tonal" density="compact" class="w-100">
-              <v-btn value="AND">AND</v-btn>
-              <v-btn value="OR">OR</v-btn>
-            </v-btn-toggle>
-          </v-col>
-          <v-col cols="12">
-            <v-select v-model="secondVariable" :items="availableVariables" item-title="name" item-value="id"
-              label="Second Variable" variant="outlined" density="compact" hide-details color="warning" />
-          </v-col>
-          <v-col cols="12">
-            <v-btn-toggle v-model="secondStat" mandatory variant="outlined" density="compact" class="w-100">
-              <v-btn v-for="stat in statsTypes" :key="stat.id" :value="stat.id">{{ stat.name }}</v-btn>
-            </v-btn-toggle>
-          </v-col>
-          <v-col cols="12">
-            <v-text-field v-model.number="secondThresholdValue" type="number" label="Second Threshold"
-              variant="outlined" density="compact" hide-details color="warning" />
-          </v-col>
-          <v-col cols="12">
-            <v-btn-toggle v-model="secondThresholdDirection" mandatory variant="tonal" density="compact" class="w-100">
-              <v-btn value=">">Above</v-btn>
-              <v-btn value="<">Below</v-btn>
-            </v-btn-toggle>
-          </v-col>
-        </template>
-      </v-row>
-
-      <v-btn block color="warning" size="large" prepend-icon="mdi-chart-line" class="mt-3" :loading="isGenerating"
-        @click="runAnalysis">
+      <v-btn block color="warning" size="small" prepend-icon="mdi-chart-line" :loading="isGenerating"
+        :disabled="!props.lastClicked || !props.variable" @click="runAnalysis">
         Run Analysis
       </v-btn>
     </div>
 
-    <!-- RIGHT: Chart + summary -->
-    <div class="analytics-main flex-grow-1 d-flex flex-column" style="overflow:hidden; min-width:0;">
+    <!-- CENTER: Chart -->
+    <div class="flex-grow-1 d-flex flex-column" style="min-width:0; overflow:hidden;">
 
-      <!-- Chart header -->
-      <div class="d-flex align-center justify-space-between px-3 py-1" style="flex-shrink:0; border-bottom:1px solid rgba(255,255,255,0.06);">
-        <div>
-          <div class="text-subtitle-2 font-weight-bold">{{ generatedPlotTitle }}</div>
-          <div class="text-caption text-grey-darken-1">{{ props.volumeLabel }}</div>
-        </div>
-        <v-chip color="warning" variant="tonal" size="small">{{ selectedSeasonLabel }}</v-chip>
+      <div class="d-flex align-center px-2 flex-shrink-0"
+        style="height:28px; border-bottom:1px solid rgba(255,255,255,0.06);">
+        <span class="text-caption font-weight-medium text-truncate">{{ chartTitle }}</span>
+        <v-spacer />
+        <v-chip size="x-small" color="warning" variant="tonal" class="ml-1 flex-shrink-0">{{ seasonLabel }}</v-chip>
       </div>
 
-      <!-- Chart body -->
-      <div class="chart-body flex-grow-1" style="position:relative; min-height:0;">
-        <div v-if="isGenerating" class="d-flex flex-column align-center justify-center fill-height">
-          <v-progress-circular indeterminate color="warning" size="48" class="mb-3" />
-          <div class="text-subtitle-2 font-weight-medium text-warning">Querying ClickHouse...</div>
-          <div class="text-body-2 text-grey mt-1">Aggregating data for selected region.</div>
+      <div class="flex-grow-1" style="position:relative; min-height:0;">
+
+        <!-- Chart — stays mounted once first render; greyscale while reloading -->
+        <div v-show="hasActivePlot" ref="chartContainerRef" class="w-100 h-100"
+          :class="{ 'chart-loading': isGenerating }" />
+
+        <!-- First-time load spinner (no chart yet) -->
+        <div v-if="isGenerating && !hasActivePlot"
+          class="d-flex flex-column align-center justify-center fill-height">
+          <v-progress-circular indeterminate color="warning" size="36" class="mb-2" />
+          <div class="text-caption text-warning">Querying ClickHouse...</div>
         </div>
 
-        <div v-else-if="hasActivePlot" ref="chartContainerRef" class="real-plot-area w-100 h-100" />
+        <!-- Reload badge shown over greyscale chart -->
+        <div v-if="isGenerating && hasActivePlot" class="chart-reload-badge">
+          <v-progress-circular indeterminate color="warning" size="14" width="2" class="mr-1" />
+          <span>Updating…</span>
+        </div>
 
-        <v-alert v-else-if="plotErrorMessage" type="error" icon="mdi-alert-octagon" class="ma-4"
-          variant="tonal" border="start">
-          <template #title>Analysis Failed</template>
+        <v-alert v-else-if="!hasActivePlot && plotErrorMessage" type="error" variant="tonal" border="start"
+          class="ma-3" density="compact">
           {{ plotErrorMessage }}
         </v-alert>
 
-        <div v-else class="empty-plot-state d-flex flex-column align-center justify-center text-center px-6 h-100">
-          <v-icon size="72" icon="mdi-poll" class="text-grey-darken-1" />
-          <div class="text-subtitle-1 font-weight-regular mt-3 text-grey-darken-1">Statistical Visualization Canvas</div>
-          <div class="text-body-2 text-grey-darken-1 mt-1">Configure analysis on the left, then click Run.</div>
+        <div v-else-if="!hasActivePlot && !isGenerating && !plotErrorMessage"
+          class="d-flex flex-column align-center justify-center h-100 text-center px-6">
+          <v-icon size="56" color="grey-darken-1">mdi-poll</v-icon>
+          <div class="text-caption text-grey-darken-1 mt-2">Configure options on the left, then click Run
+            Analysis</div>
         </div>
       </div>
+    </div>
 
-      <!-- Summary table (only when populated) -->
-      <div v-if="summaryRows.length > 0" style="flex-shrink:0; max-height:120px; overflow-y:auto; border-top:1px solid rgba(255,255,255,0.08);">
-        <div class="d-flex align-center justify-space-between px-3 py-1">
-          <span class="text-caption font-weight-medium text-grey-darken-1">Summary</span>
-          <v-chip color="warning" variant="tonal" size="x-small">{{ conditionLabel }} · {{ selectedSeasonLabel }}</v-chip>
+    <!-- RIGHT: Stats panel -->
+    <div class="analytics-stats pa-2 d-flex flex-column"
+      style="width:215px; min-width:215px; overflow:hidden; border-left:1px solid rgba(255,255,255,0.08);">
+
+      <template v-if="extremeRecords">
+        <div class="ctrl-label">All-time Records</div>
+        <div class="d-flex align-center mb-1">
+          <v-icon size="13" color="red-lighten-2">mdi-arrow-up-bold</v-icon>
+          <span class="text-caption font-weight-medium ml-1">{{ Number(extremeRecords.max.value).toFixed(3) }}</span>
+          <span class="text-grey ml-auto" style="font-size:0.63rem;">{{ String(extremeRecords.max.time).slice(0,
+            10) }}</span>
         </div>
-        <v-data-table :headers="summaryHeaders" :items="summaryRows" density="compact" hide-default-footer
-          class="summary-table" />
+        <div class="d-flex align-center mb-3">
+          <v-icon size="13" color="blue-lighten-2">mdi-arrow-down-bold</v-icon>
+          <span class="text-caption font-weight-medium ml-1">{{ Number(extremeRecords.min.value).toFixed(3) }}</span>
+          <span class="text-grey ml-auto" style="font-size:0.63rem;">{{ String(extremeRecords.min.time).slice(0,
+            10) }}</span>
+        </div>
+      </template>
+
+      <div class="ctrl-label">Threshold</div>
+      <div class="d-flex align-center mb-3" style="gap:4px;">
+        <v-btn-toggle v-model="thresholdDirection" mandatory direction="vertical" variant="tonal" density="compact"
+          style="flex: none;">
+          <v-btn value=">" size="x-small" class="threshold-btn">Above</v-btn>
+          <v-btn value="<" size="x-small" class="threshold-btn">Below</v-btn>
+        </v-btn-toggle>
+        <v-text-field v-model.number="thresholdValue" type="number" variant="outlined" density="compact" hide-details
+          style="flex: none; width: 120px;" />
+      </div>
+
+      <div class="ctrl-label">Per Year · {{ thresholdDirection === '>' ? 'Above' : 'Below' }} {{ thresholdValue }}</div>
+      <div style="flex:1; overflow-y:auto; min-height:0;">
+        <v-data-table v-if="yearlyStats.length" :headers="statsHeaders" :items="yearlyStats" density="compact"
+          hide-default-footer :items-per-page="-1" :sort-by="statsSortBy" class="stats-table">
+          <template #item.days="{ item }">
+            <span :style="statCellStyle(item.days, maxDays)">{{ item.days }}</span>
+          </template>
+          <template #item.streak="{ item }">
+            <span :style="statCellStyle(item.streak, maxStreak)">{{ item.streak }}</span>
+          </template>
+        </v-data-table>
+        <div v-else class="text-caption text-grey text-center mt-6">
+          Run analysis to see per-year stats
+        </div>
       </div>
     </div>
 
@@ -150,251 +140,29 @@ import axios from 'axios'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
 
-const config = useRuntimeConfig();
+const config = useRuntimeConfig()
 const apiBaseUrl = config.public.apiBaseUrl
 
+// --- PROPS ---
+const props = defineProps<{
+  variable: string
+  lastClicked: { lat: number; lng: number } | null
+}>()
 
-// --- DATA CONFIGURATION (Static Metadata) ---
-
+// --- CONSTANTS ---
 const minYear = 2007
 const maxYear = 2026
 
 const availableVariables = [
-  { id: 'temperature', name: 'Temperature', icon: 'mdi-thermometer' },
-  { id: 'salinity', name: 'Salinity', icon: 'mdi-water-percent' },
-  { id: 'dissolved_oxygen', name: 'Dissolved Oxygen', icon: 'mdi-molecule' },
-  { id: 'total_alkalinity', name: 'Total Alkalinity', icon: 'mdi-flask-outline' },
-  { id: 'dissolved_inorganic_carbon', name: 'Dissolved Inorganic Carbon', icon: 'mdi-molecule-co2' },
-  { id: 'ph_total', name: 'pH (Total Scale)', icon: 'mdi-flask' },
-  { id: 'omega_arag', name: 'Omega Aragonite', icon: 'mdi-omega' },
-  { id: 'omega_cal', name: 'Omega Calcite', icon: 'mdi-omega' }
+  { id: 'temperature', name: 'Temperature' },
+  { id: 'salinity', name: 'Salinity' },
+  { id: 'dissolved_oxygen', name: 'Dissolved Oxygen' },
+  { id: 'total_alkalinity', name: 'Total Alkalinity' },
+  { id: 'dissolved_inorganic_carbon', name: 'Dissolved Inorganic Carbon' },
+  { id: 'ph_total', name: 'pH (Total Scale)' },
+  { id: 'omega_arag', name: 'Omega Aragonite' },
+  { id: 'omega_cal', name: 'Omega Calcite' }
 ]
-
-const statsTypes = [
-  { id: 'min', name: 'Min' },
-  { id: 'mean', name: 'Mean' },
-  { id: 'max', name: 'Max' }
-]
-
-const analysisModes = [
-  { id: 'overlay', name: 'Overlay Yearly Timeseries', icon: 'mdi-layers-outline', desc: 'Compare selected season/months across multiple years.' },
-  { id: 'climatology', name: 'Aggregated Climatology Cycle', icon: 'mdi-calendar-sync', desc: 'Averaged seasonal cycle over the full selected period.' },
-  { id: 'threshold', name: 'Extreme Event (Threshold) Count', icon: 'mdi-thermometer-alert', desc: 'Count days matching extreme conditions per year.' },
-  { id: 'streak', name: 'Consecutive Day Streak', icon: 'mdi-fire', desc: 'Longest consecutive-day run matching the threshold condition, per year.' },
-  { id: 'trend', name: 'Inter-Annual Trend Analysis', icon: 'mdi-trending-up', desc: 'Long-term change tracking based on annual means.' },
-  { id: 'extremes', name: 'Record Finder (Extremes)', icon: 'mdi-trophy', desc: 'All-time record high and low values with their dates across the selected period.' },
-  { id: 'correlation', name: 'Multi-Variable Correlation', icon: 'mdi-chart-scatter-plot', desc: 'Relationship between two variables within the selected period.' }
-]
-
-const seasons = [
-  { id: 'full_year', name: 'Full Year (Jan - Dec)' },
-  { id: 'jja', name: 'Summer (JJA)' },
-  { id: 'mam', name: 'Spring (MAM)' },
-  { id: 'son', name: 'Autumn (SON)' },
-  { id: 'djf', name: 'Winter (DJF)' },
-  { id: 'custom', name: 'Custom Month Range' }
-]
-
-const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-// --- REACTIVE STATE (User Selections) ---
-// Current Fixed Volume Context (Passed down as props in real app)
-const props = defineProps({
-  volumeLabel: { type: String, default: 'Northern Strait of Georgia (Depth: 10-20m)' }
-})
-
-// UI State
-const variableListModel = ref('temperature') // Default list selection
-const primaryStat = ref('mean') // Default stat toggle
-
-const selectedAnalysisMode = ref('overlay')
-const yearRange = ref([2015, 2020])
-const selectedSeason = ref('full_year')
-const customMonths = ref<number[]>([6, 7, 8])
-
-// --- SPATIAL EXTENT STATE ---
-const latitudeMin = ref(46)
-const latitudeMax = ref(52)
-const longitudeMin = ref(-127)
-const longitudeMax = ref(-121)
-const depthMin = ref(0)
-const depthMax = ref(100)
-
-// Dynamic Parameter States (Conditionally shown)
-const thresholdValue = ref(19) // e.g., 19°C
-const thresholdDirection = ref('>') // Above/Below
-const secondVariable = ref('dissolved_oxygen')
-const secondStat = ref('min')
-const useSecondCondition = ref(false)
-const secondThresholdValue = ref(0)
-const secondThresholdDirection = ref('>')
-const compoundLogic = ref<'AND' | 'OR'>('AND')
-
-// --- HORIZONTAL REFERENCE LINES STATE ---
-const showHorizontalLines = ref(false)
-const hline1Label = ref('Ref A')
-const hline1Value = ref(15)
-const hline2Label = ref('Ref B')
-const hline2Value = ref(20)
-
-// --- COMPUTED STATISTICS FOR SNAP CHIPS ---
-const computedMin = computed(() => {
-  if (!chartData || !Array.isArray(chartData.series) || chartData.series.length === 0) return 0
-  const allValues: number[] = []
-  for (const serie of chartData.series) {
-    if (Array.isArray(serie.data)) {
-      for (const d of serie.data) {
-        if (d.value != null) allValues.push(d.value)
-      }
-    }
-  }
-  return allValues.length > 0 ? Math.min(...allValues) : 0
-})
-
-const computedMax = computed(() => {
-  if (!chartData || !Array.isArray(chartData.series) || chartData.series.length === 0) return 0
-  const allValues: number[] = []
-  for (const serie of chartData.series) {
-    if (Array.isArray(serie.data)) {
-      for (const d of serie.data) {
-        if (d.value != null) allValues.push(d.value)
-      }
-    }
-  }
-  return allValues.length > 0 ? Math.max(...allValues) : 0
-})
-
-const computedMean = computed(() => {
-  if (!chartData || !Array.isArray(chartData.series) || chartData.series.length === 0) return 0
-  const allValues: number[] = []
-  for (const serie of chartData.series) {
-    if (Array.isArray(serie.data)) {
-      for (const d of serie.data) {
-        if (d.value != null) allValues.push(d.value)
-      }
-    }
-  }
-  return allValues.length > 0 ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0
-})
-
-const summaryHeaders = [
-  { title: 'Series', key: 'series' },
-  { title: 'Matches', key: 'matches' },
-  { title: 'Min', key: 'min' },
-  { title: 'Max', key: 'max' },
-  { title: 'Mean', key: 'mean' },
-  { title: 'Condition', key: 'condition' }
-]
-
-const selectedSeasonLabel = computed(() => {
-  if (selectedSeason.value === 'custom') {
-    if (customMonths.value.length === 0) return 'Custom (none)'
-    const names = [...customMonths.value].sort((a, b) => a - b).map(m => monthNames[m - 1])
-    return `Custom: ${names.join(', ')}`
-  }
-  return seasons.find(s => s.id === selectedSeason.value)?.name || 'Season'
-})
-
-const thresholdDirectionLabel = computed(() => (thresholdDirection.value === '>' ? 'Above' : 'Below'))
-
-const isCompoundMode = computed(() =>
-  useSecondCondition.value &&
-  (selectedAnalysisMode.value === 'threshold' || selectedAnalysisMode.value === 'streak')
-)
-
-const conditionLabel = computed(() => {
-  const dir1 = thresholdDirectionLabel.value
-  const t1 = thresholdValue.value
-  if (isCompoundMode.value) {
-    const dir2 = secondThresholdDirection.value === '>' ? 'Above' : 'Below'
-    const var2Name = availableVariables.find(v => v.id === secondVariable.value)?.name || secondVariable.value
-    return `${dir1} ${t1} ${compoundLogic.value} ${var2Name} ${dir2} ${secondThresholdValue.value}`
-  }
-  return `${dir1} ${t1}`
-})
-
-const summaryRows = computed(() => {
-  if (!chartData) return []
-
-  const threshold = thresholdValue.value
-  const direction = thresholdDirection.value
-  const compare = (value: number) => direction === '>' ? value > threshold : value < threshold
-
-  // Extremes mode: show record high and record low as two rows;
-  // repurpose "Condition" column as the date the record occurred.
-  if (chartData.globalMax != null || chartData.globalMin != null) {
-    const rows: any[] = []
-    if (chartData.globalMax) rows.push({
-      series: 'Record High',
-      matches: '—',
-      min: '—',
-      max: Number(chartData.globalMax.value).toFixed(4),
-      mean: '—',
-      condition: String(chartData.globalMax.time).slice(0, 10)
-    })
-    if (chartData.globalMin) rows.push({
-      series: 'Record Low',
-      matches: '—',
-      min: Number(chartData.globalMin.value).toFixed(4),
-      max: '—',
-      mean: '—',
-      condition: String(chartData.globalMin.time).slice(0, 10)
-    })
-    return rows
-  }
-
-  if (Array.isArray(chartData.series)) {
-    return chartData.series.map((serie: any) => {
-      const values: number[] = Array.isArray(serie.data)
-        ? serie.data.map((d: any) => Number(d.value)).filter((v: number) => !Number.isNaN(v))
-        : []
-      const matches = values.filter(compare)
-      const min = values.length ? Math.min(...values) : null
-      const max = values.length ? Math.max(...values) : null
-      const mean = values.length ? (values.reduce((sum: number, v: number) => sum + v, 0) / values.length) : null
-
-      return {
-        series: `Year ${serie.year}`,
-        matches: matches.length,
-        min: min != null ? min.toFixed(2) : '—',
-        max: max != null ? max.toFixed(2) : '—',
-        mean: mean != null ? mean.toFixed(2) : '—',
-        condition: conditionLabel.value
-      }
-    })
-  }
-
-  if (Array.isArray(chartData.data)) {
-    const values = chartData.data.map((d: any) => Number(d.value)).filter((v: number) => !Number.isNaN(v))
-    const matches = values.filter(compare)
-    const min = values.length ? Math.min(...values) : null
-    const max = values.length ? Math.max(...values) : null
-    const mean = values.length ? (values.reduce((sum: number, v: number) => sum + v, 0) / values.length) : null
-
-    const seriesLabel = selectedAnalysisMode.value === 'trend'
-      ? 'Annual Mean'
-      : selectedAnalysisMode.value === 'threshold'
-        ? 'Days Matching Condition'
-        : selectedAnalysisMode.value === 'streak'
-          ? 'Max Streak (days)'
-          : 'Climatology Cycle'
-
-    return [{
-      series: seriesLabel,
-      matches: matches.length,
-      min: min != null ? min.toFixed(2) : '—',
-      max: max != null ? max.toFixed(2) : '—',
-      mean: mean != null ? mean.toFixed(2) : '—',
-      condition: conditionLabel.value
-    }]
-  }
-
-  return []
-})
-
-// --- CLIENT-SIDE ANALYTICS (derived from a flat daily {time, value} series) ---
-
-type SeriesPoint = { time: string; value: number | null }
 
 const SEASON_MONTHS: Record<string, number[]> = {
   full_year: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
@@ -404,30 +172,121 @@ const SEASON_MONTHS: Record<string, number[]> = {
   djf: [12, 1, 2]
 }
 
-/** Bounding-box polygon (closed ring) built from the lat/lon extent controls */
-const polygonFromBounds = computed<[number, number][]>(() => [
-  [longitudeMin.value, latitudeMin.value],
-  [longitudeMax.value, latitudeMin.value],
-  [longitudeMax.value, latitudeMax.value],
-  [longitudeMin.value, latitudeMax.value],
-  [longitudeMin.value, latitudeMin.value]
-])
+// --- REACTIVE STATE ---
+const chartView = ref<'overlay' | 'annual'>('overlay')
+const selectedSeason = ref('full_year')
+const primaryStat = ref('mean')
+const thresholdValue = ref(0)
+const thresholdDirection = ref('>')
 
-async function fetchRegionTimeseries(variable: string, stat: string): Promise<SeriesPoint[]> {
-  const payload = {
-    polygon: polygonFromBounds.value,
-    depth: { min: depthMin.value, max: depthMax.value },
-    primaryMetric: { variable, stat },
-    temporal: { yearRange: yearRange.value }
+const isGenerating = ref(false)
+const hasActivePlot = ref(false)
+const plotErrorMessage = ref<string | null>(null)
+
+const chartContainerRef = ref<HTMLDivElement | null>(null)
+let chartInstance: echarts.ECharts | null = null
+
+type SeriesPoint = { time: string; value: number | null }
+const rawAllData = ref<SeriesPoint[]>([])
+const rawSeasonalData = ref<SeriesPoint[]>([])
+
+// --- COMPUTED ---
+const polygonFromClick = computed<[number, number][]>(() => {
+  const pt = props.lastClicked
+  if (!pt) return []
+  const h = 0.05
+  return [
+    [pt.lng - h, pt.lat - h],
+    [pt.lng + h, pt.lat - h],
+    [pt.lng + h, pt.lat + h],
+    [pt.lng - h, pt.lat + h],
+    [pt.lng - h, pt.lat - h],
+  ]
+})
+
+const varName = computed(() =>
+  availableVariables.find(v => v.id === props.variable)?.name || props.variable || 'Variable'
+)
+
+const seasonLabel = computed(() => {
+  const labels: Record<string, string> = {
+    full_year: 'Full Year', jja: 'Summer (JJA)', mam: 'Spring (MAM)', son: 'Autumn (SON)', djf: 'Winter (DJF)'
   }
-  const response = await axios.post(`${apiBaseUrl}/analysis/timeseries`, payload)
-  return response.data?.data || []
+  return labels[selectedSeason.value] || 'Full Year'
+})
+
+const chartTitle = computed(() =>
+  `${chartView.value === 'overlay' ? 'All Years Overlaid' : 'Annual Summary'} — ${varName.value} (${primaryStat.value.toUpperCase()})`
+)
+
+const extremeRecords = computed(() => {
+  const data = rawSeasonalData.value
+  if (!data.length) return null
+  let max: SeriesPoint | null = null
+  let min: SeriesPoint | null = null
+  for (const d of data) {
+    if (d.value == null) continue
+    if (!max || d.value > (max.value as number)) max = d
+    if (!min || d.value < (min.value as number)) min = d
+  }
+  return (max && min) ? { max, min } : null
+})
+
+const statsHeaders = [
+  { title: 'Year', key: 'year' },
+  { title: 'Days', key: 'days' },
+  { title: 'Streak', key: 'streak' }
+]
+
+const statsSortBy = [{ key: 'year', order: 'desc' as const }]
+
+const yearlyStats = computed(() => {
+  const data = rawSeasonalData.value
+  if (!data.length) return []
+  const t = thresholdValue.value
+  const dir = thresholdDirection.value
+  const match = (v: number) => dir === '>' ? v > t : v < t
+
+  return groupByYear(data).map(({ year, data: pts }) => {
+    const days = pts.filter(d => d.value != null && match(d.value as number)).length
+
+    let maxStreak = 0, cur = 0
+    for (let i = 0; i < pts.length; i++) {
+      const { time, value } = pts[i]
+      const prev = pts[i - 1]
+      const adjacent = i > 0 && prev != null &&
+        new Date(time).getTime() - new Date(prev.time).getTime() === 86_400_000
+      if (value != null && match(value as number)) {
+        cur = adjacent ? cur + 1 : 1
+      } else {
+        cur = 0
+      }
+      if (cur > maxStreak) maxStreak = cur
+    }
+
+    return { year, days, streak: maxStreak }
+  })
+})
+
+const maxDays = computed(() => Math.max(0, ...yearlyStats.value.map(r => r.days)))
+const maxStreak = computed(() => Math.max(0, ...yearlyStats.value.map(r => r.streak)))
+
+function statCellStyle(val: number, max: number): Record<string, string> {
+  if (max === 0) return { color: 'rgba(180,180,180,0.4)' }
+  const t = Math.min(1, val / max)
+  const r = Math.round(180 + t * 75)   // 180 → 255
+  const g = Math.round(180 - t * 28)   // 180 → 152
+  const b = Math.round(180 - t * 180)  // 180 → 0
+  const a = (0.4 + t * 0.6).toFixed(2) // 0.40 → 1.00
+  return {
+    color: `rgba(${r},${g},${b},${a})`,
+    fontWeight: t > 0.6 ? '600' : 'normal',
+  }
 }
 
+// --- HELPERS ---
 function filterBySeason(data: SeriesPoint[], season: string): SeriesPoint[] {
-  const months = season === 'custom'
-    ? (customMonths.value.length > 0 ? customMonths.value : SEASON_MONTHS.full_year)
-    : (SEASON_MONTHS[season] || SEASON_MONTHS.full_year)
+  const months = SEASON_MONTHS[season] || SEASON_MONTHS.full_year
   return data.filter(d => months.includes(new Date(d.time).getUTCMonth() + 1))
 }
 
@@ -440,546 +299,256 @@ function groupByYear(data: SeriesPoint[]): { year: number; data: SeriesPoint[] }
   }
   return Array.from(byYear.entries())
     .sort((a, b) => a[0] - b[0])
-    .map(([year, points]) => ({ year, data: points }))
+    .map(([year, pts]) => ({ year, data: pts }))
 }
 
-/** Average value per calendar month, across all years in the series */
-function computeClimatology(data: SeriesPoint[]): SeriesPoint[] {
-  const monthly = new Map<number, { sum: number; count: number }>()
-  for (const d of data) {
-    if (d.value == null) continue
-    const month = new Date(d.time).getUTCMonth() + 1
-    const entry = monthly.get(month) || { sum: 0, count: 0 }
-    entry.sum += d.value
-    entry.count += 1
-    monthly.set(month, entry)
-  }
-  return Array.from(monthly.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([month, { sum, count }]) => ({
-      time: String(month).padStart(2, '0'),
-      value: count > 0 ? sum / count : null
-    }))
+/** Interpolate a sorted array at the given percentile (0–100) using linear interpolation. */
+function percentileOf(sorted: number[], p: number): number {
+  const idx = (p / 100) * (sorted.length - 1)
+  const lo = Math.floor(idx), hi = Math.ceil(idx)
+  return lo === hi ? sorted[lo]! : sorted[lo]! + (idx - lo) * (sorted[hi]! - sorted[lo]!)
 }
 
-/** Average value per year, for inter-annual trend tracking */
-function computeTrend(data: SeriesPoint[]): SeriesPoint[] {
-  const yearly = new Map<number, { sum: number; count: number }>()
-  for (const d of data) {
-    if (d.value == null) continue
-    const year = new Date(d.time).getUTCFullYear()
-    const entry = yearly.get(year) || { sum: 0, count: 0 }
-    entry.sum += d.value
-    entry.count += 1
-    yearly.set(year, entry)
-  }
-  return Array.from(yearly.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([year, { sum, count }]) => ({
-      time: String(year),
-      value: count > 0 ? sum / count : null
-    }))
-}
+type BoxRow = { year: number; box: [number, number, number, number, number]; mean: number; std: number }
 
-/** Per-year count of days matching the threshold condition */
-function computeThresholdCounts(data: SeriesPoint[], threshold: number, direction: string): SeriesPoint[] {
-  const matches = (value: number) => (direction === '>' ? value > threshold : value < threshold)
-  const counts = new Map<number, number>()
-  for (const d of data) {
-    if (d.value == null) continue
-    const year = new Date(d.time).getUTCFullYear()
-    if (!counts.has(year)) counts.set(year, 0)
-    if (matches(d.value)) counts.set(year, counts.get(year)! + 1)
-  }
-  return Array.from(counts.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([year, count]) => ({ time: String(year), value: count }))
-}
-
-/** Per-year longest consecutive-day run matching the threshold condition.
- *  Adjacency is checked by calendar date (1-day gap) so season gaps (e.g. DJF
- *  Feb→Dec jump) correctly break the streak. */
-function computeStreaks(data: SeriesPoint[], threshold: number, direction: string): SeriesPoint[] {
-  const isMatch = (v: number) => direction === '>' ? v > threshold : v < threshold
-
+function computeBoxplotData(data: SeriesPoint[]): BoxRow[] {
   return groupByYear(data).map(({ year, data: pts }) => {
-    let maxStreak = 0
-    let curStreak = 0
-    for (let i = 0; i < pts.length; i++) {
-      const { time, value } = pts[i]
-      const prev = pts[i - 1]
-      const adjacent = i > 0 && prev != null &&
-        new Date(time).getTime() - new Date(prev.time).getTime() === 86_400_000
-      if (value != null && isMatch(value)) {
-        curStreak = adjacent ? curStreak + 1 : 1
-      } else {
-        curStreak = 0
-      }
-      if (curStreak > maxStreak) maxStreak = curStreak
+    const vals = pts.filter(d => d.value != null).map(d => d.value as number).sort((a, b) => a - b)
+    if (vals.length < 4) return null
+    const n = vals.length
+    const mean = vals.reduce((s, v) => s + v, 0) / n
+    const std = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / n)
+    return {
+      year,
+      box: [vals[0], percentileOf(vals, 25), percentileOf(vals, 50), percentileOf(vals, 75), vals[n - 1]],
+      mean,
+      std
     }
-    return { time: String(year), value: maxStreak }
-  })
+  }).filter(Boolean) as BoxRow[]
 }
 
-/** Per-year count of days where both (or either) variable conditions are met */
-function computeCompoundThresholdCounts(
-  data1: SeriesPoint[], threshold1: number, direction1: string,
-  data2: SeriesPoint[], threshold2: number, direction2: string,
-  logic: 'AND' | 'OR'
-): SeriesPoint[] {
-  const m1 = (v: number) => direction1 === '>' ? v > threshold1 : v < threshold1
-  const m2 = (v: number) => direction2 === '>' ? v > threshold2 : v < threshold2
-  const sec = new Map(data2.map(d => [d.time, d.value]))
-  const counts = new Map<number, number>()
-  for (const d of data1) {
-    if (d.value == null) continue
-    const year = new Date(d.time).getUTCFullYear()
-    if (!counts.has(year)) counts.set(year, 0)
-    const v2 = sec.get(d.time)
-    const cond1 = m1(d.value)
-    const cond2 = v2 != null && m2(v2 as number)
-    if (logic === 'AND' ? (cond1 && cond2) : (cond1 || cond2))
-      counts.set(year, counts.get(year)! + 1)
-  }
-  return Array.from(counts.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([year, count]) => ({ time: String(year), value: count }))
+
+function linearRegression(pts: { x: number; y: number }[]): { slope: number; intercept: number } {
+  const n = pts.length
+  if (n < 2) return { slope: 0, intercept: pts[0]?.y ?? 0 }
+  const sumX = pts.reduce((s, p) => s + p.x, 0)
+  const sumY = pts.reduce((s, p) => s + p.y, 0)
+  const sumXY = pts.reduce((s, p) => s + p.x * p.y, 0)
+  const sumX2 = pts.reduce((s, p) => s + p.x * p.x, 0)
+  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX)
+  return { slope, intercept: (sumY - slope * sumX) / n }
 }
 
-/** Per-year longest consecutive-day streak where both (or either) conditions are met */
-function computeCompoundStreaks(
-  data1: SeriesPoint[], threshold1: number, direction1: string,
-  data2: SeriesPoint[], threshold2: number, direction2: string,
-  logic: 'AND' | 'OR'
-): SeriesPoint[] {
-  const m1 = (v: number) => direction1 === '>' ? v > threshold1 : v < threshold1
-  const m2 = (v: number) => direction2 === '>' ? v > threshold2 : v < threshold2
-  const sec = new Map(data2.map(d => [d.time, d.value]))
-  return groupByYear(data1).map(({ year, data: pts }) => {
-    let maxStreak = 0
-    let curStreak = 0
-    for (let i = 0; i < pts.length; i++) {
-      const { time, value } = pts[i]
-      const prev = pts[i - 1]
-      const adjacent = i > 0 && prev != null &&
-        new Date(time).getTime() - new Date(prev.time).getTime() === 86_400_000
-      if (value != null) {
-        const v2 = sec.get(time)
-        const cond1 = m1(value)
-        const cond2 = v2 != null && m2(v2 as number)
-        const passes = logic === 'AND' ? (cond1 && cond2) : (cond1 || cond2)
-        curStreak = passes ? (adjacent ? curStreak + 1 : 1) : 0
-      } else {
-        curStreak = 0
-      }
-      if (curStreak > maxStreak) maxStreak = curStreak
-    }
-    return { time: String(year), value: maxStreak }
-  })
-}
-
-type ExtremePoint = { time: string; value: number }
-
-/** Scans the full season-filtered series for the all-time record high and low. */
-function computeExtremes(data: SeriesPoint[]): {
-  rawData: SeriesPoint[]
-  globalMax: ExtremePoint | null
-  globalMin: ExtremePoint | null
-} {
-  let globalMax: ExtremePoint | null = null
-  let globalMin: ExtremePoint | null = null
-
-  for (const d of data) {
-    if (d.value == null) continue
-    if (globalMax == null || d.value > globalMax.value) globalMax = { time: d.time, value: d.value }
-    if (globalMin == null || d.value < globalMin.value) globalMin = { time: d.time, value: d.value }
-  }
-
-  return { rawData: data, globalMax, globalMin }
-}
-
-// Plotting States
-const isGenerating = ref(false)
-const hasActivePlot = ref(false)
-const plotErrorMessage = ref<string | null>(null)
-
-// Chart refs
-const chartContainerRef = ref<HTMLDivElement | null>(null)
-let chartInstance: echarts.ECharts | null = null
-
-// Store the raw response data for redrawing on resize
-let chartData: any = null
-
-// --- COMPUTED LOGIC ---
-
-// Dynamically generate the plot title based on selections
-const generatedPlotTitle = computed(() => {
-  const modeName = analysisModes.find(m => m.id === selectedAnalysisMode.value)?.name || ''
-  const varName = availableVariables.find(v => v.id === variableListModel.value)?.name || ''
-  const statName = primaryStat.value.toUpperCase()
-  const years = `${yearRange.value[0]}-${yearRange.value[1]}`
-
-  if (selectedAnalysisMode.value === 'correlation') {
-    const var2Name = availableVariables.find(v => v.id === secondVariable.value)?.name || ''
-    const stat2Name = secondStat.value.toUpperCase()
-    return `Correlation: ${varName} (${statName}) vs ${var2Name} (${stat2Name}) | ${years}`
-  }
-
-  if (isCompoundMode.value) {
-    const var2Name = availableVariables.find(v => v.id === secondVariable.value)?.name || ''
-    const stat2Name = secondStat.value.toUpperCase()
-    return `${modeName}: ${varName} (${statName}) ${compoundLogic.value} ${var2Name} (${stat2Name}) | ${years}`
-  }
-
-  return `${modeName}: ${varName} (${statName}) | ${years}`
-})
-
-// Watch analysis mode to reset dynamic parameters to sane defaults
-watch(selectedAnalysisMode, (newMode: string) => {
-  selectedSeason.value = newMode === 'overlay' ? 'jja' : 'full_year'
-})
-
-
-// --- ECHARTS RENDERING ---
-
-function renderOverlayChart(responseData: any) {
-  if (!chartContainerRef.value || !responseData || !Array.isArray(responseData.series)) return
-
-  registerEchartsDarkTheme()
-
-  if (chartInstance) {
-    chartInstance.dispose()
-    chartInstance = null
-  }
-
-  try {
-    chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
-  } catch (e) {
-    console.error('ECharts initialization failed', e)
-    return
-  }
-
-  const series = responseData.series || []
-  const timePoints = Array.isArray(series[0]?.data)
-    ? series[0].data.map((d: any) => d.time)
-    : []
-
-  const echartsSeries: echarts.LineSeriesOption[] = series.map((serie: any) => ({
-    name: String(serie.year),
-    type: 'line',
-    smooth: true,
+function thresholdMarkLine() {
+  return {
+    silent: true,
     symbol: 'none',
-    lineStyle: { width: 2 },
-    data: Array.isArray(serie.data) ? serie.data.map((d: any) => d.value) : []
-  }))
-
-  // Build markLine data for reference lines
-  const markLineData: any[] = []
-  if (showHorizontalLines.value) {
-    if (hline1Value.value != null && !isNaN(hline1Value.value)) {
-      markLineData.push({
-        yAxis: hline1Value.value,
-        label: {
-          formatter: hline1Label.value || 'Line 1',
-          color: '#00e5ff',
-          fontSize: 11,
-          fontWeight: 'bold'
-        },
-        lineStyle: {
-          color: '#00e5ff',
-          type: 'dashed',
-          width: 2
-        }
-      })
-    }
-    if (hline2Value.value != null && !isNaN(hline2Value.value)) {
-      markLineData.push({
-        yAxis: hline2Value.value,
-        label: {
-          formatter: hline2Label.value || 'Line 2',
-          color: '#ff9100',
-          fontSize: 11,
-          fontWeight: 'bold'
-        },
-        lineStyle: {
-          color: '#ff9100',
-          type: 'dashed',
-          width: 2
-        }
-      })
-    }
+    lineStyle: { color: 'rgba(255,255,255,0.75)', type: 'dashed', width: 1.5 },
+    label: { formatter: String(thresholdValue.value), position: 'insideEndTop', fontSize: 9, color: 'rgba(255,255,255,0.9)' },
+    data: [{ yAxis: thresholdValue.value }]
   }
-
-  // Apply markLine to last series so it draws on top, or to all series
-  if (markLineData.length > 0 && echartsSeries.length > 0) {
-    const lastSeries = echartsSeries[echartsSeries.length - 1]
-    lastSeries.markLine = {
-      silent: false,
-      symbol: 'none',
-      animation: false,
-      data: markLineData
-    }
-  }
-
-  const option: echarts.EChartsOption = {
-    tooltip: {
-      trigger: 'axis',
-      formatter: (params: any) => {
-        const items = Array.isArray(params) ? params : [params]
-        let tooltip = `<strong>${items[0]?.axisValue || ''}</strong><br/>`
-        items.forEach((p: any) => {
-          tooltip += `${p.marker} ${p.seriesName}: <strong>${p.value != null ? Number(p.value).toFixed(4) : 'N/A'}</strong><br/>`
-        })
-        return tooltip
-      }
-    },
-    legend: {
-      data: series.map((s: any) => String(s.year)),
-      top: 40,
-      type: 'scroll'
-    },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '8%',
-      top: '18%',
-      containLabel: true
-    },
-    xAxis: {
-      type: 'category',
-      data: timePoints,
-      boundaryGap: false,
-      axisLabel: {
-        rotate: 45,
-        fontSize: 10
-      }
-    },
-    yAxis: {
-      type: 'value',
-      name: `${availableVariables.find((v) => v.id === variableListModel.value)?.name || ''} (${primaryStat.value})`,
-      nameLocation: 'middle',
-      nameGap: 45
-    },
-    dataZoom: [
-      { type: 'inside', start: 0, end: 100 },
-      { type: 'slider', start: 0, end: 100, bottom: 5 }
-    ],
-    series: echartsSeries
-  }
-  chartInstance.setOption(option, true)
-  chartInstance.resize()
 }
 
-/** Renders a single-line chart for a flat {data: [{time, value}]} series (climatology/trend/threshold) */
-function renderSingleSeriesChart(responseData: any, seriesName: string, yAxisLabel: string) {
-  if (!chartContainerRef.value || !responseData || !Array.isArray(responseData.data)) return
-
-  registerEchartsDarkTheme()
-
-  if (chartInstance) {
-    chartInstance.dispose()
-    chartInstance = null
-  }
-
-  try {
-    chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
-  } catch (e) {
-    console.error('ECharts initialization failed', e)
-    return
-  }
-
-  const series = responseData.data || []
-  const timePoints = series.map((d: any) => d.time)
-
-  const echartsSeries: echarts.LineSeriesOption = {
-    name: seriesName,
-    type: 'line',
-    smooth: true,
-    symbol: 'none',
-    lineStyle: { width: 2 },
-    data: series.map((d: any) => d.value)
-  }
-
-  const option: echarts.EChartsOption = {
-    tooltip: {
-      trigger: 'axis',
-      formatter: (params: any) => {
-        const items = Array.isArray(params) ? params : [params]
-        let tooltip = `<strong>${items[0]?.axisValue || ''}</strong><br/>`
-        items.forEach((p: any) => {
-          tooltip += `${p.marker} ${p.seriesName}: <strong>${p.value != null ? Number(p.value).toFixed(4) : 'N/A'}</strong><br/>`
-        })
-        return tooltip
-      }
-    },
-    legend: {
-      data: [seriesName],
-      top: 40,
-      type: 'scroll'
-    },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '8%',
-      top: '18%',
-      containLabel: true
-    },
-    xAxis: {
-      type: 'category',
-      data: timePoints,
-      boundaryGap: false,
-      axisLabel: {
-        rotate: 45,
-        fontSize: 10
-      }
-    },
-    yAxis: {
-      type: 'value',
-      name: yAxisLabel,
-      nameLocation: 'middle',
-      nameGap: 45
-    },
-    dataZoom: [
-      { type: 'inside', start: 0, end: 100 },
-      { type: 'slider', start: 0, end: 100, bottom: 5 }
-    ],
-    series: echartsSeries
-  }
-  chartInstance.setOption(option, true)
-  chartInstance.resize()
+/**
+ * Maps a year's position in the dataset (0=oldest → 1=newest) to a colour.
+ * Oldest: muted steel-blue, low opacity.
+ * Newest: vivid orange-red, fully opaque.
+ */
+function yearColor(idx: number, total: number): string {
+  const t = total <= 1 ? 1 : idx / (total - 1)
+  // Hue: 220° (blue) → 15° (orange-red)
+  const hue = Math.round(220 - t * 205)
+  // Saturation: 45% → 95%
+  const sat = Math.round(45 + t * 50)
+  // Lightness: 65% → 58%
+  const lit = Math.round(65 - t * 7)
+  // Alpha: 0.18 (old, faded) → 1.0 (new, full)
+  const alpha = (0.18 + t * 0.82).toFixed(2)
+  return `hsla(${hue},${sat}%,${lit}%,${alpha})`
 }
 
-/** Renders the full daily timeseries as a continuous line with record-high/low markPoints */
-function renderExtremesChart(responseData: any) {
-  if (!chartContainerRef.value || !responseData || !Array.isArray(responseData.rawData)) return
-
+function initChart() {
   registerEchartsDarkTheme()
   if (chartInstance) { chartInstance.dispose(); chartInstance = null }
+  if (!chartContainerRef.value) return
+  chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
+}
 
-  try {
-    chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
-  } catch (e) {
-    console.error('ECharts initialization failed', e)
-    return
+// --- CHART RENDERERS ---
+function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
+  initChart()
+  if (!chartInstance) return
+
+  const timePoints = series[0]?.data.map(d => d.time) || []
+  console.log(series);
+  const total = series.length
+
+  // Locate global all-time max and min for markPoints
+  let gMax: { year: number; time: string; value: number } | null = null
+  let gMin: { year: number; time: string; value: number } | null = null
+  for (const { year, data } of series) {
+    for (const d of data) {
+      if (d.value == null) continue
+      if (!gMax || d.value > gMax.value) gMax = { year, time: d.time, value: d.value as number }
+      if (!gMin || d.value < gMin.value) gMin = { year, time: d.time, value: d.value as number }
+    }
   }
 
-  const pts = responseData.rawData as SeriesPoint[]
-  const timePoints = pts.map(d => d.time)
-  const values = pts.map(d => d.value)
-  const varName = availableVariables.find(v => v.id === variableListModel.value)?.name || ''
-  const yAxisLabel = `${varName} (${primaryStat.value})`
+  const echartsSeries: any[] = series.map((s, idx) => {
+    const t = total <= 1 ? 1 : idx / (total - 1)
+    const color = yearColor(idx, total)
+    const width = 1 + t * 1.5   // 1px (oldest) → 2.5px (newest)
 
-  const markPointData: any[] = []
-  const { globalMax, globalMin } = responseData
-  if (globalMax) markPointData.push({
-    coord: [globalMax.time, globalMax.value],
-    name: 'Record High',
-    itemStyle: { color: '#ff5252' },
-    label: { show: true, formatter: `High\n${String(globalMax.time).slice(0, 10)}`, color: '#ff5252', fontSize: 10 }
-  })
-  if (globalMin) markPointData.push({
-    coord: [globalMin.time, globalMin.value],
-    name: 'Record Low',
-    itemStyle: { color: '#40c4ff' },
-    label: { show: true, formatter: `Low\n${String(globalMin.time).slice(0, 10)}`, color: '#40c4ff', fontSize: 10 }
+    const marks: any[] = []
+    if (gMax?.year === s.year) marks.push({
+      coord: [gMax.time, gMax.value],
+      symbol: 'pin', symbolSize: 28,
+      itemStyle: { color: '#ff5252' },
+      label: { show: true, formatter: `▲${gMax.value.toFixed(2)}`, color: '#ff5252', fontSize: 9 }
+    })
+    if (gMin?.year === s.year) marks.push({
+      coord: [gMin.time, gMin.value],
+      symbol: 'pin', symbolSize: 28,
+      itemStyle: { color: '#40c4ff' },
+      label: { show: true, formatter: `▼${gMin.value.toFixed(2)}`, color: '#40c4ff', fontSize: 9 }
+    })
+
+    return {
+      name: String(s.year),
+      type: 'line',
+      smooth: true,
+      symbol: 'none',
+      lineStyle: { width, color },
+      itemStyle: { color },
+      data: s.data.map(d => d.value),
+      ...(marks.length ? { markPoint: { animation: false, data: marks } } : {})
+    }
   })
 
-  const option: echarts.EChartsOption = {
+  if (echartsSeries.length > 0) echartsSeries[0].markLine = thresholdMarkLine()
+
+  chartInstance.setOption({
     tooltip: {
       trigger: 'axis',
       formatter: (params: any) => {
-        const items = Array.isArray(params) ? params : [params]
-        let tooltip = `<strong>${items[0]?.axisValue || ''}</strong><br/>`
+        const items = (Array.isArray(params) ? params : [params])
+          .filter((p: any) => p.value != null)
+          .sort((a: any, b: any) => (b.value ?? 0) - (a.value ?? 0))
+        let s = `<strong>${items[0]?.axisValue}</strong><br/>`
         items.forEach((p: any) => {
-          tooltip += `${p.marker} ${p.seriesName}: <strong>${p.value != null ? Number(p.value).toFixed(4) : 'N/A'}</strong><br/>`
+          s += `${p.marker} ${p.seriesName}: <strong>${Number(p.value).toFixed(3)}</strong><br/>`
         })
-        return tooltip
+        return s
       }
     },
-    grid: { left: '3%', right: '4%', bottom: '8%', top: '12%', containLabel: true },
-    xAxis: {
-      type: 'category',
-      data: timePoints,
-      boundaryGap: false,
-      axisLabel: { rotate: 45, fontSize: 10 }
-    },
-    yAxis: { type: 'value', name: yAxisLabel, nameLocation: 'middle', nameGap: 45 },
-    dataZoom: [
-      { type: 'inside', start: 0, end: 100 },
-      { type: 'slider', start: 0, end: 100, bottom: 5 }
-    ],
-    series: [{
-      name: varName,
-      type: 'line',
-      smooth: false,
-      symbol: 'none',
-      lineStyle: { width: 1 },
-      data: values,
-      markPoint: {
-        symbol: 'pin',
-        symbolSize: 44,
-        data: markPointData
-      }
-    }]
-  }
-  chartInstance.setOption(option, true)
+    legend: { top: 4, type: 'scroll', textStyle: { fontSize: 10 } },
+    grid: { left: '3%', right: '2%', bottom: '10%', top: '22%', containLabel: true },
+    xAxis: { type: 'category', data: timePoints, boundaryGap: false, axisLabel: { rotate: 45, fontSize: 9 } },
+    yAxis: { type: 'value', name: `${varName.value} (${primaryStat.value})`, nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10 }, min: 'dataMin', max: 'dataMax' },
+    dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 16 }],
+    series: echartsSeries
+  }, true)
   chartInstance.resize()
 }
 
-function renderChart(responseData: any) {
-  if (!responseData) return
+function renderAnnualSummaryChart(rows: BoxRow[]) {
+  initChart()
+  if (!chartInstance) return
 
-  const varName = availableVariables.find((v) => v.id === variableListModel.value)?.name || ''
-  const yAxisLabel = `${varName} (${primaryStat.value})`
+  const years = rows.map(r => String(r.year))
+  const boxData = rows.map(r => r.box)
+  const meanData = rows.map(r => r.mean)
 
-  switch (selectedAnalysisMode.value) {
-    case 'overlay':
-      renderOverlayChart(responseData)
-      break
+  // Linear trend on annual means
+  const pts = rows.map((r, i) => ({ x: i, y: r.mean }))
+  const { slope, intercept } = linearRegression(pts)
+  const trendData = rows.map((_, i) => Number((slope * i + intercept).toFixed(4)))
 
-    case 'climatology':
-      renderSingleSeriesChart(responseData, 'Climatology Cycle', yAxisLabel)
-      break
+  chartInstance.setOption({
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params: any) => {
+        const items = Array.isArray(params) ? params : [params]
+        if (!items.length) return ''
+        const idx = items[0].dataIndex
+        const r = rows[idx]
+        if (!r) return ''
+        return `<strong>${r.year}</strong><br/>
+          Max: <strong>${r.box[4].toFixed(3)}</strong><br/>
+          Q3: <strong>${r.box[3].toFixed(3)}</strong><br/>
+          Median: <strong>${r.box[2].toFixed(3)}</strong><br/>
+          Q1: <strong>${r.box[1].toFixed(3)}</strong><br/>
+          Min: <strong>${r.box[0].toFixed(3)}</strong><br/>
+          Mean: <strong>${r.mean.toFixed(3)}</strong><br/>
+          Std: <strong>${r.std.toFixed(3)}</strong>`
+      }
+    },
+    legend: { data: ['Distribution', 'Mean', 'Trend'], top: 4, textStyle: { fontSize: 10 } },
+    grid: { left: '3%', right: '2%', bottom: '10%', top: '22%', containLabel: true },
+    xAxis: { type: 'category', data: years, axisLabel: { rotate: 45, fontSize: 9 } },
+    yAxis: { type: 'value', name: `${varName.value} (${primaryStat.value})`, nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10 }, min: 'dataMin', max: 'dataMax' },
+    dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 16 }],
+    series: [
+      {
+        name: 'Distribution',
+        type: 'boxplot',
+        data: boxData,
+        itemStyle: { color: 'rgba(255,152,0,0.25)', borderColor: '#ff9800', borderWidth: 1.5 },
+        boxWidth: ['20%', '50%'],
+        markLine: thresholdMarkLine()
+      },
+      {
+        name: 'Mean',
+        type: 'scatter',
+        data: meanData,
+        symbolSize: 9,
+        symbol: 'diamond',
+        itemStyle: { color: '#ff9800' },
+        z: 10
+      },
+      {
+        name: 'Trend',
+        type: 'line',
+        data: trendData,
+        smooth: false,
+        symbol: 'none',
+        lineStyle: { color: 'rgba(255,255,255,0.7)', width: 1.5, type: 'dashed' },
+        itemStyle: { color: 'rgba(255,255,255,0.7)' }
+      }
+    ]
+  }, true)
+  chartInstance.resize()
+}
 
-    case 'trend':
-      renderSingleSeriesChart(responseData, 'Annual Mean', yAxisLabel)
-      break
-
-    case 'threshold':
-      renderSingleSeriesChart(responseData, 'Days Matching Condition', 'Day count')
-      break
-
-    case 'streak':
-      renderSingleSeriesChart(responseData, 'Max Consecutive Days', 'Day count')
-      break
-
-    case 'extremes':
-      renderExtremesChart(responseData)
-      break
-
-    default:
-      break
+function renderChart(seasonal: SeriesPoint[]) {
+  if (!seasonal.length) return
+  if (chartView.value === 'overlay') {
+    renderOverlayChart(groupByYear(seasonal))
+  } else {
+    renderAnnualSummaryChart(computeBoxplotData(seasonal))
   }
 }
 
-/** Re-render the overlay chart with current reference line values without re-fetching */
-function updateReferenceLines() {
-  if (!chartInstance || !chartData || selectedAnalysisMode.value !== 'overlay') return
-  renderOverlayChart(chartData)
+function reRenderChart() {
+  if (!rawSeasonalData.value.length || !hasActivePlot.value) return
+  nextTick(() => setTimeout(() => renderChart(rawSeasonalData.value), 50))
 }
 
-// Watch horizontal line values to update chart in real-time
-watch([showHorizontalLines, hline1Value, hline2Value, hline1Label, hline2Label], () => {
-  if (hasActivePlot.value && chartData && selectedAnalysisMode.value === 'overlay') {
-    updateReferenceLines()
-  }
+// --- WATCHERS ---
+watch(chartView, reRenderChart)
+
+watch(thresholdValue, () => {
+  if (!chartInstance || !hasActivePlot.value) return
+  chartInstance.setOption({ series: [{ markLine: thresholdMarkLine() }] })
 })
 
-function handleResize() {
-  if (chartInstance) chartInstance.resize()
-}
+watch(selectedSeason, () => {
+  if (!rawAllData.value.length || isGenerating.value) return
+  rawSeasonalData.value = filterBySeason(rawAllData.value, selectedSeason.value)
+  reRenderChart()
+})
 
-// ResizeObserver so ECharts resizes when the footer panel grows/shrinks (e.g. tab switch)
 let resizeObserver: ResizeObserver | null = null
 watch(chartContainerRef, (el) => {
   if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null }
@@ -989,6 +558,8 @@ watch(chartContainerRef, (el) => {
   }
 })
 
+function handleResize() { if (chartInstance) chartInstance.resize() }
+
 onMounted(() => {
   registerEchartsDarkTheme()
   window.addEventListener('resize', handleResize)
@@ -997,154 +568,142 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
   if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null }
-  if (chartInstance) {
-    chartInstance.dispose()
-    chartInstance = null
-  }
+  if (chartInstance) { chartInstance.dispose(); chartInstance = null }
 })
 
-// --- ACTIONS ---
+// --- DATA FETCH ---
+async function fetchRegionTimeseries(): Promise<SeriesPoint[]> {
+  const polygon = polygonFromClick.value
+  if (!polygon.length) throw new Error('No location selected. Click on the map first.')
+  const response = await axios.post(`https://oa-api2.cioospacificlabs.ca/analysis/timeseries`, {
+    polygon,
+    depth: { min: 0, max: 100 },
+    primaryMetric: { variable: props.variable, stat: primaryStat.value },
+    temporal: { yearRange: [minYear, maxYear] }
+  })
+  return response.data?.data || []
+}
 
+// --- ACTIONS ---
 const runAnalysis = async () => {
   plotErrorMessage.value = null
   isGenerating.value = true
-  hasActivePlot.value = false
+  // Keep hasActivePlot as-is so old chart remains visible (greyscaled) while fetching
+  rawAllData.value = []
+  rawSeasonalData.value = []
 
   try {
-    // For compound threshold/streak, fetch both series in parallel.
-    const needsSecondary = isCompoundMode.value
-    const [rawData, rawData2] = await Promise.all([
-      fetchRegionTimeseries(variableListModel.value, primaryStat.value),
-      needsSecondary
-        ? fetchRegionTimeseries(secondVariable.value, secondStat.value)
-        : Promise.resolve([] as SeriesPoint[])
-    ])
+    const rawData = await fetchRegionTimeseries()
+    rawAllData.value = rawData
+    rawSeasonalData.value = filterBySeason(rawData, selectedSeason.value)
 
-    const seasonal = filterBySeason(rawData, selectedSeason.value)
-    const seasonal2 = needsSecondary ? filterBySeason(rawData2, selectedSeason.value) : []
-
-    let result: any
-    switch (selectedAnalysisMode.value) {
-      case 'overlay':
-        result = { series: groupByYear(seasonal) }
-        break
-      case 'climatology':
-        result = { data: computeClimatology(seasonal) }
-        break
-      case 'trend':
-        result = { data: computeTrend(seasonal) }
-        break
-      case 'threshold':
-        result = needsSecondary
-          ? { data: computeCompoundThresholdCounts(seasonal, thresholdValue.value, thresholdDirection.value, seasonal2, secondThresholdValue.value, secondThresholdDirection.value, compoundLogic.value) }
-          : { data: computeThresholdCounts(seasonal, thresholdValue.value, thresholdDirection.value) }
-        break
-      case 'streak':
-        result = needsSecondary
-          ? { data: computeCompoundStreaks(seasonal, thresholdValue.value, thresholdDirection.value, seasonal2, secondThresholdValue.value, secondThresholdDirection.value, compoundLogic.value) }
-          : { data: computeStreaks(seasonal, thresholdValue.value, thresholdDirection.value) }
-        break
-      case 'extremes':
-        result = computeExtremes(seasonal)
-        break
-      default:
-        throw new Error(`Analysis mode "${selectedAnalysisMode.value}" is not yet supported.`)
-    }
-
-    chartData = result
-    // Set hasActivePlot before nextTick so the template renders the chart container
     hasActivePlot.value = true
-    plotErrorMessage.value = null
-
-    // Wait for the DOM to update then render the chart
     await nextTick()
-    setTimeout(() => {
+    // Keep isGenerating true until new chart is rendered, then clear it
+    await new Promise<void>(resolve => setTimeout(() => {
       if (chartContainerRef.value) {
-        renderChart(chartData)
+        renderChart(rawSeasonalData.value)
       } else {
-        plotErrorMessage.value = 'Chart container not found. Unable to render plot.'
+        plotErrorMessage.value = 'Chart container not found.'
         hasActivePlot.value = false
       }
-    }, 100) // Slight delay to ensure container is ready
+      resolve()
+    }, 100))
   } catch (error: any) {
-    plotErrorMessage.value = error?.response?.data?.detail || error?.message || 'Failed to generate analysis. Please try again.'
+    plotErrorMessage.value = error?.response?.data?.detail || error?.message || 'Failed to generate analysis.'
     hasActivePlot.value = false
   } finally {
     isGenerating.value = false
   }
 }
 
-const resetParameters = () => {
-  variableListModel.value = 'temperature'
-  primaryStat.value = 'mean'
-  selectedAnalysisMode.value = 'overlay'
-  yearRange.value = [2015, 2020]
+function resetParameters() {
+  chartView.value = 'overlay'
   selectedSeason.value = 'full_year'
-  customMonths.value = [6, 7, 8]
-  latitudeMin.value = 46
-  latitudeMax.value = 52
-  longitudeMin.value = -127
-  longitudeMax.value = -121
-  depthMin.value = 0
-  depthMax.value = 100
-  useSecondCondition.value = false
-  secondThresholdValue.value = 0
-  secondThresholdDirection.value = '>'
-  compoundLogic.value = 'AND'
-  showHorizontalLines.value = false
-  hline1Label.value = 'Ref A'
-  hline1Value.value = 15
-  hline2Label.value = 'Ref B'
-  hline2Value.value = 20
+  primaryStat.value = 'mean'
+  thresholdValue.value = 0
+  thresholdDirection.value = '>'
   hasActivePlot.value = false
   plotErrorMessage.value = null
-  chartData = null
-  if (chartInstance) {
-    chartInstance.dispose()
-    chartInstance = null
-  }
+  rawAllData.value = []
+  rawSeasonalData.value = []
+  if (chartInstance) { chartInstance.dispose(); chartInstance = null }
 }
-
 </script>
 
 
 <style scoped>
 .analytics-panel {
   height: 100%;
-  font-family: 'Roboto', sans-serif;
 }
 
 .analytics-sidebar {
   background: rgba(255, 255, 255, 0.02);
 }
 
-.chart-body {
-  flex: 1;
-  min-height: 0;
+.analytics-stats {
+  background: rgba(255, 255, 255, 0.02);
 }
 
-.real-plot-area {
-  width: 100%;
-  height: 100%;
+.ctrl-label {
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+  margin-bottom: 4px;
 }
 
-.summary-table {
-  width: 100%;
+.analytics-sidebar :deep(.v-btn) {
+  font-size: 0.7rem !important;
+  letter-spacing: 0.02em !important;
 }
 
-.summary-table :deep(.v-data-table__td),
-.summary-table :deep(.v-data-table__th) {
-  font-size: 0.75rem !important;
-  padding: 2px 8px !important;
+.analytics-sidebar :deep(.v-btn__content) {
+  font-size: 0.7rem !important;
 }
 
-/* Month picker: wrap 12 buttons into rows */
-.month-btn {
-  min-width: 44px !important;
-  flex: 0 0 auto;
+.season-btn {
+  min-width: 34px !important;
+  flex: 1 !important;
+  padding: 0 4px !important;
 }
 
-.gap-1 {
+.threshold-btn {
+  max-width: 80px !important;
+  flex: 1 !important;
+  padding: 0 4px !important;
+  font-size: 0.7rem !important;
+}
+
+.chart-loading {
+  filter: grayscale(1);
+  opacity: 0.45;
+  transition: filter 0.4s ease, opacity 0.4s ease;
+}
+
+.chart-reload-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
   gap: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 0.65rem;
+  color: rgba(255, 193, 7, 0.9);
+  pointer-events: none;
+}
+
+.stats-table :deep(.v-data-table__td),
+.stats-table :deep(.v-data-table__th) {
+  font-size: 0.72rem !important;
+  padding: 2px 6px !important;
+}
+
+.stats-table :deep(.v-data-table__th) {
+  font-weight: 600 !important;
 }
 </style>
