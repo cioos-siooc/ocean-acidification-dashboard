@@ -20,8 +20,8 @@
       <div class="ctrl-label">Season</div>
       <v-btn-toggle v-model="selectedSeason" mandatory variant="tonal" density="compact" class="flex-wrap w-100 mb-3">
         <v-btn value="full_year" size="x-small" class="season-btn">All</v-btn>
-        <v-btn value="jja" size="x-small" class="season-btn">JJA</v-btn>
         <v-btn value="mam" size="x-small" class="season-btn">MAM</v-btn>
+        <v-btn value="jja" size="x-small" class="season-btn">JJA</v-btn>
         <v-btn value="son" size="x-small" class="season-btn">SON</v-btn>
         <v-btn value="djf" size="x-small" class="season-btn">DJF</v-btn>
       </v-btn-toggle>
@@ -147,6 +147,7 @@ const apiBaseUrl = config.public.apiBaseUrl
 const props = defineProps<{
   variable: string
   lastClicked: { lat: number; lng: number } | null
+  queryMode: 'point' | 'area'
 }>()
 
 // --- CONSTANTS ---
@@ -343,8 +344,8 @@ function thresholdMarkLine() {
   return {
     silent: true,
     symbol: 'none',
-    lineStyle: { color: 'rgba(255,255,255,0.75)', type: 'dashed', width: 1.5 },
-    label: { formatter: String(thresholdValue.value), position: 'insideEndTop', fontSize: 9, color: 'rgba(255,255,255,0.9)' },
+    lineStyle: { color: '##33cccc', type: 'dashed', width: 1.5 },
+    label: { formatter: String(thresholdValue.value), position: 'insideEndTop', fontSize: 9, color: '#33cccc' },
     data: [{ yAxis: thresholdValue.value }]
   }
 }
@@ -379,39 +380,16 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
   initChart()
   if (!chartInstance) return
 
-  const timePoints = series[0]?.data.map(d => d.time) || []
-  console.log(series);
-  const total = series.length
+  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const fmtMD = (iso: string) => `${MONTH_ABBR[parseInt(iso.slice(5, 7)) - 1]} ${iso.slice(8, 10)}`
 
-  // Locate global all-time max and min for markPoints
-  let gMax: { year: number; time: string; value: number } | null = null
-  let gMin: { year: number; time: string; value: number } | null = null
-  for (const { year, data } of series) {
-    for (const d of data) {
-      if (d.value == null) continue
-      if (!gMax || d.value > gMax.value) gMax = { year, time: d.time, value: d.value as number }
-      if (!gMin || d.value < gMin.value) gMin = { year, time: d.time, value: d.value as number }
-    }
-  }
+  const timePoints = series[0]?.data.map(d => fmtMD(d.time)) || []
+  const total = series.length
 
   const echartsSeries: any[] = series.map((s, idx) => {
     const t = total <= 1 ? 1 : idx / (total - 1)
     const color = yearColor(idx, total)
     const width = 1 + t * 1.5   // 1px (oldest) → 2.5px (newest)
-
-    const marks: any[] = []
-    if (gMax?.year === s.year) marks.push({
-      coord: [gMax.time, gMax.value],
-      symbol: 'pin', symbolSize: 28,
-      itemStyle: { color: '#ff5252' },
-      label: { show: true, formatter: `▲${gMax.value.toFixed(2)}`, color: '#ff5252', fontSize: 9 }
-    })
-    if (gMin?.year === s.year) marks.push({
-      coord: [gMin.time, gMin.value],
-      symbol: 'pin', symbolSize: 28,
-      itemStyle: { color: '#40c4ff' },
-      label: { show: true, formatter: `▼${gMin.value.toFixed(2)}`, color: '#40c4ff', fontSize: 9 }
-    })
 
     return {
       name: String(s.year),
@@ -421,7 +399,13 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
       lineStyle: { width, color },
       itemStyle: { color },
       data: s.data.map(d => d.value),
-      ...(marks.length ? { markPoint: { animation: false, data: marks } } : {})
+      emphasis: {
+        focus: 'series',
+        lineStyle: { width: width + 1.5, opacity: 1, color },
+      },
+      blur: {
+        lineStyle: { opacity: 0.07 },
+      },
     }
   })
 
@@ -443,8 +427,8 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
     },
     legend: { top: 4, type: 'scroll', textStyle: { fontSize: 10 } },
     grid: { left: '3%', right: '2%', bottom: '10%', top: '22%', containLabel: true },
-    xAxis: { type: 'category', data: timePoints, boundaryGap: false, axisLabel: { rotate: 45, fontSize: 9 } },
-    yAxis: { type: 'value', name: `${varName.value} (${primaryStat.value})`, nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10 }, min: 'dataMin', max: 'dataMax' },
+    xAxis: { type: 'category', data: timePoints, boundaryGap: false, axisLabel: { rotate: 45, fontSize: 9, color: '#ccc' } },
+    yAxis: { type: 'value', name: `${varName.value} (${primaryStat.value})`, nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10, color: '#ccc' }, min: 'dataMin', max: 'dataMax' },
     dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 16 }],
     series: echartsSeries
   }, true)
@@ -486,8 +470,8 @@ function renderAnnualSummaryChart(rows: BoxRow[]) {
     },
     legend: { data: ['Distribution', 'Mean', 'Trend'], top: 4, textStyle: { fontSize: 10 } },
     grid: { left: '3%', right: '2%', bottom: '10%', top: '22%', containLabel: true },
-    xAxis: { type: 'category', data: years, axisLabel: { rotate: 45, fontSize: 9 } },
-    yAxis: { type: 'value', name: `${varName.value} (${primaryStat.value})`, nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10 }, min: 'dataMin', max: 'dataMax' },
+    xAxis: { type: 'category', data: years, axisLabel: { rotate: 45, fontSize: 9, color: '#ccc' } },
+    yAxis: { type: 'value', name: `${varName.value} (${primaryStat.value})`, nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10, color: '#ccc' }, min: 'dataMin', max: 'dataMax' },
     dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 16 }],
     series: [
       {
@@ -573,14 +557,17 @@ onBeforeUnmount(() => {
 
 // --- DATA FETCH ---
 async function fetchRegionTimeseries(): Promise<SeriesPoint[]> {
-  const polygon = polygonFromClick.value
-  if (!polygon.length) throw new Error('No location selected. Click on the map first.')
-  const response = await axios.post(`https://oa-api2.cioospacificlabs.ca/analysis/timeseries`, {
-    polygon,
+  const pt = props.lastClicked
+  if (!pt) throw new Error('No location selected. Click on the map first.')
+  const base = {
     depth: { min: 0, max: 100 },
     primaryMetric: { variable: props.variable, stat: primaryStat.value },
     temporal: { yearRange: [minYear, maxYear] }
-  })
+  }
+  const location = props.queryMode === 'area'
+    ? { polygon: polygonFromClick.value }
+    : { lat: pt.lat, lon: pt.lng }
+  const response = await axios.post(`https://oa-api2.cioospacificlabs.ca/analysis/timeseries`, { ...base, ...location })
   return response.data?.data || []
 }
 

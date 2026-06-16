@@ -44,6 +44,21 @@
 
             <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
 
+            <!-- Query mode toggle -->
+            <div style="position:absolute; top:10px; right:10px; z-index:10;">
+                <v-btn-toggle :model-value="mainStore.queryMode" mandatory density="compact" variant="tonal"
+                    @update:model-value="(v) => mainStore.setQueryMode(v)">
+                    <v-btn value="point" size="small" title="Point query">
+                        <v-icon size="16">mdi-map-marker</v-icon>
+                        <span class="ml-1" style="font-size:0.7rem;">Point</span>
+                    </v-btn>
+                    <v-btn value="area" size="small" title="Area query">
+                        <v-icon size="16">mdi-vector-square</v-icon>
+                        <span class="ml-1" style="font-size:0.7rem;">Area</span>
+                    </v-btn>
+                </v-btn-toggle>
+            </div>
+
             <!-- Multi-sensor location picker -->
             <SensorPickerPopover :visible="sensorPicker.visible" :x="sensorPicker.x" :y="sensorPicker.y"
                 :sensors="sensorPicker.sensors" @pick="(s) => clickSensor(s.id, s.depth)"
@@ -89,7 +104,7 @@
 
                     <!-- Analysis Builder tab -->
                     <div v-show="activeTab === 'analysis'" style="height:100%;">
-                        <Analytics :variable="selectedVariable.var" :last-clicked="lastClicked" />
+                        <Analytics :variable="selectedVariable.var" :last-clicked="lastClicked" :query-mode="mainStore.queryMode" />
                     </div>
                 </div>
 
@@ -114,8 +129,6 @@ import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import { useRuntimeConfig } from '#app';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import MapboxDraw from '@mapbox/mapbox-gl-draw';
-import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import axios from 'axios'
 import moment from 'moment-timezone'
 import TimeControls from '../components/TimeControls.vue'
@@ -255,7 +268,7 @@ onMounted(async () => {
             if (map) zoom.value = map.getZoom().toFixed(2);
         });
 
-        setupMapboxDraw();
+        updateAnalysisBox();
     });
 
 
@@ -299,6 +312,11 @@ onBeforeUnmount(() => {
                 try { if (r.line && r.line.parentNode) r.line.parentNode.removeChild(r.line); } catch { }
             }
         }
+
+        // remove analysis region box
+        try { if (map.getLayer(ABOX_FILL)) map.removeLayer(ABOX_FILL); } catch (e) { }
+        try { if (map.getLayer(ABOX_LINE)) map.removeLayer(ABOX_LINE); } catch (e) { }
+        try { if (map.getSource(ABOX_SOURCE)) map.removeSource(ABOX_SOURCE); } catch (e) { }
 
         // remove stations layers + source if present
         try { if (map.getLayer && map.getLayer('stations-badge')) map.removeLayer('stations-badge'); } catch (e) { }
@@ -554,20 +572,6 @@ async function init() {
     // Chart is initialized by the TimeseriesChart component itself
 }
 
-function setupMapboxDraw() {
-    if (!map) return;
-
-    const draw = new MapboxDraw({
-        displayControlsDefault: false,
-        controls: {
-            polygon: true,
-            trash: true
-        }
-    });
-
-    map.addControl(draw, 'top-right');
-
-}
 
 function maybeInitClick() {
     // Call initClick only once both the map has finished loading and the selected variable has been initialized
@@ -609,7 +613,11 @@ async function getTimeseriesPromises(lat: number, lon: number) {
 }
 
 async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {
-    const payload = { source: mainStore.selected_variable.source, var: mainStore.selected_variable.var, stat: 'mean', lat, lon, depth: mainStore.selected_variable.depth_nc, fromDate, toDate }
+    const base = { source: mainStore.selected_variable.source, var: mainStore.selected_variable.var, stat: 'mean', depth: mainStore.selected_variable.depth_nc, fromDate, toDate }
+    const h = 0.05
+    const payload = mainStore.queryMode === 'area'
+        ? { ...base, polygon: [[lon-h,lat-h],[lon+h,lat-h],[lon+h,lat+h],[lon-h,lat+h],[lon-h,lat-h]] }
+        : { ...base, lat, lon }
     return axios.post(`${apiBaseUrl}/extractTimeseries`, payload, { signal: tsRequestController.signal });
     // const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
     // const json = r.data;
@@ -861,10 +869,12 @@ async function trigger_mapClick(lat: number, lng: number) {
     if (!overlay) return;
     // show a marker at clicked position
     try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
-    const el = document.createElement('div');
-    el.className = 'map-click-marker';
-    const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map);
-    (map as any).__clickMarker = marker;
+    if (mainStore.queryMode === 'point') {
+        const el = document.createElement('div');
+        el.className = 'map-click-marker';
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map);
+        (map as any).__clickMarker = marker;
+    }
 
     // Abort any in-flight timeseries requests and create a new controller
     try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
@@ -1119,6 +1129,47 @@ async function autorange() {
         mainStore.setAutoRangeDisabled(false);
     }
 }
+
+// --- ANALYSIS REGION BOX ---
+const ABOX_SOURCE = 'analysis-region'
+const ABOX_FILL   = 'analysis-region-fill'
+const ABOX_LINE   = 'analysis-region-line'
+
+function updateAnalysisBox() {
+  if (!map || !map.isStyleLoaded()) return
+  const pt  = lastClicked.value
+  const show = mainStore.queryMode === 'area' && !!pt
+
+  const data: GeoJSON.Feature<GeoJSON.Polygon> = show
+    ? { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[
+          [pt!.lng - 0.05, pt!.lat - 0.05],
+          [pt!.lng + 0.05, pt!.lat - 0.05],
+          [pt!.lng + 0.05, pt!.lat + 0.05],
+          [pt!.lng - 0.05, pt!.lat + 0.05],
+          [pt!.lng - 0.05, pt!.lat - 0.05],
+        ]] } }
+    : { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[]] } }
+
+  if (map.getSource(ABOX_SOURCE)) {
+    (map.getSource(ABOX_SOURCE) as mapboxgl.GeoJSONSource).setData(data)
+    map.setLayoutProperty(ABOX_FILL, 'visibility', show ? 'visible' : 'none')
+    map.setLayoutProperty(ABOX_LINE, 'visibility', show ? 'visible' : 'none')
+  } else {
+    map.addSource(ABOX_SOURCE, { type: 'geojson', data })
+    map.addLayer({ id: ABOX_FILL, type: 'fill', source: ABOX_SOURCE,
+      paint: { 'fill-color': 'rgba(255,193,7,0.08)' },
+      layout: { visibility: show ? 'visible' : 'none' } })
+    map.addLayer({ id: ABOX_LINE, type: 'line', source: ABOX_SOURCE,
+      paint: { 'line-color': 'rgba(255,193,7,0.85)', 'line-width': 1.5, 'line-dasharray': [4, 2] },
+      layout: { visibility: show ? 'visible' : 'none' } })
+  }
+}
+
+watch([lastClicked, activeTab], updateAnalysisBox)
+watch(() => mainStore.queryMode, () => {
+    updateAnalysisBox()
+    if (lastClicked.value) trigger_mapClick(lastClicked.value.lat, lastClicked.value.lng)
+})
 
 // Abort controller for ongoing timeseries requests and debounce timer
 let tsRequestController: AbortController | null = null;

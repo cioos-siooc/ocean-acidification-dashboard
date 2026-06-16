@@ -24,6 +24,23 @@ def _get_ch_client():
     return clickhouse_connect.get_client(host=host, port=port, username=user, password=password)
 
 
+def lookup_nearest_grid_cell(lat: float, lon: float) -> List[Tuple[int, int]]:
+    """
+    Returns the single (gridX, gridY) tuple whose coordinate is closest
+    to the given (lat, lon), using great-circle distance via ClickHouse's
+    geoDistance function.
+    """
+    client = _get_ch_client()
+    query = f"""
+        SELECT gridX, gridY
+        FROM grid_SSC
+        ORDER BY geoDistance({lon}, {lat}, longitude, latitude)
+        LIMIT 1
+    """
+    result = client.query(query)
+    return result.result_rows
+
+
 def lookup_grid_cells_for_polygon(polygon_coords: List[Tuple[float, float]]) -> List[Tuple[int, int]]:
     """
     Takes a GeoJSON polygon array [(lon1, lat1), (lon2, lat2), ...]

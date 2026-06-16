@@ -27,7 +27,7 @@ from modules.extract_climate_timeseries import extract_climate_timeseries
 from modules.extractMinMax import extract_minmax
 from modules.pngGenerator import generate_png_for_variable
 from modules.extractSensorTimeseries import extract_sensor_timeseries
-from modules.ocean_analysis import lookup_grid_cells_for_polygon, query_region_timeseries
+from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
 
 async def run_in_process(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
@@ -1039,9 +1039,11 @@ class DepthRange(BaseModel):
     max: float
 
 class AnalysisRequest(BaseModel):
-    # The API expects a GeoJSON-style polygon coordinate array
-    # e.g., [[lon1, lat1], [lon2, lat2], [lon3, lat3], [lon1, lat1]]
-    polygon: List[Tuple[float, float]]
+    # Either a GeoJSON-style polygon [[lon, lat], ...] for area mode,
+    # or lat + lon for point mode. At least one must be provided.
+    polygon: Optional[List[Tuple[float, float]]] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
     depth: DepthRange
     primaryMetric: MetricSpec
     temporal: dict
@@ -1051,33 +1053,46 @@ class AnalysisRequest(BaseModel):
 # ==============================================================================
 @app.post("/analysis/timeseries")
 async def analysis_timeseries(request: AnalysisRequest):
-    """Regional Daily Timeseries — Aggregates data strictly within a custom polygon.
+    """Daily Timeseries for Analysis Builder.
 
-    Returns a flat daily {time, value} series; the frontend derives
-    climatology, trend, threshold, streak, and extreme-value analytics
-    from this series.
+    Accepts either:
+      - polygon (area mode): aggregates all grid cells inside the polygon
+      - lat + lon (point mode): uses the single nearest grid cell
+
+    Returns a flat daily {time, value} series.
     """
     try:
-        # 1. Enforce that the polygon has enough points to form a closed shape
-        if len(request.polygon) < 3:
+        has_polygon = request.polygon and len(request.polygon) >= 3
+        has_point = request.lat is not None and request.lon is not None
+
+        if not has_polygon and not has_point:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid polygon. A regional selection requires at least 3 coordinate pairs."
+                detail="Provide either a polygon (area mode) or lat + lon (point mode)."
             )
 
-        # 2. Convert real-world coordinates to explicit grid integer tuples
-        grid_points = await run_in_threadpool(
-            lookup_grid_cells_for_polygon,
-            polygon_coords=request.polygon
-        )
-
-        if not grid_points:
-            raise HTTPException(
-                status_code=400,
-                detail="The selected polygon area does not cover any active marine grid cells."
+        if has_polygon:
+            grid_points = await run_in_threadpool(
+                lookup_grid_cells_for_polygon,
+                polygon_coords=request.polygon
             )
+            if not grid_points:
+                raise HTTPException(
+                    status_code=400,
+                    detail="The selected polygon area does not cover any active marine grid cells."
+                )
+        else:
+            grid_points = await run_in_threadpool(
+                lookup_nearest_grid_cell,
+                lat=request.lat,
+                lon=request.lon
+            )
+            if not grid_points:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No marine grid cell found near the selected point."
+                )
 
-        # 3. Forward the resolved points list straight to the historical dataset
         result = await run_in_threadpool(
             query_region_timeseries,
             grid_points=grid_points,
