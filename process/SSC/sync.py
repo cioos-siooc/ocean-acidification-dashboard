@@ -14,9 +14,12 @@ truth for "has this date actually been committed" (see api/modules/sync_hourly.p
 own orchestration (what's left to push), not a correctness guarantee. A 409
 from home means "already imported" and is treated as success here.
 
-Requires SYNC_HOME_SSH_TARGET, SYNC_HOME_DATA_DIR, SYNC_HOME_API_BASE and
-SYNC_API_TOKEN to be configured (see config.py) — left unset by default so a
-local-only deployment never tries to sync to itself.
+Requires SYNC_HOME_DATA_DIR, SYNC_HOME_API_BASE and SYNC_API_TOKEN to be
+configured (see config.py) — left unset by default so a local-only
+deployment never tries to sync to itself. SSH connectivity (REMOTE_SSH_*)
+defaults to the cloudflared `ssh_tunnel` convention shared with the
+LiveOcean remote pipeline (process/liveOcean/main.py /
+docker-compose.prod.process.yml) and doesn't need to be set separately.
 """
 from __future__ import annotations
 
@@ -30,9 +33,9 @@ from datetime import date, datetime, timedelta
 import requests
 
 from .config import (
-    ALL_VARIABLES, IMAGE_BASE_DIR, SYNC_API_TOKEN, SYNC_HOME_API_BASE,
-    SYNC_HOME_DATA_DIR, SYNC_HOME_SSH_TARGET, SYNC_SSH_KEY, SYNC_SSH_PORT,
-    SYNC_STAGING_DIR,
+    ALL_VARIABLES, IMAGE_BASE_DIR, REMOTE_SSH_HOST, REMOTE_SSH_KEY_PATH,
+    REMOTE_SSH_KNOWN_HOSTS, REMOTE_SSH_PORT, REMOTE_SSH_USER,
+    SYNC_API_TOKEN, SYNC_HOME_API_BASE, SYNC_HOME_DATA_DIR, SYNC_STAGING_DIR,
     STATUS_FAILED_SYNC, STATUS_SUCCESS_SYNC, STATUS_SYNCING,
 )
 from .db import get_dates_pending_sync, get_row, mark_failed, mark_running, mark_success
@@ -44,11 +47,12 @@ logger = logging.getLogger('SalishSeaCast.sync')
 # /opt/data/... path to the equivalent path on the home host's filesystem.
 _CONTAINER_DATA_ROOT = '/opt/data'
 
+_HOME_TARGET = f'{REMOTE_SSH_USER}@{REMOTE_SSH_HOST}'
+
 
 def _require_configured() -> None:
     missing = [
         name for name, val in (
-            ('SYNC_HOME_SSH_TARGET', SYNC_HOME_SSH_TARGET),
             ('SYNC_HOME_DATA_DIR', SYNC_HOME_DATA_DIR),
             ('SYNC_HOME_API_BASE', SYNC_HOME_API_BASE),
             ('SYNC_API_TOKEN', SYNC_API_TOKEN),
@@ -58,11 +62,26 @@ def _require_configured() -> None:
         raise RuntimeError(f'Sync is not configured: missing {", ".join(missing)}')
 
 
-def _ssh_args() -> list[str]:
-    args = ['-p', str(SYNC_SSH_PORT)]
-    if SYNC_SSH_KEY:
-        args += ['-i', SYNC_SSH_KEY]
-    return args
+def _ssh_opts_parts() -> list[str]:
+    # BatchMode=yes: fail fast instead of hanging on an unattended password
+    # prompt. StrictHostKeyChecking=accept-new: auto-trust a host's key on
+    # first connect (no interactive yes/no prompt) but still reject if it
+    # ever changes later. Same flags/defaults as process/liveOcean/main.py.
+    parts = [
+        'ssh', '-p', str(REMOTE_SSH_PORT),
+        '-o', 'BatchMode=yes',
+        '-o', 'StrictHostKeyChecking=accept-new',
+    ]
+    if REMOTE_SSH_KEY_PATH and os.path.exists(REMOTE_SSH_KEY_PATH):
+        parts += ['-i', REMOTE_SSH_KEY_PATH]
+    else:
+        logger.warning(
+            'REMOTE_SSH_KEY_PATH not found at %s; rsync may prompt/fail if '
+            'passwordless auth is not already configured.', REMOTE_SSH_KEY_PATH,
+        )
+    if REMOTE_SSH_KNOWN_HOSTS:
+        parts += ['-o', f'UserKnownHostsFile={REMOTE_SSH_KNOWN_HOSTS}']
+    return parts
 
 
 def _home_path(local_path: str) -> str:
@@ -72,8 +91,9 @@ def _home_path(local_path: str) -> str:
 
 
 def _ssh_exec(remote_cmd: str) -> None:
+    ssh_opts_parts = _ssh_opts_parts()
     proc = subprocess.run(
-        ['ssh', *_ssh_args(), SYNC_HOME_SSH_TARGET, remote_cmd],
+        ssh_opts_parts + [_HOME_TARGET, remote_cmd],
         capture_output=True, text=True,
     )
     if proc.returncode != 0:
@@ -113,7 +133,8 @@ def _export_native(client, date_val: date, out_path: str) -> None:
 def _rsync_native_file(local_path: str) -> None:
     dest_path = _home_path(local_path)
     _ssh_exec(f'mkdir -p {shlex.quote(os.path.dirname(dest_path))}')
-    _rsync(['-az', '-e', f'ssh {" ".join(_ssh_args())}', local_path, f'{SYNC_HOME_SSH_TARGET}:{dest_path}'])
+    ssh_opts = ' '.join(_ssh_opts_parts())
+    _rsync(['-az', '-e', ssh_opts, local_path, f'{_HOME_TARGET}:{dest_path}'])
 
 
 def _date_image_dirs(date_val: date, image_base_dir: str) -> list[str]:
@@ -137,9 +158,10 @@ def _rsync_images(date_val: date, image_base_dir: str) -> None:
         return
     dest_root = _home_path(image_base_dir)
     _ssh_exec(f'mkdir -p {shlex.quote(dest_root)}')
+    ssh_opts = ' '.join(_ssh_opts_parts())
     _rsync(
-        ['-az', '--relative', '--files-from=-', '-e', f'ssh {" ".join(_ssh_args())}',
-         f'{image_base_dir}/', f'{SYNC_HOME_SSH_TARGET}:{dest_root}/'],
+        ['-az', '--relative', '--files-from=-', '-e', ssh_opts,
+         f'{image_base_dir}/', f'{_HOME_TARGET}:{dest_root}/'],
         input_text='\n'.join(rel_dirs) + '\n',
     )
     logger.info('rsynced %d image directories for %s', len(rel_dirs), date_val)

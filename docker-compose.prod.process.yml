@@ -23,6 +23,23 @@ services:
       --service-token-secret ${CF_TOKEN_SECRET}
     restart: unless-stopped
 
+  # Local ClickHouse for the SSC pipeline's own status tracking
+  # (SalishSeaCast_status) on this machine — only the finished hourly data +
+  # images get pushed home via the `sync` stage, same "process locally,
+  # network only at the end" philosophy as the LiveOcean LOCAL_STATE_DIR.
+  db-ch:
+    image: clickhouse/clickhouse-server:latest
+    profiles: ["tools"]
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ./clickhouse/data:/var/lib/clickhouse
+      - ./clickhouse/logs:/var/log/clickhouse-server
+    environment:
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
+    restart: unless-stopped
+
   process:
     build:
       context: .
@@ -45,6 +62,7 @@ services:
       - REMOTE_NC_DIR=${REMOTE_NC_DIR:-/home/cioos/OA_data/LO/nc}
       - REMOTE_IMAGE_DIR=${REMOTE_IMAGE_DIR:-/home/cioos/OA_data/LO/images}
       # SSH tunnel to Machine A (second cloudflared tunnel for file transfer)
+      # — shared by both the LiveOcean transfer stage and the SSC sync stage.
       - REMOTE_SSH_HOST=${REMOTE_SSH_HOST:-localhost}
       - REMOTE_SSH_PORT=${REMOTE_SSH_PORT:-12022}
       - REMOTE_SSH_USER=${REMOTE_SSH_USER:-cioos}
@@ -56,14 +74,31 @@ services:
       - LOCAL_STATE_DIR=${LOCAL_STATE_DIR:-/opt/data/local/LO/state}
       # Grid cache
       - LO_GRID_CACHE=${LO_GRID_CACHE:-/opt/data/cache/lo_grid_cache.npz}
+      # SSC pipeline: local ClickHouse (db-ch above) for status tracking
+      - CH_HOST=${CH_HOST:-localhost}
+      - CH_PORT=${CH_PORT:-8123}
+      - CH_USER=${CH_USER:-default}
+      - CH_PASSWORD=${CH_PASSWORD:-}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+      # SSC pipeline: local processing output dirs on this machine
+      - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
+      - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
+      - SSC_SYNC_STAGING_DIR=${SSC_SYNC_STAGING_DIR:-/opt/data/SalishSeaCast/sync_staging}
+      # SSC sync stage: push finished dates' hourly rows + images home
+      - SYNC_HOME_DATA_DIR=${SYNC_HOME_DATA_DIR:-}
+      - SYNC_HOME_API_BASE=${SYNC_HOME_API_BASE:-}
+      - SYNC_API_TOKEN=${SYNC_API_TOKEN:-}
     volumes:
       - ./shared:/app/shared
       - ./data:/opt/data
       - ./secrets:/run/secrets:ro
     depends_on:
-      db_tunnel:
-        condition: service_started
+      # db_tunnel (Postgres) is LO-only — SSC doesn't touch Postgres at all,
+      # so it's deliberately not a dependency here. Bring it up separately
+      # when LO work resumes.
       ssh_tunnel:
+        condition: service_started
+      db-ch:
         condition: service_started
     network_mode: "host"
     restart: unless-stopped

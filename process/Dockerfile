@@ -2,10 +2,13 @@ FROM python:3.13.13-slim
 
 WORKDIR /app
 
-# System packages needed by transfer stage (rsync over SSH)
+# System packages needed by the sync stage (rsync over SSH, optionally
+# tunneled through Cloudflare Access via an ssh ProxyCommand)
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends rsync openssh-client \
-	&& rm -rf /var/lib/apt/lists/*
+	&& apt-get install -y --no-install-recommends rsync openssh-client curl \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& curl -L -o /usr/local/bin/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+	&& chmod +x /usr/local/bin/cloudflared
 
 # Install uv
 RUN pip install --no-cache-dir uv

@@ -175,9 +175,13 @@ CH_REMOTE_URL = os.getenv('CH_REMOTE_URL', '')
 
 # ---------------------------------------------------------------------------
 # Sync stage — this pipeline may run on a remote server; sync pushes each
-# date's hourly rows + WebP images home once ingest succeeds. All of these
-# must be set on the remote server for `sync` to work; left blank by default
-# so a local-only deployment (this one) doesn't accidentally try to sync.
+# date's hourly rows + WebP images home once ingest succeeds.
+#
+# SSH connectivity reuses the same convention as the LiveOcean remote
+# pipeline (process/liveOcean/main.py) and docker-compose.prod.process.yml's
+# cloudflared `ssh_tunnel` service: a persistent local TCP tunnel to the home
+# server, so REMOTE_SSH_HOST/PORT just point at "localhost:<tunnel port>"
+# rather than needing an ssh ProxyCommand per invocation.
 # ---------------------------------------------------------------------------
 
 # Staging directory for the Native-format export, on this filesystem. The
@@ -185,12 +189,12 @@ CH_REMOTE_URL = os.getenv('CH_REMOTE_URL', '')
 # API can find the file after rsync lands it at the equivalent path there.
 SYNC_STAGING_DIR = os.getenv('SSC_SYNC_STAGING_DIR', '/opt/data/SalishSeaCast/sync_staging')
 
-# SSH target for rsync, e.g. "deploy@home.example.com". Required for `sync`.
-SYNC_HOME_SSH_TARGET = os.getenv('SYNC_HOME_SSH_TARGET', '')
-
-# Optional: SSH port / identity file, passed to rsync's -e ssh.
-SYNC_SSH_PORT = os.getenv('SYNC_SSH_PORT', '22')
-SYNC_SSH_KEY  = os.getenv('SYNC_SSH_KEY', '')
+# SSH connection to the home server (same env vars as process/liveOcean/main.py).
+REMOTE_SSH_HOST        = os.getenv('REMOTE_SSH_HOST', 'localhost')
+REMOTE_SSH_PORT        = int(os.getenv('REMOTE_SSH_PORT', '12022'))
+REMOTE_SSH_USER        = os.getenv('REMOTE_SSH_USER', 'cioos')
+REMOTE_SSH_KEY_PATH    = os.getenv('REMOTE_SSH_KEY_PATH', '/run/secrets/ONC_OA_rsync')
+REMOTE_SSH_KNOWN_HOSTS = os.getenv('REMOTE_SSH_KNOWN_HOSTS', '/run/secrets/known_hosts')
 
 # Home server's data root as seen on its OWN host filesystem (i.e. the source
 # side of its docker-compose bind mount for /opt/data) — this is where rsync
