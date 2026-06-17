@@ -123,16 +123,23 @@ def process_time_chunk(args):
         
         # Loop through the remaining 7 variables
         for var in VARIABLES[1:]:
-            day_data_var = ds_dict[var][var].sel({VAR_MAP['time_var']: date_str})
-            
-            var_mean = day_data_var.mean(dim=VAR_MAP['time_var'], skipna=True).values.flatten()
-            var_min = day_data_var.min(dim=VAR_MAP['time_var'], skipna=True).values.flatten()
-            var_max = day_data_var.max(dim=VAR_MAP['time_var'], skipna=True).values.flatten()
-            
+            try:
+                day_data_var = ds_dict[var][var].sel({VAR_MAP['time_var']: date_str})
+                var_mean = day_data_var.mean(dim=VAR_MAP['time_var'], skipna=True).values.flatten()
+                var_min = day_data_var.min(dim=VAR_MAP['time_var'], skipna=True).values.flatten()
+                var_max = day_data_var.max(dim=VAR_MAP['time_var'], skipna=True).values.flatten()
+            except (ValueError, KeyError, IndexError) as e:
+                print(f"[Worker {worker_id}] Warning: {var} missing/empty for {date_str}: {e}", flush=True)
+                n_cells = len(flat_depth)
+                var_mean = np.full(n_cells, np.nan, dtype=np.float32)
+                var_min = np.full(n_cells, np.nan, dtype=np.float32)
+                var_max = np.full(n_cells, np.nan, dtype=np.float32)
+                day_data_var = None
+
             df_cols[f'{var}_mean'] = var_mean[valid_mask]
             df_cols[f'{var}_min'] = var_min[valid_mask]
             df_cols[f'{var}_max'] = var_max[valid_mask]
-            
+
             temp_mem_refs.extend([day_data_var, var_mean, var_min, var_max])
             
         # Build DataFrame and remove rows where all measurement stats are zero or null
@@ -232,8 +239,24 @@ if __name__ == '__main__':
         first_file = f"/app/data/{VARIABLES[0]}/{VARIABLES[0]}_{suffix}.nc"
         with xr.open_dataset(first_file, engine='h5netcdf') as ds_main:
             times = pd.to_datetime(ds_main[VAR_MAP['time_var']].values)
-            unique_dates = np.unique(times.date) 
-            
+            unique_dates = np.unique(times.date)
+
+        # Skip dates already present in ClickHouse
+        min_date, max_date = unique_dates.min(), unique_dates.max()
+        existing_result = main_client.query(
+            "SELECT DISTINCT time FROM SalishSeaCast_daily WHERE time >= %(min_d)s AND time <= %(max_d)s",
+            parameters={'min_d': str(min_date), 'max_d': str(max_date)}
+        )
+        existing_dates = {row[0] for row in existing_result.result_rows}
+        if existing_dates:
+            total_before = len(unique_dates)
+            unique_dates = np.array([d for d in unique_dates if d not in existing_dates])
+            print(f"Skipping {total_before - len(unique_dates)} already-inserted dates. {len(unique_dates)} remaining.")
+
+        if len(unique_dates) == 0:
+            print(f"All dates for suffix '{suffix}' already in ClickHouse. Skipping.")
+            continue
+
         days_per_worker = math.ceil(len(unique_dates) / CORES_TO_USE)
         
         worker_tasks = []
