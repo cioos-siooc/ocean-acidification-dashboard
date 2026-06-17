@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,6 +28,7 @@ from modules.extractMinMax import extract_minmax
 from modules.pngGenerator import generate_png_for_variable
 from modules.extractSensorTimeseries import extract_sensor_timeseries
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
+from modules.sync_hourly import import_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
 
 async def run_in_process(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
@@ -1113,6 +1114,33 @@ async def analysis_timeseries(request: AnalysisRequest):
 
 
 #######################################
+
+
+class SyncHourlyRequest(BaseModel):
+    date: str  # YYYY-MM-DD
+
+
+@app.post("/admin/syncHourly")
+async def sync_hourly(request: SyncHourlyRequest, authorization: Optional[str] = Header(None)):
+    """Import a remote pipeline server's exported SalishSeaCast_hourly rows.
+
+    Only accessible with a bearer token matching SYNC_API_TOKEN. The caller
+    (process/SSC/sync.py) sends just the date — the expected Native-format
+    file path is derived server-side from SSC_SYNC_STAGING_DIR, never taken
+    from the request, to avoid trusting a caller-supplied path.
+    """
+    if not SYNC_API_TOKEN or authorization != f"Bearer {SYNC_API_TOKEN}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        return await run_in_threadpool(import_native_file, request.date)
+    except SyncConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except SyncError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("sync_hourly failed for date %s", request.date)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 if __name__ == "__main__":

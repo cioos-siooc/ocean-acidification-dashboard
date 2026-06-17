@@ -106,6 +106,7 @@ FastAPI app in `SERVER.py`. All blocking work runs in a `ProcessPoolExecutor` vi
 | `POST /analysis/timeseries` | `modules/ocean_analysis.py` |
 | `GET /png/{source}/{var}/{dt}/{depth}` | `modules/pngGenerator.py` (generates on-demand if missing) |
 | `GET /variables` | `modules/variables.py` |
+| `POST /admin/syncHourly` | `modules/sync_hourly.py` (bearer-token auth via `SYNC_API_TOKEN`; imports a date's Native-format export rsynced in by a remote `process` pipeline — see `SalishSeaCast_sync_log`) |
 
 **Federation**: When `FEDERATION_ENABLED=true` and `REMOTE_B_API_BASE` is set, SSC requests are routed between two servers (A = local, B = remote archive) based on `nc_jobs.misc` ownership flags.
 
