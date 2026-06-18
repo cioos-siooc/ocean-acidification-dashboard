@@ -1,24 +1,26 @@
 """Sync stage for the SalishSeaCast pipeline.
 
-This pipeline may run on a remote server (heavy download/compute/image work),
-while the canonical ClickHouse + WebP images live on a home server. Once a
-date finishes ingest, this stage:
+This pipeline runs on the PROCESS machine (heavy download/compute/image
+work), while the canonical ClickHouse + WebP images live on the API
+machine. Once a date finishes ingest, this stage:
 
   1. Exports that date's SalishSeaCast_hourly rows to a Native-format file.
-  2. rsyncs the export file and the date's WebP image directories home.
-  3. Calls the home API to import the export file into its own ClickHouse.
+  2. rsyncs the export file and the date's WebP image directories to the
+     API machine.
+  3. Calls the API machine to import the export file into its own ClickHouse.
 
-Idempotency: the home side maintains its own sync log and is the source of
+Idempotency: the API machine maintains its own sync log and is the source of
 truth for "has this date actually been committed" (see api/modules/sync_hourly.py)
-— this stage's own pending_sync/success_sync status is only for the remote's
-own orchestration (what's left to push), not a correctness guarantee. A 409
-from home means "already imported" and is treated as success here.
+— this stage's own pending_sync/success_sync status is only for the PROCESS
+machine's own orchestration (what's left to push), not a correctness
+guarantee. A 409 from the API machine means "already imported" and is
+treated as success here.
 
-Requires SYNC_HOME_DATA_DIR, SYNC_HOME_API_BASE and SYNC_API_TOKEN to be
+Requires SYNC_API_DATA_DIR, SYNC_API_BASE_URL and SYNC_API_TOKEN to be
 configured (see config.py) — left unset by default so a local-only
-deployment never tries to sync to itself. SSH connectivity (REMOTE_SSH_*)
+deployment never tries to sync to itself. SSH connectivity (API_SSH_*)
 defaults to the cloudflared `ssh_tunnel` convention shared with the
-LiveOcean remote pipeline (process/liveOcean/main.py /
+LiveOcean pipeline (process/liveOcean/main.py /
 docker-compose.prod.process.yml) and doesn't need to be set separately.
 """
 from __future__ import annotations
@@ -33,9 +35,9 @@ from datetime import date, datetime, timedelta
 import requests
 
 from .config import (
-    ALL_VARIABLES, IMAGE_BASE_DIR, REMOTE_SSH_HOST, REMOTE_SSH_KEY_PATH,
-    REMOTE_SSH_KNOWN_HOSTS, REMOTE_SSH_PORT, REMOTE_SSH_USER,
-    SYNC_API_TOKEN, SYNC_HOME_API_BASE, SYNC_HOME_DATA_DIR, SYNC_STAGING_DIR,
+    ALL_VARIABLES, IMAGE_BASE_DIR, API_SSH_HOST, API_SSH_KEY_PATH,
+    API_SSH_KNOWN_HOSTS, API_SSH_PORT, API_SSH_USER,
+    SYNC_API_TOKEN, SYNC_API_BASE_URL, SYNC_API_DATA_DIR, SYNC_STAGING_DIR,
     STATUS_FAILED_SYNC, STATUS_SUCCESS_SYNC, STATUS_SYNCING,
 )
 from .db import get_dates_pending_sync, get_row, mark_failed, mark_running, mark_success
@@ -44,17 +46,17 @@ logger = logging.getLogger('SalishSeaCast.sync')
 
 # All of NC_BASE_DIR / IMAGE_BASE_DIR / SYNC_STAGING_DIR live under this root
 # by convention (see CLAUDE.md storage layout) — used to translate a local
-# /opt/data/... path to the equivalent path on the home host's filesystem.
+# /opt/data/... path to the equivalent path on the API machine's filesystem.
 _CONTAINER_DATA_ROOT = '/opt/data'
 
-_HOME_TARGET = f'{REMOTE_SSH_USER}@{REMOTE_SSH_HOST}'
+_API_TARGET = f'{API_SSH_USER}@{API_SSH_HOST}'
 
 
 def _require_configured() -> None:
     missing = [
         name for name, val in (
-            ('SYNC_HOME_DATA_DIR', SYNC_HOME_DATA_DIR),
-            ('SYNC_HOME_API_BASE', SYNC_HOME_API_BASE),
+            ('SYNC_API_DATA_DIR', SYNC_API_DATA_DIR),
+            ('SYNC_API_BASE_URL', SYNC_API_BASE_URL),
             ('SYNC_API_TOKEN', SYNC_API_TOKEN),
         ) if not val
     ]
@@ -68,32 +70,32 @@ def _ssh_opts_parts() -> list[str]:
     # first connect (no interactive yes/no prompt) but still reject if it
     # ever changes later. Same flags/defaults as process/liveOcean/main.py.
     parts = [
-        'ssh', '-p', str(REMOTE_SSH_PORT),
+        'ssh', '-p', str(API_SSH_PORT),
         '-o', 'BatchMode=yes',
         '-o', 'StrictHostKeyChecking=accept-new',
     ]
-    if REMOTE_SSH_KEY_PATH and os.path.exists(REMOTE_SSH_KEY_PATH):
-        parts += ['-i', REMOTE_SSH_KEY_PATH]
+    if API_SSH_KEY_PATH and os.path.exists(API_SSH_KEY_PATH):
+        parts += ['-i', API_SSH_KEY_PATH]
     else:
         logger.warning(
-            'REMOTE_SSH_KEY_PATH not found at %s; rsync may prompt/fail if '
-            'passwordless auth is not already configured.', REMOTE_SSH_KEY_PATH,
+            'API_SSH_KEY_PATH not found at %s; rsync may prompt/fail if '
+            'passwordless auth is not already configured.', API_SSH_KEY_PATH,
         )
-    if REMOTE_SSH_KNOWN_HOSTS:
-        parts += ['-o', f'UserKnownHostsFile={REMOTE_SSH_KNOWN_HOSTS}']
+    if API_SSH_KNOWN_HOSTS:
+        parts += ['-o', f'UserKnownHostsFile={API_SSH_KNOWN_HOSTS}']
     return parts
 
 
-def _home_path(local_path: str) -> str:
-    """Map a local /opt/data/... path to its equivalent on the home host."""
+def _api_path(local_path: str) -> str:
+    """Map a local /opt/data/... path to its equivalent on the API machine."""
     rel = os.path.relpath(local_path, _CONTAINER_DATA_ROOT)
-    return os.path.join(SYNC_HOME_DATA_DIR, rel)
+    return os.path.join(SYNC_API_DATA_DIR, rel)
 
 
 def _ssh_exec(remote_cmd: str) -> None:
     ssh_opts_parts = _ssh_opts_parts()
     proc = subprocess.run(
-        ssh_opts_parts + [_HOME_TARGET, remote_cmd],
+        ssh_opts_parts + [_API_TARGET, remote_cmd],
         capture_output=True, text=True,
     )
     if proc.returncode != 0:
@@ -131,10 +133,10 @@ def _export_native(client, date_val: date, out_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 def _rsync_native_file(local_path: str) -> None:
-    dest_path = _home_path(local_path)
+    dest_path = _api_path(local_path)
     _ssh_exec(f'mkdir -p {shlex.quote(os.path.dirname(dest_path))}')
     ssh_opts = ' '.join(_ssh_opts_parts())
-    _rsync(['-az', '-e', ssh_opts, local_path, f'{_HOME_TARGET}:{dest_path}'])
+    _rsync(['-az', '-e', ssh_opts, local_path, f'{_API_TARGET}:{dest_path}'])
 
 
 def _date_image_dirs(date_val: date, image_base_dir: str) -> list[str]:
@@ -156,23 +158,23 @@ def _rsync_images(date_val: date, image_base_dir: str) -> None:
     if not rel_dirs:
         logger.warning('No image directories found for %s — skipping image rsync', date_val)
         return
-    dest_root = _home_path(image_base_dir)
+    dest_root = _api_path(image_base_dir)
     _ssh_exec(f'mkdir -p {shlex.quote(dest_root)}')
     ssh_opts = ' '.join(_ssh_opts_parts())
     _rsync(
         ['-az', '--relative', '--files-from=-', '-e', ssh_opts,
-         f'{image_base_dir}/', f'{_HOME_TARGET}:{dest_root}/'],
+         f'{image_base_dir}/', f'{_API_TARGET}:{dest_root}/'],
         input_text='\n'.join(rel_dirs) + '\n',
     )
     logger.info('rsynced %d image directories for %s', len(rel_dirs), date_val)
 
 
 # ---------------------------------------------------------------------------
-# Home notification
+# API machine notification
 # ---------------------------------------------------------------------------
 
-def _notify_home(date_val: date) -> None:
-    url = f'{SYNC_HOME_API_BASE.rstrip("/")}/admin/syncHourly'
+def _notify_api(date_val: date) -> None:
+    url = f'{SYNC_API_BASE_URL.rstrip("/")}/admin/syncHourly'
     resp = requests.post(
         url,
         json={'date': date_val.isoformat()},
@@ -180,7 +182,7 @@ def _notify_home(date_val: date) -> None:
         timeout=600,
     )
     if resp.status_code == 409:
-        logger.info('Home already has %s synced (409) — treating as success', date_val)
+        logger.info('API machine already has %s synced (409) — treating as success', date_val)
         return
     resp.raise_for_status()
 
@@ -190,7 +192,7 @@ def _notify_home(date_val: date) -> None:
 # ---------------------------------------------------------------------------
 
 def sync_date(client, date_val: date, image_base_dir: str = IMAGE_BASE_DIR) -> bool:
-    """Export, transfer and trigger the home import for date_val. Returns success."""
+    """Export, transfer and trigger the API machine's import for date_val. Returns success."""
     _require_configured()
 
     for var in ALL_VARIABLES:
@@ -202,7 +204,7 @@ def sync_date(client, date_val: date, image_base_dir: str = IMAGE_BASE_DIR) -> b
         _export_native(client, date_val, native_path)
         _rsync_native_file(native_path)
         _rsync_images(date_val, image_base_dir)
-        _notify_home(date_val)
+        _notify_api(date_val)
 
         for var in ALL_VARIABLES:
             row = get_row(client, date_val, var) or {}

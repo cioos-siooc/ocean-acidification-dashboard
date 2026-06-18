@@ -1,8 +1,8 @@
 """Local state management for remote processing mode.
 
-When processing on Machine B and transferring files to Machine A,
-this module tracks processing state in per-date JSON files instead of
-writing to Machine A's database during extract/image stages.
+When processing on the PROCESS machine and transferring files to the API
+machine, this module tracks processing state in per-date JSON files instead
+of writing to the API machine's database during extract/image stages.
 
 State file format (one JSON file per source_date):
 {

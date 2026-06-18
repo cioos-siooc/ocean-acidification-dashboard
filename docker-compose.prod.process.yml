@@ -1,16 +1,4 @@
 services:
-  db_tunnel:
-    image: cloudflare/cloudflared:latest
-    profiles: ["tools"]
-    network_mode: "host"
-    command: >
-      access tcp
-      --hostname ${CF_DB_HOSTNAME:-db-prod.cioospacificlabs.ca}
-      --listener ${CF_DB_LISTENER:-localhost:19012}
-      --service-token-id ${CF_TOKEN_ID}
-      --service-token-secret ${CF_TOKEN_SECRET}
-    restart: unless-stopped
-
   ssh_tunnel:
     image: cloudflare/cloudflared:latest
     profiles: ["tools"]
@@ -47,7 +35,7 @@ services:
     # user: "${UID:-1000}:${GID:-1000}"
     profiles: ["tools"]
     environment:
-      # Machine A database (read via cloudflared tunnel on Machine B)
+      # API machine's Postgres (read via cloudflared tunnel from this PROCESS machine)
       - PGHOST=${DB_HOST:-localhost}
       - PGPORT=${DB_PORT:-19012}
       - PGDATABASE=oa
@@ -58,17 +46,17 @@ services:
       # Python/uv
       - UV_CACHE_DIR=/tmp/uv-cache
       - UV_NO_SYNC=1
-      # Machine A remote paths (rsync destination)
-      - REMOTE_NC_DIR=${REMOTE_NC_DIR:-/home/cioos/OA_data/LO/nc}
-      - REMOTE_IMAGE_DIR=${REMOTE_IMAGE_DIR:-/home/cioos/OA_data/LO/images}
-      # SSH tunnel to Machine A (second cloudflared tunnel for file transfer)
+      # API machine paths (rsync destination)
+      - API_NC_DIR=${API_NC_DIR:-/home/cioos/OA_data/LO/nc}
+      - API_IMAGE_DIR=${API_IMAGE_DIR:-/home/cioos/OA_data/LO/images}
+      # SSH tunnel to the API machine (second cloudflared tunnel for file transfer)
       # — shared by both the LiveOcean transfer stage and the SSC sync stage.
-      - REMOTE_SSH_HOST=${REMOTE_SSH_HOST:-localhost}
-      - REMOTE_SSH_PORT=${REMOTE_SSH_PORT:-12022}
-      - REMOTE_SSH_USER=${REMOTE_SSH_USER:-cioos}
-      - REMOTE_SSH_KEY_PATH=${REMOTE_SSH_KEY_PATH:-/run/secrets/ONC_OA_rsync}
-      - REMOTE_SSH_KNOWN_HOSTS=${REMOTE_SSH_KNOWN_HOSTS:-/run/secrets/known_hosts}
-      # Machine B local scratch dirs (processing output before transfer)
+      - API_SSH_HOST=${API_SSH_HOST:-localhost}
+      - API_SSH_PORT=${API_SSH_PORT:-12022}
+      - API_SSH_USER=${API_SSH_USER:-cioos}
+      - API_SSH_KEY_PATH=${API_SSH_KEY_PATH:-/run/secrets/ONC_OA_rsync}
+      - API_SSH_KNOWN_HOSTS=${API_SSH_KNOWN_HOSTS:-/run/secrets/known_hosts}
+      # PROCESS machine local scratch dirs (processing output before transfer)
       - LOCAL_NC_DIR=${LOCAL_NC_DIR:-/opt/data/local/LO/nc}
       - LOCAL_IMAGE_DIR=${LOCAL_IMAGE_DIR:-/opt/data/local/LO/images}
       - LOCAL_STATE_DIR=${LOCAL_STATE_DIR:-/opt/data/local/LO/state}
@@ -84,9 +72,9 @@ services:
       - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
       - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
       - SSC_SYNC_STAGING_DIR=${SSC_SYNC_STAGING_DIR:-/opt/data/SalishSeaCast/sync_staging}
-      # SSC sync stage: push finished dates' hourly rows + images home
-      - SYNC_HOME_DATA_DIR=${SYNC_HOME_DATA_DIR:-}
-      - SYNC_HOME_API_BASE=${SYNC_HOME_API_BASE:-}
+      # SSC sync stage: push finished dates' hourly rows + images to the API machine
+      - SYNC_API_DATA_DIR=${SYNC_API_DATA_DIR:-}
+      - SYNC_API_BASE_URL=${SYNC_API_BASE_URL:-}
       - SYNC_API_TOKEN=${SYNC_API_TOKEN:-}
     volumes:
       - ./shared:/app/shared

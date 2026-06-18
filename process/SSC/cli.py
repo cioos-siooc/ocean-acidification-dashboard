@@ -26,11 +26,11 @@ Commands:
               pending_ingest, and fully-ingested dates (all 8 at
               success_ingest) to pending_sync.
   sync        Process pending_sync jobs: export the date's hourly rows to a
-              Native-format file, rsync it plus the WebP images to the home
-              server, then call the home API to import them. Requires
-              SYNC_HOME_SSH_TARGET / SYNC_HOME_DATA_DIR / SYNC_HOME_API_BASE /
-              SYNC_API_TOKEN to be configured (see config.py) — a no-op
-              error on a local-only deployment that hasn't set these.
+              Native-format file, rsync it plus the WebP images to the API
+              machine, then call its API to import them. Requires
+              SYNC_API_DATA_DIR / SYNC_API_BASE_URL / SYNC_API_TOKEN
+              to be configured (see config.py) — a no-op error on a
+              local-only deployment that hasn't set these.
   run         Run all steps in order: download -> check_image -> compute ->
                                        check_image -> image -> promote ->
                                        ingest -> promote -> sync.
@@ -295,7 +295,7 @@ def cmd_sync(args) -> None:
 
 def cmd_run(args) -> None:
     """Run all pipeline steps in sequence for pending work."""
-    from .config import IMAGE_BASE_DIR, NC_BASE_DIR, SYNC_HOME_API_BASE
+    from .config import IMAGE_BASE_DIR, NC_BASE_DIR, SYNC_API_BASE_URL
     from .downloader import process_pending_downloads
     from .compute import process_pending_compute
     from .imaging import process_pending_images
@@ -334,11 +334,11 @@ def cmd_run(args) -> None:
     logger.info('=== promote (success_ingest → pending_sync) ===')
     promote_ready_dates(client)
 
-    if SYNC_HOME_API_BASE:
+    if SYNC_API_BASE_URL:
         logger.info('=== sync ===')
         process_pending_syncs(client, limit=args.limit, image_base_dir=image_dir)
     else:
-        logger.info('=== sync skipped (SYNC_HOME_API_BASE not configured) ===')
+        logger.info('=== sync skipped (SYNC_API_BASE_URL not configured) ===')
 
     client.close()
 
@@ -439,7 +439,7 @@ def main(argv=None) -> None:
     _add_limit(p, default=20)
     p.set_defaults(func=cmd_promote)
 
-    p = sub.add_parser('sync', help='Export + rsync + trigger home import for ingested dates')
+    p = sub.add_parser('sync', help='Export + rsync + trigger API machine import for ingested dates')
     _add_date(p); _add_limit(p, default=5); _add_force(p)
     p.set_defaults(func=cmd_sync)
 

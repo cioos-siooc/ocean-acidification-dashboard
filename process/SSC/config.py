@@ -174,33 +174,33 @@ CH_USE_REMOTE = os.getenv('CH_USE_REMOTE', '').strip().lower() in ('1', 'true', 
 CH_REMOTE_URL = os.getenv('CH_REMOTE_URL', '')
 
 # ---------------------------------------------------------------------------
-# Sync stage — this pipeline may run on a remote server; sync pushes each
-# date's hourly rows + WebP images home once ingest succeeds.
+# Sync stage — this pipeline runs on the PROCESS machine; sync pushes each
+# date's hourly rows + WebP images to the API machine once ingest succeeds.
 #
-# SSH connectivity reuses the same convention as the LiveOcean remote
-# pipeline (process/liveOcean/main.py) and docker-compose.prod.process.yml's
-# cloudflared `ssh_tunnel` service: a persistent local TCP tunnel to the home
-# server, so REMOTE_SSH_HOST/PORT just point at "localhost:<tunnel port>"
+# SSH connectivity reuses the same convention as the LiveOcean pipeline
+# (process/liveOcean/main.py) and docker-compose.prod.process.yml's
+# cloudflared `ssh_tunnel` service: a persistent local TCP tunnel to the API
+# machine, so API_SSH_HOST/PORT just point at "localhost:<tunnel port>"
 # rather than needing an ssh ProxyCommand per invocation.
 # ---------------------------------------------------------------------------
 
 # Staging directory for the Native-format export, on this filesystem. The
-# home side must use the same relative layout under its own data root so the
-# API can find the file after rsync lands it at the equivalent path there.
+# API machine must use the same relative layout under its own data root so
+# it can find the file after rsync lands it at the equivalent path there.
 SYNC_STAGING_DIR = os.getenv('SSC_SYNC_STAGING_DIR', '/opt/data/SalishSeaCast/sync_staging')
 
-# SSH connection to the home server (same env vars as process/liveOcean/main.py).
-REMOTE_SSH_HOST        = os.getenv('REMOTE_SSH_HOST', 'localhost')
-REMOTE_SSH_PORT        = int(os.getenv('REMOTE_SSH_PORT', '12022'))
-REMOTE_SSH_USER        = os.getenv('REMOTE_SSH_USER', 'cioos')
-REMOTE_SSH_KEY_PATH    = os.getenv('REMOTE_SSH_KEY_PATH', '/run/secrets/ONC_OA_rsync')
-REMOTE_SSH_KNOWN_HOSTS = os.getenv('REMOTE_SSH_KNOWN_HOSTS', '/run/secrets/known_hosts')
+# SSH connection to the API machine (same env vars as process/liveOcean/main.py).
+API_SSH_HOST        = os.getenv('API_SSH_HOST', 'localhost')
+API_SSH_PORT        = int(os.getenv('API_SSH_PORT', '12022'))
+API_SSH_USER        = os.getenv('API_SSH_USER', 'cioos')
+API_SSH_KEY_PATH    = os.getenv('API_SSH_KEY_PATH', '/run/secrets/ONC_OA_rsync')
+API_SSH_KNOWN_HOSTS = os.getenv('API_SSH_KNOWN_HOSTS', '/run/secrets/known_hosts')
 
-# Home server's data root as seen on its OWN host filesystem (i.e. the source
+# API machine's data root as seen on its OWN host filesystem (i.e. the source
 # side of its docker-compose bind mount for /opt/data) — this is where rsync
 # writes, NOT the in-container /opt/data path. e.g. "/home/user/OA/data".
-SYNC_HOME_DATA_DIR = os.getenv('SYNC_HOME_DATA_DIR', '')
+SYNC_API_DATA_DIR = os.getenv('SYNC_API_DATA_DIR', '')
 
-# Home API base URL and shared bearer token for the import-trigger call.
-SYNC_HOME_API_BASE = os.getenv('SYNC_HOME_API_BASE', '')
-SYNC_API_TOKEN     = os.getenv('SYNC_API_TOKEN', '')
+# API machine base URL and shared bearer token for the import-trigger call.
+SYNC_API_BASE_URL = os.getenv('SYNC_API_BASE_URL', '')
+SYNC_API_TOKEN    = os.getenv('SYNC_API_TOKEN', '')

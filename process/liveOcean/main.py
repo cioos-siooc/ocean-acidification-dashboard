@@ -5,7 +5,7 @@ Stages:
 - download: Fetch layers.nc from URL
 - extract: Extract variables into daily NetCDF files
 - image: Generate WebP tiles
-- transfer: rsync NC + images to remote Machine A, then update its database (remote mode only)
+- transfer: rsync NC + images to the API machine, then update its database (remote mode only)
 - all: Run download + extract + image (transfer must be run separately)
 
 Each stage has its own status tracking. In normal mode, status is written to the
@@ -50,17 +50,17 @@ IMAGE_OUTPUT_DIR = os.getenv("LO_IMAGE_DIR", "/opt/data/LO/images")
 VARS_JSON_PATH = os.path.join(os.path.dirname(__file__), "lo_vars.json")
 INPUT_FILE_TEMP = "/tmp/layers.nc"
 
-# Remote mode paths (Machine B local scratch + SSH target on Machine A)
+# Remote mode paths (PROCESS machine local scratch + SSH target on the API machine)
 LOCAL_NC_DIR = os.getenv("LOCAL_NC_DIR", "/opt/data/local/LO/nc")
 LOCAL_IMAGE_DIR = os.getenv("LOCAL_IMAGE_DIR", "/opt/data/local/LO/images")
 LOCAL_STATE_DIR = os.getenv("LOCAL_STATE_DIR", "/opt/data/local/LO/state")
-REMOTE_NC_DIR = os.getenv("REMOTE_NC_DIR", NC_OUTPUT_DIR)
-REMOTE_IMAGE_DIR = os.getenv("REMOTE_IMAGE_DIR", IMAGE_OUTPUT_DIR)
-REMOTE_SSH_HOST = os.getenv("REMOTE_SSH_HOST", "localhost")
-REMOTE_SSH_PORT = int(os.getenv("REMOTE_SSH_PORT", "12022"))
-REMOTE_SSH_USER = os.getenv("REMOTE_SSH_USER", "ubuntu")
-REMOTE_SSH_KEY_PATH = os.getenv("REMOTE_SSH_KEY_PATH", "/run/secrets/ONC_OA_rsync")
-REMOTE_SSH_KNOWN_HOSTS = os.getenv("REMOTE_SSH_KNOWN_HOSTS", "/run/secrets/known_hosts")
+API_NC_DIR = os.getenv("API_NC_DIR", NC_OUTPUT_DIR)
+API_IMAGE_DIR = os.getenv("API_IMAGE_DIR", IMAGE_OUTPUT_DIR)
+API_SSH_HOST = os.getenv("API_SSH_HOST", "localhost")
+API_SSH_PORT = int(os.getenv("API_SSH_PORT", "12022"))
+API_SSH_USER = os.getenv("API_SSH_USER", "ubuntu")
+API_SSH_KEY_PATH = os.getenv("API_SSH_KEY_PATH", "/run/secrets/ONC_OA_rsync")
+API_SSH_KNOWN_HOSTS = os.getenv("API_SSH_KNOWN_HOSTS", "/run/secrets/known_hosts")
 
 BASE_NAME_MAP = {
     "temp": "temperature",
@@ -492,29 +492,29 @@ def stage_transfer(
     state_dir: str,
     local_nc_dir: str,
     local_image_dir: str,
-    remote_nc_dir: str,
-    remote_image_dir: str,
+    api_nc_dir: str,
+    api_image_dir: str,
     ssh_host: str,
     ssh_port: int,
     ssh_user: str,
     conn,
 ) -> None:
-    """Transfer local files to Machine A and update its database.
+    """Transfer local files to the API machine and update its database.
 
     Reads the local state JSON for source_date, rsyncs NC and image files
-    to the remote machine via SSH, then inserts records into Machine A's database.
-    
+    to the API machine via SSH, then inserts records into its database.
+
     Args:
         source_date: Date to transfer (YYYY-MM-DD)
         state_dir: Directory containing local JSON state files
         local_nc_dir: Local NC output directory (source for rsync)
         local_image_dir: Local image output directory (source for rsync)
-        remote_nc_dir: Remote NC directory on Machine A (rsync destination)
-        remote_image_dir: Remote image directory on Machine A (rsync destination)
-        ssh_host: SSH hostname/IP for Machine A (cloudflared tunnel)
-        ssh_port: SSH port for Machine A (cloudflared tunnel)
-        ssh_user: SSH username on Machine A
-        conn: Database connection to Machine A (for final DB updates)
+        api_nc_dir: NC directory on the API machine (rsync destination)
+        api_image_dir: Image directory on the API machine (rsync destination)
+        ssh_host: SSH hostname/IP for the API machine (cloudflared tunnel)
+        ssh_port: SSH port for the API machine (cloudflared tunnel)
+        ssh_user: SSH username on the API machine
+        conn: Database connection to the API machine (for final DB updates)
     """
     import shlex
     import subprocess
@@ -526,7 +526,7 @@ def stage_transfer(
             f"(image_status={state.get('image_status')})"
         )
     if state.get("transfer_status") == "transferred":
-        logger.warning(f"{source_date} already transferred. Re-running will overwrite remote files.")
+        logger.warning(f"{source_date} already transferred. Re-running will overwrite files on the API machine.")
 
     ssh_opts_parts = [
         "ssh",
@@ -534,64 +534,64 @@ def stage_transfer(
         "-o", "BatchMode=yes",
         "-o", "StrictHostKeyChecking=accept-new",
     ]
-    if REMOTE_SSH_KEY_PATH and os.path.exists(REMOTE_SSH_KEY_PATH):
-        ssh_opts_parts.extend(["-i", REMOTE_SSH_KEY_PATH])
+    if API_SSH_KEY_PATH and os.path.exists(API_SSH_KEY_PATH):
+        ssh_opts_parts.extend(["-i", API_SSH_KEY_PATH])
     else:
         logger.warning(
-            "REMOTE_SSH_KEY_PATH not found at %s; rsync may prompt/fail if passwordless auth is not already configured.",
-            REMOTE_SSH_KEY_PATH,
+            "API_SSH_KEY_PATH not found at %s; rsync may prompt/fail if passwordless auth is not already configured.",
+            API_SSH_KEY_PATH,
         )
-    if REMOTE_SSH_KNOWN_HOSTS:
-        ssh_opts_parts.extend(["-o", f"UserKnownHostsFile={REMOTE_SSH_KNOWN_HOSTS}"])
+    if API_SSH_KNOWN_HOSTS:
+        ssh_opts_parts.extend(["-o", f"UserKnownHostsFile={API_SSH_KNOWN_HOSTS}"])
     ssh_opts = " ".join(ssh_opts_parts)
 
-    # Ensure remote destination directories exist before rsync
-    remote_nc_dir_norm = remote_nc_dir.rstrip("/")
-    remote_image_dir_norm = remote_image_dir.rstrip("/")
+    # Ensure destination directories exist on the API machine before rsync
+    api_nc_dir_norm = api_nc_dir.rstrip("/")
+    api_image_dir_norm = api_image_dir.rstrip("/")
     mkdir_cmd = (
-        f"mkdir -p {shlex.quote(remote_nc_dir_norm)} {shlex.quote(remote_image_dir_norm)}"
+        f"mkdir -p {shlex.quote(api_nc_dir_norm)} {shlex.quote(api_image_dir_norm)}"
     )
-    logger.info("Ensuring remote directories exist: %s, %s", remote_nc_dir_norm, remote_image_dir_norm)
+    logger.info("Ensuring API machine directories exist: %s, %s", api_nc_dir_norm, api_image_dir_norm)
     subprocess.run(
         ssh_opts_parts + [f"{ssh_user}@{ssh_host}", mkdir_cmd],
         check=True,
     )
 
     # rsync NC files
-    logger.info(f"Transferring NC files → {ssh_user}@{ssh_host}:{remote_nc_dir} ...")
+    logger.info(f"Transferring NC files → {ssh_user}@{ssh_host}:{api_nc_dir} ...")
     subprocess.run(
         ["rsync", "-avz", "--progress", "-e", ssh_opts,
          f"{local_nc_dir.rstrip('/')}/",
-         f"{ssh_user}@{ssh_host}:{remote_nc_dir_norm}/"],
+         f"{ssh_user}@{ssh_host}:{api_nc_dir_norm}/"],
         check=True,
     )
     logger.info("NC files transferred")
 
     # rsync image files
-    logger.info(f"Transferring image files → {ssh_user}@{ssh_host}:{remote_image_dir} ...")
+    logger.info(f"Transferring image files → {ssh_user}@{ssh_host}:{api_image_dir} ...")
     subprocess.run(
         ["rsync", "-avz", "--progress", "-e", ssh_opts,
          f"{local_image_dir.rstrip('/')}/",
-         f"{ssh_user}@{ssh_host}:{remote_image_dir_norm}/"],
+         f"{ssh_user}@{ssh_host}:{api_image_dir_norm}/"],
         check=True,
     )
     logger.info("Image files transferred")
 
-    # Update Machine A's DB: rewrite local paths to remote paths
+    # Update the API machine's DB: rewrite local paths to API machine paths
     outputs = []
     for file_info in state["files"]:
-        remote_nc_path = file_info["local_nc_path"].replace(
-            local_nc_dir.rstrip("/"), remote_nc_dir.rstrip("/"), 1
+        api_nc_path = file_info["local_nc_path"].replace(
+            local_nc_dir.rstrip("/"), api_nc_dir.rstrip("/"), 1
         )
         outputs.append({
             "variable": file_info["variable"],
-            "path": remote_nc_path,
+            "path": api_nc_path,
             "start_time": file_info["start_time"],
             "end_time": file_info["end_time"],
             "date": file_info["date"],
         })
 
-    logger.info(f"Updating remote DB for {len(outputs)} file(s)...")
+    logger.info(f"Updating API machine DB for {len(outputs)} file(s)...")
     outputs = insert_processed_dates(conn, source_date, outputs)
     for out in outputs:
         update_file_status(conn, source_date, out["variable_id"], out["start_time"], "success_image")
@@ -635,7 +635,7 @@ def run_pipeline(
         needs_db = (not remote_mode) or (stage == "transfer") or (date is None)
 
         if needs_db:
-            # Connect to Machine A's DB (read-only in remote mode until transfer stage)
+            # Connect to the API machine's DB (read-only in remote mode until transfer stage)
             conn = get_db_conn()
 
             if not remote_mode:
@@ -723,7 +723,7 @@ def run_pipeline(
                     local_state = load_state(LOCAL_STATE_DIR, source_date)
                     local_state["image_status"] = "success"
                     save_state(LOCAL_STATE_DIR, source_date, local_state)
-                    logger.info(f"Image stage complete. Run --stage transfer --date {source_date} to push to Machine A.")
+                    logger.info(f"Image stage complete. Run --stage transfer --date {source_date} to push to the API machine.")
             else:
                 logger.warning("No extracted files to image. Check that extraction completed successfully.")
         
@@ -733,11 +733,11 @@ def run_pipeline(
                 state_dir=LOCAL_STATE_DIR,
                 local_nc_dir=LOCAL_NC_DIR,
                 local_image_dir=LOCAL_IMAGE_DIR,
-                remote_nc_dir=REMOTE_NC_DIR,
-                remote_image_dir=REMOTE_IMAGE_DIR,
-                ssh_host=REMOTE_SSH_HOST,
-                ssh_port=REMOTE_SSH_PORT,
-                ssh_user=REMOTE_SSH_USER,
+                api_nc_dir=API_NC_DIR,
+                api_image_dir=API_IMAGE_DIR,
+                ssh_host=API_SSH_HOST,
+                ssh_port=API_SSH_PORT,
+                ssh_user=API_SSH_USER,
                 conn=conn,
             )
         
@@ -768,7 +768,7 @@ def main(argv: List[str] | None = None) -> int:
         choices=["download", "extract", "image", "transfer", "all"],
         default="all",
         help="Which stage(s) to run: 'download', 'extract', 'image', 'transfer', or 'all' (default). "
-             "'transfer' rsyncs local files to Machine A and updates its DB (remote mode only)."
+             "'transfer' rsyncs local files to the API machine and updates its DB (remote mode only)."
     )
     p.add_argument(
         "--image-workers",
