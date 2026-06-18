@@ -586,8 +586,10 @@ def write_png_packed(float_arr: np.ndarray, alpha_mask: np.ndarray, outpath: str
     Alpha channel is preserved as provided (0..255 uint8).
     """
     h, w = float_arr.shape
-    # quantize
-    q = np.rint((float_arr - base) / float(precision)).astype(np.int64)
+    # quantize. NaN cells (land/masked) would warn on the int64 cast below;
+    # they're overwritten to 0 immediately after anyway, so mask them first.
+    with np.errstate(invalid='ignore'):
+        q = np.rint((float_arr - base) / float(precision)).astype(np.int64)
     q = np.where(np.isnan(float_arr), 0, q)
     q = np.clip(q, 0, 2 ** 24 - 1).astype(np.int64)
 
