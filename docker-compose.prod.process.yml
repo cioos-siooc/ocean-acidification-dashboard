@@ -1,16 +1,4 @@
 services:
-  ssh_tunnel:
-    image: cloudflare/cloudflared:latest
-    profiles: ["tools"]
-    network_mode: "host"
-    command: >
-      access tcp
-      --hostname ${CF_SSH_HOSTNAME:-ssh.cioospacificlabs.ca}
-      --listener ${CF_SSH_LISTENER:-localhost:12022}
-      --service-token-id ${CF_TOKEN_ID}
-      --service-token-secret ${CF_TOKEN_SECRET}
-    restart: unless-stopped
-
   # Local ClickHouse for the SSC pipeline's own status tracking
   # (SalishSeaCast_status) on this machine — only the finished hourly data +
   # images get pushed home via the `sync` stage, same "process locally,
@@ -32,7 +20,7 @@ services:
     build:
       context: .
       dockerfile: process/Dockerfile
-    # user: "${UID:-1000}:${GID:-1000}"
+    user: "${UID:-1000}:${GID:-1000}"
     profiles: ["tools"]
     environment:
       # API machine's Postgres (read via cloudflared tunnel from this PROCESS machine)
@@ -49,13 +37,14 @@ services:
       # API machine paths (rsync destination)
       - API_NC_DIR=${API_NC_DIR:-/home/cioos/OA_data/LO/nc}
       - API_IMAGE_DIR=${API_IMAGE_DIR:-/home/cioos/OA_data/LO/images}
-      # SSH tunnel to the API machine (second cloudflared tunnel for file transfer)
-      # — shared by both the LiveOcean transfer stage and the SSC sync stage.
-      - API_SSH_HOST=${API_SSH_HOST:-localhost}
-      - API_SSH_PORT=${API_SSH_PORT:-12022}
+      # SSH to the API machine via `cloudflared access ssh` as a ProxyCommand
+      # (see process/SSC/sync.py) — service-token auth, no tunnel container.
+      - API_SSH_HOST=${API_SSH_HOST:-ssh.cioospacificlabs.ca}
       - API_SSH_USER=${API_SSH_USER:-cioos}
       - API_SSH_KEY_PATH=${API_SSH_KEY_PATH:-/run/secrets/ONC_OA_rsync}
       - API_SSH_KNOWN_HOSTS=${API_SSH_KNOWN_HOSTS:-/run/secrets/known_hosts}
+      - CF_TOKEN_ID=${CF_TOKEN_ID:-}
+      - CF_TOKEN_SECRET=${CF_TOKEN_SECRET:-}
       # PROCESS machine local scratch dirs (processing output before transfer)
       - LOCAL_NC_DIR=${LOCAL_NC_DIR:-/opt/data/local/LO/nc}
       - LOCAL_IMAGE_DIR=${LOCAL_IMAGE_DIR:-/opt/data/local/LO/images}
@@ -81,11 +70,6 @@ services:
       - ./data:/opt/data
       - ./secrets:/run/secrets:ro
     depends_on:
-      # db_tunnel (Postgres) is LO-only — SSC doesn't touch Postgres at all,
-      # so it's deliberately not a dependency here. Bring it up separately
-      # when LO work resumes.
-      ssh_tunnel:
-        condition: service_started
       db-ch:
         condition: service_started
     network_mode: "host"

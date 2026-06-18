@@ -18,10 +18,9 @@ treated as success here.
 
 Requires SYNC_API_DATA_DIR, SYNC_API_BASE_URL and SYNC_API_TOKEN to be
 configured (see config.py) — left unset by default so a local-only
-deployment never tries to sync to itself. SSH connectivity (API_SSH_*)
-defaults to the cloudflared `ssh_tunnel` convention shared with the
-LiveOcean pipeline (process/liveOcean/main.py /
-docker-compose.prod.process.yml) and doesn't need to be set separately.
+deployment never tries to sync to itself. SSH/rsync connect to the API
+machine via `cloudflared access ssh` as a ProxyCommand (CF_TOKEN_ID /
+CF_TOKEN_SECRET + API_SSH_HOST), not a persistent tunnel container.
 """
 from __future__ import annotations
 
@@ -36,7 +35,7 @@ import requests
 
 from .config import (
     ALL_VARIABLES, IMAGE_BASE_DIR, API_SSH_HOST, API_SSH_KEY_PATH,
-    API_SSH_KNOWN_HOSTS, API_SSH_PORT, API_SSH_USER,
+    API_SSH_KNOWN_HOSTS, API_SSH_USER, CF_TOKEN_ID, CF_TOKEN_SECRET,
     SYNC_API_TOKEN, SYNC_API_BASE_URL, SYNC_API_DATA_DIR, SYNC_STAGING_DIR,
     STATUS_FAILED_SYNC, STATUS_SUCCESS_SYNC, STATUS_SYNCING,
 )
@@ -68,11 +67,20 @@ def _ssh_opts_parts() -> list[str]:
     # BatchMode=yes: fail fast instead of hanging on an unattended password
     # prompt. StrictHostKeyChecking=accept-new: auto-trust a host's key on
     # first connect (no interactive yes/no prompt) but still reject if it
-    # ever changes later. Same flags/defaults as process/liveOcean/main.py.
+    # ever changes later. ProxyCommand routes the connection through
+    # Cloudflare Access via `cloudflared access ssh` (service-token auth) —
+    # `cloudflared access tcp`'s listener mode 400s/bad-handshakes against
+    # this Access application, so this is a per-invocation subprocess instead
+    # of a persistent tunnel container.
+    proxy_command = (
+        f'cloudflared access ssh --hostname {API_SSH_HOST} '
+        f'--service-token-id {CF_TOKEN_ID} --service-token-secret {CF_TOKEN_SECRET}'
+    )
     parts = [
-        'ssh', '-p', str(API_SSH_PORT),
+        'ssh',
         '-o', 'BatchMode=yes',
         '-o', 'StrictHostKeyChecking=accept-new',
+        '-o', f'ProxyCommand={proxy_command}',
     ]
     if API_SSH_KEY_PATH and os.path.exists(API_SSH_KEY_PATH):
         parts += ['-i', API_SSH_KEY_PATH]

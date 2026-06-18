@@ -177,11 +177,11 @@ CH_REMOTE_URL = os.getenv('CH_REMOTE_URL', '')
 # Sync stage — this pipeline runs on the PROCESS machine; sync pushes each
 # date's hourly rows + WebP images to the API machine once ingest succeeds.
 #
-# SSH connectivity reuses the same convention as the LiveOcean pipeline
-# (process/liveOcean/main.py) and docker-compose.prod.process.yml's
-# cloudflared `ssh_tunnel` service: a persistent local TCP tunnel to the API
-# machine, so API_SSH_HOST/PORT just point at "localhost:<tunnel port>"
-# rather than needing an ssh ProxyCommand per invocation.
+# SSH connectivity goes through `cloudflared access ssh` as a ProxyCommand
+# (one subprocess per ssh/rsync invocation) rather than a persistent local
+# tunnel container — `cloudflared access tcp`'s listener mode hits a
+# "websocket: bad handshake" error against this Access application, while
+# `access ssh` works.
 # ---------------------------------------------------------------------------
 
 # Staging directory for the Native-format export, on this filesystem. The
@@ -189,12 +189,13 @@ CH_REMOTE_URL = os.getenv('CH_REMOTE_URL', '')
 # it can find the file after rsync lands it at the equivalent path there.
 SYNC_STAGING_DIR = os.getenv('SSC_SYNC_STAGING_DIR', '/opt/data/SalishSeaCast/sync_staging')
 
-# SSH connection to the API machine (same env vars as process/liveOcean/main.py).
-API_SSH_HOST        = os.getenv('API_SSH_HOST', 'localhost')
-API_SSH_PORT        = int(os.getenv('API_SSH_PORT', '12022'))
+# SSH connection to the API machine, via cloudflared Access (service token auth).
+API_SSH_HOST        = os.getenv('API_SSH_HOST', 'ssh.cioospacificlabs.ca')
 API_SSH_USER        = os.getenv('API_SSH_USER', 'cioos')
 API_SSH_KEY_PATH    = os.getenv('API_SSH_KEY_PATH', '/run/secrets/ONC_OA_rsync')
 API_SSH_KNOWN_HOSTS = os.getenv('API_SSH_KNOWN_HOSTS', '/run/secrets/known_hosts')
+CF_TOKEN_ID         = os.getenv('CF_TOKEN_ID', '')
+CF_TOKEN_SECRET     = os.getenv('CF_TOKEN_SECRET', '')
 
 # API machine's data root as seen on its OWN host filesystem (i.e. the source
 # side of its docker-compose bind mount for /opt/data) — this is where rsync

@@ -2,13 +2,22 @@ FROM python:3.13.13-slim
 
 WORKDIR /app
 
-# System packages needed by the sync stage (rsync over SSH, optionally
-# tunneled through Cloudflare Access via an ssh ProxyCommand)
+# System packages needed by the sync stage (rsync over SSH, tunneled through
+# Cloudflare Access via an ssh ProxyCommand using `cloudflared access ssh`)
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends rsync openssh-client curl \
 	&& rm -rf /var/lib/apt/lists/* \
-	&& curl -L -o /usr/local/bin/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
-	&& chmod +x /usr/local/bin/cloudflared
+	&& arch="$(dpkg --print-architecture)" \
+	&& curl -fL -o /usr/local/bin/cloudflared "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}" \
+	&& chmod +x /usr/local/bin/cloudflared \
+	&& cloudflared --version
+
+# docker-compose passes user: "${UID:-1000}:${GID:-1000}" so file ownership
+# matches host-mounted secrets/data, but the base image has no passwd entry
+# for that UID — ssh calls getpwuid() unconditionally and refuses to run
+# without one ("No user exists for uid 1000"). Bake in a matching entry.
+RUN groupadd -g 1000 appuser \
+	&& useradd -u 1000 -g 1000 -m -s /bin/bash appuser
 
 # Install uv
 RUN pip install --no-cache-dir uv
