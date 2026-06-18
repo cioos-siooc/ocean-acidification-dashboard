@@ -143,7 +143,7 @@ def _export_native(client, date_val: date, out_path: str) -> None:
 def _rsync_native_file(local_path: str) -> None:
     dest_path = _api_path(local_path)
     _ssh_exec(f'mkdir -p {shlex.quote(os.path.dirname(dest_path))}')
-    ssh_opts = ' '.join(_ssh_opts_parts())
+    ssh_opts = shlex.join(_ssh_opts_parts())
     _rsync(['-az', '-e', ssh_opts, local_path, f'{_API_TARGET}:{dest_path}'])
 
 
@@ -168,7 +168,7 @@ def _rsync_images(date_val: date, image_base_dir: str) -> None:
         return
     dest_root = _api_path(image_base_dir)
     _ssh_exec(f'mkdir -p {shlex.quote(dest_root)}')
-    ssh_opts = ' '.join(_ssh_opts_parts())
+    ssh_opts = shlex.join(_ssh_opts_parts())
     _rsync(
         ['-az', '--relative', '--files-from=-', '-e', ssh_opts,
          f'{image_base_dir}/', f'{_API_TARGET}:{dest_root}/'],
