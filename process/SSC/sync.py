@@ -172,7 +172,10 @@ def _rsync_images(date_val: date, image_base_dir: str) -> None:
     _rsync(
         ['-az', '--relative', '--files-from=-', '-e', ssh_opts,
          f'{image_base_dir}/', f'{_API_TARGET}:{dest_root}/'],
-        input_text='\n'.join(rel_dirs) + '\n',
+        # --files-from only copies a listed directory's *contents* if the
+        # entry has a trailing slash — without it, rsync creates the empty
+        # directory and stops (confirmed: 192 empty dirs, 0 files).
+        input_text='\n'.join(f'{d}/' for d in rel_dirs) + '\n',
     )
     logger.info('rsynced %d image directories for %s', len(rel_dirs), date_val)
 
