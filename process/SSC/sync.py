@@ -205,6 +205,28 @@ def _notify_api(date_val: date) -> None:
     resp.raise_for_status()
 
 
+def _delete_local_hourly(client, date_val: date) -> None:
+    """Delete date_val's rows from this machine's OWN SalishSeaCast_hourly.
+
+    Only called after the API machine has confirmed it already has the data
+    (post _notify_api). Without this, the local table accumulates every
+    synced date forever — SalishSeaCast_hourly's ORDER BY (gridX, gridY,
+    depth, time) doesn't have `time` as a leading key, so _export_native's
+    per-date WHERE-time scan gets slower as a partition (one calendar month)
+    fills up with old, already-synced days it still has to scan past.
+    """
+    start = datetime(date_val.year, date_val.month, date_val.day)
+    end   = start + timedelta(days=1)
+    # ALTER ... DELETE (not the newer lightweight DELETE FROM) for
+    # compatibility with any ClickHouse version, not just ones with that
+    # feature enabled.
+    client.command(
+        'ALTER TABLE SalishSeaCast_hourly DELETE WHERE time >= %(start)s AND time < %(end)s',
+        parameters={'start': start, 'end': end},
+    )
+    logger.info('Deleted local SalishSeaCast_hourly rows for %s (API machine already has them)', date_val)
+
+
 # ---------------------------------------------------------------------------
 # Core sync
 # ---------------------------------------------------------------------------
@@ -223,6 +245,17 @@ def sync_date(client, date_val: date, image_base_dir: str = IMAGE_BASE_DIR) -> b
         _rsync_native_file(native_path)
         _rsync_images(date_val, image_base_dir)
         _notify_api(date_val)
+
+        try:
+            _delete_local_hourly(client, date_val)
+        except Exception:
+            # Sync itself already succeeded (API machine confirmed import) —
+            # don't fail/retry the whole date over a cleanup error, that
+            # would force a needless multi-GB re-export and re-transfer.
+            logger.exception(
+                'Synced %s but failed to delete its local SalishSeaCast_hourly rows — '
+                'needs manual cleanup, will not be retried automatically', date_val,
+            )
 
         for var in ALL_VARIABLES:
             row = get_row(client, date_val, var) or {}
