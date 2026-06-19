@@ -28,7 +28,7 @@ from modules.extractMinMax import extract_minmax
 from modules.pngGenerator import generate_png_for_variable
 from modules.extractSensorTimeseries import extract_sensor_timeseries
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
-from modules.sync_hourly import import_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
+from modules.sync_hourly import import_native_file, import_daily_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
 
 async def run_in_process(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
@@ -1140,6 +1140,28 @@ async def sync_hourly(request: SyncHourlyRequest, authorization: Optional[str] =
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.exception("sync_hourly failed for date %s", request.date)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/admin/syncDaily")
+async def sync_daily(request: SyncHourlyRequest, authorization: Optional[str] = Header(None)):
+    """Import a remote pipeline server's exported SalishSeaCast_daily rows.
+
+    Counterpart to /admin/syncHourly — same bearer-token auth, same derived
+    (never caller-supplied) staging path, but against the daily mean/min/max
+    table and its own sync log.
+    """
+    if not SYNC_API_TOKEN or authorization != f"Bearer {SYNC_API_TOKEN}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        return await run_in_threadpool(import_daily_native_file, request.date)
+    except SyncConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except SyncError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("sync_daily failed for date %s", request.date)
         raise HTTPException(status_code=500, detail=str(exc))
 
 

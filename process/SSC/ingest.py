@@ -74,6 +74,16 @@ def ingest_date(client, date_val: date, nc_base_dir: str = NC_BASE_DIR) -> int:
         D, Y, X = np.meshgrid(depths, gridY, gridX, indexing='ij')
         D = D.ravel(); Y = Y.ravel(); X = X.ravel()
 
+        # Daily mean/min/max accumulators for SalishSeaCast_daily, built across
+        # this same per-hour read pass so it never needs its own NC read. Sized
+        # to the full grid (not just one hour's valid cells) because which cells
+        # are valid (see valid_mask below) can differ hour to hour.
+        n_cells   = len(D)
+        day_sum   = {var: np.zeros(n_cells, dtype=np.float64) for var in ALL_VARIABLES}
+        day_min   = {var: np.full(n_cells, np.inf, dtype=np.float32) for var in ALL_VARIABLES}
+        day_max   = {var: np.full(n_cells, -np.inf, dtype=np.float32) for var in ALL_VARIABLES}
+        day_count = np.zeros(n_cells, dtype=np.int32)
+
         total_inserted = 0
         for ti in range(n_t):
             var_slices = {
@@ -94,6 +104,14 @@ def ingest_date(client, date_val: date, nc_base_dir: str = NC_BASE_DIR) -> int:
             valid_X    = X[valid_mask]
             valid_vars = {var: var_slices[var][valid_mask] for var in ALL_VARIABLES}
 
+            day_count[valid_mask] += 1
+            for var in ALL_VARIABLES:
+                vals = valid_vars[var]
+                day_sum[var][valid_mask] += vals
+                cur_min, cur_max = day_min[var], day_max[var]
+                cur_min[valid_mask] = np.minimum(cur_min[valid_mask], vals)
+                cur_max[valid_mask] = np.maximum(cur_max[valid_mask], vals)
+
             for batch_start in range(0, n_valid, _BATCH_SIZE):
                 sl = slice(batch_start, min(n_valid, batch_start + _BATCH_SIZE))
                 df = pd.DataFrame({
@@ -108,12 +126,54 @@ def ingest_date(client, date_val: date, nc_base_dir: str = NC_BASE_DIR) -> int:
 
             logger.debug('t=%d: inserted %d rows (%d valid cells)', ti, n_valid, n_valid)
 
+        _insert_daily_aggregate(client, date_val, D, Y, X, day_sum, day_min, day_max, day_count)
+
     finally:
         for ds in datasets.values():
             ds.close()
 
     logger.info('Ingestion complete for %s: %d rows', date_val, total_inserted)
     return total_inserted
+
+
+def _insert_daily_aggregate(
+    client, date_val: date,
+    D: np.ndarray, Y: np.ndarray, X: np.ndarray,
+    day_sum: dict, day_min: dict, day_max: dict, day_count: np.ndarray,
+) -> None:
+    """Insert one day's mean/min/max per cell into SalishSeaCast_daily.
+
+    A cell is included only if at least one hour had valid (non-land,
+    non-seafloor-padding) data for it — same inclusion rule as the historical
+    bulk-load table this feeds (clickhouse_test/scripts/SSC.py).
+    """
+    day_valid = day_count > 0
+    n_day_valid = int(day_valid.sum())
+    if n_day_valid == 0:
+        logger.warning('No valid cells for daily aggregation on %s', date_val)
+        return
+
+    counts       = day_count[day_valid]
+    daily_means  = {var: (day_sum[var][day_valid] / counts).astype(np.float32) for var in ALL_VARIABLES}
+    daily_mins   = {var: day_min[var][day_valid] for var in ALL_VARIABLES}
+    daily_maxs   = {var: day_max[var][day_valid] for var in ALL_VARIABLES}
+    daily_D, daily_Y, daily_X = D[day_valid], Y[day_valid], X[day_valid]
+
+    n_inserted = 0
+    for batch_start in range(0, n_day_valid, _BATCH_SIZE):
+        sl = slice(batch_start, min(n_day_valid, batch_start + _BATCH_SIZE))
+        df = pd.DataFrame({
+            'time':  date_val,
+            'depth': daily_D[sl],
+            'gridX': daily_X[sl],
+            'gridY': daily_Y[sl],
+            **{f'{var}_mean': daily_means[var][sl] for var in ALL_VARIABLES},
+            **{f'{var}_min': daily_mins[var][sl] for var in ALL_VARIABLES},
+            **{f'{var}_max': daily_maxs[var][sl] for var in ALL_VARIABLES},
+        })
+        client.insert('SalishSeaCast_daily', df, column_names=list(df.columns))
+        n_inserted += len(df)
+    logger.info('Daily aggregation complete for %s: %d rows', date_val, n_inserted)
 
 
 # ---------------------------------------------------------------------------

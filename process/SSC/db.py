@@ -89,9 +89,31 @@ PARTITION BY toYYYYMM(date)
 ORDER BY (date, variable)
 """
 
+# Daily mean/min/max per variable, derived from SalishSeaCast_hourly during
+# ingest (see ingest.py) — same column layout as the historical bulk-load
+# table this feeds (clickhouse_test/scripts/SSC.py), so both the PROCESS
+# machine's local table and the API machine's table stay schema-compatible.
+_DAILY_VARIABLE_COLS = '\n    '.join(
+    f'{var}_{stat} Float32 CODEC(Gorilla, ZSTD(4)),'
+    for var in ALL_VARIABLES for stat in ('mean', 'min', 'max')
+)
+
+_CREATE_DAILY = f"""
+CREATE TABLE IF NOT EXISTS SalishSeaCast_daily (
+    time     Date      CODEC(DoubleDelta, ZSTD(4)),
+    depth    Float32   CODEC(Gorilla, ZSTD(4)),
+    gridX    UInt16    CODEC(DoubleDelta, ZSTD(4)),
+    gridY    UInt16    CODEC(DoubleDelta, ZSTD(4)),
+    {_DAILY_VARIABLE_COLS}
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(time)
+ORDER BY (gridX, gridY, time, depth)
+"""
+
 
 def ensure_schema(client) -> None:
     client.command(_CREATE_HOURLY)
+    client.command(_CREATE_DAILY)
     client.command(_CREATE_STATUS)
     logger.info('SalishSeaCast ClickHouse schema verified')
 

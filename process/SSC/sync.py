@@ -8,6 +8,9 @@ machine. Once a date finishes ingest, this stage:
   2. rsyncs the export file and the date's WebP image directories to the
      API machine.
   3. Calls the API machine to import the export file into its own ClickHouse.
+  4. Repeats 1-3 for that date's SalishSeaCast_daily row(s) — the per-cell
+     mean/min/max ingest.py derived from the same hourly NC read — against
+     a separate native file and POST /admin/syncDaily.
 
 Idempotency: the API machine maintains its own sync log and is the source of
 truth for "has this date actually been committed" (see api/modules/sync_hourly.py)
@@ -136,6 +139,25 @@ def _export_native(client, date_val: date, out_path: str) -> None:
     logger.info('Exported %s (%d bytes) for %s', out_path, len(data), date_val)
 
 
+def _daily_native_path(date_val: date) -> str:
+    return os.path.join(SYNC_STAGING_DIR, f'{date_val.isoformat()}.daily.native')
+
+
+def _export_native_daily(client, date_val: date, out_path: str) -> None:
+    """Export this date's SalishSeaCast_daily row(s) — written by ingest.py's
+    per-cell mean/min/max accumulation, one row set per date (time is a Date
+    column there, not DateTime), so an equality match is enough."""
+    data = client.raw_query(
+        'SELECT * FROM SalishSeaCast_daily WHERE time = %(d)s',
+        parameters={'d': date_val},
+        fmt='Native',
+    )
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, 'wb') as f:
+        f.write(data)
+    logger.info('Exported %s (%d bytes) for %s', out_path, len(data), date_val)
+
+
 # ---------------------------------------------------------------------------
 # Transfer
 # ---------------------------------------------------------------------------
@@ -191,8 +213,8 @@ def _rsync_images(date_val: date, image_base_dir: str) -> None:
 # API machine notification
 # ---------------------------------------------------------------------------
 
-def _notify_api(date_val: date) -> None:
-    url = f'{SYNC_API_BASE_URL.rstrip("/")}/admin/syncHourly'
+def _notify_api(date_val: date, endpoint: str = '/admin/syncHourly') -> None:
+    url = f'{SYNC_API_BASE_URL.rstrip("/")}{endpoint}'
     resp = requests.post(
         url,
         json={'date': date_val.isoformat()},
@@ -200,7 +222,7 @@ def _notify_api(date_val: date) -> None:
         timeout=600,
     )
     if resp.status_code == 409:
-        logger.info('API machine already has %s synced (409) — treating as success', date_val)
+        logger.info('API machine already has %s synced via %s (409) — treating as success', date_val, endpoint)
         return
     resp.raise_for_status()
 
@@ -227,6 +249,19 @@ def _delete_local_hourly(client, date_val: date) -> None:
     logger.info('Deleted local SalishSeaCast_hourly rows for %s (API machine already has them)', date_val)
 
 
+def _delete_local_daily(client, date_val: date) -> None:
+    """Delete date_val's rows from this machine's OWN SalishSeaCast_daily.
+
+    Same rationale as _delete_local_hourly: keeps the local table from
+    growing forever with data the API machine already has.
+    """
+    client.command(
+        'ALTER TABLE SalishSeaCast_daily DELETE WHERE time = %(d)s',
+        parameters={'d': date_val},
+    )
+    logger.info('Deleted local SalishSeaCast_daily rows for %s (API machine already has them)', date_val)
+
+
 # ---------------------------------------------------------------------------
 # Core sync
 # ---------------------------------------------------------------------------
@@ -240,6 +275,7 @@ def sync_date(client, date_val: date, image_base_dir: str = IMAGE_BASE_DIR) -> b
         mark_running(client, date_val, var, STATUS_SYNCING, row.get('attempts', 0))
 
     native_path = os.path.join(SYNC_STAGING_DIR, f'{date_val.isoformat()}.native')
+    daily_native_path = _daily_native_path(date_val)
     try:
         _export_native(client, date_val, native_path)
         _rsync_native_file(native_path)
@@ -257,6 +293,18 @@ def sync_date(client, date_val: date, image_base_dir: str = IMAGE_BASE_DIR) -> b
                 'needs manual cleanup, will not be retried automatically', date_val,
             )
 
+        _export_native_daily(client, date_val, daily_native_path)
+        _rsync_native_file(daily_native_path)
+        _notify_api(date_val, endpoint='/admin/syncDaily')
+
+        try:
+            _delete_local_daily(client, date_val)
+        except Exception:
+            logger.exception(
+                'Synced %s but failed to delete its local SalishSeaCast_daily rows — '
+                'needs manual cleanup, will not be retried automatically', date_val,
+            )
+
         for var in ALL_VARIABLES:
             row = get_row(client, date_val, var) or {}
             mark_success(client, date_val, var, STATUS_SUCCESS_SYNC, attempts=row.get('attempts', 0))
@@ -271,6 +319,8 @@ def sync_date(client, date_val: date, image_base_dir: str = IMAGE_BASE_DIR) -> b
     finally:
         if os.path.exists(native_path):
             os.remove(native_path)
+        if os.path.exists(daily_native_path):
+            os.remove(daily_native_path)
 
 
 # ---------------------------------------------------------------------------
