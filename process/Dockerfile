@@ -2,6 +2,16 @@ FROM python:3.13.13-slim
 
 WORKDIR /app
 
+# compute.py parallelizes PyCO2SYS across time-steps via ProcessPoolExecutor
+# (one process per step) — without this, each of those processes' own NumPy
+# BLAS backend ALSO tries to use every core, so worker count and BLAS thread
+# count multiply instead of adding, and more --workers can get slower, not
+# faster, once that compounded oversubscription saturates memory bandwidth.
+ENV OMP_NUM_THREADS=1 \
+	OPENBLAS_NUM_THREADS=1 \
+	MKL_NUM_THREADS=1 \
+	NUMEXPR_NUM_THREADS=1
+
 # System packages needed by the sync stage (rsync over SSH, tunneled through
 # Cloudflare Access via an ssh ProxyCommand using `cloudflared access ssh`)
 RUN apt-get update \

@@ -417,7 +417,7 @@ def main(argv=None) -> None:
     p.set_defaults(func=cmd_download)
 
     p = sub.add_parser('compute', help='Derive ph_total, omega_arag, omega_cal via PyCO2SYS')
-    _add_date(p); _add_limit(p, default=10); _add_workers(p, default=4); _add_force(p)
+    _add_date(p); _add_limit(p, default=10); _add_workers(p, default=10); _add_force(p)
     p.set_defaults(func=cmd_compute)
 
     p = sub.add_parser('check_image',
@@ -426,7 +426,7 @@ def main(argv=None) -> None:
     p.set_defaults(func=cmd_check_image)
 
     p = sub.add_parser('image', help='Generate WebP tiles via nc2tile')
-    _add_date(p); _add_limit(p, default=40); _add_workers(p, default=4); _add_force(p)
+    _add_date(p); _add_limit(p, default=40); _add_workers(p, default=30); _add_force(p)
     p.add_argument('--variable', metavar='VAR', help='Restrict to one variable')
     p.set_defaults(func=cmd_image)
 
