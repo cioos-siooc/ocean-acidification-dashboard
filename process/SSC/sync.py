@@ -144,7 +144,14 @@ def _rsync_native_file(local_path: str) -> None:
     dest_path = _api_path(local_path)
     _ssh_exec(f'mkdir -p {shlex.quote(os.path.dirname(dest_path))}')
     ssh_opts = shlex.join(_ssh_opts_parts())
-    _rsync(['-az', '-e', ssh_opts, local_path, f'{_API_TARGET}:{dest_path}'])
+    # --checksum: the local export is rewritten fresh (new mtime) on every
+    # retry even when the underlying data hasn't changed, so the default
+    # size+mtime quick-check can't tell it's identical to what's already on
+    # the API machine — without this, a retry re-sends the whole multi-GB
+    # file every time. --partial keeps whatever did transfer so an
+    # interrupted attempt (e.g. a dropped tunnel mid-transfer) can resume
+    # instead of restarting from zero.
+    _rsync(['-az', '--checksum', '--partial', '-e', ssh_opts, local_path, f'{_API_TARGET}:{dest_path}'])
 
 
 def _date_image_dirs(date_val: date, image_base_dir: str) -> list[str]:
@@ -170,7 +177,7 @@ def _rsync_images(date_val: date, image_base_dir: str) -> None:
     _ssh_exec(f'mkdir -p {shlex.quote(dest_root)}')
     ssh_opts = shlex.join(_ssh_opts_parts())
     _rsync(
-        ['-az', '--relative', '--files-from=-', '-e', ssh_opts,
+        ['-az', '--partial', '--relative', '--files-from=-', '-e', ssh_opts,
          f'{image_base_dir}/', f'{_API_TARGET}:{dest_root}/'],
         # --files-from only copies a listed directory's *contents* if the
         # entry has a trailing slash — without it, rsync creates the empty
