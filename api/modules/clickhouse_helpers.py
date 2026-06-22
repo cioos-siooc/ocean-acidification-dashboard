@@ -54,10 +54,22 @@ def get_ch_client():
         host, port, secure, url_user, url_password = _parse_remote_url(remote_url)
         user = url_user or os.getenv("CH_REMOTE_USER", os.getenv("CH_USER", "default"))
         password = url_password or os.getenv("CH_REMOTE_PASSWORD", os.getenv("CH_PASSWORD", os.getenv("CLICKHOUSE_PASSWORD", "")))
-        return clickhouse_connect.get_client(host=host, port=port, username=user, password=password, secure=secure)
+        return clickhouse_connect.get_client(
+            host=host, port=port, username=user, password=password, secure=secure,
+            autogenerate_session_id=False,
+        )
 
     host = os.getenv("CH_HOST", "localhost")
     port = int(os.getenv("CH_PORT", "8123"))
     user = os.getenv("CH_USER", "default")
     password = os.getenv("CH_PASSWORD", os.getenv("CLICKHOUSE_PASSWORD", ""))
-    return clickhouse_connect.get_client(host=host, port=port, username=user, password=password)
+    # Each call gets a fresh, short-lived client for one-shot queries — no temp
+    # tables or session-scoped SET statements rely on ClickHouse sessions
+    # anywhere in this codebase. Without this, clickhouse_connect's default
+    # auto-generated session id can get rejected with SESSION_IS_LOCKED if
+    # anything overlaps on it (a slow OPTIMIZE ... FINAL, a large insert still
+    # draining, a retried request, etc.) — sessionless queries can't hit that.
+    return clickhouse_connect.get_client(
+        host=host, port=port, username=user, password=password,
+        autogenerate_session_id=False,
+    )
