@@ -8,7 +8,7 @@ services:
       - "${API_PORT:-4000}:4000"
     volumes:
       - ./shared:/app/shared
-      - ./data:/opt/data
+      - /home/cioos/OA_data:/opt/data
       # Optional deep-archive mount (older data outside the normal retention
       # window) — uncomment and set ARCHIVE_DIR once this machine actually
       # has that storage; SSC_*_ARCHIVE below are no-ops without it.

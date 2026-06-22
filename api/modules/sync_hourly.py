@@ -48,17 +48,38 @@ CREATE TABLE IF NOT EXISTS SalishSeaCast_daily_sync_log (
 ORDER BY date
 """
 
-# Same 8 variables / mean-min-max layout as process/SSC/db.py and the
-# historical bulk-load table this feeds (clickhouse_test/scripts/SSC.py).
+# Same 8 variables as process/SSC/db.py / process/SSC/config.py.ALL_VARIABLES.
 # Duplicated here rather than imported because api/ and process/ are
 # separate deployables with their own dependency trees (see CLAUDE.md).
-_DAILY_VARIABLES = [
+_VARIABLES = [
     'temperature', 'salinity', 'total_alkalinity', 'dissolved_oxygen',
     'dissolved_inorganic_carbon', 'ph_total', 'omega_arag', 'omega_cal',
 ]
+
+# IF NOT EXISTS: on a deployment where `process` shared this same ClickHouse
+# instance (the old bundled docker-compose.prod.backend.yml), this table
+# already exists and these are no-ops. On a fresh API-only ClickHouse (see
+# docker-compose.prod.api.yml) — which never runs `process`, so nothing else
+# ever creates SalishSeaCast_hourly — this is what actually creates it.
+_VARIABLE_COLS = '\n    '.join(
+    f'{var} Float32 CODEC(Gorilla, ZSTD(4)),' for var in _VARIABLES
+)
+
+_CREATE_HOURLY_DATA = f"""
+CREATE TABLE IF NOT EXISTS SalishSeaCast_hourly (
+    time     DateTime  CODEC(DoubleDelta, ZSTD(4)),
+    depth    Float32   CODEC(Gorilla, ZSTD(4)),
+    gridX    UInt16    CODEC(DoubleDelta, ZSTD(4)),
+    gridY    UInt16    CODEC(DoubleDelta, ZSTD(4)),
+    {_VARIABLE_COLS}
+) ENGINE = MergeTree()
+PARTITION BY toYYYYMM(time)
+ORDER BY (gridX, gridY, depth, time)
+"""
+
 _DAILY_VARIABLE_COLS = '\n    '.join(
     f'{var}_{stat} Float32 CODEC(Gorilla, ZSTD(4)),'
-    for var in _DAILY_VARIABLES for stat in ('mean', 'min', 'max')
+    for var in _VARIABLES for stat in ('mean', 'min', 'max')
 )
 
 # IF NOT EXISTS: SalishSeaCast_daily already exists on deployments that ran
@@ -88,6 +109,7 @@ class SyncError(Exception):
 def ensure_schema(client) -> None:
     client.command(_CREATE_SYNC_LOG)
     client.command(_CREATE_DAILY_SYNC_LOG)
+    client.command(_CREATE_HOURLY_DATA)
     client.command(_CREATE_DAILY_DATA)
 
 
