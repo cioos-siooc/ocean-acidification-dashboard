@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 
 import clickhouse_connect
 from clickhouse_connect import common as ch_common
+from clickhouse_connect.driver.httputil import get_pool_manager
 
 # clickhouse_connect's default (300s) can be too short for the multi-GB
 # Native-format inserts the SSC sync stage does (see api/modules/sync_hourly.py)
@@ -46,6 +47,21 @@ _SEND_RECEIVE_TIMEOUT = 1800
 # "Connection aborted" / ProtocolError on an otherwise-successful request.
 # Disabling it removes that failure mode entirely for this deployment.
 ch_common.set_setting('max_connection_age', 0)
+
+def _fresh_pool_mgr():
+    # get_client() defaults to one SHARED, process-wide connection pool
+    # (clickhouse_connect.driver.httputil.default_pool_manager()) unless given
+    # its own. get_ch_client() is called fresh per request throughout the API,
+    # but they'd all draw from that same shared pool — so a connection idle
+    # since some unrelated earlier request can get handed to a brand-new one.
+    # The SSC sync stage's own timing (minutes between consecutive
+    # /admin/syncHourly calls, while PROCESS exports+rsyncs) is longer than
+    # ClickHouse's server-side HTTP keep-alive idle timeout, so a pooled
+    # connection reused after that gap is often already closed server-side —
+    # the client doesn't find out until it tries to use it, surfacing as
+    # "Connection aborted" / ProtocolError. A dedicated, non-shared pool per
+    # client means it never inherits a connection from an unrelated call.
+    return get_pool_manager()
 
 
 def _truthy(value: Optional[str]) -> bool:
@@ -75,6 +91,7 @@ def get_ch_client():
         return clickhouse_connect.get_client(
             host=host, port=port, username=user, password=password, secure=secure,
             autogenerate_session_id=False, send_receive_timeout=_SEND_RECEIVE_TIMEOUT,
+            pool_mgr=_fresh_pool_mgr(),
         )
 
     host = os.getenv("CH_HOST", "localhost")
@@ -90,4 +107,5 @@ def get_ch_client():
     return clickhouse_connect.get_client(
         host=host, port=port, username=user, password=password,
         autogenerate_session_id=False, send_receive_timeout=_SEND_RECEIVE_TIMEOUT,
+        pool_mgr=_fresh_pool_mgr(),
     )
