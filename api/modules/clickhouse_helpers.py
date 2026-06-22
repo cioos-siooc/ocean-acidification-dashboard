@@ -28,12 +28,24 @@ from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 import clickhouse_connect
+from clickhouse_connect import common as ch_common
 
 # clickhouse_connect's default (300s) can be too short for the multi-GB
 # Native-format inserts the SSC sync stage does (see api/modules/sync_hourly.py)
 # — a slow insert that exceeds it still lands the data server-side, but the
 # client times out waiting for the response and reports a false failure.
 _SEND_RECEIVE_TIMEOUT = 1800
+
+# clickhouse_connect keeps one shared, process-wide connection pool for every
+# client and periodically force-closes it (default: every 600s) to guard
+# against infrastructure (load balancers, NAT) silently dropping long-lived
+# connections without telling the client. db-ch is a direct same-host Docker
+# bridge connection with nothing in between that would ever do that — and the
+# periodic clear can instead race with an in-flight request (hands it a
+# connection the pool just tore down), surfacing as a spurious
+# "Connection aborted" / ProtocolError on an otherwise-successful request.
+# Disabling it removes that failure mode entirely for this deployment.
+ch_common.set_setting('max_connection_age', 0)
 
 
 def _truthy(value: Optional[str]) -> bool:
