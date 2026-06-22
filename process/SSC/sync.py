@@ -219,7 +219,11 @@ def _notify_api(date_val: date, endpoint: str = '/admin/syncHourly') -> None:
         url,
         json={'date': date_val.isoformat()},
         headers={'Authorization': f'Bearer {SYNC_API_TOKEN}'},
-        timeout=600,
+        # Must exceed the API's own ClickHouse client timeout
+        # (api/modules/clickhouse_helpers.py's _SEND_RECEIVE_TIMEOUT) — otherwise
+        # this request gives up first and reports a false failure for a
+        # multi-GB insert that's still legitimately in progress server-side.
+        timeout=1800,
     )
     if resp.status_code == 409:
         logger.info('API machine already has %s synced via %s (409) — treating as success', date_val, endpoint)

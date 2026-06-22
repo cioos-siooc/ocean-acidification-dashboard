@@ -29,6 +29,12 @@ from urllib.parse import urlparse
 
 import clickhouse_connect
 
+# clickhouse_connect's default (300s) can be too short for the multi-GB
+# Native-format inserts the SSC sync stage does (see api/modules/sync_hourly.py)
+# — a slow insert that exceeds it still lands the data server-side, but the
+# client times out waiting for the response and reports a false failure.
+_SEND_RECEIVE_TIMEOUT = 1800
+
 
 def _truthy(value: Optional[str]) -> bool:
     return (value or "").strip().lower() in ("1", "true", "yes")
@@ -56,7 +62,7 @@ def get_ch_client():
         password = url_password or os.getenv("CH_REMOTE_PASSWORD", os.getenv("CH_PASSWORD", os.getenv("CLICKHOUSE_PASSWORD", "")))
         return clickhouse_connect.get_client(
             host=host, port=port, username=user, password=password, secure=secure,
-            autogenerate_session_id=False,
+            autogenerate_session_id=False, send_receive_timeout=_SEND_RECEIVE_TIMEOUT,
         )
 
     host = os.getenv("CH_HOST", "localhost")
@@ -71,5 +77,5 @@ def get_ch_client():
     # draining, a retried request, etc.) — sessionless queries can't hit that.
     return clickhouse_connect.get_client(
         host=host, port=port, username=user, password=password,
-        autogenerate_session_id=False,
+        autogenerate_session_id=False, send_receive_timeout=_SEND_RECEIVE_TIMEOUT,
     )
