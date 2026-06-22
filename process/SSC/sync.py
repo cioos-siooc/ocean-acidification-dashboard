@@ -224,6 +224,11 @@ def _notify_api(date_val: date, endpoint: str = '/admin/syncHourly') -> None:
     if resp.status_code == 409:
         logger.info('API machine already has %s synced via %s (409) — treating as success', date_val, endpoint)
         return
+    if not resp.ok:
+        # raise_for_status()'s own exception text doesn't include the response
+        # body, so the actual SyncError detail (api/SERVER.py's HTTPException)
+        # would otherwise be lost — log it explicitly before raising.
+        logger.error('API machine rejected %s via %s (%d): %s', date_val, endpoint, resp.status_code, resp.text)
     resp.raise_for_status()
 
 

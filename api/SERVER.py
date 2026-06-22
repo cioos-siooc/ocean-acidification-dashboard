@@ -1137,6 +1137,7 @@ async def sync_hourly(request: SyncHourlyRequest, authorization: Optional[str] =
     except SyncConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except SyncError as exc:
+        logger.warning("sync_hourly rejected for date %s: %s", request.date, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.exception("sync_hourly failed for date %s", request.date)
@@ -1159,6 +1160,7 @@ async def sync_daily(request: SyncHourlyRequest, authorization: Optional[str] = 
     except SyncConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except SyncError as exc:
+        logger.warning("sync_daily rejected for date %s: %s", request.date, exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.exception("sync_daily failed for date %s", request.date)
