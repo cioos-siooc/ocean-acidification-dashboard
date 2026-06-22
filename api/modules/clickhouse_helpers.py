@@ -48,6 +48,19 @@ _SEND_RECEIVE_TIMEOUT = 1800
 # Disabling it removes that failure mode entirely for this deployment.
 ch_common.set_setting('max_connection_age', 0)
 
+# ClickHouse's own default keep_alive_timeout is 10s (confirmed against the
+# stock config.xml) — short enough that the gap between sequential requests
+# on the same pooled connection (e.g. a status-table insert, then a slow
+# multi-GB file read off disk, then the actual insert) can exceed it. A
+# cleanly-closed idle connection gets silently retried by clickhouse_connect,
+# but the failures seen in practice are unretried timeouts, not clean
+# resets — so rather than rely on guessing the exact trigger, force a brand
+# new TCP connection on every single request. Verified via urllib3 debug
+# logs: with this header, every request logs "Resetting dropped connection"
+# (i.e. never reused), vs. silent reuse without it.
+_NO_KEEPALIVE_HEADERS = {'Connection': 'close'}
+
+
 def _fresh_pool_mgr():
     # get_client() defaults to one SHARED, process-wide connection pool
     # (clickhouse_connect.driver.httputil.default_pool_manager()) unless given
@@ -91,7 +104,7 @@ def get_ch_client():
         return clickhouse_connect.get_client(
             host=host, port=port, username=user, password=password, secure=secure,
             autogenerate_session_id=False, send_receive_timeout=_SEND_RECEIVE_TIMEOUT,
-            pool_mgr=_fresh_pool_mgr(),
+            pool_mgr=_fresh_pool_mgr(), headers=_NO_KEEPALIVE_HEADERS,
         )
 
     host = os.getenv("CH_HOST", "localhost")
@@ -107,5 +120,5 @@ def get_ch_client():
     return clickhouse_connect.get_client(
         host=host, port=port, username=user, password=password,
         autogenerate_session_id=False, send_receive_timeout=_SEND_RECEIVE_TIMEOUT,
-        pool_mgr=_fresh_pool_mgr(),
+        pool_mgr=_fresh_pool_mgr(), headers=_NO_KEEPALIVE_HEADERS,
     )
