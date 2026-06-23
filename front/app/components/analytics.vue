@@ -114,14 +114,18 @@
       </div>
 
       <div class="ctrl-label">Per Year · {{ thresholdDirection === '>' ? 'Above' : 'Below' }} {{ thresholdValue }}</div>
-      <div style="flex:1; overflow-y:auto; min-height:0;">
+      <div style="flex:1; overflow-y:auto; min-height:0;" @mouseover="onStatsRowMouseOver"
+        @mouseleave="onStatsRowMouseLeave">
         <v-data-table v-if="yearlyStats.length" :headers="statsHeaders" :items="yearlyStats" density="compact"
           hide-default-footer :items-per-page="-1" :sort-by="statsSortBy" class="stats-table">
+          <template #item.year="{ item }">
+            <span :data-year="item.year">{{ item.year }}</span>
+          </template>
           <template #item.days="{ item }">
-            <span :style="statCellStyle(item.days, maxDays)">{{ item.days }}</span>
+            <span :data-year="item.year" :style="statCellStyle(item.days, maxDays)">{{ item.days }}</span>
           </template>
           <template #item.streak="{ item }">
-            <span :style="statCellStyle(item.streak, maxStreak)">{{ item.streak }}</span>
+            <span :data-year="item.year" :style="statCellStyle(item.streak, maxStreak)">{{ item.streak }}</span>
           </template>
         </v-data-table>
         <div v-else class="text-caption text-grey text-center mt-6">
@@ -186,6 +190,11 @@ const plotErrorMessage = ref<string | null>(null)
 
 const chartContainerRef = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
+
+// Per-series base color/width for the overlay chart, captured at render time so
+// table-row hover can dim/restore series directly (the legend itself fades others
+// natively via ECharts' hover focus/blur, which only kicks in for real hover events).
+let overlaySeriesStyles: { name: string; color: string; width: number }[] = []
 
 type SeriesPoint = { time: string; value: number | null }
 const rawAllData = ref<SeriesPoint[]>([])
@@ -303,6 +312,28 @@ function groupByYear(data: SeriesPoint[]): { year: number; data: SeriesPoint[] }
     .map(([year, pts]) => ({ year, data: pts }))
 }
 
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// Reference year the "All Years Overlaid" chart maps every point's month/day
+// onto, so a partial year (e.g. data only through June) lands at its real
+// calendar position on the x-axis instead of sliding to the start. Must be a
+// leap year so a real Feb 29 always has a slot. DJF's December points are
+// placed in the year before this one so Dec sits immediately before Jan on
+// the axis, matching how a single winter actually runs Dec → Jan → Feb.
+const OVERLAY_REF_YEAR = 2000
+
+function overlayTimestamp(iso: string): number {
+  const month = parseInt(iso.slice(5, 7), 10)
+  const day = parseInt(iso.slice(8, 10), 10)
+  const year = (selectedSeason.value === 'djf' && month === 12) ? OVERLAY_REF_YEAR - 1 : OVERLAY_REF_YEAR
+  return Date.UTC(year, month - 1, day)
+}
+
+function fmtOverlayDate(ts: number): string {
+  const d = new Date(ts)
+  return `${MONTH_ABBR[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
 /** Interpolate a sorted array at the given percentile (0–100) using linear interpolation. */
 function percentileOf(sorted: number[], p: number): number {
   const idx = (p / 100) * (sorted.length - 1)
@@ -368,6 +399,33 @@ function yearColor(idx: number, total: number): string {
   return `hsla(${hue},${sat}%,${lit}%,${alpha})`
 }
 
+/** Highlights a single year's series (overlay chart only) by dimming all others; null restores normal view. */
+function applyYearHighlight(year: string | null) {
+  if (!chartInstance || chartView.value !== 'overlay' || !overlaySeriesStyles.length) return
+  chartInstance.setOption({
+    series: overlaySeriesStyles.map(s => {
+      const focused = year != null && s.name === year
+      const dimmed = year != null && !focused
+      return {
+        name: s.name,
+        z: focused ? 10 : 5,
+        lineStyle: { color: s.color, width: focused ? s.width + 1.5 : s.width, opacity: dimmed ? 0.07 : 1 },
+        itemStyle: { color: s.color, opacity: dimmed ? 0.07 : 1 },
+      }
+    })
+  })
+}
+
+function onStatsRowMouseOver(e: MouseEvent) {
+  const target = (e.target as HTMLElement).closest('[data-year]') as HTMLElement | null
+  if (!target?.dataset.year) return
+  applyYearHighlight(target.dataset.year)
+}
+
+function onStatsRowMouseLeave() {
+  applyYearHighlight(null)
+}
+
 function initChart() {
   registerEchartsDarkTheme()
   if (chartInstance) { chartInstance.dispose(); chartInstance = null }
@@ -379,33 +437,24 @@ function initChart() {
 function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
   initChart()
   if (!chartInstance) return
+  overlaySeriesStyles = []
 
-  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  const fmtMD = (iso: string) => `${MONTH_ABBR[parseInt(iso.slice(5, 7)) - 1]} ${iso.slice(8, 10)}`
+  const total = series.length
 
-  // DJF crosses a year boundary: reorder each year's points Dec → Jan → Feb
-  // so the x-axis reads chronologically within the season rather than Jan-Feb-Dec.
-  const seasonOrder = (iso: string) => {
-    const m = parseInt(iso.slice(5, 7))
-    return m === 12 ? 0 : m   // Dec=0, Jan=1, Feb=2; other months unchanged
-  }
-  const orderedSeries = selectedSeason.value === 'djf'
-    ? series.map(({ year, data }) => ({
-        year,
-        data: [...data].sort((a, b) => {
-          const da = seasonOrder(a.time), db = seasonOrder(b.time)
-          return da !== db ? da - db : a.time.localeCompare(b.time)
-        })
-      }))
-    : series
-
-  const timePoints = orderedSeries[0]?.data.map(d => fmtMD(d.time)) || []
-  const total = orderedSeries.length
-
-  const echartsSeries: any[] = orderedSeries.map((s, idx) => {
+  const echartsSeries: any[] = series.map((s, idx) => {
     const t = total <= 1 ? 1 : idx / (total - 1)
     const color = yearColor(idx, total)
     const width = 1 + t * 1.5   // 1px (oldest) → 2.5px (newest)
+    overlaySeriesStyles.push({ name: String(s.year), color, width })
+
+    // Points placed by actual calendar day on a shared synthetic-year axis
+    // (see overlayTimestamp) rather than by array index, so a partial year
+    // lands at its real position instead of sliding to the start. Sorted
+    // because DJF's Dec points get mapped to the year before Jan/Feb, which
+    // is out of order relative to the original Jan→Dec array order.
+    const points = s.data
+      .map(d => [overlayTimestamp(d.time), d.value] as [number, number | null])
+      .sort((a, b) => a[0] - b[0])
 
     return {
       name: String(s.year),
@@ -414,7 +463,7 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
       symbol: 'none',
       lineStyle: { width, color },
       itemStyle: { color },
-      data: s.data.map(d => d.value),
+      data: points,
       emphasis: {
         focus: 'series',
         lineStyle: { width: width + 1.5, opacity: 1, color },
@@ -432,22 +481,28 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
       trigger: 'axis',
       formatter: (params: any) => {
         const items = (Array.isArray(params) ? params : [params])
-          .filter((p: any) => p.value != null)
-          .sort((a: any, b: any) => (b.value ?? 0) - (a.value ?? 0))
-        let s = `<strong>${items[0]?.axisValue}</strong><br/>`
+          .filter((p: any) => p.value?.[1] != null)
+          .sort((a: any, b: any) => (b.value[1] ?? 0) - (a.value[1] ?? 0))
+        if (!items.length) return ''
+        let s = `<strong>${fmtOverlayDate(items[0].value[0])}</strong><br/>`
         items.forEach((p: any) => {
-          s += `${p.marker} ${p.seriesName}: <strong>${Number(p.value).toFixed(3)}</strong><br/>`
+          s += `${p.marker} ${p.seriesName}: <strong>${Number(p.value[1]).toFixed(3)}</strong><br/>`
         })
         return s
       }
     },
     legend: { top: 4, type: 'scroll', textStyle: { fontSize: 10 } },
     grid: { left: '3%', right: '2%', bottom: '10%', top: '22%', containLabel: true },
-    xAxis: { type: 'category', data: timePoints, boundaryGap: false, axisLabel: { rotate: 45, fontSize: 9, color: '#ccc' } },
+    xAxis: {
+      type: 'time',
+      boundaryGap: false,
+      axisLabel: { rotate: 45, fontSize: 9, color: '#ccc', formatter: (value: number) => fmtOverlayDate(value) },
+    },
     yAxis: { type: 'value', name: `${varName.value} (${primaryStat.value})`, nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10, color: '#ccc' }, min: 'dataMin', max: 'dataMax' },
     dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 16 }],
     series: echartsSeries
   }, true)
+
   chartInstance.resize()
 }
 

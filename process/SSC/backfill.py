@@ -3,10 +3,10 @@ import os
 from SSC.db import get_client, ensure_schema, mark_success, get_row
 from SSC.config import (
     DOWNLOAD_VARIABLES, COMPUTE_VARIABLES, NC_BASE_DIR,
-    STATUS_SUCCESS_DOWNLOAD, STATUS_SUCCESS_COMPUTE,
+    STATUS_SUCCESS_DOWNLOAD, STATUS_SUCCESS_COMPUTE, STATUS_SUCCESS_SYNC
 )
 
-dates = [date(2026, 6, d) for d in range(1, 14)]  # <- fill in your actual dates
+dates = [date(2026, 6, d) for d in range(1, 20)]  # <- fill in your actual dates
 nc_dir = os.getenv('SSC_NC_DIR', NC_BASE_DIR)
 
 def nc_path(var, d):
