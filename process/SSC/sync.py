@@ -125,37 +125,54 @@ def _rsync(args: list[str], input_text: str = None) -> None:
 # Export
 # ---------------------------------------------------------------------------
 
-def _export_native(client, date_val: date, out_path: str) -> None:
+def _export_native(client, date_val: date, out_path: str) -> int:
+    """Export this date's SalishSeaCast_hourly rows. Returns the row count —
+    sent to the API machine alongside the file so it can verify its import
+    actually completed instead of just checking "any rows exist" (a partial
+    upload that dies mid-transfer can leave a nonzero-but-incomplete count)."""
     start = datetime(date_val.year, date_val.month, date_val.day)
     end   = start + timedelta(days=1)
+    params = {'start': start, 'end': end}
+    row_count = client.query(
+        'SELECT count() FROM SalishSeaCast_hourly WHERE time >= %(start)s AND time < %(end)s',
+        parameters=params,
+    ).result_rows[0][0]
     data = client.raw_query(
         'SELECT * FROM SalishSeaCast_hourly WHERE time >= %(start)s AND time < %(end)s',
-        parameters={'start': start, 'end': end},
+        parameters=params,
         fmt='Native',
     )
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, 'wb') as f:
         f.write(data)
-    logger.info('Exported %s (%d bytes) for %s', out_path, len(data), date_val)
+    logger.info('Exported %s (%d bytes, %d rows) for %s', out_path, len(data), row_count, date_val)
+    return row_count
 
 
 def _daily_native_path(date_val: date) -> str:
     return os.path.join(SYNC_STAGING_DIR, f'{date_val.isoformat()}.daily.native')
 
 
-def _export_native_daily(client, date_val: date, out_path: str) -> None:
+def _export_native_daily(client, date_val: date, out_path: str) -> int:
     """Export this date's SalishSeaCast_daily row(s) — written by ingest.py's
     per-cell mean/min/max accumulation, one row set per date (time is a Date
-    column there, not DateTime), so an equality match is enough."""
+    column there, not DateTime), so an equality match is enough. Returns the
+    row count, same purpose as _export_native's."""
+    params = {'d': date_val}
+    row_count = client.query(
+        'SELECT count() FROM SalishSeaCast_daily WHERE time = %(d)s',
+        parameters=params,
+    ).result_rows[0][0]
     data = client.raw_query(
         'SELECT * FROM SalishSeaCast_daily WHERE time = %(d)s',
-        parameters={'d': date_val},
+        parameters=params,
         fmt='Native',
     )
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, 'wb') as f:
         f.write(data)
-    logger.info('Exported %s (%d bytes) for %s', out_path, len(data), date_val)
+    logger.info('Exported %s (%d bytes, %d rows) for %s', out_path, len(data), row_count, date_val)
+    return row_count
 
 
 # ---------------------------------------------------------------------------
@@ -213,11 +230,11 @@ def _rsync_images(date_val: date, image_base_dir: str) -> None:
 # API machine notification
 # ---------------------------------------------------------------------------
 
-def _notify_api(date_val: date, endpoint: str = '/admin/syncHourly') -> None:
+def _notify_api(date_val: date, expected_rows: int, endpoint: str = '/admin/syncHourly') -> None:
     url = f'{SYNC_API_BASE_URL.rstrip("/")}{endpoint}'
     resp = requests.post(
         url,
-        json={'date': date_val.isoformat()},
+        json={'date': date_val.isoformat(), 'expected_rows': expected_rows},
         headers={'Authorization': f'Bearer {SYNC_API_TOKEN}'},
         # Must exceed the API's own ClickHouse client timeout
         # (api/modules/clickhouse_helpers.py's _SEND_RECEIVE_TIMEOUT) — otherwise
@@ -286,10 +303,10 @@ def sync_date(client, date_val: date, image_base_dir: str = IMAGE_BASE_DIR) -> b
     native_path = os.path.join(SYNC_STAGING_DIR, f'{date_val.isoformat()}.native')
     daily_native_path = _daily_native_path(date_val)
     try:
-        _export_native(client, date_val, native_path)
+        hourly_rows = _export_native(client, date_val, native_path)
         _rsync_native_file(native_path)
         _rsync_images(date_val, image_base_dir)
-        _notify_api(date_val)
+        _notify_api(date_val, hourly_rows)
 
         try:
             _delete_local_hourly(client, date_val)
@@ -302,9 +319,9 @@ def sync_date(client, date_val: date, image_base_dir: str = IMAGE_BASE_DIR) -> b
                 'needs manual cleanup, will not be retried automatically', date_val,
             )
 
-        _export_native_daily(client, date_val, daily_native_path)
+        daily_rows = _export_native_daily(client, date_val, daily_native_path)
         _rsync_native_file(daily_native_path)
-        _notify_api(date_val, endpoint='/admin/syncDaily')
+        _notify_api(date_val, daily_rows, endpoint='/admin/syncDaily')
 
         try:
             _delete_local_daily(client, date_val)

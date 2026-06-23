@@ -117,6 +117,23 @@ def _native_path(date_val: date, suffix: str = '') -> str:
     return os.path.join(SYNC_STAGING_DIR, f'{date_val.isoformat()}{suffix}.native')
 
 
+def _read_in_chunks(path: str, chunk_size: int = 16 * 1024 * 1024):
+    """Stream a file in fixed-size chunks rather than loading it whole.
+
+    Native exports can be multi-GB; reading one into a single bytes object
+    before handing it to raw_insert() spikes memory by that file's full size
+    right as it needs to be sent over the wire. A generator keeps at most
+    chunk_size in memory at once — clickhouse_connect/urllib3 sends a
+    non-bytes insert_block via chunked transfer encoding automatically.
+    """
+    with open(path, 'rb') as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -152,14 +169,24 @@ def _set_log_status(client, log_table: str, date_val: date, status: str) -> None
 def _claim_and_import(
     client, date_val: date, *, log_table: str, data_table: str,
     native_path: str, existing_check_sql: str, existing_check_params: dict,
+    delete_existing_sql: str, expected_rows: int,
 ) -> int:
     """Claim date_val in log_table, import native_path into data_table unless
-    it's already there, and record the outcome.
+    it's already complete, and record the outcome.
 
     Shared by the hourly and daily sync paths below — same claim/import/
     finish skeleton, differing only in which table/log/file/existence-check
-    each operates on. Returns the pre-existing row count (0 on a fresh
-    import). Raises SyncConflict / SyncError.
+    each operates on.
+
+    Checking "any rows exist" instead of "the right number of rows exist" is
+    not safe: a transfer that dies mid-upload can leave ClickHouse with a
+    nonzero but incomplete row count for the date (confirmed in practice —
+    ClickHouse was still actively writing parts when a 2.27GB upload's
+    connection dropped, having already committed >1GB of it). expected_rows
+    is the row count PROCESS counted at export time, used here to tell a
+    genuinely-complete prior import apart from a partial one; a partial one
+    is cleared and re-imported rather than silently treated as done. Raises
+    SyncConflict / SyncError.
     """
     log_row = _get_log_row(client, log_table, date_val)
     if log_row:
@@ -178,19 +205,48 @@ def _claim_and_import(
             raise SyncError(f'Expected export file not found: {native_path}')
 
         existing = client.query(existing_check_sql, parameters=existing_check_params).result_rows[0][0]
-        if existing:
-            # Self-heal: data is already there even though our log didn't know it
-            # (e.g. a manual insert, or a crash after insert but before this point).
-            logger.info('%s already has %d rows for %s — skipping insert', data_table, existing, date_val)
+        if existing == expected_rows:
+            # Self-heal: data is already fully there even though our log didn't
+            # know it (e.g. a manual insert, or a crash after insert but before
+            # this point) — genuinely complete, safe to skip.
+            logger.info('%s already has the expected %d rows for %s — skipping insert',
+                        data_table, existing, date_val)
         else:
-            with open(native_path, 'rb') as f:
-                data = f.read()
-            client.raw_insert(data_table, insert_block=data, fmt='Native')
-            logger.info('Imported %s into %s from %s', date_val, data_table, native_path)
+            if existing:
+                # Leftover from a prior import that didn't finish (e.g. the
+                # connection died mid-upload) — clear it before re-importing
+                # the full export, otherwise the old partial rows and the new
+                # complete rows would both end up in the table (this is a
+                # plain MergeTree, not deduplicating). mutations_sync makes
+                # the DELETE finish before the insert starts, avoiding a race.
+                logger.warning(
+                    '%s has %d rows for %s but expected %d (likely a previous partial import) — '
+                    'clearing before re-importing the full export',
+                    data_table, existing, date_val, expected_rows,
+                )
+                client.command(delete_existing_sql, parameters=existing_check_params,
+                                settings={'mutations_sync': 1})
+            # insert_deduplicate=0: ClickHouse's automatic block-level insert
+            # dedup tracks content hashes independently of whether the rows
+            # were since deleted — re-importing data that overlaps with a
+            # just-cleared partial import can otherwise get silently dropped
+            # (reproduced directly: a delete+reinsert sequence landed only
+            # 713 of 1000 expected rows with dedup left on). We already
+            # handle idempotency ourselves via the row-count check above, so
+            # ClickHouse's own dedup only gets in the way here.
+            client.raw_insert(data_table, insert_block=_read_in_chunks(native_path), fmt='Native',
+                               settings={'insert_deduplicate': 0})
+            inserted = client.query(existing_check_sql, parameters=existing_check_params).result_rows[0][0]
+            if inserted != expected_rows:
+                raise SyncError(
+                    f'{data_table} has {inserted} rows for {date_val} after import, expected '
+                    f'{expected_rows} — import is incomplete, will retry on next sync attempt'
+                )
+            logger.info('Imported %s into %s from %s (%d rows)', date_val, data_table, native_path, inserted)
 
         _set_log_status(client, log_table, date_val, 'success')
         os.remove(native_path)
-        return existing
+        return expected_rows
     except SyncError:
         _set_log_status(client, log_table, date_val, 'failed')
         raise
@@ -199,7 +255,7 @@ def _claim_and_import(
         raise SyncError(str(exc)) from exc
 
 
-def import_native_file(date_str: str) -> dict:
+def import_native_file(date_str: str, expected_rows: int) -> dict:
     """Claim, import and finish the SalishSeaCast_hourly sync for date_str.
 
     Raises SyncConflict if already synced / in progress, SyncError for any
@@ -211,18 +267,20 @@ def import_native_file(date_str: str) -> dict:
 
     start = datetime(date_val.year, date_val.month, date_val.day)
     end   = start + timedelta(days=1)
-    existing = _claim_and_import(
+    rows = _claim_and_import(
         client, date_val,
         log_table='SalishSeaCast_sync_log',
         data_table='SalishSeaCast_hourly',
         native_path=_native_path(date_val),
         existing_check_sql='SELECT count() FROM SalishSeaCast_hourly WHERE time >= %(start)s AND time < %(end)s',
         existing_check_params={'start': start, 'end': end},
+        delete_existing_sql='ALTER TABLE SalishSeaCast_hourly DELETE WHERE time >= %(start)s AND time < %(end)s',
+        expected_rows=expected_rows,
     )
-    return {'date': date_str, 'rows_existing': existing}
+    return {'date': date_str, 'rows': rows}
 
 
-def import_daily_native_file(date_str: str) -> dict:
+def import_daily_native_file(date_str: str, expected_rows: int) -> dict:
     """Claim, import and finish the SalishSeaCast_daily sync for date_str.
 
     Same contract as import_native_file, against the daily mean/min/max
@@ -233,12 +291,14 @@ def import_daily_native_file(date_str: str) -> dict:
     client = get_ch_client()
     ensure_schema(client)
 
-    existing = _claim_and_import(
+    rows = _claim_and_import(
         client, date_val,
         log_table='SalishSeaCast_daily_sync_log',
         data_table='SalishSeaCast_daily',
         native_path=_native_path(date_val, suffix='.daily'),
         existing_check_sql='SELECT count() FROM SalishSeaCast_daily WHERE time = %(d)s',
         existing_check_params={'d': date_val},
+        delete_existing_sql='ALTER TABLE SalishSeaCast_daily DELETE WHERE time = %(d)s',
+        expected_rows=expected_rows,
     )
-    return {'date': date_str, 'rows_existing': existing}
+    return {'date': date_str, 'rows': rows}

@@ -1118,6 +1118,7 @@ async def analysis_timeseries(request: AnalysisRequest):
 
 class SyncHourlyRequest(BaseModel):
     date: str  # YYYY-MM-DD
+    expected_rows: int
 
 
 @app.post("/admin/syncHourly")
@@ -1133,7 +1134,7 @@ async def sync_hourly(request: SyncHourlyRequest, authorization: Optional[str] =
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        return await run_in_threadpool(import_native_file, request.date)
+        return await run_in_threadpool(import_native_file, request.date, request.expected_rows)
     except SyncConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except SyncError as exc:
@@ -1156,7 +1157,7 @@ async def sync_daily(request: SyncHourlyRequest, authorization: Optional[str] = 
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        return await run_in_threadpool(import_daily_native_file, request.date)
+        return await run_in_threadpool(import_daily_native_file, request.date, request.expected_rows)
     except SyncConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except SyncError as exc:

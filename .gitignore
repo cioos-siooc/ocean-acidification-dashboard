@@ -74,5 +74,6 @@ docker-compose.override.yml
 clickhouse_test/clickhouse_data/
 clickhouse_test/clickhouse_logs/
 clickhouse_test/data/
+clickhouse/logs/
 
 /secrets
