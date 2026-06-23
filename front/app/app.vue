@@ -7,7 +7,7 @@
       </template>
 
       <v-app-bar-title>
-        <span class="">OAH</span>
+        <span class="">OceanECO</span>
         <span class="text-label-medium mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
       </v-app-bar-title>
 

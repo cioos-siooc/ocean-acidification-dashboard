@@ -8,7 +8,7 @@
 
             <v-card-text class="pa-6">
                 <div class="mb-4">
-                    <p class="text-title-large mb-2">Welcome to the OAH app</p>
+                    <p class="text-title-large mb-2">Welcome to the OceanECO app</p>
                     <p>
                         This application is currently in <strong>beta</strong> and actively under development.
                         Features, data, and functionality may change as we continue to improve the platform.

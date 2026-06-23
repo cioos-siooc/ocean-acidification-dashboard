@@ -41,7 +41,7 @@
             attacking the foundation of their survival. This is not a future problem; it is
             reshaping our marine environment right now.
           </p>
-          <p class="s1-teaser">To save the harvest, we must see the threat. Meet the <strong>"OAH Twins."</strong></p>
+          <p class="s1-teaser">To save the harvest, we must see the threat. Meet the <strong>"OceanECO Twins."</strong></p>
         </div>
         <div class="s1-scroll-hint">
           <v-icon icon="mdi-chevron-down" size="32" class="bounce" />
@@ -50,7 +50,7 @@
     </section>
 
     <!-- ══════════════════════════════════════════════════════
-         SECTION 2 – MEET THE OAH TWINS
+         SECTION 2 – MEET THE OCEANECO TWINS
     ══════════════════════════════════════════════════════ -->
     <section class="s2-twins" ref="twinsSection">
       <div class="s2-ocean-bg">
@@ -74,7 +74,7 @@
       <div class="s2-content">
         <div class="s2-header">
           <h2 class="section-eyebrow">SECTION 2</h2>
-          <h2 class="section-title">MEET THE OAH TWINS:<br />ACIDIFICATION &amp; HYPOXIA</h2>
+          <h2 class="section-title">MEET THE OCEANECO TWINS:<br />ACIDIFICATION &amp; HYPOXIA</h2>
           <p class="section-subtitle">
             Meet the two powerful forces reshaping our marine wilderness.<br />
             They are invisible, distinct-but-related, and devastating.
@@ -174,7 +174,7 @@
         <!-- Text panel -->
         <div class="s3-text-panel">
           <h2 class="section-eyebrow">SECTION 3</h2>
-          <h2 class="section-title">VOYAGE INTO THE DEEP:<br />THE HIDDEN BATTLE FOR OAH</h2>
+          <h2 class="section-title">VOYAGE INTO THE DEEP:<br />THE HIDDEN BATTLE FOR OCEANECO</h2>
           <p class="section-subtitle">The complexity of ocean monitoring means we can't just measure the surface.</p>
 
           <transition name="slide-up" mode="out-in">
@@ -189,7 +189,7 @@
             <div v-else key="post">
               <p class="s3-callout">💡 The layers reveal where the battle is hidden.</p>
               <p>
-                The OAH Twins use this structure to their advantage, hiding their devastating effects
+                The OceanECO Twins use this structure to their advantage, hiding their devastating effects
                 in specific depth zones. You cannot measure the multi-layer health of a sensitive
                 fjord by only checking the surface pH.
               </p>
