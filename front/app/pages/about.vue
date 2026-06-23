@@ -3,7 +3,7 @@
         <!-- Hero Banner -->
         <v-sheet color="primary" class="hero-banner text-white text-center py-16 px-4" elevation="0">
             <v-container maxWidth="900" class="py-10">
-                <h1 class="text-display-large font-weight-bold mb-6">Ocean Acidification & Hypoxia</h1>
+                <h1 class="text-display-large font-weight-bold mb-6">Ocean Environmental Conditions Observer</h1>
                 <!-- <p class="text-h6 font-weight-regular opacity-90 mb-0">
                     The Coastal Hypoxia, Ocean acidification, and 'Klimate' variables Evaluator.
                 </p> -->
@@ -20,7 +20,7 @@
                             as global and provincial emissions continue to rise. These shifts in the marine environment
                             directly affect coastal Canadian communities and industry.
                             <br><br>
-                            The Ocean Acidification & Hypoxia app combines data from moored instruments and regional
+                            The Ocean Environmental Conditions Observer app combines data from moored instruments and regional
                             ocean models to provide users with live maps and climatological records of ocean
                             temperature, salinity, pH, oxygen content, and the 'corrosiveness' of seawater to shelled
                             organisms across southern to central BC.
@@ -42,7 +42,7 @@
                             Who We Are
                         </v-card-title>
                         <v-card-text class="text-body-1 text-medium-emphasis pl-4 pr-4" style="line-height: 1.6;">
-                            The Ocean Acidification & Hypoxia app is developed and maintained by the Canadian Integrated
+                            The Ocean Environmental Conditions Observer app is developed and maintained by the Canadian Integrated
                             Ocean Observing System (<a href="https://www.cioospacific.ca/" target="_blank"
                                 rel="noopener noreferrer"
                                 class="text-primary text-decoration-none font-weight-bold">CIOOS</a>) Pacific region in
