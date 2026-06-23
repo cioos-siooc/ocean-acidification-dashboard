@@ -177,8 +177,7 @@
                                     Get in Touch
                                 </h3>
                                 <p class="text-body-1 text-medium-emphasis mb-0" style="max-width: 600px;">
-                                    Have feedback or datasets you'd like to see incorporated into the Ocean
-                                    Acidification & Hypoxia app? We'd love to hear from you.
+                                    Have feedback or datasets you'd like to see incorporated into the OceanECO app? We'd love to hear from you.
                                 </p>
                             </div>
                             <div class="d-flex flex-column flex-sm-row gap-4">
