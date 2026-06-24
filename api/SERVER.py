@@ -624,7 +624,6 @@ async def get_raster_tiles(z: int, x: int, y: int):
 class timeseriesRequest(BaseModel):
     source: str
     var: str
-    stat: str
     lat: float
     lon: float
     depth: Optional[float] = None
@@ -660,7 +659,6 @@ async def fn_extract_timeseries(request: timeseriesRequest):
                         extract_timeseries,
                         source=request.source,
                         var=request.var,
-                        stat=request.stat,
                         lat=request.lat,
                         lon=request.lon,
                         depth=depth,
@@ -676,7 +674,6 @@ async def fn_extract_timeseries(request: timeseriesRequest):
                     remote_payload = {
                         "source": request.source,
                         "var": request.var,
-                        "stat": request.stat,
                         "lat": request.lat,
                         "lon": request.lon,
                         "depth": request.depth,
@@ -708,7 +705,7 @@ async def fn_extract_timeseries(request: timeseriesRequest):
 
         # non-federated flow
         result = await asyncio.wait_for(
-            run_in_process(extract_timeseries, source=request.source, var=request.var, stat=request.stat, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate),
+            run_in_process(extract_timeseries, source=request.source, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate),
             timeout=THREADPOOL_TIMEOUT,
         )
         payload = _format_timeseries_result(result)

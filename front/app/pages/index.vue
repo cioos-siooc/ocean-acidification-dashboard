@@ -604,7 +604,7 @@ async function getTimeseriesPromises(lat: number, lon: number) {
     await timeseriesChart.value.fetchAndPlot(
         lat, lon,
         () => getTimeseriesFromApi(lat, lon, fromDate, toDate),
-        () => getClimateTimeseries(lat, lon, fromDate, toDate),
+        // () => getClimateTimeseries(lat, lon, fromDate, toDate),
         () => mainStore.selectedSensor && mainStore.selectedSensor.id
             ? getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selectedSensor.depth)
             : Promise.resolve(null)
@@ -612,7 +612,7 @@ async function getTimeseriesPromises(lat: number, lon: number) {
 }
 
 async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {
-    const base = { source: mainStore.selected_variable.source, var: mainStore.selected_variable.var, stat: 'mean', depth: mainStore.selected_variable.depth_nc, fromDate, toDate }
+    const base = { source: mainStore.selected_variable.source, var: mainStore.selected_variable.var, depth: mainStore.selected_variable.depth_nc, fromDate, toDate }
     const h = 0.05
     const payload = mainStore.queryMode === 'area'
         ? { ...base, polygon: [[lon-h,lat-h],[lon+h,lat-h],[lon+h,lat+h],[lon-h,lat+h],[lon-h,lat-h]] }

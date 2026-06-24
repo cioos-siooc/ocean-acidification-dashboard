@@ -1,0 +1,68 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${API_PORT:-4000}:4000"
+    volumes:
+      - ./api:/app
+      - ./shared:/app/shared
+      - /home/cioos/OA_data:/opt/data
+      # Optional deep-archive mount (older data outside the normal retention
+      # window) — uncomment and set ARCHIVE_DIR once this machine actually
+      # has that storage; SSC_*_ARCHIVE below are no-ops without it.
+      # - ${ARCHIVE_DIR}:/opt/archive
+    environment:
+      - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
+      - SSC_NC_DIR_ARCHIVE=${SSC_NC_DIR_ARCHIVE:-/opt/archive/SSC/nc}
+      - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
+      - SSC_IMAGE_DIR_ARCHIVE=${SSC_IMAGE_DIR_ARCHIVE:-/opt/archive/SSC/images}
+      - SSC_CLIM_DIR=${SSC_CLIM_DIR:-/opt/data/SSC/climatology}
+      - LO_NC_DIR=${LO_NC_DIR:-/opt/data/LO/nc}
+      - LO_IMAGE_DIR=${LO_IMAGE_DIR:-/opt/data/LO/images}
+      - EVAL_DATA_DIR=${EVAL_DATA_DIR:-/opt/data/eval}
+      # ClickHouse: local docker-compose instance (db-ch below) by default
+      - CH_HOST=${CH_HOST:-db-ch}
+      - CH_PORT=${CH_PORT:-8123}
+      - CH_USER=${CH_USER:-default}
+      - CH_PASSWORD=${CH_PASSWORD:-}
+      # Set CH_USE_REMOTE=true and CH_REMOTE_URL to query a remote ClickHouse instead
+      - CH_USE_REMOTE=${CH_USE_REMOTE:-false}
+      - CH_REMOTE_URL=${CH_REMOTE_URL:-}
+      - CH_REMOTE_USER=${CH_REMOTE_USER:-}
+      - CH_REMOTE_PASSWORD=${CH_REMOTE_PASSWORD:-}
+      # SSC sync stage (process/SSC/sync.py on the PROCESS machine): staging
+      # dir the rsynced Native-format export lands in, and the bearer token
+      # POST /admin/syncHourly is checked against. SYNC_API_TOKEN must
+      # exactly match the PROCESS machine's .env.process.remote — previously
+      # missing here entirely, which made every sync attempt 401.
+      - SSC_SYNC_STAGING_DIR=${SSC_SYNC_STAGING_DIR:-/opt/data/SalishSeaCast/sync_staging}
+      - SYNC_API_TOKEN=${SYNC_API_TOKEN:?Set SYNC_API_TOKEN to the same value as the PROCESS machine's .env.process.remote}
+    depends_on:
+      db-ch:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Canonical ClickHouse — receives the PROCESS machine's synced
+  # SalishSeaCast_hourly data (see api/modules/sync_hourly.py) and serves
+  # extractTimeseries/analysis queries. Not the same as the PROCESS
+  # machine's own db-ch, which only tracks that machine's pipeline status.
+  db-ch:
+    build:
+      context: .
+      dockerfile: clickhouse_test/Dockerfile
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ${CH_DATA_DIR:-/home/cioos/clickhouse_data}:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped

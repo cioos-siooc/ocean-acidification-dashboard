@@ -5,7 +5,7 @@ Extract a time series for an ocean variable at a coordinate from ClickHouse.
 
 For each supported `source`, the nearest grid cell to (lat, lon) is looked up
 in that source's grid table (e.g. `grid_SSC`), then the requested variable is
-read from the source's 4D data table (e.g. `SalishSeaCast_daily`) for that
+read from the source's 4D data table (e.g. `SalishSeaCast_hourly`) for that
 grid cell over the requested time range.
 
 When `depth` is given, the available depth level nearest to it is selected
@@ -13,8 +13,11 @@ When `depth` is given, the available depth level nearest to it is selected
 value) series is returned. When `depth` is omitted, every depth level is
 returned as a DataFrame with `time`, `depth`, `value` columns.
 
+Each row in the hourly table already holds one raw value per hour, so no
+mean/min/max aggregation is involved.
+
 Examples:
-  python modules/extractTimeseries.py --source SalishSeaCast --var temperature --stat mean \
+  python modules/extractTimeseries.py --source SalishSeaCast --var temperature \
       --lat 49.2 --lon -123.5 --depth 5 \
       --from-date 2023-01-01T00:00:00 --to-date 2023-01-31T23:59:59
 """
@@ -30,7 +33,7 @@ from modules.clickhouse_helpers import get_ch_client
 
 # ClickHouse table holding the 4D (time, depth, gridX, gridY, <variables>) data per source
 DATA_TABLE_BY_SOURCE = {
-    "SalishSeaCast": "SalishSeaCast_daily",
+    "SalishSeaCast": "SalishSeaCast_hourly",
 }
 
 # ClickHouse table mapping gridX/gridY to longitude/latitude per source
@@ -49,9 +52,6 @@ ALLOWED_VARIABLES = {
     "dissolved_oxygen",
     "dissolved_inorganic_carbon",
 }
-
-# Suffix appended to `var` to form the data table column name, e.g. "temperature_mean"
-ALLOWED_STATS = {"mean", "min", "max"}
 
 MAX_GRID_DIST_KM = 25.0
 
@@ -107,7 +107,6 @@ def extract_timeseries(
     *,
     source: str,
     var: str,
-    stat: str,
     lat: float,
     lon: float,
     depth: Optional[float] = None,
@@ -115,7 +114,7 @@ def extract_timeseries(
     to_date: Optional[str] = None,
     verbose: bool = False,
 ) -> Union[Tuple[pd.Series, pd.Series], pd.DataFrame]:
-    """Extract a time series for `var`'s `stat` (mean/min/max) at (lat, lon) from ClickHouse.
+    """Extract the hourly time series for `var` at (lat, lon) from ClickHouse.
 
     When `depth` is provided, returns `(times, values)` as a tuple of
     pd.Series. When `depth` is None, returns a `pd.DataFrame` with columns
@@ -127,7 +126,6 @@ def extract_timeseries(
         print("########### Extracting timeseries with parameters: ###########", flush=True)
         print(f"Source: {source}", flush=True)
         print(f"Variable: {var}", flush=True)
-        print(f"Stat: {stat}", flush=True)
         print(f"Latitude: {lat}", flush=True)
         print(f"Longitude: {lon}", flush=True)
         print(f"Depth: {depth}", flush=True)
@@ -141,8 +139,6 @@ def extract_timeseries(
         )
     if var not in ALLOWED_VARIABLES:
         raise ValueError(f"Unknown variable '{var}'. Supported variables: {sorted(ALLOWED_VARIABLES)}")
-    if stat not in ALLOWED_STATS:
-        raise ValueError(f"Unknown stat '{stat}'. Supported stats: {sorted(ALLOWED_STATS)}")
 
     table = DATA_TABLE_BY_SOURCE[source]
     grid_table = GRID_TABLE_BY_SOURCE[source]
@@ -157,14 +153,14 @@ def extract_timeseries(
         params: dict = {"gx": grid_x, "gy": grid_y}
         if from_date is not None:
             where.append("time >= %(from_time)s")
-            params["from_time"] = pd.to_datetime(from_date).date()
+            params["from_time"] = pd.to_datetime(from_date)
         if to_date is not None:
             where.append("time <= %(to_time)s")
-            params["to_time"] = pd.to_datetime(to_date).date()
+            params["to_time"] = pd.to_datetime(to_date)
 
         if depth is None:
             query = (
-                f"SELECT time, depth, {var}_{stat} AS value FROM {table} "
+                f"SELECT time, depth, {var} AS value FROM {table} "
                 f"WHERE {' AND '.join(where)} ORDER BY time, depth"
             )
             result = client.query(query, parameters=params)
@@ -190,7 +186,7 @@ def extract_timeseries(
 
         where.append("depth = %(depth)s")
         params["depth"] = depth_sel
-        query = f"SELECT time, {var}_{stat} AS value FROM {table} WHERE {' AND '.join(where)} ORDER BY time"
+        query = f"SELECT time, {var} AS value FROM {table} WHERE {' AND '.join(where)} ORDER BY time"
         result = client.query(query, parameters=params)
         if not result.result_rows:
             raise RuntimeError("No data found in ClickHouse for the requested time range")
@@ -208,7 +204,6 @@ def main(argv: Optional[list] = None) -> int:
     p = argparse.ArgumentParser(description="Extract a time series for an ocean variable at a coordinate from ClickHouse")
     p.add_argument("--source", default="SalishSeaCast", choices=sorted(DATA_TABLE_BY_SOURCE), help="Data source")
     p.add_argument("--var", "-v", required=True, choices=sorted(ALLOWED_VARIABLES), help="Variable name to extract")
-    p.add_argument("--stat", required=True, choices=sorted(ALLOWED_STATS), help="Statistic to extract (mean, min, or max)")
     p.add_argument("--lat", "-a", type=float, required=True, help="Latitude (required)")
     p.add_argument("--lon", "-o", type=float, required=True, help="Longitude (required)")
     p.add_argument("--depth", type=float, default=None,
@@ -223,7 +218,6 @@ def main(argv: Optional[list] = None) -> int:
     result = extract_timeseries(
         source=args.source,
         var=args.var,
-        stat=args.stat,
         lat=args.lat,
         lon=args.lon,
         depth=args.depth,

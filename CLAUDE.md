@@ -81,7 +81,7 @@ Core relational store for pipeline state and spatial metadata:
 - `colormaps` — colormap definitions served to the frontend
 
 ### ClickHouse (`db-ch`)
-Stores pre-aggregated time-series data for fast analytical queries. The API queries it via `api/modules/clickhouse_helpers.py`, which selects between a local instance (`CH_HOST`/`CH_PORT`) and a remote one (`CH_USE_REMOTE=true` + `CH_REMOTE_URL`). Used by `extractTimeseries` when the source is `SalishSeaCast` (reads `grid_ssc` and `SalishSeaCast_daily` tables).
+Stores time-series data for fast analytical queries. The API queries it via `api/modules/clickhouse_helpers.py`, which selects between a local instance (`CH_HOST`/`CH_PORT`) and a remote one (`CH_USE_REMOTE=true` + `CH_REMOTE_URL`). Used by `extractTimeseries` when the source is `SalishSeaCast` (reads `grid_SSC` and `SalishSeaCast_hourly` — raw per-hour values, no mean/min/max aggregation).
 
 ### `nc_jobs` State Machine
 Every NetCDF file/day-variable combination is tracked as a row. States:
