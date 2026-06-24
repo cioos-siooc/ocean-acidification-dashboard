@@ -104,15 +104,14 @@
 
                     <!-- Analysis Builder tab -->
                     <div v-show="activeTab === 'analysis'" style="height:100%;">
-                        <Analytics :variable="selectedVariable.var" :last-clicked="lastClicked" :query-mode="mainStore.queryMode" />
+                        <Analytics />
                     </div>
                 </div>
 
             </v-container>
 
             <!-- Dialog component for monthly chart -->
-            <EchartsLineDialog :coord="lastClicked" :variable="selectedVariable.var"
-                :depth="selectedVariable.depth_nc ?? undefined" />
+            <EchartsLineDialog />
 
         </v-footer>
         <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">

@@ -79,28 +79,53 @@ def lookup_grid_cells_for_polygon(polygon_coords: List[Tuple[float, float]]) -> 
     return result.result_rows
 
 
+def _resolve_nearest_depth(client, grid_x: int, grid_y: int, depth: float) -> float | None:
+    """Return the available depth level nearest to `depth` for (grid_x, grid_y).
+
+    Returns None if no depth levels are available for this grid cell.
+    """
+    query = """
+        SELECT DISTINCT depth FROM SalishSeaCast_daily
+        WHERE gridX = %(gx)s AND gridY = %(gy)s
+    """
+    result = client.query(query, parameters={"gx": grid_x, "gy": grid_y})
+    depths = [float(row[0]) for row in result.result_rows]
+    if not depths:
+        return None
+    return min(depths, key=lambda d: abs(d - depth))
+
+
 def query_region_timeseries(
     grid_points: List[Tuple[int, int]],
-    depth_range: Tuple[float, float],
+    depth: float,
     variable: str,
     stat: str,
     year_range: List[int],
 ) -> dict:
     """
     Returns the regionally-averaged daily timeseries for `{variable}_{stat}`
-    across `grid_points`, averaged over `depth_range` and restricted to
-    `year_range`. No seasonal filtering or per-year split is applied here —
-    the frontend derives climatology, trend, threshold counts, streaks, and
-    extremes from this flat series.
+    across `grid_points`, at the depth level nearest to `depth` and
+    restricted to `year_range`. No seasonal filtering or per-year split is
+    applied here — the frontend derives climatology, trend, threshold
+    counts, streaks, and extremes from this flat series.
 
     Returns: {"data": [{"time": "YYYY-MM-DD", "value": ...}, ...]}
     """
     column_name = f"{variable}_{stat}"
 
+    client = _get_ch_client()
+
+    # Depth levels are uniform across the SSC grid, so any grid point in the
+    # selection can resolve the nearest available level (same approach as
+    # extractTimeseries.py's _resolve_depth, used for single-point lookups).
+    grid_x, grid_y = grid_points[0]
+    depth_sel = _resolve_nearest_depth(client, grid_x, grid_y, depth)
+    if depth_sel is None:
+        return {"data": []}
+
     params = {
         "grid_points": grid_points,
-        "min_depth": depth_range[0],
-        "max_depth": depth_range[1],
+        "depth": depth_sel,
         "min_year": year_range[0],
         "max_year": year_range[1],
     }
@@ -109,13 +134,12 @@ def query_region_timeseries(
         SELECT time, avg({column_name}) AS val
         FROM SalishSeaCast_daily
         WHERE (gridX, gridY) IN %(grid_points)s
-          AND depth BETWEEN %(min_depth)s AND %(max_depth)s
+          AND depth = %(depth)s
           AND toYear(time) BETWEEN %(min_year)s AND %(max_year)s
         GROUP BY time
         ORDER BY time
     """
 
-    client = _get_ch_client()
     result = client.query(query, parameters=params)
 
     return {

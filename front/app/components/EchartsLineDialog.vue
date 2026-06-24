@@ -31,15 +31,18 @@ const apiBaseUrl = config.public.apiBaseUrl;
 ///////////////////////////////////  PROP  ///////////////////////////////////
 
 const props = defineProps({
-    // Fetch by coord/variable/depth
-    coord: { type: Object, required: true },
-    variable: { type: String, required: true },
-    depth: { type: Number, default: null },
+    modelValue: { type: Boolean, default: false },
 });
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 const emit = defineEmits(['update:modelValue']);
+
+// Fetch by coord/variable/depth — sourced directly from the store rather than
+// passed down as props, since index.vue derives them from the same store anyway.
+const coord = computed(() => mainStore.lastClickedMapPoint);
+const variable = computed(() => mainStore.selected_variable.var);
+const depth = computed(() => mainStore.selected_variable.depth_nc);
 
 ///////////////////////////////////  REF  ///////////////////////////////////
 
@@ -56,7 +59,7 @@ const showClimatologyDialog = computed({
 });
 
 const title = computed(() => {
-    return `${props.variable} climatology at (${props.coord.lat?.toFixed(2)}, ${props.coord.lng?.toFixed(2)}) at depth ${props.depth}m`;
+    return `${variable.value} climatology at (${coord.value?.lat?.toFixed(2)}, ${coord.value?.lng?.toFixed(2)}) at depth ${depth.value}m`;
 });
 
 ///////////////////////////////////  LIFECYCLE  ///////////////////////////////////
@@ -158,14 +161,14 @@ const close = () => {
 };
 
 const getDataForCoord = async () => {
-    if (!props.coord || props.coord.lat === undefined || props.coord.lng === undefined || !props.variable) return null;
+    if (!coord.value || coord.value.lat === undefined || coord.value.lng === undefined || !variable.value) return null;
     loading.value = true;
     try {
         const response = await axios.post(`${apiBaseUrl}/getMonthlyClimatologyAtCoord`, {
-            variable: props.variable,
-            depth: props.depth,
-            lat: props.coord.lat,
-            lon: props.coord.lng,
+            variable: variable.value,
+            depth: depth.value,
+            lat: coord.value.lat,
+            lon: coord.value.lng,
         });
         return response;
     } catch (e) {

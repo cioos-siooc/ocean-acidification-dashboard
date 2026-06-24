@@ -6,7 +6,6 @@ from SSC.config import (
     STATUS_SUCCESS_DOWNLOAD, STATUS_SUCCESS_COMPUTE, STATUS_SUCCESS_SYNC
 )
 
-dates = [date(2026, 6, d) for d in range(1, 20)]  # <- fill in your actual dates
 nc_dir = os.getenv('SSC_NC_DIR', NC_BASE_DIR)
 
 def nc_path(var, d):
@@ -14,6 +13,13 @@ def nc_path(var, d):
 
 client = get_client()
 ensure_schema(client)
+
+# Dates between 2026-01-01 and 2026-03-31
+dates = []
+d = date(2026, 1, 1)
+while d <= date(2026, 3, 31):
+    dates.append(d)
+    d = d.fromordinal(d.toordinal() + 1)
 
 for d in dates:
     for var, status in [(v, STATUS_SUCCESS_DOWNLOAD) for v in DOWNLOAD_VARIABLES] + \

@@ -34,7 +34,7 @@
       </v-btn-toggle>
 
       <v-btn block color="warning" size="small" prepend-icon="mdi-chart-line" :loading="isGenerating"
-        :disabled="!props.lastClicked || !props.variable" @click="runAnalysis">
+        :disabled="!lastClicked || !variable || depth == null" @click="runAnalysis">
         Run Analysis
       </v-btn>
     </div>
@@ -143,16 +143,17 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
+import { useMainStore } from '../stores/main'
 
 const config = useRuntimeConfig()
 const apiBaseUrl = config.public.apiBaseUrl
+const mainStore = useMainStore()
 
-// --- PROPS ---
-const props = defineProps<{
-  variable: string
-  lastClicked: { lat: number; lng: number } | null
-  queryMode: 'point' | 'area'
-}>()
+// --- STORE-DERIVED STATE ---
+const variable = computed(() => mainStore.selected_variable.var)
+const lastClicked = computed(() => mainStore.lastClickedMapPoint)
+const queryMode = computed(() => mainStore.queryMode)
+const depth = computed(() => mainStore.selected_variable.depth_nc)
 
 // --- CONSTANTS ---
 const minYear = 2007
@@ -202,7 +203,7 @@ const rawSeasonalData = ref<SeriesPoint[]>([])
 
 // --- COMPUTED ---
 const polygonFromClick = computed<[number, number][]>(() => {
-  const pt = props.lastClicked
+  const pt = lastClicked.value
   if (!pt) return []
   const h = 0.05
   return [
@@ -215,7 +216,7 @@ const polygonFromClick = computed<[number, number][]>(() => {
 })
 
 const varName = computed(() =>
-  availableVariables.find(v => v.id === props.variable)?.name || props.variable || 'Variable'
+  availableVariables.find(v => v.id === variable.value)?.name || variable.value || 'Variable'
 )
 
 const seasonLabel = computed(() => {
@@ -628,14 +629,15 @@ onBeforeUnmount(() => {
 
 // --- DATA FETCH ---
 async function fetchRegionTimeseries(): Promise<SeriesPoint[]> {
-  const pt = props.lastClicked
+  const pt = lastClicked.value
   if (!pt) throw new Error('No location selected. Click on the map first.')
+  if (depth.value == null) throw new Error('No depth selected.')
   const base = {
-    depth: { min: 0, max: 100 },
-    primaryMetric: { variable: props.variable, stat: primaryStat.value },
+    depth: depth.value,
+    primaryMetric: { variable: variable.value, stat: primaryStat.value },
     temporal: { yearRange: [minYear, maxYear] }
   }
-  const location = props.queryMode === 'area'
+  const location = queryMode.value === 'area'
     ? { polygon: polygonFromClick.value }
     : { lat: pt.lat, lon: pt.lng }
   const response = await axios.post(`https://oa-api2.cioospacificlabs.ca/analysis/timeseries`, { ...base, ...location })

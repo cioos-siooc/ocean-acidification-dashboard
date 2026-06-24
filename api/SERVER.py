@@ -1035,17 +1035,13 @@ class MetricSpec(BaseModel):
     variable: str
     stat: str
 
-class DepthRange(BaseModel):
-    min: float
-    max: float
-
 class AnalysisRequest(BaseModel):
     # Either a GeoJSON-style polygon [[lon, lat], ...] for area mode,
     # or lat + lon for point mode. At least one must be provided.
     polygon: Optional[List[Tuple[float, float]]] = None
     lat: Optional[float] = None
     lon: Optional[float] = None
-    depth: DepthRange
+    depth: float
     primaryMetric: MetricSpec
     temporal: dict
 
@@ -1097,7 +1093,7 @@ async def analysis_timeseries(request: AnalysisRequest):
         result = await run_in_threadpool(
             query_region_timeseries,
             grid_points=grid_points,
-            depth_range=(request.depth.min, request.depth.max),
+            depth=request.depth,
             variable=request.primaryMetric.variable,
             stat=request.primaryMetric.stat,
             year_range=request.temporal["yearRange"],
