@@ -79,14 +79,14 @@ app.add_middleware(
 
 # Explicit PNG route that sets cache-control for compatibility with Mapbox and browsers
 SSC_IMAGE_DIR = os.environ.get("SSC_IMAGE_DIR", "/opt/data/SalishSeaCast/images")
-LO_IMAGE_DIR = os.environ.get("LO_IMAGE_DIR", "/opt/data/LiveOcean/images")
 
 
 def _get_image_roots(source: str) -> list:
     """Return list of image root directories to search when serving tiles.
 
-    Searches SSC_IMAGE_DIR, LO_IMAGE_DIR, and optional archive counterparts.
-    All directories are searched in order when looking up a tile file.
+    Searches SSC_IMAGE_DIR and its optional archive counterpart. All
+    directories are searched in order when looking up a tile file.
+    SalishSeaCast is the only supported source.
     """
     roots = []
     if(source == "SalishSeaCast"):
@@ -94,11 +94,6 @@ def _get_image_roots(source: str) -> list:
         archive_ssc = os.getenv("SSC_IMAGE_DIR_ARCHIVE", "")
         if archive_ssc:
             roots.append(archive_ssc)
-    elif(source == "LiveOcean"):
-        roots = [LO_IMAGE_DIR]
-        archive_lo = os.getenv("LO_IMAGE_DIR_ARCHIVE", "")
-        if archive_lo:
-            roots.append(archive_lo)
 
     return [r for r in roots if r]
 
@@ -307,7 +302,7 @@ async def get_variables():
     """
     try:
         from modules.variables import get_variables as fetch_variables
-        variables = await run_in_threadpool(fetch_variables, db_host, db_port, db_name, db_user, db_password)
+        variables = await run_in_threadpool(fetch_variables)
         return variables
     except HTTPException:
         raise
@@ -360,35 +355,10 @@ async def get_sensors():
 
 @app.get('/colormaps')
 async def get_colormaps():
-    """Return all colormaps from the database."""
-    def _fetch():
-        import psycopg2
-        import psycopg2.extras
-        conn = None
-        try:
-            conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password, connect_timeout=5)
-            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            cur.execute("SELECT name, description, stops, type, mode, meta FROM colormaps ORDER BY name;")
-            rows = cur.fetchall()
-            cur.close()
-
-            out = []
-            for r in rows:
-                out.append({
-                    'name': r.get('name'),
-                    'description': r.get('description'),
-                    'stops': r.get('stops'),
-                    'type': r.get('type'),
-                    'mode': r.get('mode'),
-                    'meta': r.get('meta') or {}
-                })
-            return out
-        finally:
-            if conn:
-                conn.close()
-
+    """Return all colormaps from shared/colormaps.json."""
     try:
-        return await run_in_threadpool(_fetch)
+        from shared.variable_config import load_colormaps
+        return sorted(load_colormaps(), key=lambda c: c['name'])
     except Exception as exc:
         logger.exception('get_colormaps failed')
         raise HTTPException(status_code=500, detail=str(exc))
@@ -513,6 +483,9 @@ async def get_png(source: str, var: str, dt: str, depth: str):
     safe_var = os.path.basename(var)
     safe_dt = os.path.basename(dt)
     safe_depth = depth # .replace('.', 'p')
+
+    if safe_source != "SalishSeaCast":
+        raise HTTPException(status_code=400, detail=f"Unsupported source: {safe_source}")
 
     # Federation routing (phase-1: SSC only): redirect to B when ownership is remote
     if FEDERATION_ENABLED and safe_source == "SalishSeaCast" and REMOTE_B_API_BASE:
@@ -859,14 +832,11 @@ async def fn_get_minmax(request: minmaxRequest):
             logger.error(f"Unsupported source: {source}")
             raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
         
-        if source == "SalishSeaCast":
-            db_gridTable = "grid"
-        elif source == "Live Ocean":
-            db_gridTable = "lo_grid"
-        else:
+        if source != "SalishSeaCast":
             logger.error(f"Unsupported source: {source}")
             raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
-        
+        db_gridTable = "grid"
+
         # Extract bounds if provided
         north = request.north
         south = request.south
@@ -966,13 +936,10 @@ async def fn_get_profile(request: profileRequest):
         lng = request.lng
         dt = request.dt
         
-        if source == "SalishSeaCast":
-            db_gridTable = "grid"
-        elif source == "Live Ocean":
-            db_gridTable = "lo_grid"
-        else:
+        if source != "SalishSeaCast":
             logger.error(f"Unsupported source: {source}")
             raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
+        db_gridTable = "grid"
 
         profile = await run_in_threadpool(
             extract_profile,
@@ -1019,7 +986,7 @@ async def fn_get_eval(request: evalRequest):
     eval_nc_path = os.path.join(eval_data_dir, f"{request.sensor}.nc")
     
     # Validate model parameter
-    valid_models = ["SSC", "LiveOcean"]
+    valid_models = ["SSC"]
     model = request.model.strip()  # Remove leading/trailing whitespace
     if model not in valid_models:
         raise HTTPException(status_code=400, detail=f"Invalid model: {model}. Must be one of {valid_models}")

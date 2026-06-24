@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import os
 
+from shared.variable_config import load_variable_config as _load_variable_config
+
 # Variables downloaded directly from ERDDAP
 DOWNLOAD_VARIABLES: list[str] = [
     'temperature',
@@ -82,18 +84,12 @@ SEAWATER_DENSITY = 1025.0  # kg/m³
 DEPTH_TO_PRESSURE_FACTOR = 1.019716
 
 # Packing precision for WebP tile generation (controls quantisation in nc2tile).
-# Must match the `fields.precision` column in Postgres (see modules/png_worker.py's
-# get_variable_precision) — mismatches cause the packed RGB tiles to be quantised
-# at the wrong resolution.
+# Sourced from shared/variable_config.yml — the single copy of this value used
+# by both this pipeline and the API, so they can't drift apart the way a
+# hardcoded dict here once did against Postgres's fields.precision column.
 VARIABLE_PRECISION: dict[str, float] = {
-    'temperature':               0.01,
-    'salinity':                  0.01,
-    'total_alkalinity':          0.1,
-    'dissolved_oxygen':          0.1,
-    'dissolved_inorganic_carbon': 0.1,
-    'ph_total':                  0.001,
-    'omega_arag':                0.0001,
-    'omega_cal':                 0.0001,
+    var: meta['precision']
+    for var, meta in _load_variable_config()['variables'].items()
 }
 
 # ---------------------------------------------------------------------------
