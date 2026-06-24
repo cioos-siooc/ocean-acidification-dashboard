@@ -81,16 +81,19 @@ SEAWATER_DENSITY = 1025.0  # kg/m³
 # Depth-to-pressure conversion factor (1 m ≈ 1.019716 dbar)
 DEPTH_TO_PRESSURE_FACTOR = 1.019716
 
-# Packing precision for WebP tile generation (controls quantisation in nc2tile)
+# Packing precision for WebP tile generation (controls quantisation in nc2tile).
+# Must match the `fields.precision` column in Postgres (see modules/png_worker.py's
+# get_variable_precision) — mismatches cause the packed RGB tiles to be quantised
+# at the wrong resolution.
 VARIABLE_PRECISION: dict[str, float] = {
-    'temperature':               0.1,
+    'temperature':               0.01,
     'salinity':                  0.01,
-    'total_alkalinity':          1.0,
+    'total_alkalinity':          0.1,
     'dissolved_oxygen':          0.1,
-    'dissolved_inorganic_carbon': 1.0,
-    'ph_total':                  0.01,
-    'omega_arag':                0.01,
-    'omega_cal':                 0.01,
+    'dissolved_inorganic_carbon': 0.1,
+    'ph_total':                  0.001,
+    'omega_arag':                0.0001,
+    'omega_cal':                 0.0001,
 }
 
 # ---------------------------------------------------------------------------
