@@ -718,7 +718,8 @@ async def fn_extract_timeseries(request: timeseriesRequest):
     except RuntimeError as exc:
         # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
         if ("km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc)
-                or "does not cover any active marine grid cells" in str(exc)):
+                or "does not cover any active marine grid cells" in str(exc)
+                or "No data available at depth" in str(exc)):
             logger.warning(f"Out-of-domain or invalid coordinates: {exc}")
             raise HTTPException(status_code=400, detail=str(exc))
         # Other RuntimeErrors are unexpected, treat as 500

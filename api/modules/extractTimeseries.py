@@ -55,6 +55,13 @@ ALLOWED_VARIABLES = {
 
 MAX_GRID_DIST_KM = 25.0
 
+# Maximum allowed gap (meters) between a requested depth and the nearest
+# depth actually present at a grid cell. Native sigma levels are discrete and
+# bathymetry-truncated per cell, so without this a request for e.g. 400m at a
+# shallow coastal cell would silently return that cell's shallowest level
+# instead of signalling "no data here".
+DEPTH_MATCH_TOLERANCE_M = 0.1
+
 
 def _find_nearest_grid_point(client, grid_table: str, lat: float, lon: float, max_dist_km: float = MAX_GRID_DIST_KM) -> Tuple[int, int, float, float]:
     """Find the (gridX, gridY) cell nearest to (lat, lon) in `grid_table`.
@@ -111,8 +118,11 @@ def _find_grid_points_in_polygon(client, grid_table: str, polygon: List[Tuple[fl
 def _resolve_depth(client, table: str, grid_x: int, grid_y: int, depth: float) -> Optional[float]:
     """Return the available depth level nearest to `depth` for (grid_x, grid_y).
 
-    `depth == -1` selects the deepest (bottom) level. Returns None if no
-    depth levels are available for this grid cell.
+    `depth == -1` selects the deepest (bottom) level, whatever it is.
+    Otherwise, the nearest available level must be within
+    `DEPTH_MATCH_TOLERANCE_M` of `depth` or this returns None — a depth
+    deeper than the local water column should mean "no data", not silently
+    fall back to the cell's shallowest/deepest level.
     """
     query = f"""
         SELECT DISTINCT depth FROM {table}
@@ -124,7 +134,10 @@ def _resolve_depth(client, table: str, grid_x: int, grid_y: int, depth: float) -
         return None
     if float(depth) == -1.0:
         return max(depths)
-    return min(depths, key=lambda d: abs(d - depth))
+    closest = min(depths, key=lambda d: abs(d - depth))
+    if abs(closest - depth) > DEPTH_MATCH_TOLERANCE_M:
+        return None
+    return closest
 
 
 def extract_timeseries(
@@ -233,7 +246,10 @@ def extract_timeseries(
         gx0, gy0 = grid_points[0]
         depth_sel = _resolve_depth(client, table, gx0, gy0, depth)
         if depth_sel is None:
-            raise RuntimeError(f"No data found for grid point (gridX={gx0}, gridY={gy0})")
+            raise RuntimeError(
+                f"No data available at depth {depth}m for grid point (gridX={gx0}, gridY={gy0}). "
+                f"The water column at this location may not extend to that depth."
+            )
         if verbose:
             print(f"Selecting depth {depth_sel} nearest to requested depth {depth}", flush=True)
 

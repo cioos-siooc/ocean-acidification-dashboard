@@ -79,10 +79,19 @@ def lookup_grid_cells_for_polygon(polygon_coords: List[Tuple[float, float]]) -> 
     return result.result_rows
 
 
+# Same tolerance and rationale as extractTimeseries.py's DEPTH_MATCH_TOLERANCE_M:
+# native sigma levels are discrete and bathymetry-truncated per cell, so a
+# depth deeper than the local water column should resolve to "no data", not
+# silently snap to whatever level happens to be closest.
+DEPTH_MATCH_TOLERANCE_M = 0.1
+
+
 def _resolve_nearest_depth(client, grid_x: int, grid_y: int, depth: float) -> float | None:
     """Return the available depth level nearest to `depth` for (grid_x, grid_y).
 
-    Returns None if no depth levels are available for this grid cell.
+    `depth == -1` selects the deepest (bottom) level, whatever it is.
+    Otherwise, the nearest available level must be within
+    `DEPTH_MATCH_TOLERANCE_M` of `depth` or this returns None.
     """
     query = """
         SELECT DISTINCT depth FROM SalishSeaCast_daily
@@ -92,7 +101,12 @@ def _resolve_nearest_depth(client, grid_x: int, grid_y: int, depth: float) -> fl
     depths = [float(row[0]) for row in result.result_rows]
     if not depths:
         return None
-    return min(depths, key=lambda d: abs(d - depth))
+    if float(depth) == -1.0:
+        return max(depths)
+    closest = min(depths, key=lambda d: abs(d - depth))
+    if abs(closest - depth) > DEPTH_MATCH_TOLERANCE_M:
+        return None
+    return closest
 
 
 def query_region_timeseries(

@@ -64,6 +64,33 @@ def test_extract_timeseries_bottom_depth_selects_max(monkeypatch):
     assert _resolve_depth(fake, 'SalishSeaCast_hourly', 10, 20, -1) == 10.0
 
 
+def test_extract_timeseries_depth_out_of_tolerance_raises(monkeypatch):
+    # Requested depth (400m) is far beyond this cell's deepest level (10m) —
+    # should report "no data", not silently return the 10m series.
+    fake = FakeClient(
+        grid_row=(10, 20, 49.0, -123.0, 500.0),
+        depths=[0.0, 5.0, 10.0],
+        point_rows=[(datetime(2026, 1, 1), 1.0)],
+    )
+    monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: fake)
+
+    with pytest.raises(RuntimeError, match="No data available at depth"):
+        extract_timeseries(source='SalishSeaCast', var='temperature', lat=49.0, lon=-123.0, depth=400.0)
+
+
+def test_extract_timeseries_depth_within_tolerance_matches(monkeypatch):
+    fake = FakeClient(
+        grid_row=(10, 20, 49.0, -123.0, 500.0),
+        depths=[0.0, 5.0, 10.0],
+        point_rows=[(datetime(2026, 1, 1), 7.5)],
+    )
+    monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: fake)
+
+    times, values = extract_timeseries(source='SalishSeaCast', var='temperature', lat=49.0, lon=-123.0, depth=5.05)
+
+    assert list(values) == [7.5]
+
+
 def test_extract_timeseries_all_depths(monkeypatch):
     fake = FakeClient(
         grid_row=(10, 20, 49.0, -123.0, 500.0),
