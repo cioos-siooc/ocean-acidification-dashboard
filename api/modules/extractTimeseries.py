@@ -24,7 +24,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
-from typing import Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -84,6 +84,30 @@ def _find_nearest_grid_point(client, grid_table: str, lat: float, lon: float, ma
     return int(grid_x), int(grid_y), float(grid_lat), float(grid_lon)
 
 
+def _find_grid_points_in_polygon(client, grid_table: str, polygon: List[Tuple[float, float]]) -> List[Tuple[int, int]]:
+    """Find all (gridX, gridY) cells inside `polygon` (a [(lon, lat), ...] ring) in `grid_table`.
+
+    Mirrors modules/ocean_analysis.py's lookup_grid_cells_for_polygon. Coordinates are cast to
+    float before being interpolated into the query since ClickHouse doesn't support a parameter
+    type for arrays of tuples — Pydantic has already validated them as floats by this point.
+    """
+    lons = [float(p[0]) for p in polygon]
+    lats = [float(p[1]) for p in polygon]
+    min_lon, max_lon = min(lons), max(lons)
+    min_lat, max_lat = min(lats), max(lats)
+    polygon_sql = "[" + ", ".join(f"({lon}, {lat})" for lon, lat in zip(lons, lats)) + "]"
+
+    query = f"""
+        SELECT gridX, gridY
+        FROM {grid_table}
+        WHERE longitude BETWEEN {min_lon} AND {max_lon}
+          AND latitude BETWEEN {min_lat} AND {max_lat}
+          AND pointInPolygon((longitude, latitude), {polygon_sql})
+    """
+    result = client.query(query)
+    return [(int(r[0]), int(r[1])) for r in result.result_rows]
+
+
 def _resolve_depth(client, table: str, grid_x: int, grid_y: int, depth: float) -> Optional[float]:
     """Return the available depth level nearest to `depth` for (grid_x, grid_y).
 
@@ -107,14 +131,20 @@ def extract_timeseries(
     *,
     source: str,
     var: str,
-    lat: float,
-    lon: float,
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+    polygon: Optional[List[Tuple[float, float]]] = None,
     depth: Optional[float] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     verbose: bool = False,
 ) -> Union[Tuple[pd.Series, pd.Series], pd.DataFrame]:
-    """Extract the hourly time series for `var` at (lat, lon) from ClickHouse.
+    """Extract the hourly time series for `var` from ClickHouse.
+
+    Accepts either:
+      - lat + lon (point mode): the single nearest grid cell, or
+      - polygon (area mode): a [(lon, lat), ...] ring; every grid cell inside it
+        is averaged together per timestamp.
 
     When `depth` is provided, returns `(times, values)` as a tuple of
     pd.Series. When `depth` is None, returns a `pd.DataFrame` with columns
@@ -122,12 +152,19 @@ def extract_timeseries(
 
     Exceptions are raised on errors; caller should catch and handle them.
     """
+    has_polygon = polygon is not None and len(polygon) >= 3
+    if not has_polygon and (lat is None or lon is None):
+        raise ValueError("Provide either a polygon (area mode) or lat + lon (point mode)")
+
     if verbose:
         print("########### Extracting timeseries with parameters: ###########", flush=True)
         print(f"Source: {source}", flush=True)
         print(f"Variable: {var}", flush=True)
-        print(f"Latitude: {lat}", flush=True)
-        print(f"Longitude: {lon}", flush=True)
+        if has_polygon:
+            print(f"Polygon: {polygon}", flush=True)
+        else:
+            print(f"Latitude: {lat}", flush=True)
+            print(f"Longitude: {lon}", flush=True)
         print(f"Depth: {depth}", flush=True)
         print(f"From date: {from_date}", flush=True)
         print(f"To date: {to_date}", flush=True)
@@ -145,12 +182,22 @@ def extract_timeseries(
 
     client = get_ch_client()
     try:
-        grid_x, grid_y, grid_lat, grid_lon = _find_nearest_grid_point(client, grid_table, lat, lon)
-        if verbose:
-            print(f"Nearest grid point in ClickHouse: gridX={grid_x} gridY={grid_y} lat={grid_lat} lon={grid_lon}", flush=True)
+        if has_polygon:
+            assert polygon is not None
+            grid_points = _find_grid_points_in_polygon(client, grid_table, polygon)
+            if not grid_points:
+                raise RuntimeError("The selected polygon area does not cover any active marine grid cells.")
+            if verbose:
+                print(f"Grid points in polygon: {len(grid_points)}", flush=True)
+        else:
+            assert lat is not None and lon is not None
+            grid_x, grid_y, grid_lat, grid_lon = _find_nearest_grid_point(client, grid_table, lat, lon)
+            if verbose:
+                print(f"Nearest grid point in ClickHouse: gridX={grid_x} gridY={grid_y} lat={grid_lat} lon={grid_lon}", flush=True)
+            grid_points = [(grid_x, grid_y)]
 
-        where = ["gridX = %(gx)s", "gridY = %(gy)s"]
-        params: dict = {"gx": grid_x, "gy": grid_y}
+        where = ["(gridX, gridY) IN %(grid_points)s"]
+        params: dict = {"grid_points": grid_points}
         if from_date is not None:
             where.append("time >= %(from_time)s")
             params["from_time"] = pd.to_datetime(from_date)
@@ -159,9 +206,11 @@ def extract_timeseries(
             params["to_time"] = pd.to_datetime(to_date)
 
         if depth is None:
+            # avg() is a no-op for point mode (one grid cell per group) and averages
+            # across cells for area mode — one query path covers both.
             query = (
-                f"SELECT time, depth, {var} AS value FROM {table} "
-                f"WHERE {' AND '.join(where)} ORDER BY time, depth"
+                f"SELECT time, depth, avg({var}) AS value FROM {table} "
+                f"WHERE {' AND '.join(where)} GROUP BY time, depth ORDER BY time, depth"
             )
             result = client.query(query, parameters=params)
             if not result.result_rows:
@@ -178,15 +227,19 @@ def extract_timeseries(
             )
             return df
 
-        depth_sel = _resolve_depth(client, table, grid_x, grid_y, depth)
+        # Depth levels are uniform across the SSC grid, so any grid point in the
+        # selection can resolve the nearest available level (same assumption used
+        # by ocean_analysis.py's query_region_timeseries for polygon aggregation).
+        gx0, gy0 = grid_points[0]
+        depth_sel = _resolve_depth(client, table, gx0, gy0, depth)
         if depth_sel is None:
-            raise RuntimeError(f"No data found for grid point (gridX={grid_x}, gridY={grid_y})")
+            raise RuntimeError(f"No data found for grid point (gridX={gx0}, gridY={gy0})")
         if verbose:
             print(f"Selecting depth {depth_sel} nearest to requested depth {depth}", flush=True)
 
         where.append("depth = %(depth)s")
         params["depth"] = depth_sel
-        query = f"SELECT time, {var} AS value FROM {table} WHERE {' AND '.join(where)} ORDER BY time"
+        query = f"SELECT time, avg({var}) AS value FROM {table} WHERE {' AND '.join(where)} GROUP BY time ORDER BY time"
         result = client.query(query, parameters=params)
         if not result.result_rows:
             raise RuntimeError("No data found in ClickHouse for the requested time range")

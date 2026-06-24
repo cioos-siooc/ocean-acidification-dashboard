@@ -12,15 +12,18 @@ class FakeResult:
 
 
 class FakeClient:
-    def __init__(self, grid_row, depths=None, point_rows=None, all_depth_rows=None):
+    def __init__(self, grid_row=None, depths=None, point_rows=None, all_depth_rows=None, polygon_rows=None):
         self.grid_row = grid_row
         self.depths = depths or []
         self.point_rows = point_rows or []
         self.all_depth_rows = all_depth_rows or []
+        self.polygon_rows = polygon_rows or []
         self.closed = False
 
     def query(self, query, parameters=None):
         q = " ".join(query.lower().split())
+        if "pointinpolygon" in q:
+            return FakeResult(self.polygon_rows)
         if "from grid_ssc" in q:
             return FakeResult([self.grid_row])
         if "select distinct depth" in q:
@@ -99,3 +102,51 @@ def test_extract_timeseries_unknown_variable(monkeypatch):
 
     with pytest.raises(ValueError, match="Unknown variable"):
         extract_timeseries(source='SalishSeaCast', var='not_a_variable', lat=49.0, lon=-123.0, depth=5.0)
+
+
+def test_extract_timeseries_polygon_single_depth(monkeypatch):
+    fake = FakeClient(
+        depths=[0.0, 5.0, 10.0],
+        polygon_rows=[(10, 20), (11, 20)],
+        point_rows=[(datetime(2026, 1, 1), 7.5), (datetime(2026, 1, 2), 8.0)],
+    )
+    monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: fake)
+
+    polygon = [(-123.1, 48.9), (-122.9, 48.9), (-122.9, 49.1), (-123.1, 49.1), (-123.1, 48.9)]
+    times, values = extract_timeseries(source='SalishSeaCast', var='temperature', polygon=polygon, depth=5.0)
+
+    assert isinstance(times, pd.Series)
+    assert list(values) == [7.5, 8.0]
+    assert fake.closed
+
+
+def test_extract_timeseries_polygon_all_depths(monkeypatch):
+    fake = FakeClient(
+        polygon_rows=[(10, 20), (11, 20)],
+        all_depth_rows=[
+            (datetime(2026, 1, 1), 0.0, 1.0),
+            (datetime(2026, 1, 1), 5.0, 2.0),
+        ],
+    )
+    monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: fake)
+
+    polygon = [(-123.1, 48.9), (-122.9, 48.9), (-122.9, 49.1), (-123.1, 49.1), (-123.1, 48.9)]
+    df = extract_timeseries(source='SalishSeaCast', var='temperature', polygon=polygon, depth=None)
+
+    assert isinstance(df, pd.DataFrame)
+    assert list(df.columns) == ['time', 'depth', 'value']
+    assert len(df) == 2
+
+
+def test_extract_timeseries_polygon_no_grid_cells_raises(monkeypatch):
+    fake = FakeClient(polygon_rows=[])
+    monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: fake)
+
+    polygon = [(-123.1, 48.9), (-122.9, 48.9), (-122.9, 49.1), (-123.1, 49.1), (-123.1, 48.9)]
+    with pytest.raises(RuntimeError, match="does not cover any active marine grid cells"):
+        extract_timeseries(source='SalishSeaCast', var='temperature', polygon=polygon, depth=5.0)
+
+
+def test_extract_timeseries_requires_point_or_polygon(monkeypatch):
+    with pytest.raises(ValueError, match="Provide either a polygon"):
+        extract_timeseries(source='SalishSeaCast', var='temperature', depth=5.0)

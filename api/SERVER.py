@@ -624,16 +624,28 @@ async def get_raster_tiles(z: int, x: int, y: int):
 class timeseriesRequest(BaseModel):
     source: str
     var: str
-    lat: float
-    lon: float
+    # Either lat + lon (point mode) or polygon (area mode); at least one must be provided.
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    polygon: Optional[List[Tuple[float, float]]] = None
     depth: Optional[float] = None
     fromDate: str
     toDate: str
 
 @app.post("/extractTimeseries")
 async def fn_extract_timeseries(request: timeseriesRequest):
+    has_polygon = bool(request.polygon) and len(request.polygon) >= 3
+    has_point = request.lat is not None and request.lon is not None
+    if not has_polygon and not has_point:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either a polygon (area mode) or lat + lon (point mode)."
+        )
+
+    location_desc = f"polygon({len(request.polygon or [])} pts)" if has_polygon else f"{request.lat}, {request.lon}"
+
     # Reject requests if we are already at concurrency limit
-    logger.info(f"START extractTimeseries: {request.source}, {request.var}, {request.lat}, {request.lon}, depth={request.depth}, from={request.fromDate}, to={request.toDate}")
+    logger.info(f"START extractTimeseries: {request.source}, {request.var}, {location_desc}, depth={request.depth}, from={request.fromDate}, to={request.toDate}")
     try:
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
     except (asyncio.TimeoutError, Exception):
@@ -661,6 +673,7 @@ async def fn_extract_timeseries(request: timeseriesRequest):
                         var=request.var,
                         lat=request.lat,
                         lon=request.lon,
+                        polygon=request.polygon,
                         depth=depth,
                         from_date=request.fromDate,
                         to_date=request.toDate,
@@ -676,6 +689,7 @@ async def fn_extract_timeseries(request: timeseriesRequest):
                         "var": request.var,
                         "lat": request.lat,
                         "lon": request.lon,
+                        "polygon": request.polygon,
                         "depth": request.depth,
                         "fromDate": request.fromDate,
                         "toDate": request.toDate,
@@ -693,10 +707,9 @@ async def fn_extract_timeseries(request: timeseriesRequest):
             if warnings:
                 merged["warnings"] = warnings
             logger.info(
-                "FINISH extractTimeseries (federated): %s, %s, %s, from=%s, to=%s - returned %s points",
+                "FINISH extractTimeseries (federated): %s, %s, from=%s, to=%s - returned %s points",
                 request.var,
-                request.lat,
-                request.lon,
+                location_desc,
                 request.fromDate,
                 request.toDate,
                 len(merged.get("time", [])),
@@ -705,15 +718,24 @@ async def fn_extract_timeseries(request: timeseriesRequest):
 
         # non-federated flow
         result = await asyncio.wait_for(
-            run_in_process(extract_timeseries, source=request.source, var=request.var, lat=request.lat, lon=request.lon, depth=depth, from_date=request.fromDate, to_date=request.toDate),
+            run_in_process(
+                extract_timeseries,
+                source=request.source,
+                var=request.var,
+                lat=request.lat,
+                lon=request.lon,
+                polygon=request.polygon,
+                depth=depth,
+                from_date=request.fromDate,
+                to_date=request.toDate,
+            ),
             timeout=THREADPOOL_TIMEOUT,
         )
         payload = _format_timeseries_result(result)
         logger.info(
-            "FINISH extractTimeseries: %s, %s, %s, depth=%s, from=%s, to=%s - returned %s points",
+            "FINISH extractTimeseries: %s, %s, depth=%s, from=%s, to=%s - returned %s points",
             request.var,
-            request.lat,
-            request.lon,
+            location_desc,
             request.depth if request.depth is not None else "all",
             request.fromDate,
             request.toDate,
@@ -722,7 +744,8 @@ async def fn_extract_timeseries(request: timeseriesRequest):
         return payload
     except RuntimeError as exc:
         # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
-        if "km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc):
+        if ("km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc)
+                or "does not cover any active marine grid cells" in str(exc)):
             logger.warning(f"Out-of-domain or invalid coordinates: {exc}")
             raise HTTPException(status_code=400, detail=str(exc))
         # Other RuntimeErrors are unexpected, treat as 500
