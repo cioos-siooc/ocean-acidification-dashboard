@@ -2,6 +2,12 @@ import type moment from 'moment';
 import { defineStore } from 'pinia'
 import colors from 'vuetify/util/colors';
 
+// Depths are plain numbers (the WebP filename stem too, e.g. 18.0 -> "18.0.webp")
+// — -1 is the synthetic bottom-layer sentinel ("bottom.webp").
+export function formatDepthLabel(depth: number): string {
+    return depth === -1 ? 'bottom' : depth.toFixed(1);
+}
+
 export const useMainStore = defineStore('main', {
     state: () => ({
         colors: {
@@ -19,7 +25,7 @@ export const useMainStore = defineStore('main', {
         },
 
         dfnDays: 14, // days from now for climate timeseries
-        variables: [] as Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: { depth_nc: number, depth_image: string, hasImage: boolean }[], precision: number, bounds: [number, number, number, number] }>,
+        variables: [] as Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number] }>,
         selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as string | null, depth_nc: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null, colormapStops: [null, null, null] as (number | null)[] },
         showBathymetryContours: false,
         colormaps: {} as Record<string, any>,
@@ -49,7 +55,7 @@ export const useMainStore = defineStore('main', {
     }),
 
     actions: {
-        setVariables(vars: Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: { depth_nc: number, depth_image: string, hasImage: boolean }[], precision: number, bounds: [number, number, number, number] }>) {
+        setVariables(vars: Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number] }>) {
             this.variables = vars;
         },
 
@@ -91,12 +97,11 @@ export const useMainStore = defineStore('main', {
             const variable = this.selected_variable.var;
             const depthsArray = this.variables.find((v) => v.var === variable)?.depths;
             const closestDepth = depthsArray
-                ? [...depthsArray].sort((a, b) => Math.abs(a.depth_nc - depth) - Math.abs(b.depth_nc - depth))
+                ? [...depthsArray].sort((a, b) => Math.abs(a - depth) - Math.abs(b - depth))
                 : [];
             if (closestDepth.length > 0) {
-                const entry = closestDepth[0];
-                const newDepth = entry?.depth_image;
-                const newDepthNc = entry?.depth_nc ?? null;
+                const newDepthNc = closestDepth[0] ?? null;
+                const newDepth = newDepthNc !== null ? formatDepthLabel(newDepthNc) : null;
                 if (newDepth && newDepth !== this.selected_variable.depth) {
                     this.snackMessages.push({ color: 'warning', text: `Switched to closest available depth: ${newDepth}m` });
                     this.updateSelectedVariable({ depth: newDepth, depth_nc: newDepthNc });

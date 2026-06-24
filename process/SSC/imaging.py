@@ -62,7 +62,7 @@ def _get_all_depths(nc_path: str) -> tuple[list[int], list[str]]:
     if depth_coord is None:
         raise ValueError(f'No depth coordinate found in {nc_path}')
     # Round to 1 decimal so filenames are e.g. 18.0.webp, not 18.00713539123535.webp
-    return list(range(len(depth_coord))), [str(round(float(v), 1)) for v in depth_coord]
+    return list(range(len(depth_coord))), [f'{round(float(v), 1):.1f}' for v in depth_coord]
 
 
 # ---------------------------------------------------------------------------

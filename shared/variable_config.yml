@@ -31,51 +31,53 @@ bounds: [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117
 # ingest.py already assumes a single depth axis across variables when it
 # builds its meshgrid from one variable's file and reuses it for all 8, so
 # this list isn't a new assumption, just making an existing one explicit.
-# depth_image is the WebP filename stem (nc2tile.py's `.` -> `p` convention).
-# "bottom" is a synthetic companion level read from each variable's separate
-# `_bottom.nc` file, not part of the native depth axis.
+# Each value is also the WebP filename stem (e.g. 18.0 -> "18.0.webp") — no
+# separate label needed since nc2tile.py writes them out verbatim, decimal
+# point and all. -1 is a synthetic sentinel for the bottom layer, a separate
+# companion level read from each variable's own `_bottom.nc` file (filename
+# "bottom.webp"), not part of the native depth axis.
 depths:
-  - {depth_nc: 0.5,   depth_image: "0p5"}
-  - {depth_nc: 1.5,   depth_image: "1p5"}
-  - {depth_nc: 2.5,   depth_image: "2p5"}
-  - {depth_nc: 3.5,   depth_image: "3p5"}
-  - {depth_nc: 4.5,   depth_image: "4p5"}
-  - {depth_nc: 5.5,   depth_image: "5p5"}
-  - {depth_nc: 6.5,   depth_image: "6p5"}
-  - {depth_nc: 7.5,   depth_image: "7p5"}
-  - {depth_nc: 8.5,   depth_image: "8p5"}
-  - {depth_nc: 9.5,   depth_image: "9p5"}
-  - {depth_nc: 10.5,  depth_image: "10p5"}
-  - {depth_nc: 11.5,  depth_image: "11p5"}
-  - {depth_nc: 12.5,  depth_image: "12p5"}
-  - {depth_nc: 13.5,  depth_image: "13p5"}
-  - {depth_nc: 14.6,  depth_image: "14p6"}
-  - {depth_nc: 15.6,  depth_image: "15p6"}
-  - {depth_nc: 16.8,  depth_image: "16p8"}
-  - {depth_nc: 18.0,  depth_image: "18p0"}
-  - {depth_nc: 19.5,  depth_image: "19p5"}
-  - {depth_nc: 21.4,  depth_image: "21p4"}
-  - {depth_nc: 24.1,  depth_image: "24p1"}
-  - {depth_nc: 28.2,  depth_image: "28p2"}
-  - {depth_nc: 34.7,  depth_image: "34p7"}
-  - {depth_nc: 44.5,  depth_image: "44p5"}
-  - {depth_nc: 58.5,  depth_image: "58p5"}
-  - {depth_nc: 76.6,  depth_image: "76p6"}
-  - {depth_nc: 98.1,  depth_image: "98p1"}
-  - {depth_nc: 121.9, depth_image: "121p9"}
-  - {depth_nc: 147.1, depth_image: "147p1"}
-  - {depth_nc: 173.1, depth_image: "173p1"}
-  - {depth_nc: 199.6, depth_image: "199p6"}
-  - {depth_nc: 226.3, depth_image: "226p3"}
-  - {depth_nc: 253.1, depth_image: "253p1"}
-  - {depth_nc: 279.9, depth_image: "279p9"}
-  - {depth_nc: 306.8, depth_image: "306p8"}
-  - {depth_nc: 333.8, depth_image: "333p8"}
-  - {depth_nc: 360.7, depth_image: "360p7"}
-  - {depth_nc: 387.6, depth_image: "387p6"}
-  - {depth_nc: 414.5, depth_image: "414p5"}
-  - {depth_nc: 441.5, depth_image: "441p5"}
-  - {depth_nc: -1,    depth_image: "bottom"}
+  - 0.5
+  - 1.5
+  - 2.5
+  - 3.5
+  - 4.5
+  - 5.5
+  - 6.5
+  - 7.5
+  - 8.5
+  - 9.5
+  - 10.5
+  - 11.5
+  - 12.5
+  - 13.5
+  - 14.6
+  - 15.6
+  - 16.8
+  - 18.0
+  - 19.5
+  - 21.4
+  - 24.1
+  - 28.2
+  - 34.7
+  - 44.5
+  - 58.5
+  - 76.6
+  - 98.1
+  - 121.9
+  - 147.1
+  - 173.1
+  - 199.6
+  - 226.3
+  - 253.1
+  - 279.9
+  - 306.8
+  - 333.8
+  - 360.7
+  - 387.6
+  - 414.5
+  - 441.5
+  - -1
 
 variables:
   temperature:

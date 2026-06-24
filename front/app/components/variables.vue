@@ -22,9 +22,7 @@
         item-title="title" item-value="value" :disabled="!depths || depths.length === 0" density="compact" hide-details
         variant="outlined" class="my-4" :menu-props="{ location: 'end', offset: 75, zIndex: 9999 }" style="width: 100%">
         <template #item="{ props, item }">
-          <v-list-item v-bind="props" :title="item.title"
-            :style="{ color: item.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">
-          </v-list-item>
+          <v-list-item v-bind="props" :title="item.title"></v-list-item>
         </template>
         <template #selection="{ item }">
           <div class="colormap-selection">{{ item.title }}</div>
@@ -77,7 +75,7 @@ import moment from 'moment-timezone';
 import { var2name } from '../../composables/useVar2Name';
 import colors from 'vuetify/util/colors'
 
-import { useMainStore } from '../stores/main'
+import { useMainStore, formatDepthLabel } from '../stores/main'
 const mainStore = useMainStore();
 
 const emit = defineEmits<{
@@ -138,20 +136,18 @@ const selectedSource = computed({
     const depths = variable?.depths ?? [];
     
     // Find closest available depth in the new source
-    let newDepth = depths.length > 0 ? depths[0]?.depth_image : null;
-    let newDepthNc = depths.length > 0 ? depths[0]?.depth_nc : null;
-    
+    let newDepthNc: number | null = depths.length > 0 ? depths[0] : null;
+
     if (depths.length > 0 && selectedVariable.value.depth_nc !== null) {
-      // Find depth with closest depth_nc value
+      // Find depth closest to the currently selected depth value
       const currentDepthNc = selectedVariable.value.depth_nc;
-      const closestDepth = depths.reduce((closest, current) =>
-        Math.abs(current.depth_nc - currentDepthNc) < Math.abs(closest.depth_nc - currentDepthNc)
+      newDepthNc = depths.reduce((closest, current) =>
+        Math.abs(current - currentDepthNc) < Math.abs(closest - currentDepthNc)
           ? current
           : closest
       );
-      newDepth = closestDepth.depth_image;
-      newDepthNc = closestDepth.depth_nc;
     }
+    const newDepth = newDepthNc !== null ? formatDepthLabel(newDepthNc) : null;
     
     // Find closest available datetime in the new source
     let newDt = selectedVariable.value.dt;
@@ -191,20 +187,21 @@ const selectedVarName = computed({
 const depths = computed(() =>
   (mainStore.variables.
     find(v => v.source === selectedVariable.value.source && v.var === selectedVariable.value.var)?.depths ?? []).
-    filter(v => v.depth_image !== undefined).
     slice().sort((a, b) => {
-      // surface first, bottom last, numeric by depth_nc
-      const aIsBottom = a.depth_image === 'bottom';
-      const bIsBottom = b.depth_image === 'bottom';
+      // surface first, bottom (-1) last
+      const aIsBottom = a === -1;
+      const bIsBottom = b === -1;
       if (aIsBottom && !bIsBottom) return 1;
       if (!aIsBottom && bIsBottom) return -1;
-      return a.depth_nc - b.depth_nc;
+      return a - b;
     }).
-    map(v => ({
-      title: isNaN(Number(v.depth_image)) ? v.depth_image : v.depth_image + ' m',
-      value: v.depth_image,
-      hasImage: v.hasImage,
-    }))
+    map(v => {
+      const label = formatDepthLabel(v);
+      return {
+        title: isNaN(Number(label)) ? label : label + ' m',
+        value: label,
+      };
+    })
 );
 
 const selectedDepth = computed({
@@ -212,8 +209,8 @@ const selectedDepth = computed({
   set(v: string | null) {
     const raw = mainStore.variables
       .find(variable => variable.source === selectedVariable.value.source && variable.var === selectedVariable.value.var)
-      ?.depths.find(d => d.depth_image === v);
-    mainStore.updateSelectedVariable({ depth: v, depth_nc: raw?.depth_nc ?? null });
+      ?.depths.find(d => formatDepthLabel(d) === v);
+    mainStore.updateSelectedVariable({ depth: v, depth_nc: raw ?? null });
   }
 })
 
