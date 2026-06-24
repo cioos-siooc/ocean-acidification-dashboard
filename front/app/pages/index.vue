@@ -605,6 +605,7 @@ async function getTimeseriesPromises(lat: number, lon: number) {
         lat, lon,
         () => getTimeseriesFromApi(lat, lon, fromDate, toDate),
         // () => getClimateTimeseries(lat, lon, fromDate, toDate),
+        () => Promise.resolve(null),
         () => mainStore.selectedSensor && mainStore.selectedSensor.id
             ? getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selectedSensor.depth)
             : Promise.resolve(null)
