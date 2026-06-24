@@ -1,255 +1,144 @@
 #!/usr/bin/env python3
 """extractMinMax.py
 
-Extract min and max values from a NetCDF variable at a specific datetime and depth.
+Compute the min/max of a variable over the visible map area from ClickHouse,
+for the "auto-range colorbar" feature — restricted to a lat/lon bounding box,
+a single time, and a single depth level.
 
-This module finds the appropriate NC file based on the provided datetime, opens it,
-and computes min/max statistics for the specified variable at the given depth level.
-
+Examples:
+  python modules/extractMinMax.py --var temperature --dt 2026-01-17T00:30:00 \
+      --depth 0.5 --north 50 --south 48 --east -122 --west -124
 """
 from __future__ import annotations
-import os
-from glob import glob
-from typing import Optional, Tuple
+
+import argparse
 from datetime import datetime
-import logging
-import sys
+from typing import Optional, Tuple
 
-import numpy as np
-import xarray as xr
-import pandas as pd
-import psycopg2
-from nc_reader import open_nc_uncached, close_nc
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-# Ensure logger has a handler (subprocess doesn't inherit parent handlers)
-if not logger.handlers:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
-TIME_CANDIDATES = ("time",)
-DEPTH_CANDIDATES = ("depth", "lev", "level", "z", "deptht", "depthu", "depths")
-
-
-def find_variable(ds: xr.Dataset, name: str) -> xr.DataArray:
-    """Find variable by name (case-insensitive)."""
-    if name in ds:
-        return ds[name]
-    low = name.lower()
-    for k in ds.data_vars:
-        if k.lower() == low:
-            return ds[k]
-    raise KeyError(f"Variable '{name}' not found in dataset")
-
-
-def find_dimension(var: xr.DataArray, candidates: tuple) -> Optional[str]:
-    """Find first matching dimension from candidates."""
-    for dim in var.dims:
-        if dim.lower() in candidates:
-            return dim
-    return None
-
-
-def find_nc_file_for_date(data_dir, variable: str, dt: datetime, *, suffix: str = "") -> Optional[str]:
-    """Find NC file for the given date. Accepts a single directory or list of directories."""
-    from modules.nc_finder import find_nc_file
-    return find_nc_file(data_dir, variable, dt, suffix=suffix)
-
-
-def query_grid_points_in_bounds(conn, table: str, north: float, south: float, east: float, west: float) -> Tuple[np.ndarray, np.ndarray]:
-    """Query the database for all grid points within lat/lon bounds.
-    
-    Returns:
-        (row_indices, col_indices) arrays of all matching grid points
-    """
-    # Use PostGIS to find all points within the bounding box
-    sql = f"""
-        SELECT row_idx, col_idx FROM {table}
-        WHERE lat >= %s AND lat <= %s AND lon >= %s AND lon <= %s
-        ORDER BY row_idx, col_idx
-    """
-    with conn.cursor() as cur:
-        cur.execute(sql, (south, north, west, east))
-        rows = cur.fetchall()
-    
-    if not rows:
-        return np.array([], dtype=int), np.array([], dtype=int)
-    
-    row_indices = np.array([r[0] for r in rows], dtype=int)
-    col_indices = np.array([r[1] for r in rows], dtype=int)
-    return row_indices, col_indices
+from modules.clickhouse_helpers import get_ch_client
+from modules.extractTimeseries import (
+    ALLOWED_VARIABLES,
+    DATA_TABLE_BY_SOURCE,
+    DEPTH_MATCH_TOLERANCE_M,
+    GRID_TABLE_BY_SOURCE,
+)
 
 
 def extract_minmax(
-    data_dir: str,
-    variable: str,
+    *,
+    source: str,
+    var: str,
     dt: datetime,
     depth: Optional[float] = None,
     north: Optional[float] = None,
     south: Optional[float] = None,
     east: Optional[float] = None,
     west: Optional[float] = None,
-    db_host: str = "db",
-    db_port: int = 5432,
-    db_user: str = "postgres",
-    db_password: str = "postgres",
-    db_name: str = "oa",
-    db_table: str = "grid"
 ) -> Tuple[float, float]:
-    """Extract min and max for a variable at a specific datetime and depth.
-    
-    Args:
-        data_dir: Root directory containing variable subdirs (e.g., /opt/data/nc)
-        variable: Variable name (e.g., 'temperature', 'ph_total')
-        dt: Datetime to extract (used to find appropriate NC file)
-        depth: Depth level (optional; if None, uses surface or first available)
-        north: Northern latitude bound (optional)
-        south: Southern latitude bound (optional)
-        east: Eastern longitude bound (optional)
-        west: Western longitude bound (optional)
-    
-    Returns:
-        (min_value, max_value) tuple
-    
-    Raises:
-        FileNotFoundError: If no NC file found for the date
-        ValueError: If variable not found in dataset
-    """
-    # For depth=-1 (bottom layer), redirect to the pre-extracted bottom NC file
-    if depth is not None and float(depth) == -1.0:
-        nc_file = find_nc_file_for_date(data_dir, variable, dt, suffix="_bottom")
-        if not nc_file:
-            raise FileNotFoundError(f"No bottom NC file found for {variable} on {dt.strftime('%Y-%m-%d')}")
-        depth = None  # bottom file has no depth dimension
-    else:
-        nc_file = find_nc_file_for_date(data_dir, variable, dt)
-        if not nc_file:
-            raise FileNotFoundError(f"No NC file found for {variable} on {dt.strftime('%Y-%m-%d')}")
+    """Return (min, max) for `var` at `dt`, restricted to the lat/lon bbox if given.
 
-    logger.debug(f"Loading NC file: {nc_file}")
-    logger.debug(f"Bounds: north={north}, south={south}, east={east}, west={west}")
-    logger.debug(f"Variable: {variable}, DateTime: {dt}, Depth: {depth}")
-    
-    # If bounds are provided, query the database for grid points
-    row_indices = None
-    col_indices = None
-    if north is not None and south is not None and east is not None and west is not None:
-        try:
-            conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password)
-            row_indices, col_indices = query_grid_points_in_bounds(conn, db_table, north, south, east, west)
-            conn.close()
-            logger.info(f"Found {len(row_indices)} grid points within bounds [S:{south:.4f}, N:{north:.4f}, W:{west:.4f}, E:{east:.4f}]")
-        except Exception as e:
-            logger.warning(f"Could not query database for bounds: {e}")
-            row_indices = None
-            col_indices = None
-    
-    # Open dataset (thread-safe via xarray independent instances)
-    ds = open_nc_uncached(nc_file)
-    
+    `depth=None` uses each grid cell's shallowest available level; `depth=-1`
+    uses each grid cell's deepest (bottom) level — both vary per cell due to
+    bathymetry, so they're resolved per-cell with argMin/argMax rather than a
+    fixed depth filter. Any other depth value is expected to be one of the
+    canonical native sigma levels (as returned by /variables) and is matched
+    within DEPTH_MATCH_TOLERANCE_M — native levels are stored as Float32, so
+    a value nominally "14.6" round-trips as 14.600000381469727, which would
+    never satisfy a strict equality match against the Float64 literal from
+    the request (see extractTimeseries.py's _resolve_depth, same issue). A
+    depth that doesn't exist at any cell in the area still means no data.
+
+    Raises RuntimeError if no data matches.
+    """
+    if source not in DATA_TABLE_BY_SOURCE:
+        raise RuntimeError(
+            f"Source '{source}' is not yet available via ClickHouse. "
+            f"Supported sources: {sorted(DATA_TABLE_BY_SOURCE)}"
+        )
+    if var not in ALLOWED_VARIABLES:
+        raise ValueError(f"Unknown variable '{var}'. Supported variables: {sorted(ALLOWED_VARIABLES)}")
+
+    table = DATA_TABLE_BY_SOURCE[source]
+    grid_table = GRID_TABLE_BY_SOURCE[source]
+    has_bounds = None not in (north, south, east, west)
+
+    client = get_ch_client()
     try:
-        # Find the variable
-        var = find_variable(ds, variable)
-        
-        # Find dimensions
-        time_dim = find_dimension(var, TIME_CANDIDATES)
-        depth_dim = find_dimension(var, DEPTH_CANDIDATES)
-        
-        # Select time slice if variable has time dimension
-        if time_dim:
-            # Find the closest time in the file to the requested datetime
-            times = ds[time_dim].values
-            
-            # Convert xarray times to Python datetime objects using pandas
-            try:
-                times_pd = pd.to_datetime(times)
-                times_dt = times_pd.to_pydatetime()
-            except Exception:
-                # Fallback: try to use the times directly if they're already datetime-like
-                try:
-                    times_dt = np.array([np.datetime64(t).astype('datetime64[ns]').astype('O') for t in times], dtype=object)
-                except Exception:
-                    # If all else fails, use the first time
-                    time_idx = 0
-                    times_dt = None
-            
-            if times_dt is not None:
-                # Find closest time to the requested datetime
-                diffs = np.array([(pd.Timestamp(t) - pd.Timestamp(dt)).total_seconds() for t in times_dt])
-                time_idx = int(np.argmin(np.abs(diffs)))
-            
-            var = var.isel({time_dim: time_idx})
-        
-        # Select depth slice if variable has depth dimension
-        if depth_dim and depth is not None:
-            depths = ds[depth_dim].values
-            depth_idx = int(np.argmin(np.abs(depths - depth)))
-            var = var.isel({depth_dim: depth_idx})
-        elif depth_dim:
-            # Use first (shallowest) depth level
-            var = var.isel({depth_dim: 0})
-        
-        # Now var should be purely spatial (2D grid with gridY and gridX dimensions)
-        # If we have row/col indices from database bounds query, use them
-        if row_indices is not None and col_indices is not None and len(row_indices) > 0:
-            # Find gridY and gridX dimensions (handles both SSC and LiveOcean naming)
-            grid_y_dim = None
-            grid_x_dim = None
-            for dim in var.dims:
-                if dim.lower() in ('gridy', 'y', 'eta', 'eta_rho'):
-                    grid_y_dim = dim
-                elif dim.lower() in ('gridx', 'x', 'xi', 'xi_rho'):
-                    grid_x_dim = dim
-            
-            if grid_y_dim and grid_x_dim:
-                # Keep unique indices and sort them for proper selection
-                unique_rows = np.unique(row_indices)
-                unique_cols = np.unique(col_indices)
-                logger.info(f"Selecting region: {grid_y_dim}[{len(unique_rows)}] x {grid_x_dim}[{len(unique_cols)}]")
-                # Select only the grid points that fall within the bounds
-                var = var.isel({grid_y_dim: unique_rows, grid_x_dim: unique_cols})
-                logger.info(f"Selected region: {var.shape} = {var.size:,} values (was {var.shape[0]*var.shape[1]:,})")
-            else:
-                logger.warning(f"Could not find gridY/gridX dimensions. Available: {var.dims}")
+        params: dict = {"dt": dt}
+        where = ["time = %(dt)s"]
+
+        if has_bounds:
+            # Filter via a subquery against the (small) grid table rather than
+            # pulling matching (gridX, gridY) pairs into Python and re-sending
+            # them as a literal IN-list — for a wide visible-area bbox that
+            # list can be tens of thousands of tuples, large enough to blow
+            # past ClickHouse's max_query_size (256KB) once inlined as SQL text.
+            where.append(f"""(gridX, gridY) IN (
+                SELECT gridX, gridY FROM {grid_table}
+                WHERE latitude BETWEEN %(south)s AND %(north)s
+                  AND longitude BETWEEN %(west)s AND %(east)s
+            )""")
+            params.update({"south": south, "north": north, "west": west, "east": east})
+
+        if depth is None or float(depth) == -1.0:
+            agg = "argMin" if depth is None else "argMax"
+            query = f"""
+                SELECT min(value) AS min_val, max(value) AS max_val, count() AS cnt
+                FROM (
+                    SELECT {agg}({var}, depth) AS value
+                    FROM {table}
+                    WHERE {' AND '.join(where)}
+                    GROUP BY gridX, gridY
+                )
+            """
         else:
-            logger.info("No bounds provided or no grid points found in bounds - using full global data")
-        
-        # Compute min/max across all valid (finite) values
-        arr = var.values
-        fin = np.isfinite(arr)
-        
-        if fin.sum() == 0:
-            # All NaN data
-            min_val = 0.0
-            max_val = 1.0
-            logger.warning(f"No valid data found in selected region")
-        else:
-            # For min: exclude zeros to get meaningful minimum
-            nonzero_fin = fin & (arr != 0)
-            if nonzero_fin.sum() > 0:
-                min_val = float(np.min(arr[nonzero_fin]))
-            else:
-                # All finite values are zero
-                min_val = 0.0
-            
-            max_val = float(np.max(arr[fin]))
-        
-        logger.info(f"Result: min={min_val:.4f}, max={max_val:.4f} (from {fin.sum()} valid values, {nonzero_fin.sum() if fin.sum() > 0 else 0} non-zero)")
-        return min_val, max_val
-    
+            params["depth"] = float(depth)
+            params["depth_tol"] = DEPTH_MATCH_TOLERANCE_M
+            where.append("abs(depth - %(depth)s) <= %(depth_tol)s")
+            query = f"SELECT min({var}) AS min_val, max({var}) AS max_val, count() AS cnt FROM {table} WHERE {' AND '.join(where)}"
+
+        result = client.query(query, parameters=params)
+        min_val, max_val, cnt = result.result_rows[0]
+        # ClickHouse's min()/max() return the column type's default (0 for
+        # Float32, not NULL) when zero rows match — count() is the only
+        # reliable way to tell "no data" apart from a genuine value of 0.
+        if cnt == 0:
+            raise RuntimeError(
+                f"No data available for {var} at {dt.isoformat()}"
+                + (f", depth {depth}m" if depth is not None else "")
+                + " in the visible area."
+            )
+        return float(min_val), float(max_val)
     finally:
-        close_nc(nc_file)
+        client.close()
+
+
+def main(argv: Optional[list] = None) -> int:
+    p = argparse.ArgumentParser(description="Compute min/max for a variable over an area from ClickHouse")
+    p.add_argument("--source", default="SalishSeaCast", choices=sorted(DATA_TABLE_BY_SOURCE), help="Data source")
+    p.add_argument("--var", "-v", required=True, choices=sorted(ALLOWED_VARIABLES), help="Variable name")
+    p.add_argument("--dt", required=True, help="Datetime (ISO-8601)")
+    p.add_argument("--depth", type=float, default=None, help="Depth value (-1 for bottom); omit for shallowest")
+    p.add_argument("--north", type=float, default=None)
+    p.add_argument("--south", type=float, default=None)
+    p.add_argument("--east", type=float, default=None)
+    p.add_argument("--west", type=float, default=None)
+
+    args = p.parse_args(argv)
+
+    min_val, max_val = extract_minmax(
+        source=args.source,
+        var=args.var,
+        dt=datetime.fromisoformat(args.dt),
+        depth=args.depth,
+        north=args.north,
+        south=args.south,
+        east=args.east,
+        west=args.west,
+    )
+    print(f"min={min_val}, max={max_val}")
+    return 0
 
 
 if __name__ == "__main__":
-    from datetime import datetime
-    
-    # Example usage
-    data_dir = "/opt/data/nc"
-    min_val, max_val = extract_minmax(data_dir, "temperature", datetime(2026, 1, 17), depth=0.5)
-    print(f"Temperature range: {min_val:.2f} to {max_val:.2f}")
+    raise SystemExit(main())

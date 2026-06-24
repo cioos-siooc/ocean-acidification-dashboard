@@ -1105,6 +1105,8 @@ async function autorange() {
             west: west
         });
 
+        console.log(response.data);
+
         if (response.data && response.data.min !== null && response.data.max !== null) {
             let minVal = response.data.min;
             let maxVal = response.data.max;

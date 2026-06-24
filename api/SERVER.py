@@ -818,54 +818,40 @@ async def fn_get_minmax(request: minmaxRequest):
 
     try:
         from datetime import datetime
-        
+
         source = request.source
         var = request.var
-        depth = request.depth
-        dt_str = request.dt
-        
-        # Parse datetime string (ISO format: YYYY-MM-DDTHH:mm:ss)
-        dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
-        
-        # Get data directory from environment
-        data_dir = _get_nc_data_dirs(source)
-        if data_dir is None:
-            logger.error(f"Unsupported source: {source}")
-            raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
-        
+
         if source != "SalishSeaCast":
             logger.error(f"Unsupported source: {source}")
             raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
-        db_gridTable = "grid"
 
-        # Extract bounds if provided
-        north = request.north
-        south = request.south
-        east = request.east
-        west = request.west
-        
-        # Extract min/max with database connection for bounds mapping
+        # Parse datetime string (ISO format: YYYY-MM-DDTHH:mm:ss)
+        dt = datetime.fromisoformat(request.dt.replace('Z', '+00:00'))
+
         min_val, max_val = await asyncio.wait_for(
             run_in_process(extract_minmax,
-                data_dir=data_dir,
-                variable=var,
+                source=source,
+                var=var,
                 dt=dt,
-                depth=depth,
-                north=north,
-                south=south,
-                east=east,
-                west=west,
-                db_host=db_host,
-                db_port=db_port,
-                db_user=db_user,
-                db_password=db_password,
-                db_name=db_name,
-                db_table=db_gridTable),
+                depth=request.depth,
+                north=request.north,
+                south=request.south,
+                east=request.east,
+                west=request.west),
             timeout=THREADPOOL_TIMEOUT,
         )
-        
+
         logger.info(f"FINISH getMinMax: source={request.source}, var={request.var}, range=[{min_val}, {max_val}]")
         return {"min": min_val, "max": max_val}
+    except HTTPException:
+        raise
+    except RuntimeError as exc:
+        if "No data available for" in str(exc):
+            logger.warning(f"No data for getMinMax: {exc}")
+            raise HTTPException(status_code=400, detail=str(exc))
+        logger.exception("getMinMax failed with RuntimeError")
+        raise HTTPException(status_code=500, detail=str(exc))
     except Exception as exc:
         logger.exception("getMinMax failed")
         raise HTTPException(status_code=500, detail=str(exc))
