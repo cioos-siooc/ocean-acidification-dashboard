@@ -272,6 +272,36 @@ def promote_all_to_pending_sync(client, date_val: date) -> None:
     _promote_all_variables(client, date_val, STATUS_PENDING_SYNC)
 
 
+def check_image_ready_for_date(client, date_val: date) -> bool:
+    """Single-date variant of check_image_ready: promote date_val to pending_image
+    if all 8 variables have reached their stage's success state. Returns True if
+    promoted, False if not yet ready (a no-op, safe to call repeatedly)."""
+    result = client.query(
+        f"""
+        SELECT COUNT(DISTINCT variable)
+        FROM SalishSeaCast_status FINAL
+        WHERE date = %(d)s
+          AND (
+                (variable IN ('{"', '".join(DOWNLOAD_VARIABLES)}') AND status = '{STATUS_SUCCESS_DOWNLOAD}')
+             OR (variable IN ('{"', '".join(COMPUTE_VARIABLES)}') AND status = '{STATUS_SUCCESS_COMPUTE}')
+          )
+        """,
+        parameters={'d': date_val},
+    )
+    if int(result.result_rows[0][0]) != len(ALL_VARIABLES):
+        return False
+    paths_result = client.query(
+        "SELECT variable, nc_path FROM SalishSeaCast_status FINAL WHERE date = %(d)s",
+        parameters={'d': date_val},
+    )
+    paths = {r[0]: r[1] for r in paths_result.result_rows}
+    for var in ALL_VARIABLES:
+        promote_to_pending_image(client, date_val, var, nc_path=paths.get(var, ''))
+    logger.info('check_image: %s ready — promoted all %d variables to %s',
+                date_val, len(ALL_VARIABLES), STATUS_PENDING_IMAGE)
+    return True
+
+
 def check_image_ready(client, limit: int = 20) -> int:
     """Find dates where ALL 8 variables have reached their stage's success state
     (5 download vars at success_download, 3 compute vars at success_compute) and
@@ -298,16 +328,8 @@ def check_image_ready(client, limit: int = 20) -> int:
     )
     promoted = 0
     for (date_val,) in result.result_rows:
-        paths_result = client.query(
-            "SELECT variable, nc_path FROM SalishSeaCast_status FINAL WHERE date = %(d)s",
-            parameters={'d': date_val},
-        )
-        paths = {r[0]: r[1] for r in paths_result.result_rows}
-        for var in ALL_VARIABLES:
-            promote_to_pending_image(client, date_val, var, nc_path=paths.get(var, ''))
-        logger.info('check_image: %s ready — promoted all %d variables to %s',
-                    date_val, len(ALL_VARIABLES), STATUS_PENDING_IMAGE)
-        promoted += len(ALL_VARIABLES)
+        if check_image_ready_for_date(client, date_val):
+            promoted += len(ALL_VARIABLES)
     return promoted
 
 
@@ -343,6 +365,24 @@ def promote_ready_dates(client, limit: int = 20) -> int:
     promoted = _promote_dates_at_status(client, STATUS_SUCCESS_IMAGE, STATUS_PENDING_INGEST, limit)
     promoted += _promote_dates_at_status(client, STATUS_SUCCESS_INGEST, STATUS_PENDING_SYNC, limit)
     return promoted
+
+
+def promote_date_if_ready(client, date_val: date) -> Optional[str]:
+    """Single-date variant of promote_ready_dates: promote date_val if fully
+    imaged (-> pending_ingest) or fully ingested (-> pending_sync). Returns the
+    new status if promoted, else None."""
+    for from_status, to_status in (
+        (STATUS_SUCCESS_IMAGE, STATUS_PENDING_INGEST),
+        (STATUS_SUCCESS_INGEST, STATUS_PENDING_SYNC),
+    ):
+        result = client.query(
+            "SELECT COUNT(DISTINCT variable) FROM SalishSeaCast_status FINAL WHERE date = %(d)s AND status = %(s)s",
+            parameters={'d': date_val, 's': from_status},
+        )
+        if int(result.result_rows[0][0]) == len(ALL_VARIABLES):
+            _promote_all_variables(client, date_val, to_status)
+            return to_status
+    return None
 
 
 # ---------------------------------------------------------------------------
