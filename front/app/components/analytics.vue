@@ -76,8 +76,8 @@
         <div v-else-if="!hasActivePlot && !isGenerating && !plotErrorMessage"
           class="d-flex flex-column align-center justify-center h-100 text-center px-6">
           <v-icon size="56" color="grey-darken-1">mdi-poll</v-icon>
-          <div class="text-caption text-grey-darken-1 mt-2">Configure options on the left, then click Run
-            Analysis</div>
+          <div class="text-caption text-grey-darken-1 mt-2">Select a point on the map — analysis loads
+            automatically</div>
         </div>
       </div>
     </div>
@@ -129,7 +129,7 @@
           </template>
         </v-data-table>
         <div v-else class="text-caption text-grey text-center mt-6">
-          Run analysis to see per-year stats
+          Per-year stats appear once analysis loads
         </div>
       </div>
     </div>
@@ -148,6 +148,10 @@ import { useMainStore } from '../stores/main'
 const config = useRuntimeConfig()
 const apiBaseUrl = config.public.apiBaseUrl
 const mainStore = useMainStore()
+
+// Only fetch while the Analysis Builder tab is actually visible — the parent
+// page keeps this component mounted (v-show) even when another tab is shown.
+const props = defineProps<{ active?: boolean }>()
 
 // --- STORE-DERIVED STATE ---
 const variable = computed(() => mainStore.selected_variable.var)
@@ -188,6 +192,11 @@ const thresholdDirection = ref('>')
 const isGenerating = ref(false)
 const hasActivePlot = ref(false)
 const plotErrorMessage = ref<string | null>(null)
+
+let autoRunTimer: ReturnType<typeof setTimeout> | null = null
+let activeRequestId = 0
+let lastFetchSignature: string | null = null
+let analysisRequestController: AbortController | null = null
 
 const chartContainerRef = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
@@ -605,6 +614,15 @@ watch(selectedSeason, () => {
   reRenderChart()
 })
 
+// Auto-fetch on point/area, variable, or depth change — but only while this tab is visible.
+// primaryStat is intentionally excluded: switching Min/Mean/Max stays manual via the Run button.
+watch([lastClicked, variable, depth, queryMode], scheduleAutoRun)
+
+// Switching into this tab fetches fresh data for whatever changed while it was hidden.
+watch(() => props.active, (active: boolean | undefined) => {
+  if (active) scheduleAutoRun()
+})
+
 let resizeObserver: ResizeObserver | null = null
 watch(chartContainerRef, (el) => {
   if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null }
@@ -640,12 +658,33 @@ async function fetchRegionTimeseries(): Promise<SeriesPoint[]> {
   const location = queryMode.value === 'area'
     ? { polygon: polygonFromClick.value }
     : { lat: pt.lat, lon: pt.lng }
-  const response = await axios.post(`https://oa-api2.cioospacificlabs.ca/analysis/timeseries`, { ...base, ...location })
+  // Abort any in-flight request so a stale response can't clobber a newer one
+  if (analysisRequestController) analysisRequestController.abort()
+  analysisRequestController = new AbortController()
+  const response = await axios.post(`https://oa-api2.cioospacificlabs.ca/analysis/timeseries`, { ...base, ...location }, { signal: analysisRequestController.signal })
   return response.data?.data || []
 }
 
 // --- ACTIONS ---
+// Identifies the inputs that should trigger an automatic refetch (point/area, variable, depth).
+// Deliberately excludes primaryStat — switching Min/Mean/Max stays manual via the Run button.
+function currentSignature(): string {
+  const pt = lastClicked.value
+  return JSON.stringify({ lat: pt?.lat, lng: pt?.lng, mode: queryMode.value, variable: variable.value, depth: depth.value })
+}
+
+function scheduleAutoRun() {
+  if (!props.active) return
+  if (!lastClicked.value || !variable.value || depth.value == null) return
+  const sig = currentSignature()
+  if (sig === lastFetchSignature) return
+  if (autoRunTimer) clearTimeout(autoRunTimer)
+  autoRunTimer = setTimeout(runAnalysis, 300)
+}
+
 const runAnalysis = async () => {
+  const requestId = ++activeRequestId
+  lastFetchSignature = currentSignature()
   plotErrorMessage.value = null
   isGenerating.value = true
   // Keep hasActivePlot as-is so old chart remains visible (greyscaled) while fetching
@@ -654,6 +693,7 @@ const runAnalysis = async () => {
 
   try {
     const rawData = await fetchRegionTimeseries()
+    if (requestId !== activeRequestId) return // superseded by a newer request
     rawAllData.value = rawData
     rawSeasonalData.value = filterBySeason(rawData, selectedSeason.value)
 
@@ -670,10 +710,11 @@ const runAnalysis = async () => {
       resolve()
     }, 100))
   } catch (error: any) {
+    if (requestId !== activeRequestId || error?.code === 'ERR_CANCELED') return
     plotErrorMessage.value = error?.response?.data?.detail || error?.message || 'Failed to generate analysis.'
     hasActivePlot.value = false
   } finally {
-    isGenerating.value = false
+    if (requestId === activeRequestId) isGenerating.value = false
   }
 }
 

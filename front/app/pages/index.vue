@@ -104,7 +104,7 @@
 
                     <!-- Analysis Builder tab -->
                     <div v-show="activeTab === 'analysis'" style="height:100%;">
-                        <Analytics />
+                        <Analytics :active="activeTab === 'analysis'" />
                     </div>
                 </div>
 
@@ -353,32 +353,35 @@ watch(() => [mainStore.selected_variable.source, mainStore.selected_variable.var
         mapLoaded.value = true;
 
         // If the user previously clicked a point, refresh the timeseries chart for the new var/depth
+        // (only while the Timeseries tab is the one being viewed — Analysis Builder has its own fetch)
         if (lastClicked.value && v !== 'bathymetry') {  // Skip API call for bathymetry
-            try {
-                // debounce rapid var/depth changes to avoid hammering the API
-                if (tsRefreshTimer) clearTimeout(tsRefreshTimer);
-                // Skip if a sensor click is already handling the fetch via lastClickedMapPoint watcher
-                if (_sensorClickPending) return;
-                tsRefreshTimer = setTimeout(async () => {
-                    try {
-                        const lat = lastClicked.value!.lat;
-                        const lon = lastClicked.value!.lng;
-                        const varName = mainStore.selected_variable.var;
+            if (activeTab.value === 'timeseries') {
+                try {
+                    // debounce rapid var/depth changes to avoid hammering the API
+                    if (tsRefreshTimer) clearTimeout(tsRefreshTimer);
+                    // Skip if a sensor click is already handling the fetch via lastClickedMapPoint watcher
+                    if (_sensorClickPending) return;
+                    tsRefreshTimer = setTimeout(async () => {
+                        try {
+                            const lat = lastClicked.value!.lat;
+                            const lon = lastClicked.value!.lng;
+                            const varName = mainStore.selected_variable.var;
 
-                        // abort previous request if any
-                        try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-                        tsRequestController = new AbortController();
+                            // abort previous request if any
+                            try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
+                            tsRequestController = new AbortController();
 
-                        getTimeseriesPromises(lat, lon);
-                    } catch (e) {
-                        if (e && e.code === 'ERR_CANCELED') return; // aborted
-                        console.warn('Failed to refresh timeseries after var/depth change', e);
-                    } finally {
-                        tsRequestController = null;
-                    }
-                }, 300);
-            } catch (e) {
-                console.warn('Failed to schedule timeseries refresh after var/depth change', e);
+                            getTimeseriesPromises(lat, lon);
+                        } catch (e) {
+                            if (e && e.code === 'ERR_CANCELED') return; // aborted
+                            console.warn('Failed to refresh timeseries after var/depth change', e);
+                        } finally {
+                            tsRequestController = null;
+                        }
+                    }, 300);
+                } catch (e) {
+                    console.warn('Failed to schedule timeseries refresh after var/depth change', e);
+                }
             }
         } else
             maybeInitClick();
@@ -700,7 +703,7 @@ function clickSensor(sensor_id: number, depth: number[]) {
     } else {
         // Sensor not in store — fall back to current point
         const pt = lastClicked.value;
-        if (pt) getTimeseriesPromises(pt.lat, pt.lng);
+        if (pt && activeTab.value === 'timeseries') getTimeseriesPromises(pt.lat, pt.lng);
     }
     // Clear after this tick — the var/depth watcher has already seen the flag.
     nextTick(() => { _sensorClickPending = false; });
@@ -875,6 +878,9 @@ async function trigger_mapClick(lat: number, lng: number) {
         const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map);
         (map as any).__clickMarker = marker;
     }
+
+    // Only the Timeseries tab needs hourly data fetched on point/area change.
+    if (activeTab.value !== 'timeseries') return;
 
     // Abort any in-flight timeseries requests and create a new controller
     try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
@@ -1171,6 +1177,14 @@ watch([lastClicked, activeTab], updateAnalysisBox)
 watch(() => mainStore.queryMode, () => {
     updateAnalysisBox()
     if (lastClicked.value) trigger_mapClick(lastClicked.value.lat, lastClicked.value.lng)
+})
+
+// Switching into the Timeseries tab fetches fresh data for the current point/var/depth,
+// since updates while that tab was hidden are never fetched (see activeTab gating above).
+watch(activeTab, (tab) => {
+    if (tab === 'timeseries' && lastClicked.value) {
+        trigger_mapClick(lastClicked.value.lat, lastClicked.value.lng)
+    }
 })
 
 // Abort controller for ongoing timeseries requests and debounce timer
