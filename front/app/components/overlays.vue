@@ -17,6 +17,12 @@
         <IconsContour />
       </v-btn>
 
+      <!-- CURSOR COORDINATES -->
+      <v-btn icon size="20px" flat :variant="showCursorCoords ? 'elevated' : 'text'"
+        @click="mainStore.setShowCursorCoords(!showCursorCoords)" title="Cursor Coordinates" class="ma-2">
+        <v-icon size="16px">{{ showCursorCoords ? 'mdi-cursor-default' : 'mdi-cursor-default-outline' }}</v-icon>
+      </v-btn>
+
       <!-- VERTICAL PROFILE -->
       <v-btn icon size="20px" flat @click="toggleVerticalProfile" title="Vertical Profile" class="ma-2">
         <IconsProfile />
@@ -76,6 +82,8 @@ const showColorbarSettings = computed({
 const selectedVariableName = computed(() => mainStore.selected_variable.var);
 
 const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
+
+const showCursorCoords = computed(() => mainStore.showCursorCoords);
 
 const isControlPanelOpen = computed(() => mainStore.isControlPanelOpen);
 

@@ -20,7 +20,7 @@
         <!-- <div class="d-flex flex-column h-screen overflow-hidden"> -->
         <!-- Top: Map -->
         <div ref="mapContainer" class="flex-grow-1"
-            :style="{ position: 'relative', height: `calc(100% - ${activeFooterHeight})` }">
+            :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }">
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
             <Overlays @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
@@ -73,26 +73,32 @@
                 <ColormapBar class="ma-2" />
             </div>
 
+            <!-- Cursor coordinate readout, follows the mouse over the map -->
+            <div v-if="mainStore.showCursorCoords && mouseCoords.visible" class="cursor-coord-label"
+                :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }">
+                {{ mouseCoords.lat?.toFixed(5) }}, {{ mouseCoords.lng?.toFixed(5) }}
+            </div>
 
         </div>
 
         <!-- Bottom: Global Chart Footer -->
-        <v-footer class="ma-0 pa-0" :style="{ height: activeFooterHeight, maxHeight: activeFooterHeight }">
-            <v-container minWidth="100%" class="ma-0 pa-0 d-flex flex-column" :style="{ height: activeFooterHeight }">
+        <v-footer class="ma-0 pa-0" :style="{ height: footerHeight, maxHeight: footerHeight }">
+            <div class="d-flex" :style="{ width: '100%', height: footerHeight }">
 
-                <!-- Tab bar -->
-                <v-tabs v-model="activeTab" density="compact" height="28" bg-color="transparent" class="footer-tabs flex-shrink-0">
-                    <v-tab value="timeseries" prepend-icon="mdi-chart-line" size="small">Timeseries</v-tab>
-                    <v-tab value="analysis" prepend-icon="mdi-poll" size="small">Analysis Builder</v-tab>
-                    <v-spacer />
-                    <div class="d-flex align-center px-2 text-label-small" style="font-size:0.72rem; opacity:0.6;">
-                        <v-icon size="12px" class="mx-1">mdi-cursor-default-outline</v-icon>
-                        {{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5) }}
+                <!-- Vertical tab rail -->
+                <div class="footer-rail d-flex flex-column flex-shrink-0">
+                    <div class="footer-rail-track">
+                        <div class="footer-rail-pill" :style="{ transform: `translateY(${railIndex * 100}%)` }"></div>
+                        <button v-for="t in footerTabs" :key="t.value" type="button" class="footer-rail-item"
+                            :class="{ active: activeTab === t.value }" @click="activeTab = t.value">
+                            <v-icon size="16">{{ t.icon }}</v-icon>
+                            <span>{{ t.label }}</span>
+                        </button>
                     </div>
-                </v-tabs>
+                </div>
 
                 <!-- Content area -->
-                <div class="flex-grow-1" style="min-height:0; overflow:hidden;">
+                <div class="flex-grow-1" style="min-width:0; height:100%; overflow:hidden;">
                     <!-- Timeseries tab -->
                     <div v-show="activeTab === 'timeseries'" style="height:100%; position:relative;">
                         <TimeControls
@@ -102,13 +108,13 @@
                         <TimeseriesChart ref="timeseriesChart" style="width:100%; height:calc(100% - 32px);" />
                     </div>
 
-                    <!-- Analysis Builder tab -->
+                    <!-- Historical tab -->
                     <div v-show="activeTab === 'analysis'" style="height:100%;">
                         <Analytics :active="activeTab === 'analysis'" />
                     </div>
                 </div>
 
-            </v-container>
+            </div>
 
             <!-- Dialog component for monthly chart -->
             <EchartsLineDialog />
@@ -162,11 +168,15 @@ let map: mapboxgl.Map | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
 const activeTab = ref<'timeseries' | 'analysis'>('timeseries');
+const footerTabs = [
+    { value: 'timeseries', icon: 'mdi-chart-line', label: 'Timeseries' },
+    { value: 'analysis', icon: 'mdi-poll', label: 'Historical' },
+] as const;
+const railIndex = computed(() => footerTabs.findIndex(t => t.value === activeTab.value));
 
 const isRectangleDrawing = ref(false);
 const drawnRectangle = ref<Feature<Polygon> | null>(null);
-const footerHeight = ref<string>('300px');
-const activeFooterHeight = computed(() => activeTab.value === 'analysis' ? '440px' : footerHeight.value);
+const footerHeight = ref<string>('440px');
 
 const sensorPicker = ref<{ visible: boolean; x: number; y: number; sensors: MultiSensorCandidate[] }>({
     visible: false,
@@ -178,7 +188,7 @@ const sensorPicker = ref<{ visible: boolean; x: number; y: number; sensors: Mult
 // [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
 const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, number]];
 
-const mouseCoords = ref<{ lng: number | null, lat: number | null }>({ lng: null, lat: null });
+const mouseCoords = ref<{ lng: number | null, lat: number | null, x: number, y: number, visible: boolean }>({ lng: null, lat: null, x: 0, y: 0, visible: false });
 
 const sensorData = ref<{ time: string, value: number }[]>([])
 
@@ -258,6 +268,12 @@ onMounted(async () => {
         map?.on('mousemove', (e) => {
             mouseCoords.value.lng = e.lngLat.lng;
             mouseCoords.value.lat = e.lngLat.lat;
+            mouseCoords.value.x = e.point.x;
+            mouseCoords.value.y = e.point.y;
+            mouseCoords.value.visible = true;
+        });
+        map?.getContainer().addEventListener('mouseleave', () => {
+            mouseCoords.value.visible = false;
         });
         // Fetch colormaps and variables in parallel
         Promise.all([init()]).catch((e) => console.warn('init failed:', e));
@@ -1206,12 +1222,73 @@ let _sensorClickPending = false;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
-.footer-tabs :deep(.v-tab) {
+.footer-rail {
+    width: 136px;
+    background: rgba(255, 255, 255, 0.03);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.footer-rail-track {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+}
+
+.footer-rail-pill {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    top: 6px;
+    height: 32px;
+    border-radius: 8px;
+    background: rgba(var(--v-theme-primary), 0.16);
+    transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 0;
+}
+
+.footer-rail-item {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 32px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
     font-size: 0.75rem;
     letter-spacing: 0;
-    text-transform: none;
-    min-width: 0;
-    padding: 0 12px;
+    opacity: 0.65;
+    cursor: pointer;
+    transition: opacity 150ms ease, color 150ms ease;
+}
+
+.footer-rail-item:hover {
+    opacity: 0.9;
+}
+
+.footer-rail-item.active {
+    opacity: 1;
+    font-weight: 600;
+    color: rgb(var(--v-theme-primary));
+}
+
+.cursor-coord-label {
+    position: absolute;
+    z-index: 998;
+    pointer-events: none;
+    transform: translate(-14px, 14px);
+    background: rgba(17, 17, 17, 0.85);
+    color: #fff;
+    font-family: "Roboto Mono", monospace;
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
 }
 </style>
 

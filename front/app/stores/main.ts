@@ -52,6 +52,8 @@ export const useMainStore = defineStore('main', {
         showClimatologyDialog: false,
 
         queryMode: 'point' as 'point' | 'area',
+
+        showCursorCoords: true,
     }),
 
     actions: {
@@ -68,6 +70,10 @@ export const useMainStore = defineStore('main', {
 
         setShowBathymetryContours(value: boolean) {
             this.showBathymetryContours = value;
+        },
+
+        setShowCursorCoords(value: boolean) {
+            this.showCursorCoords = value;
         },
 
         setColormaps(colormaps: Record<string, any>) {
