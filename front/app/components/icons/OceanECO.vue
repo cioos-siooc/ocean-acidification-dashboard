@@ -5,7 +5,7 @@
       <div ref="wordRef" style="opacity:0;font-family:'Space Grotesk',sans-serif;font-size:40px;letter-spacing:-0.8px;line-height:1;">
         <span style="color:#e9ebf2;font-weight:400;">Ocean</span><span style="font-weight:600;background:linear-gradient(90deg,#a72d8a,#e85362,#f98e3a,#fbd24a);-webkit-background-clip:text;background-clip:text;color:transparent;">ECO</span>
       </div>
-      <div ref="subRef" style="opacity:0;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:3px;color:#5a6172;text-transform:uppercase;">Ocean Environmental Conditions Monitoring</div>
+      <div ref="subRef" style="opacity:0;font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:3px;color:#5a6172;text-transform:uppercase;">Ocean Environmental Conditions Observer</div>
     </div>
   </div>
 </template>
