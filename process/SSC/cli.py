@@ -395,7 +395,7 @@ def main(argv=None) -> None:
 
     def _add_limit(p, default=10):
         p.add_argument('--limit', type=int, default=default, metavar='N',
-                       help=f'Max jobs per step (default {default})')
+                       help=f'Max jobs per step, 0 for unlimited (default {default})')
 
     def _add_workers(p, default=4):
         p.add_argument('--workers', type=int, default=default, metavar='N',

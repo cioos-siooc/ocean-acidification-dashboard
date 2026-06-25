@@ -55,6 +55,11 @@ def get_client() -> clickhouse_connect.driver.Client:
     )
 
 
+def _limit_sql(limit: int) -> str:
+    """Render a LIMIT clause. A limit of 0 means unlimited (clause omitted)."""
+    return f'LIMIT {int(limit)}' if limit else ''
+
+
 # ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
@@ -287,9 +292,9 @@ def check_image_ready(client, limit: int = 20) -> int:
         GROUP BY date
         HAVING COUNT(DISTINCT variable) = %(n)s
         ORDER BY date
-        LIMIT %(lim)s
+        {_limit_sql(limit)}
         """,
-        parameters={'n': len(ALL_VARIABLES), 'lim': limit},
+        parameters={'n': len(ALL_VARIABLES)},
     )
     promoted = 0
     for (date_val,) in result.result_rows:
@@ -310,16 +315,16 @@ def _promote_dates_at_status(client, from_status: str, to_status: str, limit: in
     """Find dates where all 8 variables are at from_status and promote them to
     to_status together. Returns the number of status rows promoted."""
     result = client.query(
-        """
+        f"""
         SELECT date
         FROM SalishSeaCast_status FINAL
         WHERE status = %(s)s
         GROUP BY date
         HAVING COUNT(DISTINCT variable) = %(n)s
         ORDER BY date
-        LIMIT %(lim)s
+        {_limit_sql(limit)}
         """,
-        parameters={'s': from_status, 'n': len(ALL_VARIABLES), 'lim': limit},
+        parameters={'s': from_status, 'n': len(ALL_VARIABLES)},
     )
     promoted = 0
     for (date_val,) in result.result_rows:
@@ -346,13 +351,13 @@ def promote_ready_dates(client, limit: int = 20) -> int:
 
 def get_pending_downloads(client, limit: int = 20) -> list[tuple[date, str]]:
     result = client.query(
-        """
+        f"""
         SELECT date, variable FROM SalishSeaCast_status FINAL
         WHERE status = %(s)s
         ORDER BY date, variable
-        LIMIT %(lim)s
+        {_limit_sql(limit)}
         """,
-        parameters={'s': STATUS_PENDING_DOWNLOAD, 'lim': limit},
+        parameters={'s': STATUS_PENDING_DOWNLOAD},
     )
     return [(r[0], r[1]) for r in result.result_rows]
 
@@ -374,12 +379,11 @@ def get_dates_pending_compute(client, limit: int = 10) -> list[date]:
               HAVING COUNT(DISTINCT variable) = %(ndl)s
           )
         ORDER BY date
-        LIMIT %(lim)s
+        {_limit_sql(limit)}
         """,
         parameters={
             's': STATUS_PENDING_COMPUTE,
             'ndl': len(DOWNLOAD_VARIABLES),
-            'lim': limit,
         },
     )
     return [r[0] for r in result.result_rows]
@@ -387,39 +391,39 @@ def get_dates_pending_compute(client, limit: int = 10) -> list[date]:
 
 def get_pending_images(client, limit: int = 40) -> list[tuple[date, str]]:
     result = client.query(
-        """
+        f"""
         SELECT date, variable FROM SalishSeaCast_status FINAL
         WHERE status = %(s)s
         ORDER BY date, variable
-        LIMIT %(lim)s
+        {_limit_sql(limit)}
         """,
-        parameters={'s': STATUS_PENDING_IMAGE, 'lim': limit},
+        parameters={'s': STATUS_PENDING_IMAGE},
     )
     return [(r[0], r[1]) for r in result.result_rows]
 
 
 def get_dates_pending_ingest(client, limit: int = 5) -> list[date]:
     result = client.query(
-        """
+        f"""
         SELECT DISTINCT date FROM SalishSeaCast_status FINAL
         WHERE status = %(s)s
         ORDER BY date
-        LIMIT %(lim)s
+        {_limit_sql(limit)}
         """,
-        parameters={'s': STATUS_PENDING_INGEST, 'lim': limit},
+        parameters={'s': STATUS_PENDING_INGEST},
     )
     return [r[0] for r in result.result_rows]
 
 
 def get_dates_pending_sync(client, limit: int = 5) -> list[date]:
     result = client.query(
-        """
+        f"""
         SELECT DISTINCT date FROM SalishSeaCast_status FINAL
         WHERE status = %(s)s
         ORDER BY date
-        LIMIT %(lim)s
+        {_limit_sql(limit)}
         """,
-        parameters={'s': STATUS_PENDING_SYNC, 'lim': limit},
+        parameters={'s': STATUS_PENDING_SYNC},
     )
     return [r[0] for r in result.result_rows]
 
