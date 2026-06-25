@@ -1,7 +1,15 @@
 <template>
   <v-card class="colorbar" width="40px">
     <v-col class="pa-0">
-      
+
+      <!-- TOGGLE NAVIGATION PANEL -->
+      <v-btn icon size="20px" flat :variant="isControlPanelOpen ? 'elevated' : 'text'"
+        @click="mainStore.toggleIsControlPanelOpen" title="Toggle Navigation Panel" class="ma-2">
+        <v-icon size="16px">{{ isControlPanelOpen ? 'mdi-menu-open' : 'mdi-menu' }}</v-icon>
+      </v-btn>
+
+      <v-divider></v-divider>
+
       <!-- BATHYMETRY CONTOURS -->
       <v-btn icon size="20px" flat :variant="showBathymetryContours ? 'elevated' : 'text'"
         :color="showBathymetryContours ? 'primary' : undefined"
@@ -68,6 +76,8 @@ const showColorbarSettings = computed({
 const selectedVariableName = computed(() => mainStore.selected_variable.var);
 
 const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
+
+const isControlPanelOpen = computed(() => mainStore.isControlPanelOpen);
 
 ////////////////////////////////////// METHODS //////////////////////////////////////
 

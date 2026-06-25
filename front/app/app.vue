@@ -1,17 +1,17 @@
 <template>
   <v-app theme="dark">
     <v-app-bar density="compact" class="px-5" app>
-      <!-- HAMBURGER MENU ICON -->
-      <template v-slot:prepend>
-        <v-app-bar-nav-icon @click="mainStore.toggleIsControlPanelOpen"></v-app-bar-nav-icon>
-      </template>
+      <div class="d-flex align-center" style="flex-shrink:0;">
+        <iconsOceanECOLogo :size="40" :loop="false" style="display:block;" />
+      </div>
 
       <v-app-bar-title>
         <span class="">OceanECO</span>
         <span class="text-label-medium mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
       </v-app-bar-title>
 
-      <a href="https://cioospacific.ca/" target="_blank" rel="noopener noreferrer" class="logo-link" style="position: absolute; left: 50%; transform: translateX(-50%);">
+      <a href="https://cioospacific.ca/" target="_blank" rel="noopener noreferrer" class="logo-link"
+        style="position: absolute; left: 50%; transform: translateX(-50%);">
         <img src="/cioos_pacific.png" alt="OA Logo" class="logo-icon" />
       </a>
 
@@ -108,12 +108,31 @@ async function getColormaps() {
 
 <style>
 /* Global font application for Vuetify and general elements */
-html, body, .v-application, .v-application .text-body-1, .v-application .text-body-2, .v-application .text-h1, .v-application .text-h2, .v-application .text-h3, .v-application .text-h4, .v-application .text-h5, .v-application .text-h6, .v-application .text-subtitle-1, .v-application .text-subtitle-2, .v-application .text-button, .v-application .text-caption, .v-application .text-overline {
+html,
+body,
+.v-application,
+.v-application .text-body-1,
+.v-application .text-body-2,
+.v-application .text-h1,
+.v-application .text-h2,
+.v-application .text-h3,
+.v-application .text-h4,
+.v-application .text-h5,
+.v-application .text-h6,
+.v-application .text-subtitle-1,
+.v-application .text-subtitle-2,
+.v-application .text-button,
+.v-application .text-caption,
+.v-application .text-overline {
   font-family: 'Inter', sans-serif !important;
 }
 
 /* Preserve monospace for code and specific monospace classes */
-code, pre, kbd, samp, .text-monospace {
+code,
+pre,
+kbd,
+samp,
+.text-monospace {
   font-family: monospace !important;
 }
 </style>

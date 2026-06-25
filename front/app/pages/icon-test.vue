@@ -1,6 +1,6 @@
 <template>
     <v-main>
-        <iconsOceanECO />
+        <iconsOceanECOLogo size="400" :loop="false" />
     </v-main>
 </template>
 
