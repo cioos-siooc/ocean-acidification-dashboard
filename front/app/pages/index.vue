@@ -74,10 +74,10 @@
             </div>
 
             <!-- Cursor coordinate readout, follows the mouse over the map -->
-            <div v-if="mainStore.showCursorCoords && mouseCoords.visible" class="cursor-coord-label"
+            <v-card v-if="mainStore.showCursorCoords && mouseCoords.visible" class="cursor-coord-label"
                 :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }">
                 {{ mouseCoords.lat?.toFixed(5) }}, {{ mouseCoords.lng?.toFixed(5) }}
-            </div>
+            </v-card>
 
         </div>
 
@@ -86,16 +86,16 @@
             <div class="d-flex" :style="{ width: '100%', height: footerHeight }">
 
                 <!-- Vertical tab rail -->
-                <div class="footer-rail d-flex flex-column flex-shrink-0">
-                    <div class="footer-rail-track">
+                <v-sheet class="footer-rail d-flex flex-column flex-shrink-0">
+                    <v-btn-toggle v-model="activeTab" mandatory direction="vertical" variant="text"
+                        class="footer-rail-track">
                         <div class="footer-rail-pill" :style="{ transform: `translateY(${railIndex * 100}%)` }"></div>
-                        <button v-for="t in footerTabs" :key="t.value" type="button" class="footer-rail-item"
-                            :class="{ active: activeTab === t.value }" @click="activeTab = t.value">
-                            <v-icon size="16">{{ t.icon }}</v-icon>
-                            <span>{{ t.label }}</span>
-                        </button>
-                    </div>
-                </div>
+                        <v-btn v-for="t in footerTabs" :key="t.value" :value="t.value" :prepend-icon="t.icon" block
+                            class="footer-rail-item" >
+                            {{ t.label }}
+                        </v-btn>
+                    </v-btn-toggle>
+                </v-sheet>
 
                 <!-- Content area -->
                 <div class="flex-grow-1" style="min-width:0; height:100%; overflow:hidden;">
@@ -1230,8 +1230,7 @@ let _sensorClickPending = false;
 
 .footer-rail-track {
     position: relative;
-    display: flex;
-    flex-direction: column;
+    width: 100%;
     gap: 2px;
     padding: 6px;
 }
@@ -1251,20 +1250,18 @@ let _sensorClickPending = false;
 .footer-rail-item {
     position: relative;
     z-index: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
     height: 32px;
     padding: 0 10px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: inherit;
+    /* v-btn-group forces border-radius:0 on grouped buttons (fused segmented-control look) — we want independent rounded rows instead */
+    border-radius: 8px !important;
     font-size: 0.75rem;
     letter-spacing: 0;
     opacity: 0.65;
-    cursor: pointer;
     transition: opacity 150ms ease, color 150ms ease;
+}
+
+.footer-rail-item :deep(.v-btn__content) {
+    justify-content: flex-start;
 }
 
 .footer-rail-item:hover {
@@ -1282,12 +1279,13 @@ let _sensorClickPending = false;
     z-index: 998;
     pointer-events: none;
     transform: translate(-14px, 14px);
-    background: rgba(17, 17, 17, 0.85);
-    color: #fff;
-    font-family: "Roboto Mono", monospace;
-    font-size: 0.7rem;
-    padding: 2px 6px;
-    border-radius: 4px;
+    width: fit-content;
+    padding: 3px 6px;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    font-family: monospace;
+    font-size: 11px;
+    color: #ccc;
     white-space: nowrap;
 }
 </style>
