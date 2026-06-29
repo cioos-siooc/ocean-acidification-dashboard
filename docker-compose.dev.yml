@@ -85,6 +85,9 @@ services:
       - CH_REMOTE_URL=${CH_REMOTE_URL:-}
       - CH_REMOTE_USER=${CH_REMOTE_USER:-}
       - CH_REMOTE_PASSWORD=${CH_REMOTE_PASSWORD:-}
+      # PostHog Cloud (usage analytics); no-ops when POSTHOG_API_KEY is unset
+      - POSTHOG_API_KEY=${POSTHOG_API_KEY:-}
+      - POSTHOG_HOST=${POSTHOG_HOST:-https://us.i.posthog.com}
     depends_on:
       - db
       - db-ch

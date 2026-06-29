@@ -13,3 +13,4 @@ distributed>=2024.0.0
 clickhouse-connect>=1.1.1
 pyyaml>=6.0
 pytest>=8.0
+posthog>=3.7.0

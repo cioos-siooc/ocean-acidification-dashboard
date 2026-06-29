@@ -31,6 +31,7 @@ import fnmatch
 import logging
 import os
 import shlex
+import shutil
 import subprocess
 from datetime import date, datetime, timedelta
 
@@ -288,6 +289,25 @@ def _delete_local_daily(client, date_val: date) -> None:
     logger.info('Deleted local SalishSeaCast_daily rows for %s (API machine already has them)', date_val)
 
 
+def _delete_local_images(date_val: date, image_base_dir: str) -> None:
+    """Delete date_val's local WebP image directories after a confirmed sync.
+
+    Same rationale as _delete_local_hourly/_delete_local_daily: the canonical
+    images live on the API machine (see CLAUDE.md storage layout) — without
+    this, the PROCESS machine's image directories accumulate forever. Reuses
+    _date_image_dirs so the deletion scope is exactly what _rsync_images
+    already confirmed was transferred.
+    """
+    rel_dirs = _date_image_dirs(date_val, image_base_dir)
+    removed = 0
+    for rel_dir in rel_dirs:
+        abs_dir = os.path.join(image_base_dir, rel_dir)
+        if os.path.isdir(abs_dir):
+            shutil.rmtree(abs_dir)
+            removed += 1
+    logger.info('Deleted %d local image directories for %s (API machine already has them)', removed, date_val)
+
+
 # ---------------------------------------------------------------------------
 # Core sync
 # ---------------------------------------------------------------------------
@@ -328,6 +348,17 @@ def sync_date(client, date_val: date, image_base_dir: str = IMAGE_BASE_DIR) -> b
         except Exception:
             logger.exception(
                 'Synced %s but failed to delete its local SalishSeaCast_daily rows — '
+                'needs manual cleanup, will not be retried automatically', date_val,
+            )
+
+        # Only delete local images once the whole date (hourly + daily) is
+        # confirmed synced — deleting them any earlier would mean a retry
+        # triggered by a later failure has nothing left to re-rsync.
+        try:
+            _delete_local_images(date_val, image_base_dir)
+        except Exception:
+            logger.exception(
+                'Synced %s but failed to delete its local WebP image directories — '
                 'needs manual cleanup, will not be retried automatically', date_val,
             )
 

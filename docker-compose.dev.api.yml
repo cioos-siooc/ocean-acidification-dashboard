@@ -40,6 +40,9 @@ services:
       # missing here entirely, which made every sync attempt 401.
       - SSC_SYNC_STAGING_DIR=${SSC_SYNC_STAGING_DIR:-/opt/data/SalishSeaCast/sync_staging}
       - SYNC_API_TOKEN=${SYNC_API_TOKEN:?Set SYNC_API_TOKEN to the same value as the PROCESS machine's .env.process.remote}
+      # PostHog Cloud (usage analytics); no-ops when POSTHOG_API_KEY is unset
+      - POSTHOG_API_KEY=${POSTHOG_API_KEY:-}
+      - POSTHOG_HOST=${POSTHOG_HOST:-https://us.i.posthog.com}
     depends_on:
       db-ch:
         condition: service_healthy

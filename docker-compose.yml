@@ -72,6 +72,9 @@ services:
       - LO_NC_DIR=${LO_NC_DIR:-/opt/data/LO/nc}
       - LO_IMAGE_DIR=${LO_IMAGE_DIR:-/opt/data/LO/images}
       - EVAL_DATA_DIR=${EVAL_DATA_DIR:-/opt/data/eval}
+      # PostHog Cloud (usage analytics); no-ops when POSTHOG_API_KEY is unset
+      - POSTHOG_API_KEY=${POSTHOG_API_KEY:-}
+      - POSTHOG_HOST=${POSTHOG_HOST:-https://us.i.posthog.com}
     depends_on:
       - db
     restart: unless-stopped

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; }
+  canvas { display: block; }
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#15161b;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:48px 0;box-sizing:border-box;">
+
+  <div style="position:relative;width:400px;height:380px;">
+    <canvas ref="{{ canvas }}" width="400" height="380" style="width:400px;height:380px;"></canvas>
+    <div ref="{{ word }}" style="opacity:0;position:absolute;top:38px;right:30px;text-align:right;font-family:'Space Grotesk',sans-serif;font-size:33px;letter-spacing:-0.7px;line-height:1;white-space:nowrap;will-change:transform,opacity;">
+      <span style="color:#eef0f6;font-weight:400;">Ocean</span><span style="font-weight:600;background:linear-gradient(90deg,#b5318f,#e85362,#f98e3a,#fbd24a);-webkit-background-clip:text;background-clip:text;color:transparent;">ECO</span>
+    </div>
+  </div>
+
+  <div ref="{{ sub }}" style="opacity:0;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:3.5px;color:#5a6172;text-transform:uppercase;will-change:opacity;">Ocean Environmental Conditions Monitoring</div>
+
+  <button onClick="{{ replay }}" style-hover="background:#1d1f26;color:#aab0bd;border-color:#2c3038;" style="margin-top:6px;background:transparent;border:1px solid #262932;color:#7d8492;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1.5px;padding:7px 14px;border-radius:8px;cursor:pointer;transition:all .15s;">↻ REPLAY</button>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  STOPS = [[0.0,[21,19,107]],[0.18,[74,28,140]],[0.4,[150,40,140]],[0.62,[221,72,104]],[0.82,[247,128,52]],[1.0,[251,210,80]]];
+  // grid cells: [col, row] forming a diagonal channel; marker is col3,row2
+  CELLS = [[0,0],[1,0],[0,1],[1,1],[2,1],[3,1],[1,2],[2,2],[3,2],[4,2],[2,3],[3,3],[4,3]];
+  MC = 3; MR = 2;
+  END = 3500;
+
+  // geometry
+  GX0 = 44; GY0 = 34; CW = 32; CH = 25; SX = 38; SY = 31;
+  PX0 = 44; PW = 320; PTOP = 198; PDEEP = 342; PBOT = 360;
+
+  canvas = React.createRef(); word = React.createRef(); sub = React.createRef();
+
+  clamp(x, lo, hi) { lo = lo == null ? 0 : lo; hi = hi == null ? 1 : hi; return Math.max(lo, Math.min(hi, x)); }
+  ease(x) { return 1 - Math.pow(1 - this.clamp(x), 3); }
+  easeIO(x) { x = this.clamp(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+  magma(t) {
+    const S = this.STOPS; t = this.clamp(t);
+    for (let i = 0; i < S.length - 1; i++) {
+      if (t <= S[i + 1][0]) {
+        const A = S[i], B = S[i + 1], f = (t - A[0]) / ((B[0] - A[0]) || 1);
+        return [0, 1, 2].map(j => Math.round(A[1][j] + (B[1][j] - A[1][j]) * f));
+      }
+    }
+    return S[S.length - 1][1];
+  }
+  rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
+  cellColor(col, row) { return this.magma((col + row) / 7); }
+  valleyY(u) {
+    const depth = Math.exp(-Math.pow(u - 0.45, 2) / (2 * 0.15 * 0.15));
+    return this.PTOP + depth * (this.PDEEP - this.PTOP);
+  }
+
+  componentDidMount() {
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.W = 400; this.H = 380;
+    const cv = this.canvas.current;
+    if (cv) { cv.width = this.W * this.dpr; cv.height = this.H * this.dpr; }
+    this._loop = this._loop.bind(this);
+    this.start = performance.now();
+    this.running = true;
+    this._loop(this.start);
+  }
+  componentWillUnmount() { cancelAnimationFrame(this.raf); }
+
+  replay() {
+    this.start = performance.now();
+    if (!this.running) { this.running = true; this._loop(this.start); }
+  }
+
+  _loop(now) {
+    let el = now - this.start;
+    const finished = el >= this.END;
+    if (finished) el = this.END;
+    this.draw(el);
+    this.updateText(el);
+    if (finished) { this.running = false; return; }
+    this.raf = requestAnimationFrame(this._loop);
+  }
+
+  updateText(el) {
+    const wp = this.easeIO((el - 400) / 700);
+    if (this.word.current) {
+      this.word.current.style.opacity = wp;
+      this.word.current.style.transform = 'translateY(' + ((1 - wp) * -8) + 'px) scale(' + (0.965 + 0.035 * wp) + ')';
+    }
+    if (this.sub.current) this.sub.current.style.opacity = this.clamp((el - 2600) / 700) * 0.95;
+  }
+
+  draw(el) {
+    const cv = this.canvas.current; if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const W = this.W, H = this.H;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    const r = 44;
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(0, 0, W, H, r); ctx.clip();
+    ctx.fillStyle = '#0a0c14'; ctx.fillRect(0, 0, W, H);
+
+    // ---- grid field cells ----
+    this.CELLS.forEach(([col, row]) => {
+      const delay = (col + row) * 55;
+      const cp = this.ease((el - delay) / 520);
+      if (cp <= 0) return;
+      const cx = this.GX0 + col * this.SX + this.CW / 2;
+      const cy = this.GY0 + row * this.SY + this.CH / 2;
+      const sc = 0.5 + 0.5 * cp;
+      const col3 = this.cellColor(col, row);
+      ctx.save();
+      ctx.globalAlpha = cp * 0.93;
+      ctx.translate(cx, cy); ctx.scale(sc, sc);
+      ctx.fillStyle = this.rgba(col3, 1);
+      ctx.beginPath(); ctx.roundRect(-this.CW / 2, -this.CH / 2, this.CW, this.CH, 6); ctx.fill();
+      ctx.restore();
+    });
+
+    // ---- plot gridlines ----
+    const glA = this.clamp((el - 1300) / 500) * 0.5;
+    if (glA > 0) {
+      ctx.globalAlpha = glA; ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1;
+      [0.0, 0.5, 1.0].forEach(g => {
+        const yy = this.PTOP + (this.PDEEP - this.PTOP) * g + 4;
+        ctx.beginPath(); ctx.moveTo(this.PX0, yy); ctx.lineTo(this.PX0 + this.PW, yy); ctx.stroke();
+      });
+      ctx.globalAlpha = 1;
+    }
+
+    // marker geometry
+    const mcx = this.GX0 + this.MC * this.SX + this.CW / 2;
+    const mBot = this.GY0 + this.MR * this.SY + this.CH;
+    const mU = (mcx - this.PX0) / this.PW;
+    const targetY = this.valleyY(mU);
+
+    // ---- connector (point -> deep) ----
+    const cEl = el - 1150;
+    if (cEl > 0) {
+      const cp = this.ease(cEl / 480);
+      ctx.globalAlpha = cp * 0.7;
+      ctx.strokeStyle = 'rgba(247,170,90,0.9)'; ctx.lineWidth = 1.5;
+      ctx.setLineDash([4.5, 4.5]);
+      const y1 = mBot + 6, y2 = targetY - 6;
+      ctx.beginPath(); ctx.moveTo(mcx, y1); ctx.lineTo(mcx, y1 + (y2 - y1) * cp); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+
+    // ---- timeseries valley ----
+    const dEl = el - 1400;
+    if (dEl > 0) {
+      const dp = this.ease(dEl / 1500);
+      const N = 120;
+      const pts = [];
+      for (let i = 0; i <= N; i++) {
+        const u = i / N;
+        let Y = this.valleyY(u);
+        Y += Math.sin(u * 26 + 0.6) * 2.4 * Math.exp(-Math.pow((u - 0.45) / 0.5, 2));
+        pts.push([this.PX0 + this.PW * u, Y]);
+      }
+      const head = Math.max(1, Math.round(N * dp));
+      // area fill (under line to bottom)
+      ctx.beginPath(); ctx.moveTo(pts[0][0], this.PBOT);
+      for (let i = 0; i <= head; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.lineTo(pts[head][0], this.PBOT); ctx.closePath();
+      const ag = ctx.createLinearGradient(0, this.PTOP, 0, this.PBOT);
+      ag.addColorStop(0, 'rgba(247,128,52,0.16)'); ag.addColorStop(1, 'rgba(150,40,140,0.02)');
+      ctx.fillStyle = ag; ctx.fill();
+      // stroke
+      const grad = ctx.createLinearGradient(this.PX0, 0, this.PX0 + this.PW, 0);
+      [0, 0.25, 0.5, 0.75, 1].forEach(s => { const cc = this.magma(0.16 + s * 0.8); grad.addColorStop(s, this.rgba(cc, 1)); });
+      ctx.strokeStyle = grad; ctx.lineWidth = 3.2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.shadowColor = 'rgba(247,128,52,0.45)'; ctx.shadowBlur = 9;
+      ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i <= head; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.stroke(); ctx.shadowBlur = 0;
+      // head dot
+      const hp = pts[head], hc = this.magma(0.16 + (head / N) * 0.8);
+      ctx.fillStyle = this.rgba(hc, 0.25); ctx.beginPath(); ctx.arc(hp[0], hp[1], 8, 0, 7); ctx.fill();
+      ctx.fillStyle = this.rgba(hc, 1); ctx.beginPath(); ctx.arc(hp[0], hp[1], 3.4, 0, 7); ctx.fill();
+    }
+
+    // ---- marker (clicked point) on top ----
+    const mEl = el - 900;
+    if (mEl > 0) {
+      const mp = this.ease(mEl / 350);
+      const mcy = this.GY0 + this.MR * this.SY + this.CH / 2;
+      // glow
+      const gg = ctx.createRadialGradient(mcx, mcy, 0, mcx, mcy, 22);
+      gg.addColorStop(0, this.rgba([251, 210, 100], 0.4 * mp)); gg.addColorStop(1, this.rgba([251, 210, 100], 0));
+      ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(mcx, mcy, 22, 0, 7); ctx.fill();
+      // expanding ping
+      const ping = this.clamp((el - 1000) / 750);
+      if (ping > 0 && ping < 1) {
+        ctx.globalAlpha = (1 - ping) * 0.8;
+        ctx.strokeStyle = 'rgba(255,236,200,1)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(mcx, mcy, 6 + ping * 13, 0, 7); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      // ring + core
+      ctx.globalAlpha = mp;
+      ctx.strokeStyle = 'rgba(255,238,205,0.96)'; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.arc(mcx, mcy, 6.5, 0, 7); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,247,230,1)';
+      ctx.beginPath(); ctx.arc(mcx, mcy, 2.6, 0, 7); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+    // tile border
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(0.5, 0.5, W - 1, H - 1, r); ctx.stroke();
+    ctx.restore();
+  }
+
+  renderVals() {
+    return { canvas: this.canvas, word: this.word, sub: this.sub, replay: () => this.replay() };
+  }
+}
+</script>
+</body>
+</html>

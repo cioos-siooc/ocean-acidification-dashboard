@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +29,7 @@ from modules.pngGenerator import generate_png_for_variable
 from modules.extractSensorTimeseries import extract_sensor_timeseries
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
 from modules.sync_hourly import import_native_file, import_daily_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
+from modules.posthog_helpers import capture_event, client_distinct_id
 
 async def run_in_process(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
@@ -373,7 +374,7 @@ class sensorTimeseriesRequest(BaseModel):
     depth: Optional[float] = None
 
 @app.post("/sensorTimeseries")
-async def get_sensor_timeseries(request: sensorTimeseriesRequest):
+async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: Request):
     """Return sensor telemetry read from a compressed NC file.
 
     Accepts a canonical variable name (model name) and resolves it to the
@@ -444,6 +445,10 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest):
             ),
             timeout=THREADPOOL_TIMEOUT,
         )
+        capture_event(client_distinct_id(http_request), "sensor_timeseries", {
+            "sensorId": request.sensorId, "modelVariable": request.modelVariable,
+            "fromDate": request.fromDate, "toDate": request.toDate, "depth": request.depth,
+        })
         return result
     except HTTPException:
         raise
@@ -606,7 +611,7 @@ class timeseriesRequest(BaseModel):
     toDate: str
 
 @app.post("/extractTimeseries")
-async def fn_extract_timeseries(request: timeseriesRequest):
+async def fn_extract_timeseries(request: timeseriesRequest, http_request: Request):
     has_polygon = bool(request.polygon) and len(request.polygon) >= 3
     has_point = request.lat is not None and request.lon is not None
     if not has_polygon and not has_point:
@@ -687,6 +692,12 @@ async def fn_extract_timeseries(request: timeseriesRequest):
                 request.toDate,
                 len(merged.get("time", [])),
             )
+            capture_event(client_distinct_id(http_request), "extract_timeseries", {
+                "source": request.source, "var": request.var,
+                "lat": request.lat, "lon": request.lon,
+                "polygon": has_polygon, "depth": request.depth,
+                "fromDate": request.fromDate, "toDate": request.toDate,
+            })
             return merged
 
         # non-federated flow
@@ -714,6 +725,12 @@ async def fn_extract_timeseries(request: timeseriesRequest):
             request.toDate,
             len(payload.get("time", [])),
         )
+        capture_event(client_distinct_id(http_request), "extract_timeseries", {
+            "source": request.source, "var": request.var,
+            "lat": request.lat, "lon": request.lon,
+            "polygon": has_polygon, "depth": request.depth,
+            "fromDate": request.fromDate, "toDate": request.toDate,
+        })
         return payload
     except RuntimeError as exc:
         # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
@@ -742,7 +759,7 @@ class climate_timeseriesRequest(BaseModel):
     toDate: str
 
 @app.post("/extract_climateTimeseries")
-async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
+async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_request: Request):
     # Reject requests if we are already at concurrency limit
     logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
     try:
@@ -779,6 +796,10 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
                             row[key] = None
             
         logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
+        capture_event(client_distinct_id(http_request), "extract_climate_timeseries", {
+            "var": request.var, "lat": request.lat, "lon": request.lon,
+            "depth": request.depth, "fromDate": request.fromDate, "toDate": request.toDate,
+        })
         return result
     except RuntimeError as exc:
         # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
@@ -807,7 +828,7 @@ class minmaxRequest(BaseModel):
     west: Optional[float] = None
 
 @app.post("/getMinMax")
-async def fn_get_minmax(request: minmaxRequest):
+async def fn_get_minmax(request: minmaxRequest, http_request: Request):
     """Extract min and max values for a variable at a specific datetime and depth."""
     logger.info(f"START getMinMax: source={request.source}, var={request.var}, dt={request.dt}, depth={request.depth}")
     try:
@@ -843,6 +864,10 @@ async def fn_get_minmax(request: minmaxRequest):
         )
 
         logger.info(f"FINISH getMinMax: source={request.source}, var={request.var}, range=[{min_val}, {max_val}]")
+        capture_event(client_distinct_id(http_request), "get_minmax", {
+            "source": request.source, "var": request.var,
+            "dt": request.dt, "depth": request.depth,
+        })
         return {"min": min_val, "max": max_val}
     except HTTPException:
         raise
@@ -867,7 +892,7 @@ class monthlyClimRequest(BaseModel):
     depth: float
 
 @app.post("/getMonthlyClimatologyAtCoord")
-async def fn_get_monthly_climatology(request: monthlyClimRequest):
+async def fn_get_monthly_climatology(request: monthlyClimRequest, http_request: Request):
     logger.info(f"START getMonthlyClimatologyAtCoord: {request.variable}, {request.lat}, {request.lon}, depth={request.depth}")
     try:
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
@@ -888,6 +913,10 @@ async def fn_get_monthly_climatology(request: monthlyClimRequest):
             # Let module pick DB environment vars
         )
         logger.info(f"FINISH getMonthlyClimatologyAtCoord: {request.variable}, {request.lat}, {request.lon}, depth={request.depth}")
+        capture_event(client_distinct_id(http_request), "get_monthly_climatology", {
+            "variable": request.variable, "lat": request.lat,
+            "lon": request.lon, "depth": request.depth,
+        })
         return result
     except FileNotFoundError as fnf:
         logger.exception("monthly climatology file not found")
@@ -908,7 +937,7 @@ class profileRequest(BaseModel):
     lng: float
 
 @app.post("/getProfile")
-async def fn_get_profile(request: profileRequest):
+async def fn_get_profile(request: profileRequest, http_request: Request):
     logger.info(f"START getProfile: source={request.source}, var={request.var}, lat={request.lat}, lng={request.lng}, dt={request.dt}")
     try:
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
@@ -943,6 +972,9 @@ async def fn_get_profile(request: profileRequest):
             db_table=db_gridTable
         )
         logger.info(f"FINISH getProfile: source={source}, var={var}, lat={lat}, lng={lng}, dt={dt} - returned {len(profile)} points")
+        capture_event(client_distinct_id(http_request), "get_profile", {
+            "source": source, "var": var, "lat": lat, "lng": lng, "dt": dt,
+        })
         return profile
     except RuntimeError as exc:
         # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
@@ -966,7 +998,7 @@ class evalRequest(BaseModel):
     model: str
 
 @app.post("/getEval")
-async def fn_get_eval(request: evalRequest):
+async def fn_get_eval(request: evalRequest, http_request: Request):
     logger.info(f"START getEval: sensor={request.sensor}, variable={request.variable}, model={request.model}")
     
     eval_data_dir = os.getenv("EVAL_DATA_DIR", "/opt/data/eval")
@@ -987,6 +1019,9 @@ async def fn_get_eval(request: evalRequest):
         )
         
         logger.info(f"FINISH getEval: {request.variable} - returned {len(result['time'])} timesteps for model={model}")
+        capture_event(client_distinct_id(http_request), "get_eval", {
+            "sensor": request.sensor, "variable": request.variable, "model": model,
+        })
         return result
     except FileNotFoundError as e:
         logger.error(f"Evaluation file not found: {e}")
@@ -1023,7 +1058,7 @@ class AnalysisRequest(BaseModel):
 # STREAMLINED ENDPOINT
 # ==============================================================================
 @app.post("/analysis/timeseries")
-async def analysis_timeseries(request: AnalysisRequest):
+async def analysis_timeseries(request: AnalysisRequest, http_request: Request):
     """Daily Timeseries for Analysis Builder.
 
     Accepts either:
@@ -1072,6 +1107,11 @@ async def analysis_timeseries(request: AnalysisRequest):
             stat=request.primaryMetric.stat,
             year_range=request.temporal["yearRange"],
         )
+        capture_event(client_distinct_id(http_request), "analysis_timeseries", {
+            "variable": request.primaryMetric.variable, "stat": request.primaryMetric.stat,
+            "depth": request.depth, "mode": "polygon" if has_polygon else "point",
+            "yearRange": request.temporal.get("yearRange"),
+        })
         return result
 
     except HTTPException:

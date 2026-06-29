@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 248 248" width="248" height="248">
+  <defs>
+    
+    <linearGradient id="curve-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#15136b"></stop>
+      <stop offset="0.22" stop-color="#4a1c8c"></stop>
+      <stop offset="0.45" stop-color="#962888"></stop>
+      <stop offset="0.65" stop-color="#dd4864"></stop>
+      <stop offset="0.82" stop-color="#f78e3a"></stop>
+      <stop offset="1" stop-color="#fbd24a"></stop>
+    </linearGradient>
+    <linearGradient id="eco-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#a72d8a"></stop>
+      <stop offset="0.5" stop-color="#f98e3a"></stop>
+      <stop offset="1" stop-color="#fbd24a"></stop>
+    </linearGradient>
+    <linearGradient id="area-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f78034" stop-opacity="0.22"></stop>
+      <stop offset="1" stop-color="#f78034" stop-opacity="0"></stop>
+    </linearGradient>
+    <radialGradient id="marker-glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fbd24a" stop-opacity="0.35"></stop>
+      <stop offset="1" stop-color="#fbd24a" stop-opacity="0"></stop>
+    </radialGradient>
+    <clipPath id="tile-clip">
+      <rect x="12" y="12" width="224" height="224" rx="40"></rect>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#tile-clip)">
+    
+    <rect x="12" y="12" width="224" height="224" rx="40" fill="#0a0c14"></rect>
+
+    
+    
+    <rect x="44" y="30" width="22" height="18" rx="5" fill="#15136b" opacity="0.92"></rect>
+    <rect x="70" y="30" width="22" height="18" rx="5" fill="#4a1c8c" opacity="0.92"></rect>
+    
+    <rect x="44" y="52" width="22" height="18" rx="5" fill="#4a1c8c" opacity="0.92"></rect>
+    <rect x="70" y="52" width="22" height="18" rx="5" fill="#962888" opacity="0.92"></rect>
+    <rect x="96" y="52" width="22" height="18" rx="5" fill="#c93a70" opacity="0.92"></rect>
+    <rect x="122" y="52" width="22" height="18" rx="5" fill="#dd4864" opacity="0.92"></rect>
+    
+    <rect x="70" y="74" width="22" height="18" rx="5" fill="#c93a70" opacity="0.92"></rect>
+    <rect x="96" y="74" width="22" height="18" rx="5" fill="#dd4864" opacity="0.92"></rect>
+    <rect x="122" y="74" width="22" height="18" rx="5" fill="#f78e3a" opacity="0.92"></rect>
+    <rect x="148" y="74" width="22" height="18" rx="5" fill="#f9a84a" opacity="0.92"></rect>
+    
+    <rect x="96" y="96" width="22" height="18" rx="5" fill="#f78e3a" opacity="0.92"></rect>
+    <rect x="122" y="96" width="22" height="18" rx="5" fill="#f9a84a" opacity="0.92"></rect>
+    <rect x="148" y="96" width="22" height="18" rx="5" fill="#fbd24a" opacity="0.92"></rect>
+
+    
+    <circle cx="159" cy="83" r="17" fill="url(#marker-glow)"></circle>
+    <circle cx="159" cy="83" r="6" fill="none" stroke="rgba(255,236,200,0.95)" stroke-width="2.1"></circle>
+    <circle cx="159" cy="83" r="2.4" fill="#fff5e1"></circle>
+
+    
+    <line x1="159" y1="92" x2="159" y2="122" stroke="rgba(247,170,90,0.7)" stroke-width="1.4" stroke-dasharray="4 4"></line>
+
+    
+    <line x1="38" y1="132" x2="210" y2="132" stroke="rgba(255,255,255,0.06)" stroke-width="1"></line>
+    <line x1="38" y1="152" x2="210" y2="152" stroke="rgba(255,255,255,0.06)" stroke-width="1"></line>
+    <line x1="38" y1="172" x2="210" y2="172" stroke="rgba(255,255,255,0.06)" stroke-width="1"></line>
+
+    
+    <path d="M38,172 L38,168 Q62,165 80,161 Q98,156 108,148 Q116,138 124,128 Q130,123 136,128 Q142,134 150,141 Q160,150 172,158 Q186,166 210,171 Z" fill="url(#area-grad)"></path>
+    
+    <path d="M38,168 Q62,165 80,161 Q98,156 108,148 Q116,138 124,128 Q130,123 136,128 Q142,134 150,141 Q160,150 172,158 Q186,166 210,171" fill="none" stroke="url(#curve-grad)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>
+    <circle cx="210" cy="171" r="6.5" fill="rgba(251,210,80,0.2)"></circle>
+    <circle cx="210" cy="171" r="3" fill="#fbd24a"></circle>
+
+    
+    <text x="124" y="204" text-anchor="middle" font-size="27" letter-spacing="-0.6">
+      <tspan class="wm-light" fill="#e9ebf2">Ocean</tspan><tspan class="wm-bold" fill="url(#eco-grad)">ECO</tspan>
+    </text>
+    <text x="124" y="220" text-anchor="middle" class="wm-sub" font-size="6" letter-spacing="1.7" fill="#5a6172">ENVIRONMENTAL CONDITIONS MONITORING</text>
+  </g>
+
+  
+  <rect x="12" y="12" width="224" height="224" rx="40" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"></rect>
+</svg>
