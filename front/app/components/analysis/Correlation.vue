@@ -232,4 +232,6 @@ onBeforeUnmount(() => {
   color: rgba(255, 255, 255, 0.38);
   margin-bottom: 4px;
 }
+
+:deep(.v-select) { flex: none; }
 </style>

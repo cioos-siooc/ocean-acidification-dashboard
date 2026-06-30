@@ -166,4 +166,6 @@ onBeforeUnmount(() => {
   font-size: 0.72rem !important;
   padding: 2px 6px !important;
 }
+
+:deep(.v-text-field) { flex: none; }
 </style>
