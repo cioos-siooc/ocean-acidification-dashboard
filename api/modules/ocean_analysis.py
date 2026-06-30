@@ -8,6 +8,7 @@ then computes climatology, trend, threshold, streak, and extreme-value
 analytics client-side.
 """
 
+import math
 import os
 import logging
 from typing import List, Tuple
@@ -158,7 +159,7 @@ def query_region_timeseries(
 
     return {
         "data": [
-            {"time": str(t), "value": round(float(v), 6) if v is not None else None}
+            {"time": str(t), "value": (None if math.isnan(fv := float(v)) else round(fv, 6)) if v is not None else None}
             for t, v in result.result_rows
         ]
     }

@@ -7,7 +7,10 @@
 
       <div class="d-flex align-center justify-space-between mb-2">
         <span class="ctrl-label" style="margin-bottom:0;">ANALYSIS</span>
-        <v-btn icon="mdi-refresh" size="x-small" variant="text" @click="resetParameters" title="Reset" />
+        <div>
+          <v-btn icon="mdi-fullscreen" size="x-small" variant="text" @click="advancedOpen = true" title="Advanced Mode" />
+          <v-btn icon="mdi-refresh" size="x-small" variant="text" @click="resetParameters" title="Reset" />
+        </div>
       </div>
 
       <div class="ctrl-label">View</div>
@@ -135,23 +138,30 @@
     </div>
 
   </div>
+
+  <AdvancedAnalysisDialog v-model="advancedOpen" />
 </template>
 
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import axios from 'axios'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
 import { useMainStore } from '../stores/main'
+import { fetchAnalysisSeries, type SeriesPoint } from '../../composables/useAnalysisFetch'
+import {
+  availableVariables, filterBySeason, groupByYear,
+  computeBoxplotData, type BoxRow, linearRegression, yearColor,
+} from '../../composables/useAnalysisStatistics'
+import AdvancedAnalysisDialog from './analysis/AdvancedAnalysisDialog.vue'
 
-const config = useRuntimeConfig()
-const apiBaseUrl = config.public.apiBaseUrl
 const mainStore = useMainStore()
 
 // Only fetch while the Analysis Builder tab is actually visible — the parent
 // page keeps this component mounted (v-show) even when another tab is shown.
 const props = defineProps<{ active?: boolean }>()
+
+const advancedOpen = ref(false)
 
 // --- STORE-DERIVED STATE ---
 const variable = computed(() => mainStore.selected_variable.var)
@@ -162,25 +172,6 @@ const depth = computed(() => mainStore.selected_variable.depth_nc)
 // --- CONSTANTS ---
 const minYear = 2007
 const maxYear = 2026
-
-const availableVariables = [
-  { id: 'temperature', name: 'Temperature' },
-  { id: 'salinity', name: 'Salinity' },
-  { id: 'dissolved_oxygen', name: 'Dissolved Oxygen' },
-  { id: 'total_alkalinity', name: 'Total Alkalinity' },
-  { id: 'dissolved_inorganic_carbon', name: 'Dissolved Inorganic Carbon' },
-  { id: 'ph_total', name: 'pH (Total Scale)' },
-  { id: 'omega_arag', name: 'Omega Aragonite' },
-  { id: 'omega_cal', name: 'Omega Calcite' }
-]
-
-const SEASON_MONTHS: Record<string, number[]> = {
-  full_year: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-  jja: [6, 7, 8],
-  mam: [3, 4, 5],
-  son: [9, 10, 11],
-  djf: [12, 1, 2]
-}
 
 // --- REACTIVE STATE ---
 const chartView = ref<'overlay' | 'annual'>('overlay')
@@ -206,7 +197,6 @@ let chartInstance: echarts.ECharts | null = null
 // natively via ECharts' hover focus/blur, which only kicks in for real hover events).
 let overlaySeriesStyles: { name: string; color: string; width: number }[] = []
 
-type SeriesPoint = { time: string; value: number | null }
 const rawAllData = ref<SeriesPoint[]>([])
 const rawSeasonalData = ref<SeriesPoint[]>([])
 
@@ -305,23 +295,6 @@ function statCellStyle(val: number, max: number): Record<string, string> {
 }
 
 // --- HELPERS ---
-function filterBySeason(data: SeriesPoint[], season: string): SeriesPoint[] {
-  const months = SEASON_MONTHS[season] || SEASON_MONTHS.full_year
-  return data.filter(d => months.includes(new Date(d.time).getUTCMonth() + 1))
-}
-
-function groupByYear(data: SeriesPoint[]): { year: number; data: SeriesPoint[] }[] {
-  const byYear = new Map<number, SeriesPoint[]>()
-  for (const d of data) {
-    const year = new Date(d.time).getUTCFullYear()
-    if (!byYear.has(year)) byYear.set(year, [])
-    byYear.get(year)!.push(d)
-  }
-  return Array.from(byYear.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([year, pts]) => ({ year, data: pts }))
-}
-
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 // Reference year the "All Years Overlaid" chart maps every point's month/day
@@ -344,43 +317,6 @@ function fmtOverlayDate(ts: number): string {
   return `${MONTH_ABBR[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
-/** Interpolate a sorted array at the given percentile (0–100) using linear interpolation. */
-function percentileOf(sorted: number[], p: number): number {
-  const idx = (p / 100) * (sorted.length - 1)
-  const lo = Math.floor(idx), hi = Math.ceil(idx)
-  return lo === hi ? sorted[lo]! : sorted[lo]! + (idx - lo) * (sorted[hi]! - sorted[lo]!)
-}
-
-type BoxRow = { year: number; box: [number, number, number, number, number]; mean: number; std: number }
-
-function computeBoxplotData(data: SeriesPoint[]): BoxRow[] {
-  return groupByYear(data).map(({ year, data: pts }) => {
-    const vals = pts.filter(d => d.value != null).map(d => d.value as number).sort((a, b) => a - b)
-    if (vals.length < 4) return null
-    const n = vals.length
-    const mean = vals.reduce((s, v) => s + v, 0) / n
-    const std = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / n)
-    return {
-      year,
-      box: [vals[0], percentileOf(vals, 25), percentileOf(vals, 50), percentileOf(vals, 75), vals[n - 1]],
-      mean,
-      std
-    }
-  }).filter(Boolean) as BoxRow[]
-}
-
-
-function linearRegression(pts: { x: number; y: number }[]): { slope: number; intercept: number } {
-  const n = pts.length
-  if (n < 2) return { slope: 0, intercept: pts[0]?.y ?? 0 }
-  const sumX = pts.reduce((s, p) => s + p.x, 0)
-  const sumY = pts.reduce((s, p) => s + p.y, 0)
-  const sumXY = pts.reduce((s, p) => s + p.x * p.y, 0)
-  const sumX2 = pts.reduce((s, p) => s + p.x * p.x, 0)
-  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX)
-  return { slope, intercept: (sumY - slope * sumX) / n }
-}
-
 function thresholdMarkLine() {
   return {
     silent: true,
@@ -389,24 +325,6 @@ function thresholdMarkLine() {
     label: { formatter: String(thresholdValue.value), position: 'insideEndTop', fontSize: 9, color: '#33cccc' },
     data: [{ yAxis: thresholdValue.value }]
   }
-}
-
-/**
- * Maps a year's position in the dataset (0=oldest → 1=newest) to a colour.
- * Oldest: muted steel-blue, low opacity.
- * Newest: vivid orange-red, fully opaque.
- */
-function yearColor(idx: number, total: number): string {
-  const t = total <= 1 ? 1 : idx / (total - 1)
-  // Hue: 220° (blue) → 15° (orange-red)
-  const hue = Math.round(220 - t * 205)
-  // Saturation: 45% → 95%
-  const sat = Math.round(45 + t * 50)
-  // Lightness: 65% → 58%
-  const lit = Math.round(65 - t * 7)
-  // Alpha: 0.18 (old, faded) → 1.0 (new, full)
-  const alpha = (0.18 + t * 0.82).toFixed(2)
-  return `hsla(${hue},${sat}%,${lit}%,${alpha})`
 }
 
 /** Highlights a single year's series (overlay chart only) by dimming all others; null restores normal view. */
@@ -650,19 +568,16 @@ async function fetchRegionTimeseries(): Promise<SeriesPoint[]> {
   const pt = lastClicked.value
   if (!pt) throw new Error('No location selected. Click on the map first.')
   if (depth.value == null) throw new Error('No depth selected.')
-  const base = {
-    depth: depth.value,
-    primaryMetric: { variable: variable.value, stat: primaryStat.value },
-    temporal: { yearRange: [minYear, maxYear] }
-  }
   const location = queryMode.value === 'area'
     ? { polygon: polygonFromClick.value }
     : { lat: pt.lat, lon: pt.lng }
   // Abort any in-flight request so a stale response can't clobber a newer one
   if (analysisRequestController) analysisRequestController.abort()
   analysisRequestController = new AbortController()
-  const response = await axios.post(`https://oa-api2.cioospacificlabs.ca/analysis/timeseries`, { ...base, ...location }, { signal: analysisRequestController.signal })
-  return response.data?.data || []
+  return fetchAnalysisSeries(
+    { variable: variable.value, stat: primaryStat.value as 'min' | 'mean' | 'max', depth: depth.value, location, yearRange: [minYear, maxYear] },
+    analysisRequestController.signal
+  )
 }
 
 // --- ACTIONS ---

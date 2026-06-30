@@ -107,7 +107,7 @@ function startAnimation() {
     // ---- marker (clicked point) ----
     const mcx = gx0 + MCOL * cw + cw / 2, mcy = gy0 + MROW * ch + ch / 2;
     const mp = ease((phase - 0.1) / 0.08);
-    const plotTop = y0 + side * 0.595;
+    const plotTop = y0 + side * 0.525;
     if (mp > 0) {
       const pulse = 0.5 + 0.5 * Math.sin(t * 3.0);
       const rb = S * 0.026;
@@ -131,9 +131,12 @@ function startAnimation() {
       ctx.beginPath(); ctx.moveTo(mcx, y1); ctx.lineTo(mcx, y1 + (plotTop - y1) * conP); ctx.stroke();
       ctx.setLineDash([]);
     }
+    ctx.restore();
 
-    // ---- timeseries plot ----
-    const pX0 = gx0, pW = gw, pBase = y0 + side * 0.9, pPeakTop = y0 + side * 0.64, pH = pBase - pPeakTop;
+    // ---- timeseries plot (own clip: bounded left/right like the card, but open at the bottom so the dip can spill past the card edge) ----
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x0, y0, side, side * 2); ctx.clip();
+    const pX0 = gx0, pW = gw, pBase = y0 + side * 0.83, pPeakTop = y0 + side * 0.5, pH = pBase - pPeakTop;
     ctx.globalAlpha = A * 0.45; ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 1;
     [0.0, 0.5, 1.0].forEach(g => { const yy = pPeakTop + pH * g; ctx.beginPath(); ctx.moveTo(pX0, yy); ctx.lineTo(pX0 + pW, yy); ctx.stroke(); });
 
@@ -149,6 +152,7 @@ function startAnimation() {
         const X = pX0 + pW * u;
         let Y = pBase - yv * pH * 0.92;
         Y += Math.sin(u * 7 + t * 1.4) * pH * 0.03 * done * Math.exp(-Math.pow((u - mid) / 0.5, 2));
+        Y = pPeakTop + pBase - Y; // flip wrt x-axis: mirror vertically within the plot bounds
         pts.push([X, Y]);
       }
       const head = Math.max(1, Math.round(N * drawP));
