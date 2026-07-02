@@ -42,10 +42,10 @@ BATCH_SIZE = 50_000
 
 # ── CH helpers ────────────────────────────────────────────────────────────────
 
-def get_active_erddap_sensors(ch_client, sensor_id_filter: int | None) -> list[dict]:
+def get_active_erddap_sensors(ch_client, sensor_id_filter: str | None) -> list[dict]:
     where = "source LIKE '%\"type\": \"ERDDAP\"%' OR source LIKE '%\"type\":\"ERDDAP\"%'"
     if sensor_id_filter is not None:
-        where += f" AND id = {sensor_id_filter}"
+        where += f" AND id = '{sensor_id_filter}'"
     rows = ch_client.query(
         f"SELECT id, name, depth, variables, source FROM sensors FINAL "
         f"WHERE active = 1 AND ({where})"
@@ -54,7 +54,7 @@ def get_active_erddap_sensors(ch_client, sensor_id_filter: int | None) -> list[d
     for row in rows:
         source = json.loads(row[4]) if row[4] else {}
         sensors.append({
-            "id": int(row[0]),
+            "id": str(row[0]),
             "name": row[1],
             "depth": float(row[2]) if row[2] is not None else -1.0,
             "variables": json.loads(row[3]) if row[3] else {},
@@ -64,10 +64,10 @@ def get_active_erddap_sensors(ch_client, sensor_id_filter: int | None) -> list[d
     return sensors
 
 
-def get_last_stored_time(ch_client, sensor_id: int, canonical: str) -> datetime | None:
+def get_last_stored_time(ch_client, sensor_id: str, canonical: str) -> datetime | None:
     rows = ch_client.query(
         "SELECT max(time) FROM sensor_timeseries "
-        f"WHERE sensor_id = {sensor_id} AND variable = '{canonical}'"
+        f"WHERE sensor_id = '{sensor_id}' AND variable = '{canonical}'"
     ).result_rows
     if rows and rows[0][0]:
         dt = rows[0][0]
@@ -242,7 +242,7 @@ def fetch_griddap_nc(
 
 # ── Main fetch loop ───────────────────────────────────────────────────────────
 
-def fetch_and_store(sensor_id_filter: int | None = None):
+def fetch_and_store(sensor_id_filter: str | None = None):
     ch_client = get_ch_client()
     sensors = get_active_erddap_sensors(ch_client, sensor_id_filter)
 
@@ -365,6 +365,6 @@ def fetch_and_store(sensor_id_filter: int | None = None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fetch ERDDAP sensor data → ClickHouse.")
-    parser.add_argument("--sensor-id", type=int, default=None)
+    parser.add_argument("--sensor-id", type=str, default=None, metavar="UUID")
     args = parser.parse_args()
     fetch_and_store(sensor_id_filter=args.sensor_id)

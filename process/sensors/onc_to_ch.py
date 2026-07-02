@@ -10,8 +10,8 @@ step at query time.
 
 Usage
 -----
-    uv run python sensors/onc_to_ch.py              # all ONC sensors
-    uv run python sensors/onc_to_ch.py --sensor-id 3
+    uv run python sensors/onc_to_ch.py                          # all ONC sensors
+    uv run python sensors/onc_to_ch.py --sensor-id <uuid>
 """
 
 import argparse
@@ -32,10 +32,10 @@ BATCH_SIZE = 10_000
 
 # ── CH helpers ────────────────────────────────────────────────────────────────
 
-def get_active_onc_sensors(ch_client, sensor_id_filter: int | None) -> list[dict]:
+def get_active_onc_sensors(ch_client, sensor_id_filter: str | None) -> list[dict]:
     where = "source LIKE '%\"type\": \"ONC\"%' OR source LIKE '%\"type\":\"ONC\"%'"
     if sensor_id_filter is not None:
-        where += f" AND id = {sensor_id_filter}"
+        where += f" AND id = '{sensor_id_filter}'"
     rows = ch_client.query(
         f"SELECT id, name, variables, device_config FROM sensors FINAL "
         f"WHERE active = 1 AND ({where})"
@@ -43,7 +43,7 @@ def get_active_onc_sensors(ch_client, sensor_id_filter: int | None) -> list[dict
     sensors = []
     for row in rows:
         sensors.append({
-            "id": int(row[0]),
+            "id": str(row[0]),
             "name": row[1],
             "variables": json.loads(row[2]) if row[2] else {},
             "device_config": json.loads(row[3]) if row[3] else {},
@@ -51,10 +51,10 @@ def get_active_onc_sensors(ch_client, sensor_id_filter: int | None) -> list[dict
     return sensors
 
 
-def get_last_stored_time(ch_client, sensor_id: int, canonical: str) -> datetime | None:
+def get_last_stored_time(ch_client, sensor_id: str, canonical: str) -> datetime | None:
     rows = ch_client.query(
         "SELECT max(time) FROM sensor_timeseries "
-        f"WHERE sensor_id = {sensor_id} AND variable = '{canonical}'"
+        f"WHERE sensor_id = '{sensor_id}' AND variable = '{canonical}'"
     ).result_rows
     if rows and rows[0][0]:
         dt = rows[0][0]
@@ -85,7 +85,7 @@ def apply_conversion(value: float, canonical: str, variables: dict) -> float:
 
 # ── Main fetch loop ───────────────────────────────────────────────────────────
 
-def fetch_and_store(sensor_id_filter: int | None = None):
+def fetch_and_store(sensor_id_filter: str | None = None):
     ch_client = get_ch_client()
     sensors = get_active_onc_sensors(ch_client, sensor_id_filter)
 
@@ -199,6 +199,6 @@ def fetch_and_store(sensor_id_filter: int | None = None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fetch ONC sensor data → ClickHouse.")
-    parser.add_argument("--sensor-id", type=int, default=None)
+    parser.add_argument("--sensor-id", type=str, default=None, metavar="UUID")
     args = parser.parse_args()
     fetch_and_store(sensor_id_filter=args.sensor_id)

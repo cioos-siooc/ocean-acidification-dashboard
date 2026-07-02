@@ -4,10 +4,10 @@
 --
 -- Apply:
 --   docker compose -f docker-compose.dev.yml exec db-ch \
---     clickhouse-client --multiquery < clickhouse/sensors_schema.sql
+--     clickhouse-client --multiquery < scripts/sensors_schema.sql
 CREATE TABLE IF NOT EXISTS default.sensors
 (
-    id            UInt32,
+    id            UUID DEFAULT generateUUIDv4(),
     name          String,
     latitude      Float64,
     longitude     Float64,
@@ -30,7 +30,7 @@ ORDER BY id;
 -- 1-day overlap window on each run is safe.  Query with FINAL for correctness.
 CREATE TABLE IF NOT EXISTS default.sensor_timeseries
 (
-    sensor_id  UInt32                    CODEC(DoubleDelta, ZSTD(4)),
+    sensor_id  UUID                      CODEC(ZSTD(4)),
     time       DateTime                  CODEC(DoubleDelta, ZSTD(4)),
     depth      Float32                   CODEC(Gorilla(4),  ZSTD(4)),
     variable   LowCardinality(String),

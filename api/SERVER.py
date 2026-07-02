@@ -357,7 +357,7 @@ async def get_colormaps():
 #######################################
 
 class sensorTimeseriesRequest(BaseModel):
-    sensorId: int
+    sensorId: str  # UUID
     modelVariable: str  # model/canonical name, e.g. "dissolved_oxygen"
     fromDate: str
     toDate: str

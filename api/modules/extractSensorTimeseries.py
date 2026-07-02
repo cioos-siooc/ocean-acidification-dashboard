@@ -30,7 +30,7 @@ def _fmt(dt_str: str) -> str:
 
 
 def extract_sensor_timeseries(
-    sensor_id: int,
+    sensor_id: str,
     variable: str,
     from_date: str,
     to_date: str,
@@ -66,14 +66,14 @@ def extract_sensor_timeseries(
     # Escape variable name for use in query string (it comes from the API
     # request but is already validated by the caller against the sensors table).
     safe_var = variable.replace("'", "''")
-    safe_id  = int(sensor_id)
+    safe_id  = str(sensor_id).replace("'", "")
 
     if depth is not None:
         # Find the single stored depth closest to the requested value, then
         # fetch only rows at that depth.  Two queries, both tiny.
         nearest_rows = client.query(
             f"SELECT depth FROM sensor_timeseries "
-            f"WHERE sensor_id = {safe_id} AND variable = '{safe_var}' "
+            f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
             f"ORDER BY abs(depth - {float(depth)}) LIMIT 1"
         ).result_rows
         if not nearest_rows:
@@ -84,7 +84,7 @@ def extract_sensor_timeseries(
 
         result = client.query(
             f"SELECT time, value FROM sensor_timeseries FINAL "
-            f"WHERE sensor_id = {safe_id} AND variable = '{safe_var}' "
+            f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
             f"  AND depth = {target_depth} "
             f"  AND time >= toDateTime('{from_str}') "
             f"  AND time <= toDateTime('{to_str}') "
@@ -101,7 +101,7 @@ def extract_sensor_timeseries(
     # No depth filter — return all depth levels.
     result = client.query(
         f"SELECT time, depth, value FROM sensor_timeseries FINAL "
-        f"WHERE sensor_id = {safe_id} AND variable = '{safe_var}' "
+        f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
         f"  AND time >= toDateTime('{from_str}') "
         f"  AND time <= toDateTime('{to_str}') "
         f"ORDER BY time, depth"
