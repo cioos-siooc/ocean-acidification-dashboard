@@ -42,7 +42,7 @@
                                 ago</v-list-item-subtitle>
                             <v-row class="ma-0 pa-0">
                                 <v-spacer></v-spacer>
-                                <v-col v-if="sensor.depth.length > 1" cols="auto" class="ma-0 pa-0">
+                                <v-col cols="auto" class="ma-0 pa-0">
                                     <v-btn flat icon size="12px" title="Model Evaluation" @click.stop="openHeatmapDialog(sensor.id)">
                                         <icons-heatmap :color="colors.orange.lighten3" />
                                     </v-btn>
@@ -63,17 +63,7 @@
 
 
     <!-- DIALOGS -->
-    <!-- DEPTH PICKER -->
-    <v-dialog v-model="depthDialogOpen" max-width="280" max-height="300">
-        <v-card v-if="depthDialogSensor">
-            <v-card-title class="text-body-1">{{ depthDialogSensor.name }}</v-card-title>
-            <v-card-subtitle>Select a depth</v-card-subtitle>
-            <v-list density="compact">
-                <v-list-item v-for="d in depthDialogSensor.depth" :key="d" :title="d + ' m'"
-                    @click="pickDepth(depthDialogSensor.id, d)" />
-            </v-list>
-        </v-card>
-    </v-dialog>
+    <!-- DEPTH PICKER (reserved for future variable-depth/profiler sensors) -->
 
     <!-- HEATMATP -->
     <v-dialog v-model="showHeatmapDialog" width="85%" height="85%" transition="dialog-transition">
@@ -110,43 +100,16 @@ const heatmap_maxDate = ref<string | null>(null);
 function selectSensor(sensorID: string) {
     const sensor = sensors.value.find(s => s.id === sensorID);
     if (sensor) {
-        if (sensor.depth.length === 1) {
-            mainStore.selectSensor(sensorID, sensor.depth[0]);
-            mainStore.setLastClickedMapPoint({ lat: sensor.latitude, lng: sensor.longitude });
-            mainStore.setMapCenter({ lat: sensor.latitude, lng: sensor.longitude });
-        }
-        else {
-            depthDialogSensor.value = sensor;
-            return; // wait for depth selection
-        }
-    }
-}
-
-function pickDepth(sensorID: string, depth: number) {
-    depthDialogSensor.value = null;
-    const sensor = sensors.value.find(s => s.id === sensorID);
-    if (sensor) {
-        mainStore.selectSensor(sensorID, depth);
+        mainStore.selectSensor(sensorID, sensor.depth);
         mainStore.setLastClickedMapPoint({ lat: sensor.latitude, lng: sensor.longitude });
         mainStore.setMapCenter({ lat: sensor.latitude, lng: sensor.longitude });
     }
 }
 
-function depth2txt(depth: number[]): string {
-    if (depth === null || depth.length === 0) return '';
-
-    if (depth.length === 1) {
-        if (depth[0] === 0) return 'Surface';
-        else return depth[0].toFixed(0) + ' m';
-    } else {
-        return 'Profile'
-    }
-}
-
-function sensorDepths(depth: number[]): Array<{ label: string, value: number }> {
-    if (depth === null || depth.length === 0) return [];
-
-    return depth.map(d => ({ label: d === 0 ? 'Surface' : d.toFixed(0) + ' m', value: d }));
+function depth2txt(depth: number): string {
+    if (depth == null || depth < 0) return 'Variable depth';
+    if (depth === 0) return 'Surface';
+    return depth.toFixed(0) + ' m';
 }
 
 function openHeatmapDialog(sensorId: string) {

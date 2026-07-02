@@ -706,13 +706,13 @@ function openSensorPicker(sensors: MultiSensorCandidate[], screenX: number, scre
     sensorPicker.value = { visible: true, x: screenX, y: screenY, sensors };
 }
 
-function clickSensor(sensor_id: string, depth: number[]) {
+function clickSensor(sensor_id: string, depth: number) {
     sensorPicker.value.visible = false;
     // Set flag BEFORE selectSensor so the var/depth watcher skips its own fetch.
     // The lastClickedMapPoint watcher (via setLastClickedMapPoint below) will
     // trigger the single authoritative fetch.
     _sensorClickPending = true;
-    mainStore.selectSensor(sensor_id, depth[0]);
+    mainStore.selectSensor(sensor_id, depth);
     const sensor = mainStore.sensors.find((s: any) => s.id === sensor_id);
     if (sensor) {
         mainStore.setLastClickedMapPoint({ lat: sensor.latitude, lng: sensor.longitude });
