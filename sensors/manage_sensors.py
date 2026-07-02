@@ -253,6 +253,16 @@ def cmd_add(ch_client, args):
         print("ERROR: at least one --variable is required.", file=sys.stderr)
         sys.exit(1)
 
+    # Check for an existing sensor with the same name
+    existing = ch_client.query(
+        f"SELECT id FROM sensors FINAL WHERE name = '{args.name.replace(chr(39), chr(39)*2)}'"
+    ).result_rows
+    if existing:
+        existing_id = str(existing[0][0])
+        print(f"ERROR: a sensor named '{args.name}' already exists ({existing_id}).", file=sys.stderr)
+        print(f"  To update it:  uv run python manage_sensors.py update --id {existing_id} ...", file=sys.stderr)
+        sys.exit(1)
+
     variables, device_config = _build_variables_and_device_config(
         args.variable, args.location_code
     )
