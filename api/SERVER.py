@@ -325,7 +325,7 @@ async def get_sensors():
         sensors = []
         for row in result.result_rows:
             sensors.append({
-                "id": int(row[0]),
+                "id": str(row[0]),
                 "name": row[1],
                 "latitude": float(row[2]),
                 "longitude": float(row[3]),
