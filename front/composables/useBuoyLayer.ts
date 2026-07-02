@@ -31,7 +31,7 @@ async function loadImage(map: any, id: string, svg: string): Promise<void> {
     });
 }
 
-export type MultiSensorCandidate = { id: number; name: string; depth: number };
+export type MultiSensorCandidate = { id: string; name: string; depth: number };
 
 /**
  * Add (or replace) the buoy symbol layer for mooring stations.
@@ -40,7 +40,7 @@ export type MultiSensorCandidate = { id: number; name: string; depth: number };
 export async function addBuoyLayer(
     map: any,
     geojson: FeatureCollection<Geometry, GeoJsonProperties>,
-    onSensorClick: (sensor_id: number, depth: number) => void,
+    onSensorClick: (sensor_id: string, depth: number) => void,
     onMultiSensorClick: (sensors: MultiSensorCandidate[], screenX: number, screenY: number) => void,
 ): Promise<() => void> {
     await Promise.all([

@@ -706,7 +706,7 @@ function openSensorPicker(sensors: MultiSensorCandidate[], screenX: number, scre
     sensorPicker.value = { visible: true, x: screenX, y: screenY, sensors };
 }
 
-function clickSensor(sensor_id: number, depth: number[]) {
+function clickSensor(sensor_id: string, depth: number[]) {
     sensorPicker.value.visible = false;
     // Set flag BEFORE selectSensor so the var/depth watcher skips its own fetch.
     // The lastClickedMapPoint watcher (via setLastClickedMapPoint below) will

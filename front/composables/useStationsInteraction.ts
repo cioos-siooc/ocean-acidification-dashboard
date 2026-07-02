@@ -7,7 +7,7 @@ export type CircleLayer = {
 
 export function useStationsInteraction(
   getMap: () => any,
-  onFetchTimeseries: (sensor_id: number, depth: number) => void,
+  onFetchTimeseries: (sensor_id: string, depth: number) => void,
   onMultiSensorClick: (sensors: MultiSensorCandidate[], screenX: number, screenY: number) => void,
 ) {
   let _detach: (() => void) | null = null;

@@ -36,8 +36,8 @@ export const useMainStore = defineStore('main', {
          */
         midDate: null as moment.Moment | null,
 
-        sensors: [] as Array<{ id: number, name: string, latitude: number, longitude: number, depth: number[], device_config: {}, variables: {}, active: boolean }>,
-        selectedSensor: {} as { id: number, depth: number } | null,
+        sensors: [] as Array<{ id: string, name: string, latitude: number, longitude: number, depth: number[], device_config: {}, variables: {}, active: boolean }>,
+        selectedSensor: {} as { id: string, depth: number } | null,
 
         lastClickedMapPoint: null as { lat: number, lng: number } | null,
 
@@ -88,17 +88,17 @@ export const useMainStore = defineStore('main', {
             this.midDate = date;
         },
 
-        setSensors(sensors: Array<{ id: number, name: string, latitude: number, longitude: number, depth: number[], device_config: {}, variables: {}, active: boolean }>) {
+        setSensors(sensors: Array<{ id: string, name: string, latitude: number, longitude: number, depth: number[], device_config: {}, variables: {}, active: boolean }>) {
             this.sensors = sensors;
         },
-        setSelectedSensor(sensor: { id: number, depth: number } | null) {
+        setSelectedSensor(sensor: { id: string, depth: number } | null) {
             this.selectedSensor = sensor;
         },
         /**
          * Select a sensor: snap to closest available depth and set as active sensor.
          * Can be called from any component (sensorInfo, map click handler, etc.)
          */
-        selectSensor(sensor_id: number, depth: number) {
+        selectSensor(sensor_id: string, depth: number) {
             console.log("Selecting sensor", sensor_id, "at depth", depth);
             const variable = this.selected_variable.var;
             const depthsArray = this.variables.find((v) => v.var === variable)?.depths;

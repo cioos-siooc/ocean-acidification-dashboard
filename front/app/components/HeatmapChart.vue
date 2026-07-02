@@ -73,7 +73,7 @@ const apiBaseUrl = config.public.apiBaseUrl
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 const props = defineProps<{
-    sensorId: number;
+    sensorId: string;
     modelVariable: string;
 }>();
 
@@ -211,7 +211,7 @@ function dataMinMax(): [number, number] {
  * @returns Promise resolving to {times, depths, data} or null on error
  */
 async function fetchSensorGriddedData(
-    sensorId: number,
+    sensorId: string,
     modelVariable: string,
     fromDate: string,
     toDate: string
@@ -358,7 +358,7 @@ function updateChart() {
  * Handles data fetching, clearing, and error handling in one place.
  */
 async function loadChartData(
-    sensorId: number,
+    sensorId: string,
     variable: string,
     start: string,
     end: string

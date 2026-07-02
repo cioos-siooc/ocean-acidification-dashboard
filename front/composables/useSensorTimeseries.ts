@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { useRuntimeConfig } from '#app';
 
-export async function getSensorTimeseries(sensorId: number|null, canonicalVariable: string, fromDate: string, toDate: string, depth: number|null = null) {
+export async function getSensorTimeseries(sensorId: string|null, canonicalVariable: string, fromDate: string, toDate: string, depth: number|null = null) {
     if (sensorId === null || sensorId === undefined) {
         return null
     }

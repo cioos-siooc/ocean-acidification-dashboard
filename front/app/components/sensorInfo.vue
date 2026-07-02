@@ -100,14 +100,14 @@ const depthDialogOpen = computed({
 });
 
 const showHeatmapDialog = ref(false);
-const heatmap_sensorId = ref<number | null>(null);
+const heatmap_sensorId = ref<string | null>(null);
 const heatmap_variable = computed(() => mainStore.selected_variable?.var ?? null);
 const heatmap_minDate = ref<string | null>(null);
 const heatmap_maxDate = ref<string | null>(null);
 
 ///////////////////////////////// METHODS  ///////////////////////////////////
 
-function selectSensor(sensorID: number) {
+function selectSensor(sensorID: string) {
     const sensor = sensors.value.find(s => s.id === sensorID);
     if (sensor) {
         if (sensor.depth.length === 1) {
@@ -122,7 +122,7 @@ function selectSensor(sensorID: number) {
     }
 }
 
-function pickDepth(sensorID: number, depth: number) {
+function pickDepth(sensorID: string, depth: number) {
     depthDialogSensor.value = null;
     const sensor = sensors.value.find(s => s.id === sensorID);
     if (sensor) {
@@ -149,7 +149,7 @@ function sensorDepths(depth: number[]): Array<{ label: string, value: number }> 
     return depth.map(d => ({ label: d === 0 ? 'Surface' : d.toFixed(0) + ' m', value: d }));
 }
 
-function openHeatmapDialog(sensorId: number) {
+function openHeatmapDialog(sensorId: string) {
     const sensor = sensors.value.find(s => s.id === sensorId);
     heatmap_sensorId.value = sensorId;
     showHeatmapDialog.value = true;
