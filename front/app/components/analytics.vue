@@ -407,16 +407,35 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
   chartInstance.setOption({
     tooltip: {
       trigger: 'axis',
+      confine: true,
       formatter: (params: any) => {
         const items = (Array.isArray(params) ? params : [params])
           .filter((p: any) => p.value?.[1] != null)
           .sort((a: any, b: any) => (b.value[1] ?? 0) - (a.value[1] ?? 0))
         if (!items.length) return ''
-        let s = `<strong>${fmtOverlayDate(items[0].value[0])}</strong><br/>`
-        items.forEach((p: any) => {
-          s += `${p.marker} ${p.seriesName}: <strong>${Number(p.value[1]).toFixed(3)}</strong><br/>`
-        })
-        return s
+        const header = `<strong>${fmtOverlayDate(items[0].value[0])}</strong><br/>`
+        const cols = items.length > 15 ? 3 : items.length > 8 ? 2 : 1
+        if (cols === 1) {
+          let s = header
+          items.forEach((p: any) => {
+            s += `${p.marker} ${p.seriesName}: <strong>${Number(p.value[1]).toFixed(3)}</strong><br/>`
+          })
+          return s
+        }
+        const rows = Math.ceil(items.length / cols)
+        let table = `${header}<table style="border-collapse:collapse;line-height:1.4;">`
+        for (let r = 0; r < rows; r++) {
+          table += '<tr>'
+          for (let c = 0; c < cols; c++) {
+            const p = items[c * rows + r]
+            if (p) {
+              table += `<td style="padding:0 10px 0 0;white-space:nowrap;">${p.marker} ${p.seriesName}: <strong>${Number(p.value[1]).toFixed(3)}</strong></td>`
+            }
+          }
+          table += '</tr>'
+        }
+        table += '</table>'
+        return table
       }
     },
     legend: { top: 4, type: 'scroll', textStyle: { fontSize: 10 } },

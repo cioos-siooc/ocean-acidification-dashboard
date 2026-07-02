@@ -314,37 +314,27 @@ async def get_variables():
 
 @app.get("/sensors")
 async def get_sensors():
-    """
-    Return a list of sensors with their metadata.
-    """
+    """Return a list of sensors with their metadata from ClickHouse."""
     def _fetch():
-        import psycopg2
-        import psycopg2.extras
-        query = "SELECT id, name, latitude, longitude, depth, device_config, variables, active FROM sensors;"
-        conn = None
-        try:
-            conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password, connect_timeout=5)
-            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            cur.execute(query)
-            rows = cur.fetchall()
-            cur.close()
-            
-            sensors = []
-            for row in rows:
-                sensors.append({
-                    "id": row.get("id"),
-                    "name": row.get("name"),
-                    "latitude": row.get("latitude"),
-                    "longitude": row.get("longitude"),
-                    "depth": row.get("depth"),
-                    "device_config": row.get("device_config"),
-                    "variables": row.get("variables"),
-                    "active": row.get("active"),
-                })
-            return sensors
-        finally:
-            if conn:
-                conn.close()
+        from modules.clickhouse_helpers import get_ch_client
+        client = get_ch_client()
+        result = client.query(
+            "SELECT id, name, latitude, longitude, depth, device_config, variables, active "
+            "FROM sensors FINAL WHERE active = 1"
+        )
+        sensors = []
+        for row in result.result_rows:
+            sensors.append({
+                "id": int(row[0]),
+                "name": row[1],
+                "latitude": float(row[2]),
+                "longitude": float(row[3]),
+                "depth": float(row[4]),
+                "device_config": json.loads(row[5]) if row[5] else {},
+                "variables": json.loads(row[6]) if row[6] else {},
+                "active": bool(row[7]),
+            })
+        return sensors
 
     try:
         return await run_in_threadpool(_fetch)
@@ -375,70 +365,26 @@ class sensorTimeseriesRequest(BaseModel):
 
 @app.post("/sensorTimeseries")
 async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: Request):
-    """Return sensor telemetry read from a compressed NC file.
+    """Return sensor telemetry from ClickHouse sensor_timeseries.
 
-    Accepts a canonical variable name (model name) and resolves it to the
-    sensor-specific sensorCategoryCode via the sensors.variables DB mapping
-    before reading {SENSORS_ROOT}/{sensorId}/{sensorCategoryCode}.nc.
-
-    NC files may be 1-D (time,) or 2-D (time, depth).  When depth is omitted
-    and a depth dimension is present, all depths are returned.
+    Accepts a canonical variable name and queries CH directly — no
+    sensor-specific code resolution or NC file I/O needed.
 
     Response: { time: [iso...], value: [float|null,...] }
               or with depth axis: { time: [...], depth: [...], value: [...] }
     """
-    import psycopg2
-    import psycopg2.extras
-    import json
-
     try:
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
     except (asyncio.TimeoutError, Exception):
         logger.warning("Semaphore timeout in sensorTimeseries")
         raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
 
-    def _resolve_sensor_code() -> str:
-        conn = None
-        try:
-            conn = psycopg2.connect(
-                host=db_host, port=db_port, dbname=db_name,
-                user=db_user, password=db_password, connect_timeout=5,
-            )
-            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            cur.execute("SELECT variables FROM sensors WHERE id=%s", (request.sensorId,))
-            row = cur.fetchone()
-            if not row or not row.get("variables"):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Sensor {request.sensorId} has no variable mapping defined",
-                )
-            mapping = row["variables"]
-            if isinstance(mapping, str):
-                mapping = json.loads(mapping)
-            var_info = mapping.get(request.modelVariable)
-            if not var_info or not isinstance(var_info, dict):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Sensor {request.sensorId} has no mapping for '{request.modelVariable}'",
-                )
-            code = var_info.get("name")
-            if not code:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Sensor {request.sensorId} mapping for '{request.modelVariable}' is missing 'name'",
-                )
-            return code
-        finally:
-            if conn:
-                conn.close()
-
     try:
-        sensor_code = await asyncio.wait_for(run_in_threadpool(_resolve_sensor_code), timeout=10.0)
         result = await asyncio.wait_for(
-            run_in_process(
+            run_in_threadpool(
                 extract_sensor_timeseries,
                 request.sensorId,
-                sensor_code,
+                request.modelVariable,
                 request.fromDate,
                 request.toDate,
                 request.depth,
@@ -454,8 +400,6 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: 
         raise
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    except KeyError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

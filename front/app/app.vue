@@ -35,7 +35,7 @@ import moment from 'moment'
 import axios from 'axios'
 
 import { useRuntimeConfig } from '#app'
-import { useMainStore } from './stores/main'
+import { useMainStore, formatDepthLabel } from './stores/main'
 const mainStore = useMainStore();
 const config = useRuntimeConfig();
 const apiBaseUrl = config.public.apiBaseUrl;
@@ -64,7 +64,8 @@ async function getVariables() {
       const source = varMeta?.source ?? '';
       const dts = varMeta?.dts ?? [];
       const precision = varMeta?.precision || 0.1;
-      const depth = (varMeta?.depths && varMeta.depths.length > 0) ? varMeta.depths[0].depth : 0.5;
+      const depthNc = (varMeta?.depths && varMeta.depths.length > 0) ? varMeta.depths[0] : 0.5;
+      const depth = formatDepthLabel(depthNc);
       const colormap = varMeta?.colormap ?? null;
       const colormapMin = varMeta?.colormapMin ?? null;
       const colormapMax = varMeta?.colormapMax ?? null;
@@ -74,6 +75,7 @@ async function getVariables() {
           source: source,
           dt: moment.utc(dts[dts.length - 1]),
           depth: depth,
+          depth_nc: depthNc,
           precision: precision,
           colormap: colormap,
           colormapMin: colormapMin,

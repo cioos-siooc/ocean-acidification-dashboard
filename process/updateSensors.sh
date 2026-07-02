@@ -4,8 +4,7 @@ if [ -f .updating_sensors ]; then
 fi
 
 > .updating_sensors
-docker compose --env-file .env.prod -f docker-compose.prod.backend.yml run --rm process uv run python sensors/onc_to_nc.py
-docker compose --env-file .env.prod -f docker-compose.prod.backend.yml run --rm process uv run python sensors/erddapGrid_to_nc.py
-docker compose --env-file .env.prod -f docker-compose.prod.backend.yml run --rm process uv run python sensors/erddapTable_to_nc.py
+docker compose --env-file .env.prod -f docker-compose.prod.backend.yml run --rm process uv run python sensors/onc_to_ch.py
+docker compose --env-file .env.prod -f docker-compose.prod.backend.yml run --rm process uv run python sensors/erddap_to_ch.py
 
 rm .updating_sensors
