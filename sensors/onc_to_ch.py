@@ -29,6 +29,12 @@ onc = ONC(TOKEN)
 
 BATCH_SIZE = 10_000
 
+# How far back to re-fetch from the last stored timestamp on each run.
+# ONC data for the most recent hours may be revised after initial delivery,
+# so we always overlap by this amount and let ReplacingMergeTree overwrite
+# stale rows during its background merge.
+OVERLAP_HOURS = 6
+
 
 # ── CH helpers ────────────────────────────────────────────────────────────────
 
@@ -127,18 +133,12 @@ def fetch_and_store(sensor_id_filter: str | None = None):
                 print(f"  No canonical mapping for codes '{sensor_codes}', skipping.")
                 continue
 
-            # Use the earliest last-stored time across all involved variables so we
-            # don't create a gap in any of them.
+            # Re-fetch from OVERLAP_HOURS before the last stored timestamp so
+            # that recently revised ONC data overwrites any stale rows.
             last_times = [get_last_stored_time(ch_client, sensor_id, c) for c in involved_canonicals]
             valid_times = [t for t in last_times if t is not None]
             if valid_times:
-                overlap = min(valid_times)
-                from_dt_obj = overlap.replace(hour=0, minute=0, second=0, microsecond=0)
-                # one-day overlap
-                from_dt_obj = from_dt_obj.replace(
-                    day=max(1, from_dt_obj.day - 1)
-                )
-                date_from = from_dt_obj.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                date_from = (min(valid_times) - timedelta(hours=OVERLAP_HOURS)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
             else:
                 date_from = None
 
