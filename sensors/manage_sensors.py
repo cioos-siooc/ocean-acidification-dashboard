@@ -183,6 +183,47 @@ def _get_sensor(ch_client, sensor_id: str) -> dict | None:
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
+SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS default.sensors
+(
+    id            UUID DEFAULT generateUUIDv4(),
+    name          String,
+    latitude      Float64,
+    longitude     Float64,
+    depth         Float32,
+    variables     String,
+    device_config String,
+    source        String,
+    active        UInt8,
+    updated_at    DateTime DEFAULT now()
+)
+ENGINE = ReplacingMergeTree(updated_at)
+ORDER BY id;
+
+CREATE TABLE IF NOT EXISTS default.sensor_timeseries
+(
+    sensor_id  UUID                      CODEC(ZSTD(4)),
+    time       DateTime                  CODEC(DoubleDelta, ZSTD(4)),
+    depth      Float32                   CODEC(Gorilla(4),  ZSTD(4)),
+    variable   LowCardinality(String),
+    value      Float32                   CODEC(Gorilla(4),  ZSTD(4))
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toYYYYMM(time)
+ORDER BY (sensor_id, variable, depth, time);
+"""
+
+
+def cmd_setup(ch_client, _args):
+    for statement in SCHEMA_SQL.strip().split(";"):
+        statement = statement.strip()
+        if statement:
+            ch_client.command(statement)
+    print("Tables created (or already exist):")
+    print("  default.sensors")
+    print("  default.sensor_timeseries")
+
+
 def cmd_list(ch_client, _args):
     rows = ch_client.query(
         "SELECT id, name, depth, source, active FROM sensors FINAL ORDER BY name"
@@ -297,6 +338,7 @@ def main():
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
+    sub.add_parser("setup", help="Create CH tables (safe to re-run, uses IF NOT EXISTS).")
     sub.add_parser("list", help="List all sensors.")
 
     add_p = sub.add_parser("add", help="Add a new sensor (UUID auto-generated).")
@@ -325,7 +367,9 @@ def main():
     args = parser.parse_args()
     ch_client = get_ch_client()
 
-    if args.command == "list":
+    if args.command == "setup":
+        cmd_setup(ch_client, args)
+    elif args.command == "list":
         cmd_list(ch_client, args)
     elif args.command == "add":
         cmd_add(ch_client, args)
