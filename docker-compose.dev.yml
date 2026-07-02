@@ -134,6 +134,7 @@ services:
     build:
       context: .
       dockerfile: sensors/Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
     env_file:
       - .env.dev
     environment:

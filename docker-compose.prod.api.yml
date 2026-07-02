@@ -54,6 +54,7 @@ services:
     build:
       context: .
       dockerfile: sensors/Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
     environment:
       - CH_HOST=${CH_HOST:-db-ch}
       - CH_PORT=${CH_PORT:-8123}
