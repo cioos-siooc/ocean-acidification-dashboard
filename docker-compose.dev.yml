@@ -120,9 +120,31 @@ services:
     volumes:
       - ./clickhouse/data:/var/lib/clickhouse
       - ./clickhouse/logs:/var/log/clickhouse-server
+      - ./clickhouse/users.d:/etc/clickhouse-server/users.d
     environment:
       CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
+
+  sensors:
+    build:
+      context: .
+      dockerfile: sensors/Dockerfile
+    env_file:
+      - .env.dev
+    environment:
+      # Override the host-IP values in .env.dev with the Docker service name/port,
+      # and clear CH_PASSWORD (local dev db-ch has no password)
+      - CH_HOST=db-ch
+      - CH_PORT=8123
+      - CH_PASSWORD=
+    depends_on:
+      db-ch:
+        condition: service_healthy
 
   process:
     build:

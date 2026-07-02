@@ -47,6 +47,25 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Sensor ingestion — fetches from ONC/ERDDAP and writes directly to db-ch.
+  # Run on-demand (cron or manual); not a long-running service.
+  # Example: docker compose -f docker-compose.prod.api.yml run --rm sensors python onc_to_ch.py
+  sensors:
+    build:
+      context: .
+      dockerfile: sensors/Dockerfile
+    environment:
+      - CH_HOST=${CH_HOST:-db-ch}
+      - CH_PORT=${CH_PORT:-8123}
+      - CH_USER=${CH_USER:-default}
+      - CH_PASSWORD=${CH_PASSWORD:-}
+      - CH_USE_REMOTE=${CH_USE_REMOTE:-false}
+      - CH_REMOTE_URL=${CH_REMOTE_URL:-}
+      - ONC_TOKEN=${ONC_TOKEN:-}
+    depends_on:
+      db-ch:
+        condition: service_healthy
+
   # Canonical ClickHouse — receives the PROCESS machine's synced
   # SalishSeaCast_hourly data (see api/modules/sync_hourly.py) and serves
   # extractTimeseries/analysis queries. Not the same as the PROCESS
