@@ -75,6 +75,9 @@ import json
 import sys
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
+
+import yaml
 
 from ch_helpers import get_ch_client
 
@@ -319,6 +322,68 @@ def cmd_set_active(ch_client, args, active: int):
 
 # ── CLI wiring ────────────────────────────────────────────────────────────────
 
+def cmd_import(ch_client, args):
+    """Batch-insert sensors from a YAML catalog file."""
+    path = Path(args.file)
+    if not path.exists():
+        print(f"ERROR: file not found: {path}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(path) as f:
+        catalog = yaml.safe_load(f)
+
+    entries = catalog.get("sensors", [])
+    if not entries:
+        print("No sensors found in catalog.")
+        return
+
+    # Build a name→uuid index of what's already in CH
+    existing = {
+        row[1]: str(row[0])
+        for row in ch_client.query(
+            "SELECT id, name FROM sensors FINAL"
+        ).result_rows
+    }
+
+    added = skipped = 0
+    for entry in entries:
+        name = entry["name"]
+        if name in existing and not args.overwrite:
+            print(f"  SKIP  {name}  (already exists, use --overwrite to update)")
+            skipped += 1
+            continue
+
+        var_strings = entry.get("variables", [])
+        variables, device_config = _build_variables_and_device_config(
+            var_strings, entry.get("location_code")
+        )
+
+        source: dict = {"type": entry["source_type"]}
+        if entry.get("source_link"):
+            source["link"] = entry["source_link"]
+
+        sensor_id = existing[name] if (name in existing and args.overwrite) else str(uuid.uuid4())
+        row = {
+            "id": sensor_id,
+            "name": name,
+            "latitude": float(entry["lat"]),
+            "longitude": float(entry["lon"]),
+            "depth": float(entry["depth"]),
+            "variables": variables,
+            "device_config": device_config,
+            "source": source,
+            "active": 0 if entry.get("inactive") else 1,
+        }
+        _upsert(ch_client, row)
+        verb = "UPDATE" if (name in existing and args.overwrite) else "  ADD "
+        print(f"  {verb}  {name}  ({sensor_id})")
+        added += 1
+
+    print(f"\n{added} sensor(s) added/updated, {skipped} skipped.")
+    if added:
+        print("Run onc_to_ch.py or erddap_to_ch.py (no --sensor-id) to backfill all new sensors.")
+
+
 def _add_variable_args(p: argparse.ArgumentParser):
     p.add_argument("--variable", action="append",
                    metavar="CANONICAL:SOURCE:UNIT:FACTOR[:DEVICE_CAT]",
@@ -340,6 +405,12 @@ def main():
 
     sub.add_parser("setup", help="Create CH tables (safe to re-run, uses IF NOT EXISTS).")
     sub.add_parser("list", help="List all sensors.")
+
+    imp_p = sub.add_parser("import", help="Batch-add sensors from a YAML catalog file.")
+    imp_p.add_argument("--file", default="catalog.yaml", metavar="PATH",
+                       help="Path to the catalog YAML file (default: catalog.yaml).")
+    imp_p.add_argument("--overwrite", action="store_true",
+                       help="Update sensors that already exist by name.")
 
     add_p = sub.add_parser("add", help="Add a new sensor (UUID auto-generated).")
     add_p.add_argument("--name", required=True)
@@ -367,7 +438,9 @@ def main():
     args = parser.parse_args()
     ch_client = get_ch_client()
 
-    if args.command == "setup":
+    if args.command == "import":
+        cmd_import(ch_client, args)
+    elif args.command == "setup":
         cmd_setup(ch_client, args)
     elif args.command == "list":
         cmd_list(ch_client, args)

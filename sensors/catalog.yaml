@@ -1,0 +1,85 @@
+# ONC/ERDDAP sensor catalog.
+#
+# Add sensors here, then run:
+#   docker compose -f docker-compose.prod.api.yml run --rm sensors \
+#     uv run python manage_sensors.py import
+#
+# After importing, backfill all new sensors at once:
+#   docker compose -f docker-compose.prod.api.yml run --rm sensors \
+#     uv run python onc_to_ch.py
+#
+# Variable format (ONC):   canonical:onc_code:unit:conversion_factor:device_category
+# Variable format (ERDDAP): canonical:erddap_column:unit:conversion_factor
+#
+# YAML anchors (&name / *name) let you define a shared variable set once
+# and reuse it across sensors that have the same instruments.
+
+# --- shared variable sets ---------------------------------------------------
+
+_venus_standard: &venus_standard
+  - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
+  - "temperature:temperature:C:1.0:CTD"
+  - "salinity:salinity:PSU:1.0:CTD"
+
+# ----------------------------------------------------------------------------
+
+sensors:
+
+  # ── ONC VENUS / NEPTUNE stations ──────────────────────────────────────────
+
+  - name: "Central Strait of Georgia VENUS platform"
+    lat: 49.0405
+    lon: -123.4247
+    depth: 298.93
+    source_type: ONC
+    location_code: SCVIP
+    variables: *venus_standard
+
+  - name: "Strait of Georgia East"
+    lat: 49.042635
+    lon: -123.317605
+    depth: 167.14
+    source_type: ONC
+    location_code: SEVIP
+    variables: *venus_standard
+
+  - name: "Folger Deep"
+    lat: 48.813808
+    lon: -125.280581
+    depth: 96.36
+    source_type: ONC
+    location_code: FGPD
+    variables: *venus_standard
+
+  - name: "Folger Pinnacle"
+    lat: 48.808292
+    lon: -125.281500
+    depth: 25.0
+    source_type: ONC
+    location_code: FGPPN
+    variables: *venus_standard
+
+  # Add more ONC locations here — copy any block above and update
+  # name, lat, lon, depth, and location_code.
+  # Full location list: https://wiki.oceannetworks.ca/spaces/O2A/pages/49447553/Available+Locations
+  #
+  # Example:
+  # - name: "Barkley Canyon Upper Slope"
+  #   lat: 48.316
+  #   lon: -126.050
+  #   depth: 395.0
+  #   source_type: ONC
+  #   location_code: BACUS
+  #   variables: *venus_standard
+
+  # ── ERDDAP sensors ────────────────────────────────────────────────────────
+
+  # - name: "Hakai Wirewalker"
+  #   lat: 50.112
+  #   lon: -125.093
+  #   depth: 20.0
+  #   source_type: ERDDAP
+  #   source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiWirewalker"
+  #   variables:
+  #     - "temperature:temperature:C:1.0"
+  #     - "salinity:salinity:PSU:1.0"
