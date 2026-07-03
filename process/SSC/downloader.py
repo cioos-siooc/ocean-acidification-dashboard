@@ -125,17 +125,23 @@ def check_erddap(client, init_days: int = 3, date_override: Optional[str] = None
         if date_override:
             dates_to_check = [datetime.strptime(date_override, '%Y-%m-%d').date()]
         else:
+            # Use max(date) across ALL statuses: variables that have moved past
+            # success_download (e.g. success_ingest) return no rows when filtered
+            # to status='success_download', causing ClickHouse to return 1970-01-01
+            # (its zero Date, not NULL) which is truthy in Python — triggering a
+            # 56-year backfill loop.
             result = client.query(
                 """
                 SELECT max(date) FROM SalishSeaCast_status FINAL
-                WHERE variable = %(v)s AND status = %(s)s
+                WHERE variable = %(v)s
                 """,
-                parameters={'v': variable, 's': STATUS_SUCCESS_DOWNLOAD},
+                parameters={'v': variable},
             )
-            last_success = result.result_rows[0][0] if result.result_rows and result.result_rows[0][0] else None
+            raw = result.result_rows[0][0] if result.result_rows else None
+            last_known = raw if raw and raw.year > 1970 else None
 
-            if last_success:
-                start_date = last_success + timedelta(days=1)
+            if last_known:
+                start_date = last_known + timedelta(days=1)
             else:
                 start_date = (remote_max - timedelta(days=init_days)).date()
 
