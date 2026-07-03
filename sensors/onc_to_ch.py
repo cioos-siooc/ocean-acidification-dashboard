@@ -160,7 +160,7 @@ def fetch_and_store(sensor_id_filter: str | None = None):
                 print(f"  ERROR fetching ONC data: {e}")
                 continue
 
-            if "sensorData" not in data:
+            if not data.get("sensorData"):
                 print(f"  No sensorData returned.")
                 continue
 
