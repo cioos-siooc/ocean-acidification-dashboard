@@ -323,7 +323,7 @@ async def get_sensors():
                 s.id, s.name, s.latitude, s.longitude, s.depth,
                 s.device_config, s.variables, s.active,
                 ts.first_data_at, ts.latest_data_at
-            FROM sensors FINAL s
+            FROM sensors AS s FINAL
             LEFT JOIN (
                 SELECT sensor_id,
                        MIN(time) AS first_data_at,
