@@ -59,10 +59,31 @@
                 </v-btn-toggle>
             </div>
 
-            <!-- Multi-sensor location picker -->
+            <!-- Multi-sensor location picker (exact same coordinate) -->
             <SensorPickerPopover :visible="sensorPicker.visible" :x="sensorPicker.x" :y="sensorPicker.y"
                 :sensors="sensorPicker.sensors" @pick="(s) => clickSensor(s.id, s.depth)"
                 @close="sensorPicker.visible = false" />
+
+            <!-- Spiderfy overlay (nearby sensors at different coordinates) -->
+            <div v-if="spiderfy.visible"
+                style="position: absolute; inset: 0; z-index: 5000; pointer-events: all;"
+                @click.self="spiderfy.visible = false">
+                <svg style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;">
+                    <line v-for="(spoke, i) in spiderfy.spokes" :key="`sl-${i}`"
+                        :x1="spiderfy.centerX" :y1="spiderfy.centerY"
+                        :x2="spoke.x" :y2="spoke.y"
+                        stroke="rgba(255,215,0,0.65)" stroke-width="1.5" />
+                    <circle :cx="spiderfy.centerX" :cy="spiderfy.centerY" r="5"
+                        fill="#FFD700" stroke="#333" stroke-width="1.5" />
+                </svg>
+                <div v-for="(spoke, i) in spiderfy.spokes" :key="`sn-${i}`"
+                    class="spiderfy-node"
+                    :style="{ left: spoke.x + 'px', top: spoke.y + 'px' }"
+                    @click.stop="clickSensorFromSpiderfy(spoke.sensor)">
+                    <div class="spiderfy-dot" />
+                    <div class="spiderfy-label">{{ spoke.sensor.name }}</div>
+                </div>
+            </div>
 
             <v-snackbar-queue ref="snackbarQueue" v-model="snackMessages" :total-visible="3" closable
                 contained></v-snackbar-queue>
@@ -184,6 +205,13 @@ const sensorPicker = ref<{ visible: boolean; x: number; y: number; sensors: Mult
     y: 0,
     sensors: [],
 });
+
+const spiderfy = ref<{
+    visible: boolean;
+    centerX: number;
+    centerY: number;
+    spokes: Array<{ sensor: MultiSensorCandidate; x: number; y: number }>;
+}>({ visible: false, centerX: 0, centerY: 0, spokes: [] });
 
 // [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
 const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, number]];
@@ -656,8 +684,11 @@ async function getClimateTimeseries(lat: number, lon: number, fromDate: string, 
     });
 };
 
+const REALTIME_THRESHOLD_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+
 async function addSensors() {
     const sensors = await getSensors();
+    const now = Date.now();
 
     // Group sensors by coordinate key so co-located sensors share one marker
     const locationMap = new Map<string, any[]>();
@@ -670,6 +701,9 @@ async function addSensors() {
     const features = Array.from(locationMap.entries()).map(([, group]) => {
         const first = group[0];
         const anyActive = group.some((s: any) => s.active);
+        const isRealtime = group.some((s: any) =>
+            s.latest_data_at && (now - new Date(s.latest_data_at).getTime()) < REALTIME_THRESHOLD_MS
+        );
         return {
             type: 'Feature',
             geometry: {
@@ -679,11 +713,10 @@ async function addSensors() {
             properties: {
                 sensorCount: group.length,
                 active: anyActive,
+                isRealtime,
                 // Embed all sensors as JSON string (Mapbox flattens properties to primitives)
                 sensorsJson: JSON.stringify(
-                    group
-                        // .sort((a: any, b: any) => a.depth - b.depth)
-                        .map((s: any) => ({ id: s.id, name: s.name, depth: s.depth }))
+                    group.map((s: any) => ({ id: s.id, name: s.name, depth: s.depth }))
                 ),
             }
         };
@@ -695,7 +728,7 @@ async function addSensors() {
     };
 
     try {
-        const detach = await addBuoyLayer(map, geojson, clickSensor, openSensorPicker);
+        const detach = await addBuoyLayer(map, geojson, clickSensor, openSensorPicker, openSpiderfy);
         (map as any).__stationsDetach = detach;
     } catch (e) {
         console.warn('Failed to add buoy layer:', e);
@@ -703,7 +736,25 @@ async function addSensors() {
 }
 
 function openSensorPicker(sensors: MultiSensorCandidate[], screenX: number, screenY: number) {
+    spiderfy.value.visible = false;
     sensorPicker.value = { visible: true, x: screenX, y: screenY, sensors };
+}
+
+function openSpiderfy(sensors: MultiSensorCandidate[], screenX: number, screenY: number) {
+    sensorPicker.value.visible = false;
+    const radius = 70;
+    const startAngle = -Math.PI / 2;
+    const spokes = sensors.map((sensor, i) => {
+        const angle = startAngle + (2 * Math.PI / sensors.length) * i;
+        return { sensor, x: screenX + radius * Math.cos(angle), y: screenY + radius * Math.sin(angle) };
+    });
+    spiderfy.value = { visible: true, centerX: screenX, centerY: screenY, spokes };
+    map.once('movestart', () => { spiderfy.value.visible = false; });
+}
+
+function clickSensorFromSpiderfy(sensor: MultiSensorCandidate) {
+    spiderfy.value.visible = false;
+    clickSensor(sensor.id, sensor.depth);
 }
 
 function clickSensor(sensor_id: string, depth: number) {
@@ -1342,5 +1393,39 @@ let _sensorClickPending = false;
 .overlay {
     position: absolute;
     z-index: 998;
+}
+
+.spiderfy-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+.spiderfy-dot {
+    width: 13px;
+    height: 13px;
+    background: #FFD700;
+    border: 2px solid #333;
+    border-radius: 50%;
+    transition: transform 0.12s ease;
+}
+
+.spiderfy-node:hover .spiderfy-dot {
+    transform: scale(1.35);
+}
+
+.spiderfy-label {
+    color: #fff;
+    font-size: 10px;
+    white-space: nowrap;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 3px #000, 0 0 5px #000;
+    pointer-events: none;
 }
 </style>

@@ -318,10 +318,21 @@ async def get_sensors():
     def _fetch():
         from modules.clickhouse_helpers import get_ch_client
         client = get_ch_client()
-        result = client.query(
-            "SELECT id, name, latitude, longitude, depth, device_config, variables, active "
-            "FROM sensors FINAL WHERE active = 1"
-        )
+        result = client.query("""
+            SELECT
+                s.id, s.name, s.latitude, s.longitude, s.depth,
+                s.device_config, s.variables, s.active,
+                ts.first_data_at, ts.latest_data_at
+            FROM sensors FINAL s
+            LEFT JOIN (
+                SELECT sensor_id,
+                       MIN(time) AS first_data_at,
+                       MAX(time) AS latest_data_at
+                FROM sensor_timeseries
+                GROUP BY sensor_id
+            ) ts ON ts.sensor_id = s.id
+            WHERE s.active = 1
+        """)
         sensors = []
         for row in result.result_rows:
             sensors.append({
@@ -333,6 +344,8 @@ async def get_sensors():
                 "device_config": json.loads(row[5]) if row[5] else {},
                 "variables": json.loads(row[6]) if row[6] else {},
                 "active": bool(row[7]),
+                "first_data_at": row[8].isoformat() if row[8] else None,
+                "latest_data_at": row[9].isoformat() if row[9] else None,
             })
         return sensors
 

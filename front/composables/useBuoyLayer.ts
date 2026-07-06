@@ -7,10 +7,11 @@ function makeSvg(fill: string) {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 15 15"><path fill="${fill}" stroke="black" stroke-width="1" stroke-linejoin="round" paint-order="stroke fill" d="${PATH}"/></svg>`;
 }
 
+export const STATIONS_LAYER_ID = 'stations-circles';
 const SOURCE_ID = 'stations';
-const LAYER_ID = 'stations-circles';
 const LAYER_BADGE_ID = 'stations-badge';
-const IMAGE_ACTIVE = 'buoy-active';
+const IMAGE_REALTIME = 'buoy-realtime';
+const IMAGE_ACTIVE   = 'buoy-active';
 const IMAGE_INACTIVE = 'buoy-inactive';
 
 async function loadImage(map: any, id: string, svg: string): Promise<void> {
@@ -42,25 +43,28 @@ export async function addBuoyLayer(
     geojson: FeatureCollection<Geometry, GeoJsonProperties>,
     onSensorClick: (sensor_id: string, depth: number) => void,
     onMultiSensorClick: (sensors: MultiSensorCandidate[], screenX: number, screenY: number) => void,
+    onSpiderfyClick: (sensors: MultiSensorCandidate[], screenX: number, screenY: number) => void,
 ): Promise<() => void> {
     await Promise.all([
-        loadImage(map, IMAGE_ACTIVE,   makeSvg('#FFD700')),
-        loadImage(map, IMAGE_INACTIVE, makeSvg('#888888')),
+        loadImage(map, IMAGE_REALTIME, makeSvg('#26C6DA')), // teal — has data within last 14 days
+        loadImage(map, IMAGE_ACTIVE,   makeSvg('#FFD700')), // gold — active but only historical data
+        loadImage(map, IMAGE_INACTIVE, makeSvg('#888888')), // grey — inactive
     ]);
 
     // Remove existing layers/source before re-adding
     try { if (map.getLayer(LAYER_BADGE_ID)) map.removeLayer(LAYER_BADGE_ID); } catch (e) { }
-    try { if (map.getLayer(LAYER_ID)) map.removeLayer(LAYER_ID); } catch (e) { }
+    try { if (map.getLayer(STATIONS_LAYER_ID)) map.removeLayer(STATIONS_LAYER_ID); } catch (e) { }
     try { if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID); } catch (e) { }
 
     map.addSource(SOURCE_ID, { type: 'geojson', data: geojson });
     map.addLayer({
-        id: LAYER_ID,
+        id: STATIONS_LAYER_ID,
         type: 'symbol',
         source: SOURCE_ID,
         layout: {
             'icon-image': [
                 'case',
+                ['all', ['==', ['get', 'active'], true], ['==', ['get', 'isRealtime'], true]], IMAGE_REALTIME,
                 ['==', ['get', 'active'], true], IMAGE_ACTIVE,
                 IMAGE_INACTIVE,
             ],
@@ -96,12 +100,11 @@ export async function addBuoyLayer(
 
     const layerAdapter = {
         on: (event: string, handler: (evt: any) => void) => {
-            map.on(event, LAYER_ID, handler);
-            return () => { try { map.off(event, LAYER_ID, handler); } catch (e) { } };
+            map.on(event, STATIONS_LAYER_ID, handler);
+            return () => { try { map.off(event, STATIONS_LAYER_ID, handler); } catch (e) { } };
         },
     };
 
-    const stations = useStationsInteraction(() => map, onSensorClick, onMultiSensorClick);
+    const stations = useStationsInteraction(() => map, STATIONS_LAYER_ID, onSensorClick, onMultiSensorClick, onSpiderfyClick);
     return stations.attach(layerAdapter) ?? (() => {});
 }
-

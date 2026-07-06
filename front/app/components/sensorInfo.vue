@@ -38,8 +38,7 @@
                                 <v-icon size="10px">mdi-chevron-down</v-icon>
                             </v-label> -->
 
-                            <v-list-item-subtitle class="text-label-small">Last Updated: 4 hours
-                                ago</v-list-item-subtitle>
+                            <v-list-item-subtitle class="text-label-small">{{ formatDataRange(sensor) }}</v-list-item-subtitle>
                             <v-row class="ma-0 pa-0">
                                 <v-spacer></v-spacer>
                                 <v-col cols="auto" class="ma-0 pa-0">
@@ -110,6 +109,16 @@ function depth2txt(depth: number): string {
     if (depth == null || depth < 0) return 'Variable depth';
     if (depth === 0) return 'Surface';
     return depth.toFixed(0) + ' m';
+}
+
+function formatDataRange(sensor: any): string {
+    const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { year: 'numeric', month: 'short' });
+    const { first_data_at, latest_data_at } = sensor;
+    if (!first_data_at && !latest_data_at) return 'No data';
+    if (!first_data_at) return `Up to ${fmt(latest_data_at)}`;
+    if (!latest_data_at) return `From ${fmt(first_data_at)}`;
+    const isRecent = Date.now() - new Date(latest_data_at).getTime() < 14 * 86400_000;
+    return `${fmt(first_data_at)} – ${isRecent ? 'present' : fmt(latest_data_at)}`;
 }
 
 function openHeatmapDialog(sensorId: string) {
