@@ -7,15 +7,28 @@ function makeSvg(fill: string) {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 15 15"><path fill="${fill}" stroke="black" stroke-width="1" stroke-linejoin="round" paint-order="stroke fill" d="${PATH}"/></svg>`;
 }
 
+function makeSplitSvg() {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 15 15">
+        <defs>
+            <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="50%" stop-color="#66BB6A"/>
+                <stop offset="50%" stop-color="#FFA726"/>
+            </linearGradient>
+        </defs>
+        <path fill="url(#g)" stroke="black" stroke-width="1" stroke-linejoin="round" paint-order="stroke fill" d="${PATH}"/>
+    </svg>`;
+}
+
 export const STATIONS_LAYER_ID = 'stations-circles';
 const SOURCE_ID = 'stations';
 const LAYER_BADGE_ID = 'stations-badge';
 const IMAGE_REALTIME = 'buoy-realtime';
 const IMAGE_ACTIVE   = 'buoy-active';
 const IMAGE_INACTIVE = 'buoy-inactive';
+const IMAGE_MIXED    = 'buoy-mixed';
 
 async function loadImage(map: any, id: string, svg: string): Promise<void> {
-    if (map.hasImage(id)) return;
+    if (map.hasImage(id)) map.removeImage(id);
     const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     return new Promise<void>((resolve) => {
         const img = new Image(30, 30);
@@ -32,7 +45,14 @@ async function loadImage(map: any, id: string, svg: string): Promise<void> {
     });
 }
 
-export type MultiSensorCandidate = { id: string; name: string; depth: number };
+export type MultiSensorCandidate = {
+    id: string;
+    name: string;
+    depth: number;
+    isRealtime: boolean;
+    lat: number;
+    lon: number;
+};
 
 /**
  * Add (or replace) the buoy symbol layer for mooring stations.
@@ -46,9 +66,10 @@ export async function addBuoyLayer(
     onSpiderfyClick: (sensors: MultiSensorCandidate[], screenX: number, screenY: number) => void,
 ): Promise<() => void> {
     await Promise.all([
-        loadImage(map, IMAGE_REALTIME, makeSvg('#26C6DA')), // teal — has data within last 14 days
-        loadImage(map, IMAGE_ACTIVE,   makeSvg('#FFD700')), // gold — active but only historical data
-        loadImage(map, IMAGE_INACTIVE, makeSvg('#888888')), // grey — inactive
+        loadImage(map, IMAGE_REALTIME, makeSvg('#66BB6A')),   // green  — data within last 14 days
+        loadImage(map, IMAGE_ACTIVE,   makeSvg('#FFA726')),   // orange — active but only historical
+        loadImage(map, IMAGE_INACTIVE, makeSvg('#888888')),   // grey   — inactive
+        loadImage(map, IMAGE_MIXED,    makeSplitSvg()),       // half green / half orange — mixed group
     ]);
 
     // Remove existing layers/source before re-adding
@@ -64,6 +85,7 @@ export async function addBuoyLayer(
         layout: {
             'icon-image': [
                 'case',
+                ['all', ['==', ['get', 'active'], true], ['==', ['get', 'hasMixed'], true]], IMAGE_MIXED,
                 ['all', ['==', ['get', 'active'], true], ['==', ['get', 'isRealtime'], true]], IMAGE_REALTIME,
                 ['==', ['get', 'active'], true], IMAGE_ACTIVE,
                 IMAGE_INACTIVE,
@@ -77,7 +99,7 @@ export async function addBuoyLayer(
         },
     });
 
-    // Badge layer: number label on top for multi-sensor locations
+    // Badge layer: count on top-right for multi-sensor locations
     map.addLayer({
         id: LAYER_BADGE_ID,
         type: 'symbol',
@@ -85,16 +107,16 @@ export async function addBuoyLayer(
         filter: ['>', ['get', 'sensorCount'], 1],
         layout: {
             'text-field': ['to-string', ['get', 'sensorCount']],
-            'text-size': 9,
+            'text-size': 14,
             'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
-            'text-offset': [0.75, -0.75],
+            'text-offset': [0.7, -0.7],
             'text-allow-overlap': true,
             'text-ignore-placement': true,
         },
         paint: {
             'text-color': '#ffffff',
-            'text-halo-color': '#E64A19',
-            'text-halo-width': 4,
+            'text-halo-color': '#333333',
+            'text-halo-width': 5,
         },
     });
 

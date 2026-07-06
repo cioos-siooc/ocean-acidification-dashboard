@@ -39,7 +39,7 @@
                             </v-label> -->
 
                             <v-list-item-subtitle class="text-label-small">{{ formatDataRange(sensor) }}</v-list-item-subtitle>
-                            <v-row class="ma-0 pa-0">
+                            <!-- <v-row class="ma-0 pa-0">
                                 <v-spacer></v-spacer>
                                 <v-col cols="auto" class="ma-0 pa-0">
                                     <v-btn flat icon size="12px" title="Model Evaluation" @click.stop="openHeatmapDialog(sensor.id)">
@@ -51,7 +51,7 @@
                                         <icons-compare :color="colors.blue.lighten3" />
                                     </v-btn>
                                 </v-col>
-                            </v-row>
+                            </v-row> -->
 
                         </div>
                     </v-list-item-content>

@@ -72,15 +72,17 @@
                     <line v-for="(spoke, i) in spiderfy.spokes" :key="`sl-${i}`"
                         :x1="spiderfy.centerX" :y1="spiderfy.centerY"
                         :x2="spoke.x" :y2="spoke.y"
-                        stroke="rgba(255,215,0,0.65)" stroke-width="1.5" />
+                        :stroke="spoke.sensor.isRealtime ? 'rgba(102,187,106,0.75)' : 'rgba(255,167,38,0.75)'"
+                        stroke-width="1.5" />
                     <circle :cx="spiderfy.centerX" :cy="spiderfy.centerY" r="5"
-                        fill="#FFD700" stroke="#333" stroke-width="1.5" />
+                        fill="#aaaaaa" stroke="#333" stroke-width="1.5" />
                 </svg>
                 <div v-for="(spoke, i) in spiderfy.spokes" :key="`sn-${i}`"
                     class="spiderfy-node"
                     :style="{ left: spoke.x + 'px', top: spoke.y + 'px' }"
                     @click.stop="clickSensorFromSpiderfy(spoke.sensor)">
-                    <div class="spiderfy-dot" />
+                    <div class="spiderfy-dot"
+                        :style="{ background: spoke.sensor.isRealtime ? '#66BB6A' : '#FFA726' }" />
                     <div class="spiderfy-label">{{ spoke.sensor.name }}</div>
                 </div>
             </div>
@@ -685,25 +687,40 @@ async function getClimateTimeseries(lat: number, lon: number, fromDate: string, 
 };
 
 const REALTIME_THRESHOLD_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const PROXIMITY_M = 100; // sensors within 100 m share one map marker
+
+function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371000;
+    const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 async function addSensors() {
     const sensors = await getSensors();
     const now = Date.now();
 
-    // Group sensors by coordinate key so co-located sensors share one marker
-    const locationMap = new Map<string, any[]>();
+    // Group sensors within PROXIMITY_M of each other into one marker
+    const groups: any[][] = [];
     for (const s of sensors) {
-        const key = `${s.longitude},${s.latitude}`;
-        if (!locationMap.has(key)) locationMap.set(key, []);
-        locationMap.get(key)!.push(s);
+        const existing = groups.find(g =>
+            haversineM(g[0].latitude, g[0].longitude, s.latitude, s.longitude) < PROXIMITY_M
+        );
+        if (existing) existing.push(s);
+        else groups.push([s]);
     }
 
-    const features = Array.from(locationMap.entries()).map(([, group]) => {
+    const sensorIsRealtime = (s: any) =>
+        s.latest_data_at && (now - new Date(s.latest_data_at).getTime()) < REALTIME_THRESHOLD_MS;
+
+    const features = groups.map(group => {
         const first = group[0];
         const anyActive = group.some((s: any) => s.active);
-        const isRealtime = group.some((s: any) =>
-            s.latest_data_at && (now - new Date(s.latest_data_at).getTime()) < REALTIME_THRESHOLD_MS
-        );
+        const isRealtime = group.some(sensorIsRealtime);
+        const allRealtime = group.every(sensorIsRealtime);
+        const hasMixed = group.length > 1 && isRealtime && !allRealtime;
         return {
             type: 'Feature',
             geometry: {
@@ -714,9 +731,16 @@ async function addSensors() {
                 sensorCount: group.length,
                 active: anyActive,
                 isRealtime,
-                // Embed all sensors as JSON string (Mapbox flattens properties to primitives)
+                hasMixed,
                 sensorsJson: JSON.stringify(
-                    group.map((s: any) => ({ id: s.id, name: s.name, depth: s.depth }))
+                    group.map((s: any) => ({
+                        id: s.id,
+                        name: s.name,
+                        depth: s.depth,
+                        isRealtime: sensorIsRealtime(s),
+                        lat: s.latitude,
+                        lon: s.longitude,
+                    }))
                 ),
             }
         };
@@ -736,8 +760,7 @@ async function addSensors() {
 }
 
 function openSensorPicker(sensors: MultiSensorCandidate[], screenX: number, screenY: number) {
-    spiderfy.value.visible = false;
-    sensorPicker.value = { visible: true, x: screenX, y: screenY, sensors };
+    openSpiderfy(sensors, screenX, screenY);
 }
 
 function openSpiderfy(sensors: MultiSensorCandidate[], screenX: number, screenY: number) {
@@ -1408,7 +1431,6 @@ let _sensorClickPending = false;
 .spiderfy-dot {
     width: 13px;
     height: 13px;
-    background: #FFD700;
     border: 2px solid #333;
     border-radius: 50%;
     transition: transform 0.12s ease;

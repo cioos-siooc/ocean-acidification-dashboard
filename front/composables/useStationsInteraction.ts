@@ -56,13 +56,7 @@ export function useStationsInteraction(
           return;
         }
 
-        if (uniqueFeatures.length === 1) {
-          // All at the exact same map coordinate → existing picker popup
-          onMultiSensorClick(allSensors, x, y);
-          return;
-        }
-
-        // Multiple features at different positions → spiderfy
+        // Always use spiderfy — consistent for both same-position (depth variants) and nearby sensors
         onSpiderfyClick(allSensors, x, y);
       } catch (e) {
         // swallow
