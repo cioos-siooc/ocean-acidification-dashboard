@@ -166,7 +166,7 @@ import type { FeatureCollection, Geometry, GeoJsonProperties, Feature, Polygon }
 import { var2name } from '../../composables/useVar2Name'
 import { utc2pst } from '../../composables/useUTC2PST'
 import useStationsInteraction from '../../composables/useStationsInteraction';
-import { addBuoyLayer, type MultiSensorCandidate } from '../../composables/useBuoyLayer';
+import { addBuoyLayer, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '../../composables/useBuoyLayer';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
 import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 import TimeseriesChart from '../components/TimeseriesChart.vue';
@@ -698,23 +698,14 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-async function addSensors() {
-    const sensors = await getSensors();
-    const now = Date.now();
+let _sensorGroups: any[][] = [];
+let _sensorIsRealtime: (s: any) => boolean = () => false;
 
-    // Group sensors within PROXIMITY_M of each other into one marker
-    const groups: any[][] = [];
-    for (const s of sensors) {
-        const existing = groups.find(g =>
-            haversineM(g[0].latitude, g[0].longitude, s.latitude, s.longitude) < PROXIMITY_M
-        );
-        if (existing) existing.push(s);
-        else groups.push([s]);
-    }
+function coordKey(lat: number, lon: number): string {
+    return `${lat.toFixed(6)},${lon.toFixed(6)}`;
+}
 
-    const sensorIsRealtime = (s: any) =>
-        s.latest_data_at && (now - new Date(s.latest_data_at).getTime()) < REALTIME_THRESHOLD_MS;
-
+function buildSensorGeoJSON(groups: any[][], sensorIsRealtime: (s: any) => boolean): FeatureCollection<Geometry, GeoJsonProperties> {
     const features = groups.map(group => {
         const first = group[0];
         const anyActive = group.some((s: any) => s.active);
@@ -723,11 +714,9 @@ async function addSensors() {
         const hasMixed = group.length > 1 && isRealtime && !allRealtime;
         return {
             type: 'Feature',
-            geometry: {
-                type: 'Point',
-                coordinates: [first.longitude, first.latitude]
-            },
+            geometry: { type: 'Point', coordinates: [first.longitude, first.latitude] },
             properties: {
+                coordKey: coordKey(first.latitude, first.longitude),
                 sensorCount: group.length,
                 active: anyActive,
                 isRealtime,
@@ -745,11 +734,40 @@ async function addSensors() {
             }
         };
     });
+    return { type: 'FeatureCollection', features };
+}
 
-    const geojson: FeatureCollection<Geometry, GeoJsonProperties> = {
-        type: 'FeatureCollection',
-        features: features
-    };
+function updateBuoyVarOpacity(selectedVar: string | null) {
+    if (!map || !_sensorGroups.length) return;
+    const keysWithVar = _sensorGroups
+        .filter(g => !selectedVar || g.some((s: any) => selectedVar in (s.variables ?? {})))
+        .map(g => coordKey(g[0].latitude, g[0].longitude));
+    const expr: any = (!selectedVar || keysWithVar.length === _sensorGroups.length)
+        ? 0.95
+        : ['case', ['in', ['get', 'coordKey'], ['literal', keysWithVar]], 0.95, 0.2];
+    try { (map as any).setPaintProperty(STATIONS_LAYER_ID, 'icon-opacity', expr); } catch (_) {}
+}
+
+async function addSensors() {
+    const sensors = await getSensors();
+    const now = Date.now();
+
+    const groups: any[][] = [];
+    for (const s of sensors) {
+        const existing = groups.find(g =>
+            haversineM(g[0].latitude, g[0].longitude, s.latitude, s.longitude) < PROXIMITY_M
+        );
+        if (existing) existing.push(s);
+        else groups.push([s]);
+    }
+
+    const sensorIsRealtime = (s: any) =>
+        s.latest_data_at && (now - new Date(s.latest_data_at).getTime()) < REALTIME_THRESHOLD_MS;
+
+    _sensorGroups = groups;
+    _sensorIsRealtime = sensorIsRealtime;
+
+    const geojson = buildSensorGeoJSON(groups, sensorIsRealtime);
 
     try {
         const detach = await addBuoyLayer(map, geojson, clickSensor, openSensorPicker, openSpiderfy);
@@ -757,7 +775,13 @@ async function addSensors() {
     } catch (e) {
         console.warn('Failed to add buoy layer:', e);
     }
+
+    updateBuoyVarOpacity(mainStore.selected_variable?.var ?? null);
 }
+
+watch(() => mainStore.selected_variable.var, (newVar) => {
+    updateBuoyVarOpacity(newVar ?? null);
+});
 
 function openSensorPicker(sensors: MultiSensorCandidate[], screenX: number, screenY: number) {
     openSpiderfy(sensors, screenX, screenY);

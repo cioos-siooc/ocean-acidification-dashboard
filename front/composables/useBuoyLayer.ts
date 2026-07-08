@@ -20,7 +20,7 @@ function makeSplitSvg() {
 }
 
 export const STATIONS_LAYER_ID = 'stations-circles';
-const SOURCE_ID = 'stations';
+export const SOURCE_ID = 'stations';
 const LAYER_BADGE_ID = 'stations-badge';
 const IMAGE_REALTIME = 'buoy-realtime';
 const IMAGE_ACTIVE   = 'buoy-active';

@@ -668,3 +668,41 @@ sensors:
     variables:
     - "temperature:temperature:C:1.0:BARS"
 
+
+  # ── ERDDAP tabledap (fixed depth) ───────────────────────────────────────────
+  # - name: "My ERDDAP Sensor"
+  #   lat: 49.123
+  #   lon: -123.456
+  #   depth: 20.0          # metres below surface; use -1 for variable-depth
+  #   source_type: ERDDAP
+  #   source_link: "https://example.erddap.org/erddap/tabledap/DatasetId"
+  #   variables:
+  #   # format: canonical:source_column:unit:conversion_factor
+  #   - "temperature:temperature:C:1.0"
+  #   - "salinity:salinity:PSU:1.0"
+  #   - "dissolved_oxygen:oxygen:ml/L:44.66"
+
+  # ── ERDDAP griddap (variable depth, 2D time×depth) ──────────────────────────
+  # - name: "My ERDDAP Grid Sensor"
+  #   lat: 47.350
+  #   lon: -122.650
+  #   depth: -1            # -1 means depth comes from the dataset itself
+  #   source_type: ERDDAP
+  #   source_link: "https://example.erddap.org/erddap/griddap/DatasetId"
+  #   variables:
+  #   # Optionally override the axis column names if the dataset uses non-standard names:
+  #   # - "time:time_var_name:UTC:1.0"
+  #   # - "depth:depth_var_name:m:1.0"
+  #   - "temperature:temperature:C:1.0"
+  #   - "salinity:salinity:PSU:1.0"
+
+  - name: "Bute Inlet Ocean Observing Station (BIOOS) Buoy"
+    lat: 50.596611
+    lon: -124.901806
+    depth: 0
+    source_type: ERDDAP
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiBIOOSBuoy1hour"
+    variables:
+    # format: canonical:source_column:unit:conversion_factor
+    - "temperature:WaterTemp:C:1.0"
+    - "salinity:WaterSalinity:PSU:1.0"

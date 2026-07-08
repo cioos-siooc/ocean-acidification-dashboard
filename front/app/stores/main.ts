@@ -36,7 +36,7 @@ export const useMainStore = defineStore('main', {
          */
         midDate: null as moment.Moment | null,
 
-        sensors: [] as Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null }>,
+        sensors: [] as Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null, source: { type?: string } }>,
         selectedSensor: {} as { id: string, depth: number } | null,
 
         lastClickedMapPoint: null as { lat: number, lng: number } | null,
@@ -88,7 +88,7 @@ export const useMainStore = defineStore('main', {
             this.midDate = date;
         },
 
-        setSensors(sensors: Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null }>) {
+        setSensors(sensors: Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null, source: { type?: string } }>) {
             this.sensors = sensors;
         },
         setSelectedSensor(sensor: { id: string, depth: number } | null) {

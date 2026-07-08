@@ -322,7 +322,7 @@ async def get_sensors():
             SELECT
                 s.id, s.name, s.latitude, s.longitude, s.depth,
                 s.device_config, s.variables, s.active,
-                ts.first_data_at, ts.latest_data_at
+                ts.first_data_at, ts.latest_data_at, s.source
             FROM sensors AS s FINAL
             LEFT JOIN (
                 SELECT sensor_id,
@@ -346,6 +346,7 @@ async def get_sensors():
                 "active": bool(row[7]),
                 "first_data_at": row[8].isoformat() if row[8] else None,
                 "latest_data_at": row[9].isoformat() if row[9] else None,
+                "source": json.loads(row[10]) if row[10] else {},
             })
         return sensors
 

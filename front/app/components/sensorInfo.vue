@@ -30,15 +30,22 @@
 
                         <div class="ml-4">
                             <v-list-item-subtitle class="text-label-small">
-                                <!-- ({{ sensor.latitude.toFixed(2) }}, {{ sensor.longitude.toFixed(2) }}) | -->
                                 {{ depth2txt(sensor.depth) }}
+                                <span v-if="sensor.source?.type" class="sensor-org">· {{ sensor.source.type }}</span>
                             </v-list-item-subtitle>
-                            <!-- <v-label v-else-if="sensor.depth.length > 1" class="text-label-small" style="cursor:pointer" @click.stop="depthDialogSensor = sensor">
-                                {{ depth2txt(sensor.depth) }}
-                                <v-icon size="10px">mdi-chevron-down</v-icon>
-                            </v-label> -->
+
+                            <v-list-item-subtitle class="text-label-small">
+                                {{ coordTxt(sensor.latitude, sensor.longitude) }}
+                            </v-list-item-subtitle>
 
                             <v-list-item-subtitle class="text-label-small">{{ formatDataRange(sensor) }}</v-list-item-subtitle>
+
+                            <div class="mt-1 d-flex flex-wrap gap-1">
+                                <v-chip v-for="varKey in Object.keys(sensor.variables)" :key="varKey"
+                                    size="x-small" density="compact" variant="tonal" color="blue-grey">
+                                    {{ varShortName(varKey) }}
+                                </v-chip>
+                            </div>
                             <!-- <v-row class="ma-0 pa-0">
                                 <v-spacer></v-spacer>
                                 <v-col cols="auto" class="ma-0 pa-0">
@@ -105,6 +112,30 @@ function selectSensor(sensorID: string) {
     }
 }
 
+function coordTxt(lat: number, lng: number): string {
+    const latStr = `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? 'N' : 'S'}`;
+    const lngStr = `${Math.abs(lng).toFixed(2)}°${lng >= 0 ? 'E' : 'W'}`;
+    return `${latStr}, ${lngStr}`;
+}
+
+const VAR_SHORT: Record<string, string> = {
+    dissolved_oxygen: 'DO',
+    temperature: 'Temp',
+    salinity: 'Sal',
+    ph: 'pH',
+    ph_total: 'pH',
+    chlorophyll: 'Chl',
+    aragonite: 'Arag',
+    nitrate: 'NO₃',
+    pressure: 'Pres',
+    turbidity: 'Turb',
+    fluorescence: 'Fluor',
+};
+
+function varShortName(varKey: string): string {
+    return VAR_SHORT[varKey] ?? varKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 function depth2txt(depth: number): string {
     if (depth == null || depth < 0) return 'Variable depth';
     if (depth === 0) return 'Surface';
@@ -128,3 +159,13 @@ function openHeatmapDialog(sensorId: string) {
 }
 
 </script>
+
+<style scoped>
+.sensor-org {
+    opacity: 0.6;
+    font-size: 0.75em;
+}
+.gap-1 {
+    gap: 4px;
+}
+</style>
