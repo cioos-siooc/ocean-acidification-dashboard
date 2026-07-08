@@ -295,7 +295,8 @@ def discover_one(base: str, dataset_id: str, show_unmapped: bool) -> str:
         f"    lat: {lat}\n"
         f"    lon: {lon}\n"
         f"    depth: {depth}\n"
-        f"    source_type: ERDDAP\n"
+        f"    api: ERDDAP\n"
+        f"    organization: \n"
         f'    source_link: "{link}"\n'
         f"    variables:\n"
         f"{vars_block}\n"

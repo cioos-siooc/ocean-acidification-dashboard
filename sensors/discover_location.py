@@ -116,7 +116,8 @@ def discover(location_code: str, show_unmapped: bool = False) -> str:
     lat: {lat}
     lon: {lon}
     depth: {depth}
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: {location_code}
     variables:
 {vars_block}

@@ -31,7 +31,7 @@
                         <div class="ml-4">
                             <v-list-item-subtitle class="text-label-small">
                                 {{ depth2txt(sensor.depth) }}
-                                <span v-if="sensor.source?.type" class="sensor-org">· {{ sensor.source.type }}</span>
+                                <span v-if="sensor.organization" class="sensor-org">· {{ sensor.organization }}</span>
                             </v-list-item-subtitle>
 
                             <v-list-item-subtitle class="text-label-small">

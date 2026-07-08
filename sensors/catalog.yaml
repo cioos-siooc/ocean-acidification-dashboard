@@ -4,7 +4,8 @@ sensors:
     lat: 49.039778
     lon: -123.425693
     depth: 298.932432
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: SCVIP
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLNTU"
@@ -16,7 +17,8 @@ sensors:
     lat: 49.314008
     lon: -124.559496
     depth: -0.149159
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: CWB10
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -27,7 +29,8 @@ sensors:
     lat: 49.042635
     lon: -123.317026
     depth: 167.144366
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: SEVIP
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLNTU"
@@ -39,7 +42,8 @@ sensors:
     lat: 48.6493
     lon: -123.446
     depth: 96.34747
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: NQU4
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -50,7 +54,8 @@ sensors:
     lat: 49.217663
     lon: -123.909168
     depth: 3.0
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: TWDP
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -62,7 +67,8 @@ sensors:
     lat: 48.651322
     lon: -123.486411
     depth: 95.525
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: PVIP
     variables:
     - "temperature:temperature:C:1.0:ADCP300KHZ"
@@ -71,7 +77,8 @@ sensors:
     lat: 69.113063
     lon: -105.063587
     depth: 8.473585
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: CBYIP
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -84,7 +91,8 @@ sensors:
     lat: 49.084835
     lon: -123.329929
     depth: 109.252632
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: USDDL
     variables:
     - "salinity:salinity:PSU:1.0:CTD"
@@ -94,7 +102,8 @@ sensors:
     lat: 48.316654
     lon: -126.05049
     depth: 983.746022
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: BACAX
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLNTU"
@@ -106,7 +115,8 @@ sensors:
     lat: 49.486885
     lon: -124.769333
     depth: 41.395604
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: BSM.J3
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -118,7 +128,8 @@ sensors:
     lat: 49.314008
     lon: -124.559496
     depth: 0.009075
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: NQU5
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -129,7 +140,8 @@ sensors:
     lat: 49.216299
     lon: -123.912057
     depth: 3.0
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: HBDB
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -141,7 +153,8 @@ sensors:
     lat: 48.695408
     lon: -123.36922
     depth: 3.0
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: TWSB
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -153,7 +166,8 @@ sensors:
     lat: 48.808292
     lon: -125.2815
     depth: 25.0
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: FGPPN
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLNTU"
@@ -165,7 +179,8 @@ sensors:
     lat: 49.941922
     lon: -125.174456
     depth: 81.71146
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: CRV6
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -176,7 +191,8 @@ sensors:
     lat: 49.486885
     lon: -124.769333
     depth: 4.923288
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: BSM.J1
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -187,7 +203,8 @@ sensors:
     lat: 48.427455
     lon: -126.174124
     depth: 65.635915
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: BACVP
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLNTU"
@@ -200,7 +217,8 @@ sensors:
     lat: 48.6493
     lon: -123.446
     depth: -0.056609
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: IRS3
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -211,7 +229,8 @@ sensors:
     lat: 48.766101
     lon: -123.039615
     depth: 222.671642
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: BDYPM
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -222,7 +241,8 @@ sensors:
     lat: 49.486885
     lon: -124.769333
     depth: 20.643939
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: BSM.J2
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -233,7 +253,8 @@ sensors:
     lat: 48.426947
     lon: -126.174649
     depth: 394.160938
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: BACUS
     variables:
     - "temperature:temperature:C:1.0:ADCP2MHZ"
@@ -242,7 +263,8 @@ sensors:
     lat: 48.300725
     lon: -123.391123
     depth: 113.25
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: AS04
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -253,7 +275,8 @@ sensors:
     lat: 48.401112
     lon: -123.408815
     depth: 55.616667
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: MAC
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -264,7 +287,8 @@ sensors:
     lat: 49.036713
     lon: -123.31835
     depth: -1.131034
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: ROVOE
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -275,7 +299,8 @@ sensors:
     lat: 48.314901
     lon: -126.058283
     depth: 894.956897
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: BACME
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLNTU"
@@ -287,7 +312,8 @@ sensors:
     lat: 48.688702
     lon: -123.500236
     depth: 87.97193
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: SILL
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -298,7 +324,8 @@ sensors:
     lat: 49.300987
     lon: -123.111138
     depth: 27.990909
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: BIIP
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -311,7 +338,8 @@ sensors:
     lat: 48.813808
     lon: -125.280581
     depth: 96.35866
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: FGPD
     variables:
     - "salinity:salinity:PSU:1.0:CTD"
@@ -321,7 +349,8 @@ sensors:
     lat: 47.948814
     lon: -129.09844
     depth: 2189.9125
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: KEMF
     variables:
     - "temperature:temperature:C:1.0:ADCP600KHZ"
@@ -330,7 +359,8 @@ sensors:
     lat: 48.6493
     lon: -123.446
     depth: -0.056609
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: GIB11
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -341,7 +371,8 @@ sensors:
     lat: 48.653585
     lon: -123.452596
     depth: 0.0
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: JPT
     variables:
     - "salinity:salinity:PSU:1.0:TSG"
@@ -351,7 +382,8 @@ sensors:
     lat: 48.6493
     lon: -123.446
     depth: 0.009075
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: SVN8
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -362,7 +394,8 @@ sensors:
     lat: 48.356652
     lon: -124.215378
     depth: 181.911111
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: JF2C
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -373,7 +406,8 @@ sensors:
     lat: 48.311842
     lon: -126.065577
     depth: 863.0
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: BACWL
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -384,7 +418,8 @@ sensors:
     lat: 48.315057
     lon: -126.058796
     depth: 891.251111
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: BACMW
     variables:
     - "temperature:temperature:C:1.0:ADCP150KHZ"
@@ -393,7 +428,8 @@ sensors:
     lat: 48.649067
     lon: -123.445966
     depth: 147.95033
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: LND1
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -404,7 +440,8 @@ sensors:
     lat: 48.649147
     lon: -123.446233
     depth: 0.342503
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: CFMTC2
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -415,7 +452,8 @@ sensors:
     lat: 48.813459
     lon: -125.281127
     depth: 0.697
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: ODYSS
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -426,7 +464,8 @@ sensors:
     lat: 48.427311
     lon: -126.174544
     depth: 396.592351
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: NCBC
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLNTU"
@@ -438,7 +477,8 @@ sensors:
     lat: 48.649178
     lon: -123.446225
     depth: 81.71146
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: GAL9
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -449,7 +489,8 @@ sensors:
     lat: 48.651297
     lon: -123.486439
     depth: 95.178049
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: PVIP.C1
     variables:
     - "salinity:salinity:PSU:1.0:CTD"
@@ -459,7 +500,8 @@ sensors:
     lat: 48.670626
     lon: -126.848013
     depth: 1256.830769
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: NC89
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -470,7 +512,8 @@ sensors:
     lat: 48.426086
     lon: -126.170938
     depth: 0.847075
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: HERC
     variables:
     - "dissolved_oxygen:oxygen:ml/L:44.66:OXYSENSOR"
@@ -481,7 +524,8 @@ sensors:
     lat: 49.080654
     lon: -123.339456
     depth: 145.105263
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: LSBBL
     variables:
     - "salinity:salinity:PSU:1.0:CTD"
@@ -491,7 +535,8 @@ sensors:
     lat: 48.622389
     lon: -123.498839
     depth: 0.083333
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: YPVPF
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -503,7 +548,8 @@ sensors:
     lat: 47.566777
     lon: -52.630332
     depth: 0.0
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: STJB
     variables:
     - "temperature:temperature:C:1.0:ADCP2MHZ"
@@ -512,7 +558,8 @@ sensors:
     lat: 50.020757
     lon: -125.23537
     depth: 8.248571
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: CRIP
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -524,7 +571,8 @@ sensors:
     lat: 49.045928
     lon: -127.254912
     depth: 0.53
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: ROPOS
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLNTU"
@@ -535,7 +583,8 @@ sensors:
     lat: 49.085844
     lon: -123.327802
     depth: 97.71875
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: SEDDL
     variables:
     - "salinity:salinity:PSU:1.0:CTD"
@@ -545,7 +594,8 @@ sensors:
     lat: 48.650936
     lon: -123.487271
     depth: 100.859375
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: PDCF
     variables:
     - "salinity:salinity:PSU:1.0:CTD"
@@ -555,7 +605,8 @@ sensors:
     lat: 53.422303
     lon: -129.246773
     depth: 80.34375
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: HBIP
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -567,7 +618,8 @@ sensors:
     lat: 48.651286
     lon: -123.486447
     depth: 95.106452
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: PVIP.O2
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -577,7 +629,8 @@ sensors:
     lat: 47.425794
     lon: -53.121091
     depth: 84.166667
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: HRBIP
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -590,7 +643,8 @@ sensors:
     lat: 47.461035
     lon: -53.114805
     depth: 0.0
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: HB2A
     variables:
     - "temperature:temperature:C:1.0:ADCP2MHZ"
@@ -599,7 +653,8 @@ sensors:
     lat: 49.153847
     lon: -124.802429
     depth: 110.166667
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: CCIP
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -611,7 +666,8 @@ sensors:
     lat: 47.762598
     lon: -127.758617
     depth: 2657.558621
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: NC27
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -622,7 +678,8 @@ sensors:
     lat: 47.312087
     lon: -54.090346
     depth: 0.0
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: RISB
     variables:
     - "temperature:temperature:C:1.0:CURRENTMETER"
@@ -631,7 +688,8 @@ sensors:
     lat: 53.974701
     lon: -128.657129
     depth: 45.381481
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: KVIP
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
@@ -643,7 +701,8 @@ sensors:
     lat: 47.549862
     lon: -59.074195
     depth: 0.0
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: PABB
     variables:
     - "temperature:temperature:C:1.0:ADCP600KHZ"
@@ -652,7 +711,8 @@ sensors:
     lat: 48.651185
     lon: -123.487021
     depth: -1.23
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: MAN
     variables:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
@@ -663,7 +723,8 @@ sensors:
     lat: 47.923905
     lon: -129.108519
     depth: 2274.368
-    source_type: ONC
+    api: ONC
+    organization: ONC
     location_code: KEMO
     variables:
     - "temperature:temperature:C:1.0:BARS"
@@ -700,7 +761,8 @@ sensors:
     lat: 50.596611
     lon: -124.901806
     depth: 0
-    source_type: ERDDAP
+    api: ERDDAP
+    organization: Hakai
     source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiBIOOSBuoy1hour"
     variables:
     # format: canonical:source_column:unit:conversion_factor

@@ -43,7 +43,7 @@ Examples
     uv run python sensors/manage_sensors.py add \\
       --name "Central Strait of Georgia VENUS platform" \\
       --lat 49.0405 --lon -123.4247 --depth 298.93 \\
-      --source-type ONC --location-code SCVIP \\
+      --api ONC --organization ONC --location-code SCVIP \\
       --variable "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR" \\
       --variable "temperature:temperature:C:1.0:CTD" \\
       --variable "salinity:salinity:PSU:1.0:CTD"
@@ -52,7 +52,7 @@ Examples
     uv run python sensors/manage_sensors.py add \\
       --name "Hakai Wirewalker" \\
       --lat 50.112 --lon -125.093 --depth 20.0 \\
-      --source-type ERDDAP \\
+      --api ERDDAP --organization Hakai \\
       --source-link "https://catalogue.hakai.org/erddap/tabledap/HakaiWirewalker" \\
       --variable "temperature:temperature:C:1.0" \\
       --variable "salinity:salinity:PSU:1.0"
@@ -60,7 +60,7 @@ Examples
     # Add an ERDDAP griddap sensor (variable depth → depth=-1)
     uv run python sensors/manage_sensors.py add \\
       --name "ORCA Buoy" --lat 47.35 --lon -122.65 --depth -1 \\
-      --source-type ERDDAP \\
+      --api ERDDAP --organization UW \\
       --source-link "https://nwem.apl.uw.edu/erddap/griddap/orca1_L3" \\
       --variable "temperature:temperature:C:1.0" \\
       --variable "salinity:salinity:PSU:1.0"
@@ -156,16 +156,18 @@ def _upsert(ch_client, row: dict):
             json.dumps(row["source"]),
             int(row["active"]),
             datetime.now(tz=timezone.utc).replace(tzinfo=None),
+            row.get("organization", ""),
         ]],
         column_names=["id", "name", "latitude", "longitude", "depth",
-                      "variables", "device_config", "source", "active", "updated_at"],
+                      "variables", "device_config", "source", "active", "updated_at",
+                      "organization"],
     )
 
 
 def _get_sensor(ch_client, sensor_id: str) -> dict | None:
     rows = ch_client.query(
         f"SELECT id, name, latitude, longitude, depth, variables, "
-        f"device_config, source, active "
+        f"device_config, source, active, organization "
         f"FROM sensors FINAL WHERE id = '{sensor_id}'"
     ).result_rows
     if not rows:
@@ -181,6 +183,7 @@ def _get_sensor(ch_client, sensor_id: str) -> dict | None:
         "device_config": json.loads(r[6]) if r[6] else {},
         "source": json.loads(r[7]) if r[7] else {},
         "active": int(r[8]),
+        "organization": r[9] or "",
     }
 
 
@@ -198,7 +201,8 @@ CREATE TABLE IF NOT EXISTS default.sensors
     device_config String,
     source        String,
     active        UInt8,
-    updated_at    DateTime DEFAULT now()
+    updated_at    DateTime DEFAULT now(),
+    organization  String DEFAULT ''
 )
 ENGINE = ReplacingMergeTree(updated_at)
 ORDER BY id;
@@ -229,24 +233,25 @@ def cmd_setup(ch_client, _args):
 
 def cmd_list(ch_client, _args):
     rows = ch_client.query(
-        "SELECT id, name, depth, source, active FROM sensors FINAL ORDER BY name"
+        "SELECT id, name, depth, source, active, organization FROM sensors FINAL ORDER BY name"
     ).result_rows
     if not rows:
         print("No sensors in ClickHouse.")
         return
-    print(f"{'Active':>6}  {'Depth':>7}  {'Type':>5}  {'ID':<36}  Name")
-    print("─" * 80)
+    print(f"{'Active':>6}  {'Depth':>7}  {'API':>6}  {'Org':<10}  {'ID':<36}  Name")
+    print("─" * 90)
     for r in rows:
         src = json.loads(r[3]) if r[3] else {}
         flag = "✓" if r[4] else "✗"
-        print(f"{flag:>6}  {r[2]:>7.1f}  {src.get('type','?'):>5}  {str(r[0]):<36}  {r[1]}")
+        org = r[5] or ""
+        print(f"{flag:>6}  {r[2]:>7.1f}  {src.get('api','?'):>6}  {org:<10}  {str(r[0]):<36}  {r[1]}")
 
 
 def cmd_add(ch_client, args):
-    if args.source_type == "ONC" and not args.location_code:
+    if args.api == "ONC" and not args.location_code:
         print("ERROR: --location-code is required for ONC sensors.", file=sys.stderr)
         sys.exit(1)
-    if args.source_type == "ERDDAP" and not args.source_link:
+    if args.api == "ERDDAP" and not args.source_link:
         print("ERROR: --source-link is required for ERDDAP sensors.", file=sys.stderr)
         sys.exit(1)
     if not args.variable:
@@ -266,7 +271,7 @@ def cmd_add(ch_client, args):
     variables, device_config = _build_variables_and_device_config(
         args.variable, args.location_code
     )
-    source: dict = {"type": args.source_type}
+    source: dict = {"api": args.api}
     if args.source_link:
         source["link"] = args.source_link
 
@@ -280,6 +285,7 @@ def cmd_add(ch_client, args):
         "variables": variables,
         "device_config": device_config,
         "source": source,
+        "organization": args.organization or "",
         "active": 0 if args.inactive else 1,
     }
     _upsert(ch_client, row)
@@ -289,7 +295,8 @@ def cmd_add(ch_client, args):
         print(f"ONC devices:  " +
               ", ".join(f"{c['deviceCategoryCode']}→{c['sensorCategoryCodes']}"
                         for c in device_config["codes"]))
-    print(f"\nTo backfill:  uv run python sensors/onc_to_ch.py --sensor-id {sensor_id}")
+    backfill_script = "onc_to_ch.py" if args.api == "ONC" else "erddap_to_ch.py"
+    print(f"\nTo backfill:  uv run python sensors/{backfill_script} --sensor-id {sensor_id}")
 
 
 def cmd_update(ch_client, args):
@@ -314,6 +321,10 @@ def cmd_update(ch_client, args):
         sensor["device_config"] = device_config
     if args.source_link:
         sensor["source"]["link"] = args.source_link
+    if args.api:
+        sensor["source"]["api"] = args.api
+    if args.organization is not None:
+        sensor["organization"] = args.organization
 
     _upsert(ch_client, sensor)
     print(f"Updated sensor {args.id} ({sensor['name']}).")
@@ -368,7 +379,7 @@ def cmd_import(ch_client, args):
             var_strings, entry.get("location_code")
         )
 
-        source: dict = {"type": entry["source_type"]}
+        source: dict = {"api": entry["api"]}
         if entry.get("source_link"):
             source["link"] = entry["source_link"]
 
@@ -382,6 +393,7 @@ def cmd_import(ch_client, args):
             "variables": variables,
             "device_config": device_config,
             "source": source,
+            "organization": entry.get("organization", ""),
             "active": 0 if entry.get("inactive") else 1,
         }
         _upsert(ch_client, row)
@@ -428,7 +440,10 @@ def main():
     add_p.add_argument("--lon", type=float, required=True)
     add_p.add_argument("--depth", type=float, required=True,
                        help="Metres; use -1 for variable-depth sensors.")
-    add_p.add_argument("--source-type", required=True, choices=["ONC", "ERDDAP"])
+    add_p.add_argument("--api", required=True, choices=["ONC", "ERDDAP"],
+                       help="Data retrieval method.")
+    add_p.add_argument("--organization", required=True,
+                       help="Owning organization (e.g. ONC, Hakai, UW).")
     add_p.add_argument("--inactive", action="store_true")
     _add_variable_args(add_p)
 
@@ -438,7 +453,8 @@ def main():
     upd_p.add_argument("--lat", type=float)
     upd_p.add_argument("--lon", type=float)
     upd_p.add_argument("--depth", type=float)
-    upd_p.add_argument("--source-type", choices=["ONC", "ERDDAP"])
+    upd_p.add_argument("--api", choices=["ONC", "ERDDAP"])
+    upd_p.add_argument("--organization")
     _add_variable_args(upd_p)
 
     for cmd, help_str in [("deactivate", "Set active=0."), ("activate", "Set active=1.")]:

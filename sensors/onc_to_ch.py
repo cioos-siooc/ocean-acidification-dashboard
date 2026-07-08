@@ -39,12 +39,12 @@ OVERLAP_HOURS = 6
 # ── CH helpers ────────────────────────────────────────────────────────────────
 
 def get_active_onc_sensors(ch_client, sensor_id_filter: str | None) -> list[dict]:
-    where = "source LIKE '%\"type\": \"ONC\"%' OR source LIKE '%\"type\":\"ONC\"%'"
+    where = "JSONExtractString(source, 'api') = 'ONC'"
     if sensor_id_filter is not None:
         where += f" AND id = '{sensor_id_filter}'"
     rows = ch_client.query(
         f"SELECT id, name, variables, device_config FROM sensors FINAL "
-        f"WHERE active = 1 AND ({where})"
+        f"WHERE active = 1 AND {where}"
     ).result_rows
     sensors = []
     for row in rows:
