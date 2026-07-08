@@ -30,19 +30,20 @@
 
                         <div class="ml-4">
                             <v-list-item-subtitle class="text-label-small">
+                                <span v-if="sensor.organization" class="sensor-org">{{ sensor.organization }} </span>
                                 {{ depth2txt(sensor.depth) }}
-                                <span v-if="sensor.organization" class="sensor-org">· {{ sensor.organization }}</span>
                             </v-list-item-subtitle>
 
                             <v-list-item-subtitle class="text-label-small">
                                 {{ coordTxt(sensor.latitude, sensor.longitude) }}
                             </v-list-item-subtitle>
 
-                            <v-list-item-subtitle class="text-label-small">{{ formatDataRange(sensor) }}</v-list-item-subtitle>
+                            <v-list-item-subtitle class="text-label-small">{{ formatDataRange(sensor)
+                                }}</v-list-item-subtitle>
 
                             <div class="mt-1 d-flex flex-wrap gap-1">
-                                <v-chip v-for="varKey in Object.keys(sensor.variables)" :key="varKey"
-                                    size="x-small" density="compact" variant="tonal" color="blue-grey">
+                                <v-chip v-for="varKey in Object.keys(sensor.variables)" :key="varKey" size="x-small"
+                                    density="compact" variant="tonal" color="grey">
                                     {{ varShortName(varKey) }}
                                 </v-chip>
                             </div>
@@ -73,7 +74,7 @@
 
     <!-- HEATMATP -->
     <v-dialog v-model="showHeatmapDialog" width="85%" height="85%" transition="dialog-transition">
-        <HeatmapChart :sensor-id="heatmap_sensorId" :model-variable="heatmap_variable"/>
+        <HeatmapChart :sensor-id="heatmap_sensorId" :model-variable="heatmap_variable" />
     </v-dialog>
 </template>
 
@@ -165,6 +166,7 @@ function openHeatmapDialog(sensorId: string) {
     opacity: 0.6;
     font-size: 0.75em;
 }
+
 .gap-1 {
     gap: 4px;
 }
