@@ -114,7 +114,7 @@
                         class="footer-rail-track">
                         <div class="footer-rail-pill" :style="{ transform: `translateY(${railIndex * 100}%)` }"></div>
                         <v-btn v-for="t in footerTabs" :key="t.value" :value="t.value" :prepend-icon="t.icon" block
-                            class="footer-rail-item" >
+                            class="footer-rail-item">
                             {{ t.label }}
                         </v-btn>
                     </v-btn-toggle>
@@ -131,9 +131,14 @@
                         <TimeseriesChart ref="timeseriesChart" style="width:100%; height:calc(100% - 32px);" />
                     </div>
 
-                    <!-- Historical tab -->
+                    <!-- Model Analysis tab -->
                     <div v-show="activeTab === 'analysis'" style="height:100%;">
                         <Analytics :active="activeTab === 'analysis'" />
+                    </div>
+
+                    <!-- Comparison tab (visible only when a sensor is selected) -->
+                    <div v-show="activeTab === 'comparison'" style="height:100%;">
+                        <SensorComparison :active="activeTab === 'comparison'" />
                     </div>
                 </div>
 
@@ -171,6 +176,7 @@ import getSensorTimeseries from '../../composables/useSensorTimeseries';
 import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 import TimeseriesChart from '../components/TimeseriesChart.vue';
 import Analytics from '../components/analytics.vue'
+import SensorComparison from '../components/sensorComparison.vue'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
@@ -190,12 +196,22 @@ const timeseriesChart = ref<InstanceType<typeof TimeseriesChart> | null>(null);
 let map: mapboxgl.Map | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
-const activeTab = ref<'timeseries' | 'analysis'>('timeseries');
-const footerTabs = [
-    { value: 'timeseries', icon: 'mdi-chart-line', label: 'Timeseries' },
-    { value: 'analysis', icon: 'mdi-poll', label: 'Historical' },
-] as const;
-const railIndex = computed(() => footerTabs.findIndex(t => t.value === activeTab.value));
+const activeTab = ref<'timeseries' | 'analysis' | 'comparison'>('timeseries');
+const footerTabs = computed(() => [
+    { value: 'timeseries' as const, icon: 'mdi-chart-line', label: 'Timeseries' },
+    { value: 'analysis' as const, icon: 'mdi-poll', label: 'Model Analysis' },
+    ...(mainStore.selectedSensor?.id
+        ? [{ value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison' }]
+        : []),
+]);
+const railIndex = computed(() => footerTabs.value.findIndex(t => t.value === activeTab.value));
+
+// Drop back to timeseries when the active sensor is cleared
+watch(() => mainStore.selectedSensor, (sensor) => {
+    if (!sensor?.id && activeTab.value === 'comparison') {
+        activeTab.value = 'timeseries';
+    }
+});
 
 const isRectangleDrawing = ref(false);
 const drawnRectangle = ref<Feature<Polygon> | null>(null);
