@@ -17,7 +17,7 @@ ensure_schema(client)
 # Dates between 2026-03-01 and 2026-03-31
 dates = []
 d = date(2026, 4, 1)
-while d <= date(2026, 4, 30):
+while d <= date(2026, 4, 2):
     dates.append(d)
     d = d.fromordinal(d.toordinal() + 1)
 

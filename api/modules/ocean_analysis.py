@@ -32,9 +32,14 @@ def lookup_nearest_grid_cell(lat: float, lon: float) -> List[Tuple[int, int]]:
     geoDistance function.
     """
     client = _get_ch_client()
+    # 0.5-degree bounding box pre-filters the full-table scan to ~1% of rows
+    # before the geoDistance sort. Safe because the Salish Sea grid spacing is
+    # well under 0.5°, so the true nearest cell is always inside the box.
     query = f"""
         SELECT gridX, gridY
         FROM grid_SSC
+        WHERE latitude BETWEEN {lat - 0.5} AND {lat + 0.5}
+          AND longitude BETWEEN {lon - 0.5} AND {lon + 0.5}
         ORDER BY geoDistance({lon}, {lat}, longitude, latitude)
         LIMIT 1
     """
@@ -86,20 +91,30 @@ def lookup_grid_cells_for_polygon(polygon_coords: List[Tuple[float, float]]) -> 
 # silently snap to whatever level happens to be closest.
 DEPTH_MATCH_TOLERANCE_M = 0.1
 
+# Depth levels are uniform across the entire SSC sigma-coordinate grid — every
+# cell has the same discrete set. Cached on first use (per process) to avoid a
+# per-request full-table scan.
+_CACHED_DEPTH_LEVELS: list[float] | None = None
+
+
+def _get_depth_levels(client) -> list[float]:
+    global _CACHED_DEPTH_LEVELS
+    if _CACHED_DEPTH_LEVELS is None:
+        result = client.query(
+            "SELECT DISTINCT depth FROM SalishSeaCast_daily ORDER BY depth"
+        )
+        _CACHED_DEPTH_LEVELS = [float(r[0]) for r in result.result_rows]
+    return _CACHED_DEPTH_LEVELS
+
 
 def _resolve_nearest_depth(client, grid_x: int, grid_y: int, depth: float) -> float | None:
-    """Return the available depth level nearest to `depth` for (grid_x, grid_y).
+    """Return the available depth level nearest to `depth`.
 
     `depth == -1` selects the deepest (bottom) level, whatever it is.
     Otherwise, the nearest available level must be within
     `DEPTH_MATCH_TOLERANCE_M` of `depth` or this returns None.
     """
-    query = """
-        SELECT DISTINCT depth FROM SalishSeaCast_daily
-        WHERE gridX = %(gx)s AND gridY = %(gy)s
-    """
-    result = client.query(query, parameters={"gx": grid_x, "gy": grid_y})
-    depths = [float(row[0]) for row in result.result_rows]
+    depths = _get_depth_levels(client)
     if not depths:
         return None
     if float(depth) == -1.0:

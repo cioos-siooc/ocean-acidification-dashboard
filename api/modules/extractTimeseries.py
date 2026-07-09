@@ -62,6 +62,18 @@ MAX_GRID_DIST_KM = 25.0
 # instead of signalling "no data here".
 DEPTH_MATCH_TOLERANCE_M = 0.1
 
+# Depth levels are uniform across the entire SSC sigma-coordinate grid — every
+# cell has the same discrete set. Cached per table per process to avoid a
+# per-request full-table scan.
+_CACHED_DEPTHS: dict[str, list[float]] = {}
+
+
+def _get_depth_levels(client, table: str) -> list[float]:
+    if table not in _CACHED_DEPTHS:
+        result = client.query(f"SELECT DISTINCT depth FROM {table} ORDER BY depth")
+        _CACHED_DEPTHS[table] = [float(r[0]) for r in result.result_rows]
+    return _CACHED_DEPTHS[table]
+
 
 def _find_nearest_grid_point(client, grid_table: str, lat: float, lon: float, max_dist_km: float = MAX_GRID_DIST_KM) -> Tuple[int, int, float, float]:
     """Find the (gridX, gridY) cell nearest to (lat, lon) in `grid_table`.
@@ -69,14 +81,23 @@ def _find_nearest_grid_point(client, grid_table: str, lat: float, lon: float, ma
     Raises RuntimeError if the grid table is empty or the nearest cell is
     farther than `max_dist_km` away.
     """
+    # 0.5-degree bounding box (~55 km at Salish Sea latitudes) pre-filters the
+    # full-table scan before the geoDistance sort. Safe: max_dist_km (25 km) is
+    # well inside 55 km, so the true nearest cell is always inside the box.
     query = f"""
         SELECT gridX, gridY, longitude, latitude,
                geoDistance(longitude, latitude, %(lon)s, %(lat)s) AS dist_m
         FROM {grid_table}
+        WHERE latitude BETWEEN %(lat_min)s AND %(lat_max)s
+          AND longitude BETWEEN %(lon_min)s AND %(lon_max)s
         ORDER BY dist_m ASC
         LIMIT 1
     """
-    result = client.query(query, parameters={"lon": lon, "lat": lat})
+    result = client.query(query, parameters={
+        "lon": lon, "lat": lat,
+        "lat_min": lat - 0.5, "lat_max": lat + 0.5,
+        "lon_min": lon - 0.5, "lon_max": lon + 0.5,
+    })
     if not result.result_rows:
         raise RuntimeError(f"Grid table '{grid_table}' is empty or not found")
 
@@ -116,7 +137,7 @@ def _find_grid_points_in_polygon(client, grid_table: str, polygon: List[Tuple[fl
 
 
 def _resolve_depth(client, table: str, grid_x: int, grid_y: int, depth: float) -> Optional[float]:
-    """Return the available depth level nearest to `depth` for (grid_x, grid_y).
+    """Return the available depth level nearest to `depth`.
 
     `depth == -1` selects the deepest (bottom) level, whatever it is.
     Otherwise, the nearest available level must be within
@@ -124,12 +145,7 @@ def _resolve_depth(client, table: str, grid_x: int, grid_y: int, depth: float) -
     deeper than the local water column should mean "no data", not silently
     fall back to the cell's shallowest/deepest level.
     """
-    query = f"""
-        SELECT DISTINCT depth FROM {table}
-        WHERE gridX = %(gx)s AND gridY = %(gy)s
-    """
-    result = client.query(query, parameters={"gx": grid_x, "gy": grid_y})
-    depths = [float(row[0]) for row in result.result_rows]
+    depths = _get_depth_levels(client, table)
     if not depths:
         return None
     if float(depth) == -1.0:
