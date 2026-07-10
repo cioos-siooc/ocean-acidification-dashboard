@@ -101,6 +101,7 @@ function initChart() {
 
             const px = evt.event.zrX;
             const py = evt.event.zrY;
+            if (!chart.containPixel('grid', [px, py])) return;
             const converted = chart.convertFromPixel('grid', [px, py]);
             if (!converted || converted[0] === undefined) return;
 
@@ -377,14 +378,21 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     console.log(option);
     chart.resize();
 
-    // Stats legend toggle — clicking 'Climatology' shows/hides internal series
-    const STATS_INTERNAL = ['_stats_min_base', '_stats_max_range', '_stats_mean'];
+    // Stats legend toggle — clicking 'Climatology' shows/hides internal series.
+    // Use setOption rather than legendSelect/legendUnSelect: those dispatch actions
+    // only work reliably for series registered in legend.data; the _stats_* series
+    // are intentionally excluded, so legendSelect would be a no-op on re-show.
     if (_statsLegendHandler) chart.off('legendselectchanged', _statsLegendHandler);
     if (hasClimate) {
         _statsLegendHandler = (params: any) => {
             if (params.name !== 'Climatology') return;
-            const action = params.selected['Model Stats'] ? 'legendSelect' : 'legendUnSelect';
-            for (const name of STATS_INTERNAL) chart!.dispatchAction({ type: action, name });
+            const visible = params.selected['Climatology'];
+            chart!.setOption({
+                series: [
+                    { name: '_stats_max_range', areaStyle: { color: mainStore.colors.stats, opacity: visible ? 0.2 : 0 } },
+                    { name: '_stats_mean', lineStyle: { color: mainStore.colors.stats, opacity: visible ? 0.8 : 0, width: 2, type: 'dashed' } },
+                ]
+            });
         };
         chart.on('legendselectchanged', _statsLegendHandler);
     } else {

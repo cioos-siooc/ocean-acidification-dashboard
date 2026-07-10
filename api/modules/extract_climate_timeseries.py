@@ -92,6 +92,7 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date):
         WHERE gridX = {grid_x}
           AND gridY = {grid_y}
           AND depth = {depth_sel}
+          AND toYear(time) <= 2025
           AND (toMonth(time), toDayOfMonth(time)) IN ({md_sql})
         GROUP BY mo, dy
         ORDER BY mo, dy
