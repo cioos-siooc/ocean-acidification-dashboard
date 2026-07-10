@@ -713,66 +713,34 @@ class climate_timeseriesRequest(BaseModel):
     var: str
     lat: float
     lon: float
-    depth: str
+    depth: float
     fromDate: str
     toDate: str
 
 @app.post("/extract_climateTimeseries")
 async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_request: Request):
-    # Reject requests if we are already at concurrency limit
     logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
     try:
-        # Wait up to 10 seconds to acquire the semaphore
-        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
-    except (asyncio.TimeoutError, Exception):
-        logger.warning("Semaphore timeout in extract_climateTimeseries")
-        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
-
-    try:
-        lat = request.lat
-        lon = request.lon
-        variable = request.var
-        depth = request.depth  # depth_image is already the correct string for file naming
-        from_date = request.fromDate  # Pass fromDate string (ISO format) to the extraction function
-        to_date = request.toDate  # Pass toDate string (ISO format) to the extraction function
-        
-        # Run the synchronous extraction in a threadpool to keep the event loop free
-        result = await asyncio.wait_for(
-            run_in_process(extract_climate_timeseries, lat=lat, lon=lon, variable=variable, depth=depth, from_date=from_date, to_date=to_date),
-            timeout=THREADPOOL_TIMEOUT,
+        result = await run_in_threadpool(
+            extract_climate_timeseries,
+            lat=request.lat, lon=request.lon, variable=request.var,
+            depth=request.depth, from_date=request.fromDate, to_date=request.toDate,
         )
         if result is None:
-            logger.error("Extraction returned None")
-            raise HTTPException(status_code=500, detail="Extraction failed")
-        
-        # Clean NaN values from all numeric columns before JSON serialization
-        if isinstance(result, dict) and 'data' in result:
-            data = result['data']
-            if isinstance(data, list):
-                for row in data:
-                    for key in row:
-                        if isinstance(row[key], float) and np.isnan(row[key]):
-                            row[key] = None
-            
+            logger.error("extract_climate_timeseries returned None")
+            raise HTTPException(status_code=500, detail="Climatology extraction failed")
+
         logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
         capture_event(client_distinct_id(http_request), "extract_climate_timeseries", {
             "var": request.var, "lat": request.lat, "lon": request.lon,
             "depth": request.depth, "fromDate": request.fromDate, "toDate": request.toDate,
         })
         return result
-    except RuntimeError as exc:
-        # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
-        if "km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc):
-            logger.warning(f"Out-of-domain or invalid coordinates: {exc}")
-            raise HTTPException(status_code=400, detail=str(exc))
-        # Other RuntimeErrors are unexpected, treat as 500
-        logger.exception("extract_climate_timeseries failed with RuntimeError")
-        raise HTTPException(status_code=500, detail=str(exc))
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("extract_climate_timeseries failed")
         raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        _extract_semaphore.release()
 
 #######################################
 

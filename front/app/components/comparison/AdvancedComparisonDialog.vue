@@ -265,13 +265,6 @@ function renderResiduals() {
   ])
   if (!resData.length) return
 
-  // Trend line endpoints derived from actual season pairs (filteredData)
-  const filtered = filteredData.value
-  const rs = residualStats.value
-  const trendLine = filtered.length >= 2
-    ? [[filtered[0].date, rs.trendIntercept], [filtered[filtered.length - 1].date, rs.trendIntercept + rs.trend * rs.spanYears]]
-    : []
-
   chart.setOption({
     tooltip: {
       trigger: 'axis',
@@ -284,7 +277,7 @@ function renderResiduals() {
         return `<strong>${date}</strong><br/>${p.marker} Model−Obs: <strong>${val >= 0 ? '+' : ''}${val.toFixed(3)}</strong>`
       },
     },
-    legend: { data: ['Trend'], top: 4, textStyle: { fontSize: 10 } },
+    legend: { show: false },
     grid: { left: '3%', right: '2%', bottom: '10%', top: '14%', containLabel: true },
     xAxis: {
       type: 'time',
@@ -327,14 +320,6 @@ function renderResiduals() {
             { offset: 1, color: 'rgba(255,152,0,0.01)' },
           ]),
         },
-      },
-      {
-        name: 'Trend',
-        type: 'line',
-        data: trendLine,
-        symbol: 'none',
-        lineStyle: { color: 'rgba(255,255,255,0.65)', width: 1.5, type: 'dashed' },
-        silent: true,
       },
     ],
   }, true)

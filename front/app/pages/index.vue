@@ -669,8 +669,7 @@ async function getTimeseriesPromises(lat: number, lon: number) {
     await timeseriesChart.value.fetchAndPlot(
         lat, lon,
         () => getTimeseriesFromApi(lat, lon, fromDate, toDate),
-        // () => getClimateTimeseries(lat, lon, fromDate, toDate),
-        () => Promise.resolve(null),
+        () => getClimateTimeseries(lat, lon, fromDate, toDate),
         () => mainStore.selectedSensor && mainStore.selectedSensor.id
             ? getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selectedSensor.depth)
             : Promise.resolve(null)
@@ -696,7 +695,7 @@ async function getClimateTimeseries(lat: number, lon: number, fromDate: string, 
         var: mainStore.selected_variable.var,
         lat,
         lon,
-        depth: mainStore.selected_variable.depth,
+        depth: mainStore.selected_variable.depth_nc,
         fromDate,
         toDate
     });

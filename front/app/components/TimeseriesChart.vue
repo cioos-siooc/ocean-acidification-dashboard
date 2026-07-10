@@ -228,7 +228,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         const values: number[] = [];
         const push = (arr: any[] | undefined) => { if (Array.isArray(arr)) arr.forEach(v => { const n = Number(v); if (Number.isFinite(n)) values.push(n); }); };
         push(modelData?.value);
-        if (Array.isArray(climateData)) climateData.forEach(row => push([row?.mean, row?.q1, row?.q3, row?.min, row?.max]));
+        if (Array.isArray(climateData)) climateData.forEach(row => push([row?.mean, row?.min, row?.max]));
         if (sensorData?.value) push(sensorData.value);
         if (!values.length) return 0;
         const range = Math.max(...values) - Math.min(...values);
@@ -336,19 +336,14 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     if (hasClimate) {
         const climate_ts = climateData.map((row: any) => moment.utc(row.requested_date).valueOf());
         const mean = climateData.map((row: any) => row.mean);
-        const q1 = climateData.map((row: any) => row.q1);
-        const q3 = climateData.map((row: any) => row.q3);
         const min = climateData.map((row: any) => row.min);
-        const q3Diff = q3.map((v: any, i: number) => v - q1[i]);
-        const maxDiff = climateData.map((row: any, i: number) => row.max - min[i]);
+        const maxDiff = climateData.map((row: any) => row.max - row.min);
 
         const fmt = (ts: number[], vals: any[]) => ts.map((t, i) => [moment.utc(t).tz(tz).format(), vals[i]]);
         seriesArr.push({ name: '_stats_min_base', type: 'line', data: fmt(climate_ts, min), lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none' });
         seriesArr.push({ name: '_stats_max_range', type: 'line', data: fmt(climate_ts, maxDiff), lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, stack: 'minmax', symbol: 'none' });
-        seriesArr.push({ name: '_stats_q1_base', type: 'line', data: fmt(climate_ts, q1), stack: 'range', lineStyle: { opacity: 0 }, symbol: 'none' });
-        seriesArr.push({ name: '_stats_iqr', type: 'line', data: fmt(climate_ts, q3Diff), stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, symbol: 'none' });
         seriesArr.push({ name: '_stats_mean', type: 'line', data: fmt(climate_ts, mean), smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 2, type: 'dashed' }, symbol: 'none' });
-        seriesArr.push({ name: 'Model Stats', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
+        seriesArr.push({ name: 'Climatology', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
     }
 
     if (hasModelData) {
@@ -382,12 +377,12 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     console.log(option);
     chart.resize();
 
-    // Stats legend toggle — clicking 'Stats' shows/hides internal series
-    const STATS_INTERNAL = ['_stats_min_base', '_stats_max_range', '_stats_q1_base', '_stats_iqr', '_stats_mean'];
+    // Stats legend toggle — clicking 'Climatology' shows/hides internal series
+    const STATS_INTERNAL = ['_stats_min_base', '_stats_max_range', '_stats_mean'];
     if (_statsLegendHandler) chart.off('legendselectchanged', _statsLegendHandler);
     if (hasClimate) {
         _statsLegendHandler = (params: any) => {
-            if (params.name !== 'Model Stats') return;
+            if (params.name !== 'Climatology') return;
             const action = params.selected['Model Stats'] ? 'legendSelect' : 'legendUnSelect';
             for (const name of STATS_INTERNAL) chart!.dispatchAction({ type: action, name });
         };
