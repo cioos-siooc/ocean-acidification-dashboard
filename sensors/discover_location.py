@@ -25,6 +25,7 @@ Canonical variable mapping (extend as needed):
 """
 
 import argparse
+import json
 import os
 import sys
 
@@ -56,10 +57,15 @@ def discover(location_code: str, show_unmapped: bool = False) -> str:
         return f"# ERROR: location '{location_code}' not found in ONC API\n"
 
     loc = loc_result[0]
-    name     = loc.get("locationName", location_code)
-    lat      = loc.get("lat") or loc.get("latitude", 0.0)
-    lon      = loc.get("lon") or loc.get("longitude", 0.0)
-    depth    = loc.get("depth", 0.0) or 0.0
+    name        = loc.get("locationName", location_code)
+    lat         = loc.get("lat") or loc.get("latitude", 0.0)
+    lon         = loc.get("lon") or loc.get("longitude", 0.0)
+    depth       = loc.get("depth", 0.0) or 0.0
+    # ONC's "description" is frequently blank (populated mainly for named
+    # sites, not generic platforms/buoys) — dataSearchURL is always present
+    # so it's kept separately as the reference link regardless.
+    description = (loc.get("description") or "").strip()
+    source_link = loc.get("dataSearchURL", "")
 
     # ── Device categories at this location ────────────────────────────────────
     dev_cats = onc.getDeviceCategories({"locationCode": location_code})
@@ -111,6 +117,8 @@ def discover(location_code: str, show_unmapped: bool = False) -> str:
 
     vars_block = "\n".join(variable_lines)
 
+    desc_line = f"    description: {json.dumps(description)}\n" if description else ""
+
     return f"""\
   - name: "{name}"
     lat: {lat}
@@ -119,7 +127,8 @@ def discover(location_code: str, show_unmapped: bool = False) -> str:
     api: ONC
     organization: ONC
     location_code: {location_code}
-    variables:
+    source_link: {json.dumps(source_link)}
+{desc_line}    variables:
 {vars_block}
 """
 

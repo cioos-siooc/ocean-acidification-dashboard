@@ -54,6 +54,8 @@ export const useMainStore = defineStore('main', {
         queryMode: 'point' as 'point' | 'area',
 
         showCursorCoords: true,
+
+        activeBottomTab: 'timeseries' as 'timeseries' | 'analysis' | 'comparison',
     }),
 
     actions: {
@@ -142,6 +144,10 @@ export const useMainStore = defineStore('main', {
 
         setQueryMode(mode: 'point' | 'area') {
             this.queryMode = mode;
+        },
+
+        setActiveBottomTab(tab: 'timeseries' | 'analysis' | 'comparison') {
+            this.activeBottomTab = tab;
         },
     }
 })

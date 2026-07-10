@@ -196,7 +196,10 @@ const timeseriesChart = ref<InstanceType<typeof TimeseriesChart> | null>(null);
 let map: mapboxgl.Map | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
-const activeTab = ref<'timeseries' | 'analysis' | 'comparison'>('timeseries');
+const activeTab = computed({
+    get: () => mainStore.activeBottomTab,
+    set: (v: 'timeseries' | 'analysis' | 'comparison') => mainStore.setActiveBottomTab(v),
+});
 const footerTabs = computed(() => [
     { value: 'timeseries' as const, icon: 'mdi-chart-line', label: 'Timeseries' },
     { value: 'analysis' as const, icon: 'mdi-poll', label: 'Model Analysis' },

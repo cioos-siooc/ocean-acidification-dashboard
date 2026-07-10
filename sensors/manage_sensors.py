@@ -274,6 +274,8 @@ def cmd_add(ch_client, args):
     source: dict = {"api": args.api}
     if args.source_link:
         source["link"] = args.source_link
+    if args.description:
+        source["description"] = args.description
 
     sensor_id = str(uuid.uuid4())
     row = {
@@ -321,6 +323,8 @@ def cmd_update(ch_client, args):
         sensor["device_config"] = device_config
     if args.source_link:
         sensor["source"]["link"] = args.source_link
+    if args.description:
+        sensor["source"]["description"] = args.description
     if args.api:
         sensor["source"]["api"] = args.api
     if args.organization is not None:
@@ -382,6 +386,8 @@ def cmd_import(ch_client, args):
         source: dict = {"api": entry["api"]}
         if entry.get("source_link"):
             source["link"] = entry["source_link"]
+        if entry.get("description"):
+            source["description"] = entry["description"]
 
         sensor_id = existing[name] if (name in existing and args.overwrite) else str(uuid.uuid4())
         row = {
@@ -414,7 +420,10 @@ def _add_variable_args(p: argparse.ArgumentParser):
     p.add_argument("--location-code", metavar="CODE",
                    help="ONC location code (required for ONC sensors).")
     p.add_argument("--source-link", metavar="URL",
-                   help="ERDDAP dataset URL (required for ERDDAP sensors).")
+                   help="Reference URL for the sensor (ERDDAP dataset URL, or ONC "
+                        "dataSearchURL — required for ERDDAP sensors).")
+    p.add_argument("--description", metavar="TEXT",
+                   help="Human-readable description shown in the app.")
 
 
 def main():

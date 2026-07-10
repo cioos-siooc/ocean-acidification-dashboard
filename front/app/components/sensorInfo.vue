@@ -47,19 +47,23 @@
                                     {{ varShortName(varKey) }}
                                 </v-chip>
                             </div>
-                            <!-- <v-row class="ma-0 pa-0">
-                                <v-spacer></v-spacer>
-                                <v-col cols="auto" class="ma-0 pa-0">
-                                    <v-btn flat icon size="12px" title="Model Evaluation" @click.stop="openHeatmapDialog(sensor.id)">
-                                        <icons-heatmap :color="colors.orange.lighten3" />
+
+                            <v-row class="mt-2 d-flex gap-1">
+                                <v-spacer />
+                                <v-col cols="auto">
+                                    <v-btn icon size="x-small" variant="tonal" color="yellow" density="compact"
+                                        @click.stop="openInfoDialog(sensor)">
+                                        <v-icon size="12px">mdi-information-variant</v-icon>
                                     </v-btn>
                                 </v-col>
-                                <v-col cols="auto" class="ma-0 pa-0" disabled>
-                                    <v-btn flat icon size="12px" title="Model Evaluation">
-                                        <icons-compare :color="colors.blue.lighten3" />
+                                <v-col cols="auto">
+                                    <v-btn v-if="sensor.id === selectedSensor?.id" icon size="x-small" variant="tonal"
+                                        color="red-lighten-2" density="compact"
+                                        @click.stop="mainStore.setActiveBottomTab('comparison')">
+                                        <v-icon size="12px">mdi-chart-bar</v-icon>
                                     </v-btn>
                                 </v-col>
-                            </v-row> -->
+                            </v-row>
 
                         </div>
                     </v-list-item-content>
@@ -75,6 +79,47 @@
     <!-- HEATMATP -->
     <v-dialog v-model="showHeatmapDialog" width="85%" height="85%" transition="dialog-transition">
         <HeatmapChart :sensor-id="heatmap_sensorId" :model-variable="heatmap_variable" />
+    </v-dialog>
+
+    <!-- SENSOR INFO -->
+    <v-dialog v-model="showInfoDialog" width="480" transition="dialog-transition">
+        <v-card v-if="infoDialogSensor">
+            <v-card-title class="d-flex align-center">
+                <v-icon size="14px" :color="infoDialogSensor.active ? 'green' : 'grey'" class="mr-2">mdi-circle</v-icon>
+                {{ infoDialogSensor.name }}
+            </v-card-title>
+            <v-card-subtitle v-if="infoDialogSensor.organization">{{ infoDialogSensor.organization }}</v-card-subtitle>
+            <v-card-text>
+                <v-list density="compact">
+                    <v-list-item>
+                        <v-list-item-title class="text-caption text-medium-emphasis">Location</v-list-item-title>
+                        <v-list-item-subtitle>{{ coordTxt(infoDialogSensor.latitude, infoDialogSensor.longitude)
+                        }}</v-list-item-subtitle>
+                    </v-list-item>
+                    <v-list-item>
+                        <v-list-item-title class="text-caption text-medium-emphasis">Depth</v-list-item-title>
+                        <v-list-item-subtitle>{{ depth2txt(infoDialogSensor.depth) }}</v-list-item-subtitle>
+                    </v-list-item>
+                    <v-list-item>
+                        <v-list-item-title class="text-caption text-medium-emphasis">Data range</v-list-item-title>
+                        <v-list-item-subtitle>{{ formatDataRange(infoDialogSensor) }}</v-list-item-subtitle>
+                    </v-list-item>
+                    <v-list-item>
+                        <v-list-item-title class="text-caption text-medium-emphasis">Variables</v-list-item-title>
+                        <v-list-item-subtitle>
+                            <span v-for="(varKey, idx) in Object.keys(infoDialogSensor.variables)" :key="varKey">
+                                {{ varShortName(varKey) }}<span
+                                    v-if="idx < Object.keys(infoDialogSensor.variables).length - 1">, </span>
+                            </span>
+                        </v-list-item-subtitle>
+                    </v-list-item>
+                </v-list>
+            </v-card-text>
+            <v-card-actions>
+                <v-spacer />
+                <v-btn size="small" variant="text" @click="showInfoDialog = false">Close</v-btn>
+            </v-card-actions>
+        </v-card>
     </v-dialog>
 </template>
 
@@ -101,6 +146,9 @@ const heatmap_sensorId = ref<string | null>(null);
 const heatmap_variable = computed(() => mainStore.selected_variable?.var ?? null);
 const heatmap_minDate = ref<string | null>(null);
 const heatmap_maxDate = ref<string | null>(null);
+
+const showInfoDialog = ref(false);
+const infoDialogSensor = ref<typeof mainStore.sensors[number] | null>(null);
 
 ///////////////////////////////// METHODS  ///////////////////////////////////
 
@@ -157,6 +205,11 @@ function openHeatmapDialog(sensorId: string) {
     const sensor = sensors.value.find(s => s.id === sensorId);
     heatmap_sensorId.value = sensorId;
     showHeatmapDialog.value = true;
+}
+
+function openInfoDialog(sensor: typeof mainStore.sensors[number]) {
+    infoDialogSensor.value = sensor;
+    showInfoDialog.value = true;
 }
 
 </script>
