@@ -1374,6 +1374,8 @@ let _sensorClickPending = false;
     letter-spacing: 0;
     opacity: 0.65;
     transition: opacity 150ms ease, color 150ms ease;
+    /* v-btn centers its prepend-icon + content as a group by default; override so all rows share a left edge regardless of label length */
+    justify-content: flex-start;
 }
 
 .footer-rail-item :deep(.v-btn__content) {

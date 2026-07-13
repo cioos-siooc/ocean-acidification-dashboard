@@ -757,14 +757,725 @@ sensors:
   #   - "temperature:temperature:C:1.0"
   #   - "salinity:salinity:PSU:1.0"
 
-  - name: "Bute Inlet Ocean Observing Station (BIOOS) Buoy"
+  - name: "Acoustic Doppler Current Profiler Time Series from Fixed Platform on the British Columbia Central Coast (Provisional)"
+    lat: 50.96103333333333
+    lon: -126.73509166666666
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiADCPTimeSeriesProfileProvisional"
+    variables:
+    # No mappable variables found
+
+  - name: "BC Estuary Water Quality Monitoring Data - Asseek (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Asseek"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Bella Coola (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_BellaCoola"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Bella Coola (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesResearch_BellaCoola"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Chemainus (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Chemainus"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Chemainus (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesResearch_Chemainus"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Cluxewe (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Cluxewe"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Cluxewe (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesResearch_Cluxewe"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Conuma (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Conuma"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Cowichan (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Cowichan"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Cowichan (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesResearch_Cowichan"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Englishman (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Englishman"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Englishman (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesResearch_Englishman"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Fulmore-Shoal (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_FulmoreShoal"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Fulmore-Shoal (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesResearch_FulmoreShoal"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Glendale (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Glendale"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Glendale (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesResearch_Glendale"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Hoeya (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Hoeya"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Kaouk (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Kaouk"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Kaouk (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesResearch_Kaouk"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Koeye (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Koeye"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Koeye (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesResearch_Koeye"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Little Qualicum (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_LittleQualicum"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Little Qualicum (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesResearch_LittleQualicum"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Malksope (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Malksope"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Moyeha (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Moyeha"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Nanaimo (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Nanaimo"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Quatse (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Quatse"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Quatse (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesResearch_Quatse"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Salmon (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesProvisional_Salmon"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "BC Estuary Water Quality Monitoring Data - Salmon (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/NatureTrustWaterPropertiesVerticalProfilesResearch_Salmon"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "Bulk and Size-Fractionated Chlorophyll and Phaeopigment Concentrations Collected by Niskin Bottle, BC, Canada (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiChlorophyllSampleProvisional"
+    variables:
+    # No mappable variables found
+
+  - name: "Bulk and Size-Fractionated Chlorophyll and Phaeopigment Concentrations Collected by Niskin Bottle, BC, Canada (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiChlorophyllSampleResearch"
+    variables:
+    # No mappable variables found
+
+  - name: "High performance liquid chromatography phytoplankton pigment timeseries for the northern Salish Sea and central coast, British Columbia"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiHPLCResearch"
+    variables:
+    - "chlorophyll:chl_a:µg/L:1.0"
+
+  - name: "High-resolution time series of surface seawater CO2 content from the OceansAlaska Shellfish Hatchery in Ketchikan, Alaska, USA"
+    lat: 55.315
+    lon: -131.5954
+    depth: 0.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiKetchikanBoLResearch"
+    variables:
+    - "omega_arag:Omega_arag::1.0"
+    - "omega_cal:Omega_calc::1.0"
+    - "ph_total:pH_T::1.0"
+    - "salinity:TSG_S:PSU:1.0"
+    - "temperature:TSG_T:C:1.0"
+
+  - name: "Oceanographic Mooring Time Series, Hyacinthe Bay, BC, Canada (Provisional)"
+    lat: 50.12001367
+    lon: -125.212195
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiQU5MMooringProvisional"
+    variables:
+    - "temperature:watertemp:C:1.0"
+
+  - name: "Oceanographic Mooring Time Series, Rivers Inlet, BC, Canada (Research)"
+    lat: 51.60063893828699
+    lon: -127.52991951817503
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiRiversInletMooringResearch"
+    variables:
+    - "dissolved_oxygen:DOXYZZ01:ml/L:1.0"  # source unit: mL/L — check factor!
+    - "salinity:PSALST01:PSU:1.0"
+    - "temperature:TEMPS901:C:1.0"
+
+  - name: "Pruth Bay Oceanographic Mooring on Calvert Island (Provisional)"
+    lat: 51.6521
+    lon: -128.0853667
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiPruthMooringProvisional"
+    variables:
+    - "temperature:watertemp:C:1.0"
+
+  - name: "Seafloor Observatory in Hyacinthe Bay, Quadra Island, British Columbia, Canada (Provisional)"
+    lat: 50.11736
+    lon: -125.22003
+    depth: 20.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiQuadraLimpet5min"
+    variables:
+    - "dissolved_oxygen:WaterOxygen_Avg:ml/L:1.0"
+    - "salinity:WaterSalinity_Avg:PSU:1.0"
+    - "temperature:WaterTemp_Avg:C:1.0"
+
+  - name: "Seawater Carbon Dioxide (CO2) Content from the Burke-o-Lator pCO2/TCO2 Analyzer located at Bamfield Marine Sciences Centre, Bamfield, BC, Canada (Provisional)"
+    lat: 48.836633
+    lon: -125.1362667
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiBamfieldBoL5min"
+    variables:
+    - "ph_total:calcpH_Med::1.0"
+    - "salinity:TSG_S_Med:PSU:1.0"
+    - "temperature:TSG_T_Med:C:1.0"
+
+  - name: "Seawater Carbon Dioxide (CO2) Content from the Burke-o-Lator pCO2/TCO2 analyzer located at Sitka Harbor, Sitka, Alaska, USA (Research)"
+    lat: 57.0526
+    lon: -135.3456
+    depth: 0.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiSitkaBoLResearch"
+    variables:
+    - "omega_arag:Omega_arag::1.0"
+    - "omega_cal:Omega_calc::1.0"
+    - "ph_total:pH_T::1.0"
+    - "salinity:TSG_S:PSU:1.0"
+    - "temperature:TSG_T:C:1.0"
+
+  - name: "Seawater Carbon Dioxide (CO2) Content from the Burke-o-Lator pCO2/TCO2 analyzer located at the Hakai Institute\u2019s Quadra Island Field Station, Hyacinthe Bay, BC, Canada (Provisional)"
+    lat: 50.116
+    lon: -125.222
+    depth: 1.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiQuadraBoL5min"
+    variables:
+    - "ph_total:calcpH_Med::1.0"
+    - "salinity:TSG_S_Med:PSU:1.0"
+    - "temperature:TSG_T_Med:C:1.0"
+
+  - name: "Seawater Carbon Dioxide (CO2) Content from the Burke-o-Lator pCO2/TCO2 analyzer located at the Hakai Institute\u2019s Quadra Island Field Station, Hyacinthe Bay, BC, Canada (Research)"
+    lat: 50.116
+    lon: -125.222
+    depth: 0.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiQuadraBoLResearch"
+    variables:
+    - "omega_arag:Omega_arag::1.0"
+    - "omega_cal:Omega_calc::1.0"
+    - "ph_total:pH_T::1.0"
+    - "salinity:TSG_S:PSU:1.0"
+    - "temperature:TSG_T:C:1.0"
+
+  - name: "Seawater Carbon Dioxide (CO2) Content from the SuperCO2 System in the Pacific Ecosystem Autonomous Research Laboratory, Bamfield Marine Sciences Centre, BC, Canada (Research)"
+    lat: 48.835608
+    lon: -125.136138
+    depth: 1.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiPearlBoL5min"
+    variables:
+    - "ph_total:calcpH_Med::1.0"
+    - "salinity:TSG_S_Med:PSU:1.0"
+    - "temperature:TSG_T_Med:C:1.0"
+
+  - name: "Seawater Carbon Dioxide (CO2) Content from the SuperCO2 System in the Pacific Ecosystem Autonomous Research Laboratory, Bamfield Marine Sciences Centre, BC, Canada (Research)"
+    lat: 48.8359
+    lon: -125.1361
+    depth: 0.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiPearlBoLResearch"
+    variables:
+    - "omega_arag:Omega_arag::1.0"
+    - "omega_cal:Omega_calc::1.0"
+    - "ph_total:pH_T::1.0"
+    - "salinity:TSG_S:PSU:1.0"
+    - "temperature:TSG_T:C:1.0"
+
+  - name: "Sentinels of Change Sea surface temperature time series data along the British Columbia Coast"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiSentinelTemperature"
+    variables:
+    - "temperature:water_temp:C:1.0"
+
+  - name: "Surface Seawater and Marine Boundary Layer CO2 Observations from the Kwakshua Channel (KC) Buoy on the Central Coast of British Columbia (Research)"
+    lat: 51.65
+    lon: -127.966
+    depth: 0.5
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiKCBuoyResearch"
+    variables:
+    - "co2_partial_pressure:pCO2_SW_sat:µatm:1.0"
+    - "salinity:Salinity:PSU:1.0"
+    - "temperature:SST:C:1.0"
+
+  - name: "Surface Seawater and Marine Boundary Layer CO2 Time Series from the Bute Inlet Ocean Observing Station (BIOOS) Buoy, Bute Inlet, BC, Canada (Provisional)"
     lat: 50.596611
     lon: -124.901806
-    depth: 0
+    depth: 0.5
     api: ERDDAP
-    organization: Hakai
+    organization: 
     source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiBIOOSBuoy1hour"
     variables:
-    # format: canonical:source_column:unit:conversion_factor
-    - "temperature:WaterTemp:C:1.0"
     - "salinity:WaterSalinity:PSU:1.0"
+    - "temperature:WaterTemp:C:1.0"
+
+  - name: "Surface Seawater and Marine Boundary Layer CO2 Time Series from the Bute Inlet Ocean Observing Station (BIOOS) Buoy, Bute Inlet, BC, Canada (Research)"
+    lat: 50.597
+    lon: -124.899
+    depth: 0.5
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiBIOOSBuoyResearch"
+    variables:
+    - "co2_partial_pressure:pCO2_SW_sat:µatm:1.0"
+    - "salinity:Salinity:PSU:1.0"
+    - "temperature:SST:C:1.0"
+
+  - name: "Surface Seawater and Marine Boundary Layer CO2 Time Series from the Kwakshua Channel (KC) Buoy, Central Coast, BC, Canada (Provisional)"
+    lat: 51.6499
+    lon: -127.9663
+    depth: 0.5
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiKCBuoy1hour"
+    variables:
+    - "dissolved_oxygen:Oxygen_Concentration:ml/L:1.0"  # source unit: mL/L — check factor!
+    - "salinity:WaterSalinity:PSU:1.0"
+    - "temperature:WaterTemp:C:1.0"
+
+  - name: "Underway Surface Seawater and Marine Boundary Layer Observations from the M/V Columbia (Research)"
+    lat: 54.03555
+    lon: -129.1134
+    depth: 2.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiColumbiaFerryResearch"
+    variables:
+    - "co2_partial_pressure:SW_pCO2_wet_equil_T:µatm:1.0"
+    - "salinity:TSG_Salinity:PSU:1.0"
+    - "temperature:TSG_T:C:1.0"
+
+  - name: "Water Level and Weather Station Time Series, Pruth Bay, Kwakshua Channel, Central Coast, BC, Canada (Provisional)"
+    lat: 51.6544888889
+    lon: -128.1302805556
+    depth: 0.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiPruthDockProvisional"
+    variables:
+    # No mappable variables found
+
+  - name: "Water Level Time Series, Choke Pass, Central Coast, BC, Canada (Provisional)"
+    lat: 51.67066666666667
+    lon: -128.12103333333334
+    depth: 0.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiCalvertCP1TideGauge"
+    variables:
+    # No mappable variables found
+
+  - name: "Water Property Measurements from Conductivity-Temperature-Depth Profiles, BC, Canada (Provisional)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiWaterPropertiesInstrumentProfileProvisional"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "Water Property Measurements from Conductivity-Temperature-Depth Profiles, BC, Canada (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiWaterPropertiesInstrumentProfileResearch"
+    variables:
+    - "dissolved_oxygen:dissolved_oxygen_ml_l:ml/L:1.0"  # source unit: mL L-1 — check factor!
+    - "ph_total:ph::1.0"
+    - "salinity:salinity:PSU:1.0"
+    - "temperature:temperature:C:1.0"
+
+  - name: "Water Property Measurements from the Bute Inlet Ocean Observing Station (BIOOS) Wirewalker, Bute Inlet, BC, Canada (Provisional)"
+    lat: 50.5744
+    lon: -124.9009
+    depth: 0.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiWirewalkerProvisional"
+    variables:
+    - "dissolved_oxygen:dissolved_o2:ml/L:1.0"  # source unit: mL/L — check factor!
+    - "temperature:temperature:C:1.0"
+
+  - name: "Watersheds Stream Stations Timeseries, Calvert and Hecate Islands, BC, Canada (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: 0.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiWatershedsStreamStationsProvisional"
+    variables:
+    # No mappable variables found
+
+  - name: "Watersheds Stream Stations Timeseries, Calvert and Hecate Islands, BC, Canada (Research)"
+    lat: 0.0
+    lon: 0.0
+    depth: 0.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiWatershedsStreamStationsResearch"
+    variables:
+    # No mappable variables found
+
+  - name: "Weather Station Time Series, Hyacinthe Bay, BC, Canada (Provisional)"
+    lat: 50.1162556
+    lon: -125.2221111
+    depth: -11.0
+    api: ERDDAP
+    organization: 
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiQuadraWeather5min"
+    variables:
+    # No mappable variables found
+
