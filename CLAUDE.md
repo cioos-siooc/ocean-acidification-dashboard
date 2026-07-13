@@ -4,11 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Services & Ports
 
+Host ports come from `docker-compose.dev.yml`'s `${VAR:-default}` fallbacks, overridden by `.env.dev`. Always start with `--env-file .env.dev` (see gotcha below) — these are the ports you'll actually hit:
+
 | Service | Description | Port |
 |---|---|---|
-| `front` | Nuxt 3 frontend | 3000 |
-| `api` | FastAPI backend | 4000 |
-| `db` | PostgreSQL/PostGIS | 5432 |
+| `front` | Nuxt 3 frontend | 9010 |
+| `api` | FastAPI backend | 9011 |
+| `db` | PostgreSQL/PostGIS | 9012 |
 | `db-ch` | ClickHouse (analytics) | 9013 (HTTP), 9014 (native) |
 | `process` | Data pipeline worker | — |
 
@@ -16,8 +18,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Start dev environment:**
 ```bash
-docker compose -f docker-compose.dev.yml up
+docker compose -f docker-compose.dev.yml --env-file .env.dev up
 ```
+Without `--env-file .env.dev`, compose falls back to the in-file defaults (front 3000, api 4000, db 5432) and can recreate dependent services on the wrong ports.
 
 **Frontend (outside Docker):**
 ```bash
@@ -133,13 +136,14 @@ Config via `nuxt.config.ts`. Runtime env vars: `NUXT_PUBLIC_API_BASE_URL`, `NUXT
 
 #### Frontend Feature Map
 
-`app/pages/index.vue` hosts a bottom `v-footer` tab rail (`activeTab`, bound to `mainStore.activeBottomTab`) with three tabs:
+`app/pages/index.vue` hosts a bottom `v-footer` tab rail (`activeTab`, bound to `mainStore.activeBottomTab`) with four tabs:
 
 | Tab | Component | Purpose | Data fetching |
 |---|---|---|---|
 | Timeseries | `app/components/TimeseriesChart.vue` | Chart of a single point/sensor's raw timeseries over a date range | `composables/useSensorTimeseries.ts` → `POST /extractTimeseries` or `/sensorTimeseries` |
 | Model Analysis | `app/components/analytics.vue` ("Analysis Builder") | Analyzes the full historical timeseries for a selected coordinate/depth/variable — view mode (All Years Overlaid / Annual Summary), season filter, statistic (min/mean/max), all-time min/max records, threshold-crossing stats per year | `composables/useAnalysisFetch.ts` → `POST /analysis/timeseries` |
 | Comparison | `app/components/sensorComparison.vue` (shown only when a sensor is selected) | Compares sensor vs. model data | — |
+| Sensor Analysis | `app/components/sensorAnalytics.vue` (shown only when a sensor is selected) | Same "Analysis Builder" pattern as Model Analysis (view mode / season / statistic), but run against a sensor's own observed timeseries instead of the model | `composables/useSensorAnalysisFetch.ts` (`fetchSensorAnalysisSeries`) |
 
 **Model Analysis advanced mode**: `analytics.vue`'s fullscreen icon opens `app/components/analysis/AdvancedAnalysisDialog.vue`, a fullscreen dialog with 5 sub-tabs under `app/components/analysis/`:
 - `ExtremeEvents.vue` — baseline window, min duration, direction
@@ -150,7 +154,7 @@ Config via `nuxt.config.ts`. Runtime env vars: `NUXT_PUBLIC_API_BASE_URL`, `NUXT
 
 The dialog fetches one shared "primary series" per point/variable/depth (reused across sub-tabs), plus a memoized `cachedFetch` helper for secondary-variable series used by CompoundStress and Correlation. Client-side stats helpers live in `composables/useAnalysisStatistics.ts`; ECharts dark theme registration in `composables/useEchartsTheme.ts`.
 
-Other chart-related components: `app/components/EchartsLineDialog.vue` — a separate monthly-chart dialog, unrelated to Model Analysis. `app/components/sensorInfo.vue` — sensor metadata/status dialog.
+Other chart-related components: `app/components/EchartsLineDialog.vue` — a separate monthly-chart dialog, unrelated to Model Analysis. `app/components/sensorInfo.vue` — despite the name, this is the left-panel searchable/filterable sensor list (mounted in `controlPanel.vue`'s "Sensors" expansion panel); it also bundles the per-sensor metadata dialog (info icon) and a heatmap dialog. Selecting a sensor here or on the map both call `mainStore.selectSensor(id, depth)`, and the list auto-scrolls the selected `v-list-item` into view via a `watch` on `mainStore.selectedSensor`.
 
 ## Python Environment
 

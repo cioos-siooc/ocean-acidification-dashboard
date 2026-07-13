@@ -29,7 +29,8 @@
                 </div>
 
                 <!-- SENSOR LIST -->
-                <v-list-item v-for="(sensor, i) in filteredSensors" :key="sensor.id" :active="sensor.id === selectedSensor?.id"
+                <v-list-item v-for="(sensor, i) in filteredSensors" :key="sensor.id" :ref="setSensorRef(sensor.id)"
+                    :active="sensor.id === selectedSensor?.id"
                     @click="selectSensor(sensor.id)" variant="text" class="rounded my-3" color="yellow"
                     :style="{ backgroundColor: '#33333399' }">
                     <v-list-item-content>
@@ -135,7 +136,7 @@
 
 <script setup lang="ts">
 import { useMainStore } from '@/stores/main';
-import { ref, computed } from 'vue';
+import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import colors from 'vuetify/util/colors';
 import { sensorStatusColor } from '../../composables/useSensorStatus';
 
@@ -192,6 +193,24 @@ const heatmap_maxDate = ref<string | null>(null);
 
 const showInfoDialog = ref(false);
 const infoDialogSensor = ref<typeof mainStore.sensors[number] | null>(null);
+
+const sensorRefs = new Map<string, Element | ComponentPublicInstance>();
+function setSensorRef(id: string) {
+    return (el: Element | ComponentPublicInstance | null) => {
+        if (el) sensorRefs.set(id, el);
+        else sensorRefs.delete(id);
+    };
+}
+
+watch(() => selectedSensor.value?.id, async (id: string | undefined) => {
+    if (!id) return;
+    await nextTick();
+    const el = sensorRefs.get(id);
+    const target = (el as any)?.$el ?? el;
+    if (target instanceof HTMLElement) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+});
 
 ///////////////////////////////// METHODS  ///////////////////////////////////
 
