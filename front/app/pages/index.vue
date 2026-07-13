@@ -779,10 +779,14 @@ function updateBuoyVarOpacity(selectedVar: string | null) {
 // Recomputes which station groups are visible on the map from mainStore.filteredSensors
 // (the same filter criteria — search/organization/variable — driving the sensorInfo.vue list),
 // and pushes the resulting geometry into the existing source via setData.
+// Each group is trimmed down to only its filter-matching members, so clusters that survive
+// the filter don't still expose non-matching sensors when spiderfied.
 function applyBuoyFilters() {
     if (!map || !_sensorGroups.length) return;
     const filteredIds = new Set(mainStore.filteredSensors.map((s: any) => s.id));
-    _visibleSensorGroups = _sensorGroups.filter(g => g.some((s: any) => filteredIds.has(s.id)));
+    _visibleSensorGroups = _sensorGroups
+        .map(g => g.filter((s: any) => filteredIds.has(s.id)))
+        .filter(g => g.length > 0);
     const geojson = buildSensorGeoJSON(_visibleSensorGroups, _sensorIsRealtime);
     const source = map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
     if (source) source.setData(geojson);
@@ -811,7 +815,9 @@ async function addSensors() {
     _sensorIsRealtime = sensorIsRealtime;
 
     const filteredIds = new Set(mainStore.filteredSensors.map((s: any) => s.id));
-    _visibleSensorGroups = groups.filter(g => g.some((s: any) => filteredIds.has(s.id)));
+    _visibleSensorGroups = groups
+        .map(g => g.filter((s: any) => filteredIds.has(s.id)))
+        .filter(g => g.length > 0);
 
     const geojson = buildSensorGeoJSON(_visibleSensorGroups, sensorIsRealtime);
 
