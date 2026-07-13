@@ -6,25 +6,35 @@
             </div>
             <div v-else>
                 <!-- FILTERS -->
-                <!-- <v-row class="ma-1 pa-0">
-                    <v-col class="ma-0 pa-0">
-                        <v-btn size="16px" icon flat disabled title="Filter by visible area">
-                            <iconsMap />
-                        </v-btn>
+                <v-row class="ma-0 pa-0" dense>
+                    <v-col cols="12" class="pa-1">
+                        <v-text-field v-model="searchQuery" label="Search sensors" variant="outlined"
+                            density="compact" hide-details clearable prepend-inner-icon="mdi-magnify"
+                            rounded></v-text-field>
                     </v-col>
-                </v-row> -->
+                    <v-col cols="12" class="pa-1">
+                        <v-select v-model="organizationFilter" :items="organizationOptions" label="Organization"
+                            variant="outlined" density="compact" hide-details clearable multiple chips
+                            closable-chips></v-select>
+                    </v-col>
+                    <v-col cols="12" class="pa-1">
+                        <v-select v-model="variableFilter" :items="variableOptions" item-title="label"
+                            item-value="value" label="Variable" variant="outlined" density="compact" hide-details
+                            clearable multiple chips closable-chips></v-select>
+                    </v-col>
+                </v-row>
 
-                <!-- SEARCH BAR -->
-                <!-- <v-text-field v-model="searchQuery" disabled label="Search Sensors" variant="outlined" density="compact"
-                    hide-details clearable rounded=""></v-text-field> -->
+                <div v-if="filteredSensors.length === 0" class="text-center text-medium-emphasis pa-4">
+                    No sensors match your filters.
+                </div>
 
                 <!-- SENSOR LIST -->
-                <v-list-item v-for="(sensor, i) in sensors" :key="sensor.id" :active="sensor.id === selectedSensor?.id"
+                <v-list-item v-for="(sensor, i) in filteredSensors" :key="sensor.id" :active="sensor.id === selectedSensor?.id"
                     @click="selectSensor(sensor.id)" variant="text" class="rounded my-3" color="yellow"
                     :style="{ backgroundColor: '#33333399' }">
                     <v-list-item-content>
                         <v-list-item-title class="text-body-medium">
-                            <v-icon size="12px" :color="sensor.active ? 'green' : 'grey'">mdi-circle</v-icon>
+                            <v-icon size="12px" :color="sensorStatusColor(sensor)">mdi-circle</v-icon>
                             {{ sensor.name }}
                         </v-list-item-title>
 
@@ -85,7 +95,7 @@
     <v-dialog v-model="showInfoDialog" width="480" transition="dialog-transition">
         <v-card v-if="infoDialogSensor">
             <v-card-title class="d-flex align-center">
-                <v-icon size="14px" :color="infoDialogSensor.active ? 'green' : 'grey'" class="mr-2">mdi-circle</v-icon>
+                <v-icon size="14px" :color="sensorStatusColor(infoDialogSensor)" class="mr-2">mdi-circle</v-icon>
                 {{ infoDialogSensor.name }}
             </v-card-title>
             <v-card-subtitle v-if="infoDialogSensor.organization">{{ infoDialogSensor.organization }}</v-card-subtitle>
@@ -127,14 +137,47 @@
 import { useMainStore } from '@/stores/main';
 import { ref, computed } from 'vue';
 import colors from 'vuetify/util/colors';
+import { sensorStatusColor } from '../../composables/useSensorStatus';
 
 const mainStore = useMainStore();
+
+type Sensor = typeof mainStore.sensors[number];
 
 ///////////////////////////////////  PROPS & STATE  ///////////////////////////////////
 
 const sensors = computed(() => mainStore.sensors.sort((a, b) => a.active === b.active ? 0 : a.active ? -1 : 1)); // active sensors first
 const selectedSensor = computed(() => mainStore.selectedSensor);
 const searchQuery = ref('');
+const organizationFilter = ref<string[]>([]);
+const variableFilter = ref<string[]>([]);
+
+const organizationOptions = computed(() => {
+    const orgs = new Set(mainStore.sensors.map((s: Sensor) => s.organization).filter(Boolean));
+    return Array.from(orgs).sort();
+});
+
+const variableOptions = computed(() => {
+    const vars = new Set<string>();
+    mainStore.sensors.forEach((s: Sensor) => Object.keys(s.variables ?? {}).forEach(v => vars.add(v)));
+    return Array.from(vars).sort().map(v => ({ label: varShortName(v), value: v }));
+});
+
+const filteredSensors = computed(() => {
+    const q = searchQuery.value.trim().toLowerCase();
+    return sensors.value.filter((sensor: Sensor) => {
+        if (q && !sensor.name.toLowerCase().includes(q) && !(sensor.organization ?? '').toLowerCase().includes(q)) {
+            return false;
+        }
+        if (organizationFilter.value.length && !organizationFilter.value.includes(sensor.organization)) {
+            return false;
+        }
+        if (variableFilter.value.length) {
+            const sensorVars = Object.keys(sensor.variables ?? {});
+            if (!variableFilter.value.some(v => sensorVars.includes(v))) return false;
+        }
+        return true;
+    });
+});
 const depthDialogSensor = ref<typeof mainStore.sensors[number] | null>(null);
 const depthDialogOpen = computed({
     get: () => depthDialogSensor.value !== null,

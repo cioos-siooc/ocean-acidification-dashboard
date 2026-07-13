@@ -204,7 +204,8 @@ function renderTimeseriesChart() {
         const items = (Array.isArray(params) ? params : [params])
           .filter((p: any) => !['Model min', 'Model max'].includes(p.seriesName) && p.value?.[1] != null)
         if (!items.length) return ''
-        const date = String(items[0]?.axisValue ?? items[0]?.value?.[0] ?? '').slice(0, 10)
+        const rawDate = items[0]?.axisValue ?? items[0]?.value?.[0]
+        const date = rawDate != null ? new Date(rawDate).toISOString().slice(0, 10) : ''
         let s = `<strong>${date}</strong><br/>`
         for (const p of items) {
           s += `${p.marker} ${p.seriesName}: <strong>${Number(p.value[1]).toFixed(3)}</strong><br/>`
