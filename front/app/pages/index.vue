@@ -727,6 +727,7 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
 
 let _sensorGroups: any[][] = [];
 let _sensorIsRealtime: (s: any) => boolean = () => false;
+let _visibleSensorGroups: any[][] = []; // _sensorGroups filtered to mainStore.filteredSensors
 
 function coordKey(lat: number, lon: number): string {
     return `${lat.toFixed(6)},${lon.toFixed(6)}`;
@@ -765,15 +766,30 @@ function buildSensorGeoJSON(groups: any[][], sensorIsRealtime: (s: any) => boole
 }
 
 function updateBuoyVarOpacity(selectedVar: string | null) {
-    if (!map || !_sensorGroups.length) return;
-    const keysWithVar = _sensorGroups
+    if (!map || !_visibleSensorGroups.length) return;
+    const keysWithVar = _visibleSensorGroups
         .filter(g => !selectedVar || g.some((s: any) => selectedVar in (s.variables ?? {})))
         .map(g => coordKey(g[0].latitude, g[0].longitude));
-    const expr: any = (!selectedVar || keysWithVar.length === _sensorGroups.length)
+    const expr: any = (!selectedVar || keysWithVar.length === _visibleSensorGroups.length)
         ? 0.95
         : ['case', ['in', ['get', 'coordKey'], ['literal', keysWithVar]], 0.95, 0.2];
     try { (map as any).setPaintProperty(STATIONS_LAYER_ID, 'icon-opacity', expr); } catch (_) {}
 }
+
+// Recomputes which station groups are visible on the map from mainStore.filteredSensors
+// (the same filter criteria — search/organization/variable — driving the sensorInfo.vue list),
+// and pushes the resulting geometry into the existing source via setData.
+function applyBuoyFilters() {
+    if (!map || !_sensorGroups.length) return;
+    const filteredIds = new Set(mainStore.filteredSensors.map((s: any) => s.id));
+    _visibleSensorGroups = _sensorGroups.filter(g => g.some((s: any) => filteredIds.has(s.id)));
+    const geojson = buildSensorGeoJSON(_visibleSensorGroups, _sensorIsRealtime);
+    const source = map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
+    if (source) source.setData(geojson);
+    updateBuoyVarOpacity(mainStore.selected_variable?.var ?? null);
+}
+
+watch(() => mainStore.filteredSensors, applyBuoyFilters);
 
 async function addSensors() {
     const sensors = await getSensors();
@@ -794,7 +810,10 @@ async function addSensors() {
     _sensorGroups = groups;
     _sensorIsRealtime = sensorIsRealtime;
 
-    const geojson = buildSensorGeoJSON(groups, sensorIsRealtime);
+    const filteredIds = new Set(mainStore.filteredSensors.map((s: any) => s.id));
+    _visibleSensorGroups = groups.filter(g => g.some((s: any) => filteredIds.has(s.id)));
+
+    const geojson = buildSensorGeoJSON(_visibleSensorGroups, sensorIsRealtime);
 
     try {
         const detach = await addBuoyLayer(map, geojson, clickSensor, openSensorPicker, openSpiderfy);

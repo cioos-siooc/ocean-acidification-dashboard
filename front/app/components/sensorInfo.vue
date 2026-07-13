@@ -136,6 +136,7 @@
 
 <script setup lang="ts">
 import { useMainStore } from '@/stores/main';
+import { storeToRefs } from 'pinia';
 import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import colors from 'vuetify/util/colors';
 import { sensorStatusColor } from '../../composables/useSensorStatus';
@@ -148,9 +149,12 @@ type Sensor = typeof mainStore.sensors[number];
 
 const sensors = computed(() => mainStore.sensors.sort((a, b) => a.active === b.active ? 0 : a.active ? -1 : 1)); // active sensors first
 const selectedSensor = computed(() => mainStore.selectedSensor);
-const searchQuery = ref('');
-const organizationFilter = ref<string[]>([]);
-const variableFilter = ref<string[]>([]);
+// Filter state lives in the store so the map layer can apply the same filters to its markers.
+const {
+    sensorSearchQuery: searchQuery,
+    sensorOrganizationFilter: organizationFilter,
+    sensorVariableFilter: variableFilter,
+} = storeToRefs(mainStore);
 
 const organizationOptions = computed(() => {
     const orgs = new Set(mainStore.sensors.map((s: Sensor) => s.organization).filter(Boolean));
@@ -163,22 +167,10 @@ const variableOptions = computed(() => {
     return Array.from(vars).sort().map(v => ({ label: varShortName(v), value: v }));
 });
 
-const filteredSensors = computed(() => {
-    const q = searchQuery.value.trim().toLowerCase();
-    return sensors.value.filter((sensor: Sensor) => {
-        if (q && !sensor.name.toLowerCase().includes(q) && !(sensor.organization ?? '').toLowerCase().includes(q)) {
-            return false;
-        }
-        if (organizationFilter.value.length && !organizationFilter.value.includes(sensor.organization)) {
-            return false;
-        }
-        if (variableFilter.value.length) {
-            const sensorVars = Object.keys(sensor.variables ?? {});
-            if (!variableFilter.value.some(v => sensorVars.includes(v))) return false;
-        }
-        return true;
-    });
-});
+// Filtering itself lives in mainStore.filteredSensors so the map layer applies the same criteria.
+const filteredSensors = computed(() =>
+    [...mainStore.filteredSensors].sort((a, b) => a.active === b.active ? 0 : a.active ? -1 : 1)
+);
 const depthDialogSensor = ref<typeof mainStore.sensors[number] | null>(null);
 const depthDialogOpen = computed({
     get: () => depthDialogSensor.value !== null,

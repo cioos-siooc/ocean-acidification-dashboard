@@ -39,6 +39,11 @@ export const useMainStore = defineStore('main', {
         sensors: [] as Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null, source: { api?: string }, organization: string }>,
         selectedSensor: {} as { id: string, depth: number } | null,
 
+        // Sensor panel filters — shared with the map so markers stay in sync with the sensor list.
+        sensorSearchQuery: '' as string,
+        sensorOrganizationFilter: [] as string[],
+        sensorVariableFilter: [] as string[],
+
         lastClickedMapPoint: null as { lat: number, lng: number } | null,
 
         mapCenter: null as { lat: number, lng: number } | null,
@@ -57,6 +62,25 @@ export const useMainStore = defineStore('main', {
 
         activeBottomTab: 'timeseries' as 'timeseries' | 'analysis' | 'comparison' | 'sensorAnalysis',
     }),
+
+    getters: {
+        filteredSensors(state) {
+            const q = state.sensorSearchQuery.trim().toLowerCase();
+            return state.sensors.filter((sensor) => {
+                if (q && !sensor.name.toLowerCase().includes(q) && !(sensor.organization ?? '').toLowerCase().includes(q)) {
+                    return false;
+                }
+                if (state.sensorOrganizationFilter.length && !state.sensorOrganizationFilter.includes(sensor.organization)) {
+                    return false;
+                }
+                if (state.sensorVariableFilter.length) {
+                    const sensorVars = Object.keys(sensor.variables ?? {});
+                    if (!state.sensorVariableFilter.some(v => sensorVars.includes(v))) return false;
+                }
+                return true;
+            });
+        },
+    },
 
     actions: {
         setVariables(vars: Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number] }>) {
@@ -95,6 +119,15 @@ export const useMainStore = defineStore('main', {
         },
         setSelectedSensor(sensor: { id: string, depth: number } | null) {
             this.selectedSensor = sensor;
+        },
+        setSensorSearchQuery(query: string) {
+            this.sensorSearchQuery = query;
+        },
+        setSensorOrganizationFilter(orgs: string[]) {
+            this.sensorOrganizationFilter = orgs;
+        },
+        setSensorVariableFilter(vars: string[]) {
+            this.sensorVariableFilter = vars;
         },
         /**
          * Select a sensor: snap to closest available depth and set as active sensor.
