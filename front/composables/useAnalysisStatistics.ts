@@ -31,6 +31,30 @@ export function maskBySeason(data: SeriesPoint[], season: string): SeriesPoint[]
     return data.map(d => months.includes(new Date(d.time).getUTCMonth() + 1) ? d : { time: d.time, value: null });
 }
 
+/**
+ * Inserts an explicit null-valued point wherever consecutive entries are more than
+ * `maxGapDays` apart. A time-axis line chart connects whatever points are actually in
+ * the array regardless of how far apart their dates are — a real multi-day/week outage
+ * (common in sensor telemetry, rare in the daily model archive) has no rows at all for
+ * the missing dates, so without this the chart silently bridges the outage with a
+ * straight diagonal instead of showing a break. Combine with `connectNulls: false`.
+ */
+export function breakDataGaps(series: SeriesPoint[], maxGapDays = 3): SeriesPoint[] {
+    if (series.length < 2) return series;
+    const out: SeriesPoint[] = [series[0]];
+    for (let i = 1; i < series.length; i++) {
+        const prev = series[i - 1];
+        const cur = series[i];
+        const gapDays = (new Date(cur.time).getTime() - new Date(prev.time).getTime()) / 86_400_000;
+        if (gapDays > maxGapDays) {
+            const breakTime = new Date(new Date(prev.time).getTime() + 86_400_000).toISOString().slice(0, 10);
+            out.push({ time: breakTime, value: null });
+        }
+        out.push(cur);
+    }
+    return out;
+}
+
 export function filterBySeason(data: SeriesPoint[], season: string): SeriesPoint[] {
     const months = SEASON_MONTHS[season] || SEASON_MONTHS.full_year;
     return data.filter(d => months.includes(new Date(d.time).getUTCMonth() + 1));
@@ -222,6 +246,22 @@ export function computeClimatologyBaseline(series: SeriesPoint[], windowDays = 5
         climatology.push({ doy, mean, std, p10: percentileOf(pooled, 10), p90: percentileOf(pooled, 90), n: pooled.length });
     }
     return climatology;
+}
+
+/**
+ * Number of distinct calendar years represented in a series. computeClimatologyBaseline pools
+ * its per-day-of-year window across every year present in the input — with fewer than ~2 years
+ * of data, that pool collapses to a rolling window over a single continuous run rather than
+ * independent yearly samples, so the resulting "baseline" is a local statistic, not a true
+ * multi-year climatology. Callers use this to decide whether to caveat the baseline in the UI.
+ */
+export function distinctYearSpan(series: SeriesPoint[]): number {
+    const years = new Set<number>();
+    for (const d of series) {
+        if (d.value == null) continue;
+        years.add(new Date(d.time).getUTCFullYear());
+    }
+    return years.size;
 }
 
 /** Looks up the climatology bucket for a given ISO date, reusing Feb 28's bucket for Feb 29. */

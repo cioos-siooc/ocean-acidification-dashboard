@@ -5,7 +5,8 @@ export type SeriesPoint = { time: string; value: number | null };
 
 export type AnalysisLocation =
     | { lat: number; lon: number }
-    | { polygon: [number, number][] };
+    | { polygon: [number, number][] }
+    | { sensorId: string };
 
 export type AnalysisFetchParams = {
     variable: string;

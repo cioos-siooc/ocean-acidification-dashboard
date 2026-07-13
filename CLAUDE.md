@@ -131,6 +131,27 @@ Config via `nuxt.config.ts`. Runtime env vars: `NUXT_PUBLIC_API_BASE_URL`, `NUXT
 
 **UI conventions**: Prefer Vuetify components (`v-btn`, `v-card`, `v-sheet`, etc.) over raw `div`/`button` elements, even when heavily restyled — apply custom look via scoped CSS classes on top of the component (e.g. `selectedInfo.vue`'s `.colorbar` class on a `v-card`) rather than dropping to plain HTML. Use `:deep()` to reach into a component's internal classes (e.g. `.v-btn__content`) when the override needs to target inner markup.
 
+#### Frontend Feature Map
+
+`app/pages/index.vue` hosts a bottom `v-footer` tab rail (`activeTab`, bound to `mainStore.activeBottomTab`) with three tabs:
+
+| Tab | Component | Purpose | Data fetching |
+|---|---|---|---|
+| Timeseries | `app/components/TimeseriesChart.vue` | Chart of a single point/sensor's raw timeseries over a date range | `composables/useSensorTimeseries.ts` → `POST /extractTimeseries` or `/sensorTimeseries` |
+| Model Analysis | `app/components/analytics.vue` ("Analysis Builder") | Analyzes the full historical timeseries for a selected coordinate/depth/variable — view mode (All Years Overlaid / Annual Summary), season filter, statistic (min/mean/max), all-time min/max records, threshold-crossing stats per year | `composables/useAnalysisFetch.ts` → `POST /analysis/timeseries` |
+| Comparison | `app/components/sensorComparison.vue` (shown only when a sensor is selected) | Compares sensor vs. model data | — |
+
+**Model Analysis advanced mode**: `analytics.vue`'s fullscreen icon opens `app/components/analysis/AdvancedAnalysisDialog.vue`, a fullscreen dialog with 5 sub-tabs under `app/components/analysis/`:
+- `ExtremeEvents.vue` — baseline window, min duration, direction
+- `CompoundStress.vue` — primary + secondary variable threshold comparison
+- `Trend.vue` — Theil-Sen slope, Mann-Kendall test
+- `Climatology.vue` — deviation from day-of-year climatological mean
+- `Correlation.vue` — 2-4 selectable variables
+
+The dialog fetches one shared "primary series" per point/variable/depth (reused across sub-tabs), plus a memoized `cachedFetch` helper for secondary-variable series used by CompoundStress and Correlation. Client-side stats helpers live in `composables/useAnalysisStatistics.ts`; ECharts dark theme registration in `composables/useEchartsTheme.ts`.
+
+Other chart-related components: `app/components/EchartsLineDialog.vue` — a separate monthly-chart dialog, unrelated to Model Analysis. `app/components/sensorInfo.vue` — sensor metadata/status dialog.
+
 ## Python Environment
 
 `process/`, `scripts/`, and `clickhouse_test/` use **uv** (see `pyproject.toml` + `uv.lock` in each). `api/` uses pip with `requirements.txt`. Each subproject has its own `.venv`.

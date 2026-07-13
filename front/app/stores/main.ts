@@ -55,7 +55,7 @@ export const useMainStore = defineStore('main', {
 
         showCursorCoords: true,
 
-        activeBottomTab: 'timeseries' as 'timeseries' | 'analysis' | 'comparison',
+        activeBottomTab: 'timeseries' as 'timeseries' | 'analysis' | 'comparison' | 'sensorAnalysis',
     }),
 
     actions: {
@@ -146,7 +146,7 @@ export const useMainStore = defineStore('main', {
             this.queryMode = mode;
         },
 
-        setActiveBottomTab(tab: 'timeseries' | 'analysis' | 'comparison') {
+        setActiveBottomTab(tab: 'timeseries' | 'analysis' | 'comparison' | 'sensorAnalysis') {
             this.activeBottomTab = tab;
         },
     }

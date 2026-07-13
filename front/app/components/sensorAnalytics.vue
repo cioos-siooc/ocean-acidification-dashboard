@@ -6,7 +6,7 @@
       style="width:190px; min-width:190px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
 
       <div class="d-flex align-center justify-space-between mb-2">
-        <span class="ctrl-label" style="margin-bottom:0;">ANALYSIS</span>
+        <span class="ctrl-label" style="margin-bottom:0;">SENSOR ANALYSIS</span>
         <div>
           <v-btn icon="mdi-fullscreen" size="x-small" variant="text" @click="advancedOpen = true" title="Advanced Mode" />
           <v-btn icon="mdi-refresh" size="x-small" variant="text" @click="resetParameters" title="Reset" />
@@ -37,7 +37,7 @@
       </v-btn-toggle>
 
       <v-btn block color="warning" size="small" prepend-icon="mdi-chart-line" :loading="isGenerating"
-        :disabled="!lastClicked || !variable || depth == null" @click="runAnalysis">
+        :disabled="!sensorInfo || !variable || depth == null" @click="runAnalysis">
         Run Analysis
       </v-btn>
     </div>
@@ -62,7 +62,7 @@
         <div v-if="isGenerating && !hasActivePlot"
           class="d-flex flex-column align-center justify-center fill-height">
           <v-progress-circular indeterminate color="warning" size="36" class="mb-2" />
-          <div class="text-caption text-warning">Querying ClickHouse...</div>
+          <div class="text-caption text-warning">Querying sensor data...</div>
         </div>
 
         <!-- Reload badge shown over greyscale chart -->
@@ -79,7 +79,7 @@
         <div v-else-if="!hasActivePlot && !isGenerating && !plotErrorMessage"
           class="d-flex flex-column align-center justify-center h-100 text-center px-6">
           <v-icon size="56" color="grey-darken-1">mdi-poll</v-icon>
-          <div class="text-caption text-grey-darken-1 mt-2">Select a point on the map — analysis loads
+          <div class="text-caption text-grey-darken-1 mt-2">Select a sensor — analysis loads
             automatically</div>
         </div>
       </div>
@@ -140,7 +140,7 @@
   </div>
 
   <AdvancedAnalysisDialog v-model="advancedOpen" :variable="variable" :depth="depth" :location="advancedLocation"
-    :year-range="[minYear, maxYear]" :point-label="pointLabel" />
+    :year-range="[minYear, maxYear]" :point-label="sensorInfo?.name || ''" />
 </template>
 
 
@@ -149,7 +149,8 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
 import { useMainStore } from '../stores/main'
-import { fetchAnalysisSeries, type SeriesPoint, type AnalysisLocation } from '../../composables/useAnalysisFetch'
+import type { SeriesPoint, AnalysisLocation } from '../../composables/useAnalysisFetch'
+import { fetchSensorAnalysisSeries } from '../../composables/useSensorAnalysisFetch'
 import {
   availableVariables, filterBySeason, groupByYear, breakDataGaps,
   computeBoxplotData, type BoxRow, linearRegression, yearColor,
@@ -158,7 +159,7 @@ import AdvancedAnalysisDialog from './analysis/AdvancedAnalysisDialog.vue'
 
 const mainStore = useMainStore()
 
-// Only fetch while the Analysis Builder tab is actually visible — the parent
+// Only fetch while the Sensor Analysis tab is actually visible — the parent
 // page keeps this component mounted (v-show) even when another tab is shown.
 const props = defineProps<{ active?: boolean }>()
 
@@ -166,13 +167,22 @@ const advancedOpen = ref(false)
 
 // --- STORE-DERIVED STATE ---
 const variable = computed(() => mainStore.selected_variable.var)
-const lastClicked = computed(() => mainStore.lastClickedMapPoint)
-const queryMode = computed(() => mainStore.queryMode)
-const depth = computed(() => mainStore.selected_variable.depth_nc)
+const selectedSensor = computed(() => mainStore.selectedSensor)
+const sensorInfo = computed(() => {
+  if (!selectedSensor.value?.id) return null
+  return mainStore.sensors.find(s => s.id === selectedSensor.value!.id) ?? null
+})
+// Sensors report at their own fixed deployment depth, not the model's selected depth.
+const depth = computed(() => selectedSensor.value?.depth ?? null)
 
-// --- CONSTANTS ---
-const minYear = 2007
-const maxYear = 2026
+const advancedLocation = computed<AnalysisLocation | null>(() =>
+  sensorInfo.value ? { sensorId: sensorInfo.value.id } : null
+)
+
+// --- YEAR RANGE (derived from the sensor's own data span) ---
+const currentYear = new Date().getFullYear()
+const minYear = computed(() => sensorInfo.value?.first_data_at ? parseInt(sensorInfo.value.first_data_at.slice(0, 4), 10) : currentYear)
+const maxYear = computed(() => sensorInfo.value?.latest_data_at ? parseInt(sensorInfo.value.latest_data_at.slice(0, 4), 10) : currentYear)
 
 // --- REACTIVE STATE ---
 const chartView = ref<'overlay' | 'annual'>('overlay')
@@ -188,7 +198,6 @@ const plotErrorMessage = ref<string | null>(null)
 let autoRunTimer: ReturnType<typeof setTimeout> | null = null
 let activeRequestId = 0
 let lastFetchSignature: string | null = null
-let analysisRequestController: AbortController | null = null
 
 const chartContainerRef = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
@@ -202,34 +211,9 @@ const rawAllData = ref<SeriesPoint[]>([])
 const rawSeasonalData = ref<SeriesPoint[]>([])
 
 // --- COMPUTED ---
-const polygonFromClick = computed<[number, number][]>(() => {
-  const pt = lastClicked.value
-  if (!pt) return []
-  const h = 0.05
-  return [
-    [pt.lng - h, pt.lat - h],
-    [pt.lng + h, pt.lat - h],
-    [pt.lng + h, pt.lat + h],
-    [pt.lng - h, pt.lat + h],
-    [pt.lng - h, pt.lat - h],
-  ]
-})
-
 const varName = computed(() =>
   availableVariables.find(v => v.id === variable.value)?.name || variable.value || 'Variable'
 )
-
-const pointLabel = computed(() => {
-  const pt = lastClicked.value
-  if (!pt) return ''
-  return queryMode.value === 'area' ? `~${pt.lat.toFixed(2)}, ${pt.lng.toFixed(2)} (area)` : `${pt.lat.toFixed(3)}, ${pt.lng.toFixed(3)}`
-})
-
-const advancedLocation = computed<AnalysisLocation | null>(() => {
-  const pt = lastClicked.value
-  if (!pt) return null
-  return queryMode.value === 'area' ? { polygon: polygonFromClick.value } : { lat: pt.lat, lon: pt.lng }
-})
 
 const seasonLabel = computed(() => {
   const labels: Record<string, string> = {
@@ -403,8 +387,8 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
       name: String(s.year),
       type: 'line',
       smooth: true,
-      symbol: 'none',
       connectNulls: false,
+      symbol: 'none',
       lineStyle: { width, color },
       itemStyle: { color },
       data: points,
@@ -567,9 +551,9 @@ watch(selectedSeason, () => {
   reRenderChart()
 })
 
-// Auto-fetch on point/area, variable, or depth change — but only while this tab is visible.
+// Auto-fetch on sensor, variable, or depth change — but only while this tab is visible.
 // primaryStat is intentionally excluded: switching Min/Mean/Max stays manual via the Run button.
-watch([lastClicked, variable, depth, queryMode], scheduleAutoRun)
+watch([selectedSensor, variable, depth], scheduleAutoRun)
 
 // Switching into this tab fetches fresh data for whatever changed while it was hidden.
 watch(() => props.active, (active: boolean | undefined) => {
@@ -599,33 +583,26 @@ onBeforeUnmount(() => {
 })
 
 // --- DATA FETCH ---
-async function fetchRegionTimeseries(): Promise<SeriesPoint[]> {
-  const pt = lastClicked.value
-  if (!pt) throw new Error('No location selected. Click on the map first.')
-  if (depth.value == null) throw new Error('No depth selected.')
-  const location = queryMode.value === 'area'
-    ? { polygon: polygonFromClick.value }
-    : { lat: pt.lat, lon: pt.lng }
-  // Abort any in-flight request so a stale response can't clobber a newer one
-  if (analysisRequestController) analysisRequestController.abort()
-  analysisRequestController = new AbortController()
-  return fetchAnalysisSeries(
-    { variable: variable.value, stat: primaryStat.value as 'min' | 'mean' | 'max', depth: depth.value, location, yearRange: [minYear, maxYear] },
-    analysisRequestController.signal
+async function fetchSensorSeries(): Promise<SeriesPoint[]> {
+  if (!sensorInfo.value) throw new Error('No sensor selected.')
+  if (depth.value == null) throw new Error('No depth available for this sensor.')
+  const fromDate = `${minYear.value}-01-01T000000`
+  const toDate = `${maxYear.value}-12-31T235959`
+  return fetchSensorAnalysisSeries(
+    sensorInfo.value.id, variable.value, primaryStat.value as 'min' | 'mean' | 'max', depth.value, fromDate, toDate
   )
 }
 
 // --- ACTIONS ---
-// Identifies the inputs that should trigger an automatic refetch (point/area, variable, depth).
+// Identifies the inputs that should trigger an automatic refetch (sensor, variable, depth).
 // Deliberately excludes primaryStat — switching Min/Mean/Max stays manual via the Run button.
 function currentSignature(): string {
-  const pt = lastClicked.value
-  return JSON.stringify({ lat: pt?.lat, lng: pt?.lng, mode: queryMode.value, variable: variable.value, depth: depth.value })
+  return JSON.stringify({ id: selectedSensor.value?.id, variable: variable.value, depth: depth.value })
 }
 
 function scheduleAutoRun() {
   if (!props.active) return
-  if (!lastClicked.value || !variable.value || depth.value == null) return
+  if (!sensorInfo.value || !variable.value || depth.value == null) return
   const sig = currentSignature()
   if (sig === lastFetchSignature) return
   if (autoRunTimer) clearTimeout(autoRunTimer)
@@ -642,7 +619,7 @@ const runAnalysis = async () => {
   rawSeasonalData.value = []
 
   try {
-    const rawData = await fetchRegionTimeseries()
+    const rawData = await fetchSensorSeries()
     if (requestId !== activeRequestId) return // superseded by a newer request
     rawAllData.value = rawData
     rawSeasonalData.value = filterBySeason(rawData, selectedSeason.value)
@@ -660,7 +637,7 @@ const runAnalysis = async () => {
       resolve()
     }, 100))
   } catch (error: any) {
-    if (requestId !== activeRequestId || error?.code === 'ERR_CANCELED') return
+    if (requestId !== activeRequestId) return
     plotErrorMessage.value = error?.response?.data?.detail || error?.message || 'Failed to generate analysis.'
     hasActivePlot.value = false
   } finally {

@@ -8,6 +8,13 @@
         (pooled across all years, smoothed over the baseline window), so it's easy to see which years ran
         warmer/cooler, more/less acidic, etc. relative to the long-term average for that calendar day.
       </div>
+
+      <v-alert v-if="isShortHistory" type="warning" variant="tonal" density="compact" icon="mdi-alert-outline"
+        class="mt-3 text-caption">
+        Only {{ yearSpan }} year{{ yearSpan === 1 ? '' : 's' }} of data available. The "mean" here isn't a true
+        multi-year climatology — it's a local ±{{ windowDays }}-day rolling average of this same record, so
+        anomalies reflect short-term swings rather than deviation from a stable long-term normal.
+      </v-alert>
     </div>
 
     <div class="flex-grow-1" style="min-width:0;">
@@ -21,12 +28,17 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '../../../composables/useEchartsTheme'
 import type { SeriesPoint } from '../../../composables/useAnalysisFetch'
-import { filterBySeason, groupByYear, computeClimatologyBaseline, climatologyForDate, yearColor } from '../../../composables/useAnalysisStatistics'
+import {
+  filterBySeason, groupByYear, breakDataGaps, computeClimatologyBaseline, climatologyForDate, yearColor,
+  distinctYearSpan,
+} from '../../../composables/useAnalysisStatistics'
 
 const props = defineProps<{ series: SeriesPoint[]; season: string }>()
 
 const windowDays = ref(5)
 const climatology = computed(() => computeClimatologyBaseline(props.series, windowDays.value))
+const yearSpan = computed(() => distinctYearSpan(props.series))
+const isShortHistory = computed(() => yearSpan.value < 2)
 const seasonalSeries = computed(() => filterBySeason(props.series, props.season))
 
 // Same synthetic-year-axis trick as the basic tab's overlay chart, so partial years
@@ -42,16 +54,17 @@ function overlayTimestamp(iso: string, season: string): number {
 const anomalySeries = computed(() => {
   const climByDoy = new Map(climatology.value.map(c => [c.doy, c]))
   return groupByYear(seasonalSeries.value).map(({ year, data }) => {
-    const points = data
-      .filter(d => d.value != null)
-      .map(d => {
-        const clim = climatologyForDate(climByDoy, d.time)
-        if (!clim || Number.isNaN(clim.mean)) return null
-        return [overlayTimestamp(d.time, props.season), (d.value as number) - clim.mean] as [number, number]
-      })
-      .filter(Boolean) as [number, number][]
+    // Gap-broken (not compacted) so a real multi-day data outage within the year renders
+    // as a break instead of ECharts bridging it with a straight diagonal.
+    const points = breakDataGaps(data).map(d => {
+      const x = overlayTimestamp(d.time, props.season)
+      if (d.value == null) return [x, null] as [number, number | null]
+      const clim = climatologyForDate(climByDoy, d.time)
+      if (!clim || Number.isNaN(clim.mean)) return [x, null] as [number, number | null]
+      return [x, (d.value as number) - clim.mean] as [number, number | null]
+    })
     return { year, points: points.sort((a, b) => a[0] - b[0]) }
-  }).filter(s => s.points.length > 0)
+  }).filter(s => s.points.some(p => p[1] != null))
 })
 
 const chartContainerRef = ref<HTMLDivElement | null>(null)
@@ -69,6 +82,7 @@ function render() {
     type: 'line',
     smooth: true,
     symbol: 'none',
+    connectNulls: false,
     lineStyle: { width: 1 + (total <= 1 ? 1 : idx / (total - 1)) * 1.5, color: yearColor(idx, total) },
     itemStyle: { color: yearColor(idx, total) },
     data: s.points,

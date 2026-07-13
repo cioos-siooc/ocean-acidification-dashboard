@@ -140,6 +140,11 @@
                     <div v-show="activeTab === 'comparison'" style="height:100%;">
                         <SensorComparison :active="activeTab === 'comparison'" />
                     </div>
+
+                    <!-- Sensor Analysis tab (visible only when a sensor is selected) -->
+                    <div v-show="activeTab === 'sensorAnalysis'" style="height:100%;">
+                        <SensorAnalytics :active="activeTab === 'sensorAnalysis'" />
+                    </div>
                 </div>
 
             </div>
@@ -177,6 +182,7 @@ import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 import TimeseriesChart from '../components/TimeseriesChart.vue';
 import Analytics from '../components/analytics.vue'
 import SensorComparison from '../components/sensorComparison.vue'
+import SensorAnalytics from '../components/sensorAnalytics.vue'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
@@ -198,20 +204,23 @@ const meta = ref<any>(null);
 const drawerOpen = ref(false);
 const activeTab = computed({
     get: () => mainStore.activeBottomTab,
-    set: (v: 'timeseries' | 'analysis' | 'comparison') => mainStore.setActiveBottomTab(v),
+    set: (v: 'timeseries' | 'analysis' | 'comparison' | 'sensorAnalysis') => mainStore.setActiveBottomTab(v),
 });
 const footerTabs = computed(() => [
     { value: 'timeseries' as const, icon: 'mdi-chart-line', label: 'Timeseries' },
     { value: 'analysis' as const, icon: 'mdi-poll', label: 'Model Analysis' },
     ...(mainStore.selectedSensor?.id
-        ? [{ value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison' }]
+        ? [
+            { value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison' },
+            { value: 'sensorAnalysis' as const, icon: 'mdi-chart-bell-curve-cumulative', label: 'Sensor Analysis' },
+        ]
         : []),
 ]);
 const railIndex = computed(() => footerTabs.value.findIndex(t => t.value === activeTab.value));
 
 // Drop back to timeseries when the active sensor is cleared
 watch(() => mainStore.selectedSensor, (sensor) => {
-    if (!sensor?.id && activeTab.value === 'comparison') {
+    if (!sensor?.id && (activeTab.value === 'comparison' || activeTab.value === 'sensorAnalysis')) {
         activeTab.value = 'timeseries';
     }
 });

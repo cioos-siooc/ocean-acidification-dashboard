@@ -44,7 +44,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '../../../composables/useEchartsTheme'
 import type { SeriesPoint, AnalysisLocation } from '../../../composables/useAnalysisFetch'
-import { availableVariables, filterBySeason, maskBySeason, groupByYear } from '../../../composables/useAnalysisStatistics'
+import { availableVariables, filterBySeason, maskBySeason, breakDataGaps, groupByYear } from '../../../composables/useAnalysisStatistics'
 
 const props = defineProps<{
   primarySeries: SeriesPoint[]
@@ -157,13 +157,13 @@ function render() {
         // Masked (not compacted) so off-season months render as a real gap instead
         // of a straight diagonal connecting e.g. last August to next March.
         name: varName(props.primaryVariable), type: 'line', showSymbol: false, yAxisIndex: 0, connectNulls: false,
-        data: maskBySeason(props.primarySeries, props.season).map(d => [d.time, d.value]),
+        data: maskBySeason(breakDataGaps(props.primarySeries), props.season).map(d => [d.time, d.value]),
         lineStyle: { width: 1.2, color: '#58d9f9' },
         markArea: { itemStyle: { color: 'rgba(255,110,118,0.18)' }, data: markAreaData },
       },
       {
         name: varName(secondaryVariable.value), type: 'line', showSymbol: false, yAxisIndex: 1, connectNulls: false,
-        data: maskBySeason(secondarySeries.value, props.season).map(d => [d.time, d.value]),
+        data: maskBySeason(breakDataGaps(secondarySeries.value), props.season).map(d => [d.time, d.value]),
         lineStyle: { width: 1.2, color: '#ff9800' },
       },
     ],

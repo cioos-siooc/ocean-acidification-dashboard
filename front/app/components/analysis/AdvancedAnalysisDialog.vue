@@ -29,7 +29,7 @@
       <v-card-text class="flex-grow-1 pa-0" style="overflow:auto; min-height:0;">
         <v-alert v-if="primaryError" type="error" variant="tonal" class="ma-4">{{ primaryError }}</v-alert>
 
-        <div v-else-if="!lastClicked || !variable || depth == null" class="d-flex flex-column align-center justify-center h-100 text-center px-6">
+        <div v-else-if="!location || !variable || depth == null" class="d-flex flex-column align-center justify-center h-100 text-center px-6">
           <v-icon size="56" color="grey-darken-1">mdi-poll</v-icon>
           <div class="text-caption text-grey-darken-1 mt-2">Select a point, variable, and depth first.</div>
         </div>
@@ -42,12 +42,12 @@
           <ExtremeEvents v-if="activeTab === 'extremes'" :series="primarySeries" :season="selectedSeason" :variable="variable" />
           <CompoundStress v-else-if="activeTab === 'compound'"
             :primary-series="primarySeries" :primary-variable="variable" :season="selectedSeason"
-            :depth="depth" :location="location" :year-range="ANALYSIS_YEAR_RANGE" :fetch-series="cachedFetch" />
+            :depth="depth" :location="location" :year-range="yearRange" :fetch-series="cachedFetch" />
           <Trend v-else-if="activeTab === 'trend'" :series="primarySeries" :season="selectedSeason" />
           <Climatology v-else-if="activeTab === 'climatology'" :series="primarySeries" :season="selectedSeason" />
           <Correlation v-else-if="activeTab === 'correlation'"
             :primary-series="primarySeries" :primary-variable="variable" :season="selectedSeason"
-            :depth="depth" :location="location" :year-range="ANALYSIS_YEAR_RANGE" :fetch-series="cachedFetch" />
+            :depth="depth" :location="location" :year-range="yearRange" :fetch-series="cachedFetch" />
         </template>
       </v-card-text>
     </v-card>
@@ -56,8 +56,8 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useMainStore } from '../../stores/main'
 import { fetchAnalysisSeries, type SeriesPoint, type AnalysisLocation } from '../../../composables/useAnalysisFetch'
+import { fetchSensorAnalysisSeries } from '../../../composables/useSensorAnalysisFetch'
 import { availableVariables } from '../../../composables/useAnalysisStatistics'
 import ExtremeEvents from './ExtremeEvents.vue'
 import CompoundStress from './CompoundStress.vue'
@@ -65,9 +65,14 @@ import Trend from './Trend.vue'
 import Climatology from './Climatology.vue'
 import Correlation from './Correlation.vue'
 
-const ANALYSIS_YEAR_RANGE: [number, number] = [2007, 2026]
-
-const props = defineProps<{ modelValue: boolean }>()
+const props = defineProps<{
+  modelValue: boolean
+  variable: string
+  depth: number | null
+  location: AnalysisLocation | null
+  yearRange: [number, number]
+  pointLabel?: string
+}>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
 
 const isOpen = computed({
@@ -75,35 +80,22 @@ const isOpen = computed({
   set: (v: boolean) => emit('update:modelValue', v),
 })
 
-const mainStore = useMainStore()
-
-const variable = computed(() => mainStore.selected_variable.var)
-const lastClicked = computed(() => mainStore.lastClickedMapPoint)
-const queryMode = computed(() => mainStore.queryMode)
-const depth = computed(() => mainStore.selected_variable.depth_nc)
+const variable = computed(() => props.variable)
+const depth = computed(() => props.depth)
+const location = computed(() => props.location)
+const yearRange = computed(() => props.yearRange)
 
 const varName = computed(() => availableVariables.find(v => v.id === variable.value)?.name || variable.value || 'Variable')
-const pointLabel = computed(() => {
-  const pt = lastClicked.value
-  if (!pt) return ''
-  return queryMode.value === 'area' ? `~${pt.lat.toFixed(2)}, ${pt.lng.toFixed(2)} (area)` : `${pt.lat.toFixed(3)}, ${pt.lng.toFixed(3)}`
-})
+const pointLabel = computed(() => props.pointLabel || '')
 
-const location = computed<AnalysisLocation | null>(() => {
-  const pt = lastClicked.value
-  if (!pt) return null
-  if (queryMode.value !== 'area') return { lat: pt.lat, lon: pt.lng }
-  const h = 0.05
-  return {
-    polygon: [
-      [pt.lng - h, pt.lat - h],
-      [pt.lng + h, pt.lat - h],
-      [pt.lng + h, pt.lat + h],
-      [pt.lng - h, pt.lat + h],
-      [pt.lng - h, pt.lat - h],
-    ],
+/** Dispatches to the sensor or model series fetcher based on the shape of `loc`. */
+function fetchSeriesFor(variableId: string, depthVal: number, loc: AnalysisLocation): Promise<SeriesPoint[]> {
+  if ('sensorId' in loc) {
+    const [fromDate, toDate] = [`${yearRange.value[0]}-01-01T000000`, `${yearRange.value[1]}-12-31T235959`]
+    return fetchSensorAnalysisSeries(loc.sensorId, variableId, 'mean', depthVal, fromDate, toDate)
   }
-})
+  return fetchAnalysisSeries({ variable: variableId, stat: 'mean', depth: depthVal, location: loc, yearRange: yearRange.value })
+}
 
 const activeTab = ref<'extremes' | 'compound' | 'trend' | 'climatology' | 'correlation'>('extremes')
 const selectedSeason = ref('full_year')
@@ -115,15 +107,12 @@ const primaryError = ref<string | null>(null)
 let primaryRequestId = 0
 
 async function fetchPrimary() {
-  if (!lastClicked.value || !variable.value || depth.value == null || !location.value) return
+  if (!variable.value || depth.value == null || !location.value) return
   const requestId = ++primaryRequestId
   primaryLoading.value = true
   primaryError.value = null
   try {
-    const data = await fetchAnalysisSeries({
-      variable: variable.value, stat: 'mean', depth: depth.value,
-      location: location.value, yearRange: ANALYSIS_YEAR_RANGE,
-    })
+    const data = await fetchSeriesFor(variable.value, depth.value, location.value)
     if (requestId !== primaryRequestId) return
     primarySeries.value = data
   } catch (err: any) {
@@ -136,7 +125,7 @@ async function fetchPrimary() {
 
 // Fetch when the dialog opens, and re-fetch if point/variable/depth changed since.
 watch(isOpen, (open) => { if (open) fetchPrimary() })
-watch([lastClicked, variable, depth, queryMode], () => { if (isOpen.value) fetchPrimary() })
+watch([location, variable, depth], () => { if (isOpen.value) fetchPrimary() })
 
 // --- SHARED FETCH CACHE (secondary variables picked in Compound Stress / Correlation tabs) ---
 const seriesCache = new Map<string, Promise<SeriesPoint[]>>()
@@ -144,7 +133,7 @@ function cachedFetch(variableId: string, depthVal: number, loc: AnalysisLocation
   const key = JSON.stringify({ variableId, depthVal, loc })
   let entry = seriesCache.get(key)
   if (!entry) {
-    entry = fetchAnalysisSeries({ variable: variableId, stat: 'mean', depth: depthVal, location: loc, yearRange: ANALYSIS_YEAR_RANGE })
+    entry = fetchSeriesFor(variableId, depthVal, loc)
     seriesCache.set(key, entry)
   }
   return entry

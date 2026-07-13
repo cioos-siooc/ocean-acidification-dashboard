@@ -21,6 +21,13 @@
         climatological baseline (marine-heatwave-style methodology), merges nearby runs, and keeps events
         lasting at least the minimum duration.
       </div>
+
+      <v-alert v-if="isShortHistory" type="warning" variant="tonal" density="compact" icon="mdi-alert-outline"
+        class="mt-3 text-caption">
+        Only {{ yearSpan }} year{{ yearSpan === 1 ? '' : 's' }} of data available. The dashed threshold isn't a
+        true multi-year climatology here — it's a local ±{{ windowDays }}-day rolling percentile of this same
+        record, so it will track short-term swings rather than a stable "normal for this time of year."
+      </v-alert>
     </div>
 
     <div class="flex-grow-1 d-flex flex-column" style="min-width:0;">
@@ -47,10 +54,14 @@ import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '../../../composables/useEchartsTheme'
 import type { SeriesPoint } from '../../../composables/useAnalysisFetch'
 import {
-  filterBySeason, maskBySeason, computeClimatologyBaseline, detectExtremeEvents, summarizeEventsByYear,
+  filterBySeason, maskBySeason, breakDataGaps, computeClimatologyBaseline, detectExtremeEvents, summarizeEventsByYear,
+  distinctYearSpan,
 } from '../../../composables/useAnalysisStatistics'
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable: string }>()
+
+const yearSpan = computed(() => distinctYearSpan(props.series))
+const isShortHistory = computed(() => yearSpan.value < 2)
 
 // Direction defaults: low extremes matter for OA-relevant variables, high extremes for temperature.
 const LOW_EXTREME_VARS = new Set(['ph_total', 'omega_arag', 'omega_cal', 'dissolved_oxygen'])
@@ -100,8 +111,10 @@ function render() {
   const climByDoy = new Map(climatology.value.map(c => [c.doy, c]))
   const CUM_DAYS_NONLEAP = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
   // Masked (not compacted) so off-season months render as a real gap in the line
-  // instead of a straight diagonal connecting e.g. last August to next March.
-  const maskedSeries = maskBySeason(props.series, props.season)
+  // instead of a straight diagonal connecting e.g. last August to next March. Gap-broken
+  // first so a genuine multi-day data outage (common in sensor telemetry) also renders
+  // as a break instead of bridging straight across, on both the value and threshold lines.
+  const maskedSeries = maskBySeason(breakDataGaps(props.series), props.season)
   const valuePoints = maskedSeries.map(d => [d.time, d.value] as [string, number | null])
   const baselinePoints = maskedSeries
     .map(d => {
