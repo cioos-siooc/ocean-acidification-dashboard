@@ -38,7 +38,7 @@ def _find_nearest_time(client, table: str, grid_x: int, grid_y: int, target: pd.
     available time is farther than TIME_MATCH_TOLERANCE_S away.
     """
     query = f"""
-        SELECT time, abs(dateDiff('second', time, %(target)s)) AS diff_s
+        SELECT time, abs(dateDiff('second', time, toDateTime(%(target)s))) AS diff_s
         FROM {table}
         WHERE gridX = %(gx)s AND gridY = %(gy)s
         ORDER BY diff_s ASC
