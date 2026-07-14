@@ -878,25 +878,21 @@ async def fn_get_profile(request: profileRequest, http_request: Request):
         lat = request.lat
         lng = request.lng
         dt = request.dt
-        
+
         if source != "SalishSeaCast":
             logger.error(f"Unsupported source: {source}")
             raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
-        db_gridTable = "grid"
 
-        profile = await run_in_threadpool(
-            extract_profile,
-            var=var,
-            lat=lat,
-            lng=lng,
-            dt=dt,
-            data_dir=_get_nc_data_dirs(source),
-            db_host=db_host,
-            db_port=db_port,
-            db_name=db_name,
-            db_user=db_user,
-            db_password=db_password,
-            db_table=db_gridTable
+        profile = await asyncio.wait_for(
+            run_in_process(
+                extract_profile,
+                source=source,
+                var=var,
+                lat=lat,
+                lon=lng,
+                dt=dt,
+            ),
+            timeout=THREADPOOL_TIMEOUT,
         )
         logger.info(f"FINISH getProfile: source={source}, var={var}, lat={lat}, lng={lng}, dt={dt} - returned {len(profile)} points")
         capture_event(client_distinct_id(http_request), "get_profile", {
@@ -904,9 +900,9 @@ async def fn_get_profile(request: profileRequest, http_request: Request):
         })
         return profile
     except RuntimeError as exc:
-        # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
-        if "km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc):
-            logger.warning(f"Out-of-domain or invalid coordinates: {exc}")
+        # Out-of-domain coordinates, empty grid, or unmatched time are client errors (400), not server errors (500)
+        if "km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc) or "No data available" in str(exc):
+            logger.warning(f"Out-of-domain or invalid coordinates/time: {exc}")
             raise HTTPException(status_code=400, detail=str(exc))
         # Other RuntimeErrors are unexpected, treat as 500
         logger.exception("extract_profile failed with RuntimeError")
