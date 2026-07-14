@@ -7,18 +7,7 @@
 
       <div class="d-flex align-center justify-space-between mb-2">
         <span class="ctrl-label" style="margin-bottom:0;">ANALYSIS</span>
-        <div>
-          <v-btn icon="mdi-fullscreen" size="x-small" variant="text" @click="advancedOpen = true" title="Advanced Mode" />
-          <v-btn icon="mdi-refresh" size="x-small" variant="text" @click="resetParameters" title="Reset" />
-        </div>
       </div>
-
-      <div class="ctrl-label">View</div>
-      <v-btn-toggle v-model="chartView" mandatory direction="vertical" variant="tonal" density="compact"
-        class="w-100 mb-3">
-        <v-btn value="overlay" size="small">All Years Overlaid</v-btn>
-        <v-btn value="annual" size="small">Annual Summary</v-btn>
-      </v-btn-toggle>
 
       <div class="ctrl-label">Season</div>
       <v-btn-toggle v-model="selectedSeason" mandatory variant="tonal" density="compact" class="flex-wrap w-100 mb-3">
@@ -36,9 +25,10 @@
         <v-btn value="max" size="small">Max</v-btn>
       </v-btn-toggle>
 
-      <v-btn block color="warning" size="small" prepend-icon="mdi-chart-line" :loading="isGenerating"
-        :disabled="!lastClicked || !variable || depth == null" @click="runAnalysis">
-        Run Analysis
+      <v-spacer />
+
+      <v-btn block color="warning" size="small" prepend-icon="mdi-open-in-full" @click="advancedOpen = true">
+        Advanced Analysis
       </v-btn>
     </div>
 
@@ -104,36 +94,8 @@
             10) }}</span>
         </div>
       </template>
-
-      <div class="ctrl-label">Threshold</div>
-      <div class="d-flex align-center mb-3" style="gap:4px;">
-        <v-btn-toggle v-model="thresholdDirection" mandatory direction="vertical" variant="tonal" density="compact"
-          style="flex: none;">
-          <v-btn value=">" size="x-small" class="threshold-btn">Above</v-btn>
-          <v-btn value="<" size="x-small" class="threshold-btn">Below</v-btn>
-        </v-btn-toggle>
-        <v-text-field v-model.number="thresholdValue" type="number" variant="outlined" density="compact" hide-details
-          style="flex: none; width: 120px;" />
-      </div>
-
-      <div class="ctrl-label">Per Year · {{ thresholdDirection === '>' ? 'Above' : 'Below' }} {{ thresholdValue }}</div>
-      <div style="flex:1; overflow-y:auto; min-height:0;" @mouseover="onStatsRowMouseOver"
-        @mouseleave="onStatsRowMouseLeave">
-        <v-data-table v-if="yearlyStats.length" :headers="statsHeaders" :items="yearlyStats" density="compact"
-          hide-default-footer :items-per-page="-1" :sort-by="statsSortBy" class="stats-table">
-          <template #item.year="{ item }">
-            <span :data-year="item.year">{{ item.year }}</span>
-          </template>
-          <template #item.days="{ item }">
-            <span :data-year="item.year" :style="statCellStyle(item.days, maxDays)">{{ item.days }}</span>
-          </template>
-          <template #item.streak="{ item }">
-            <span :data-year="item.year" :style="statCellStyle(item.streak, maxStreak)">{{ item.streak }}</span>
-          </template>
-        </v-data-table>
-        <div v-else class="text-caption text-grey text-center mt-6">
-          Per-year stats appear once analysis loads
-        </div>
+      <div v-else class="text-caption text-grey text-center mt-6">
+        Records appear once analysis loads
       </div>
     </div>
 
@@ -151,8 +113,7 @@ import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
 import { useMainStore } from '../stores/main'
 import { fetchAnalysisSeries, type SeriesPoint, type AnalysisLocation } from '../../composables/useAnalysisFetch'
 import {
-  availableVariables, filterBySeason, groupByYear, breakDataGaps,
-  computeBoxplotData, type BoxRow, linearRegression, yearColor,
+  availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor,
 } from '../../composables/useAnalysisStatistics'
 import AdvancedAnalysisDialog from './analysis/AdvancedAnalysisDialog.vue'
 
@@ -175,11 +136,8 @@ const minYear = 2007
 const maxYear = 2026
 
 // --- REACTIVE STATE ---
-const chartView = ref<'overlay' | 'annual'>('overlay')
 const selectedSeason = ref('full_year')
 const primaryStat = ref('mean')
-const thresholdValue = ref(0)
-const thresholdDirection = ref('>')
 
 const isGenerating = ref(false)
 const hasActivePlot = ref(false)
@@ -192,11 +150,6 @@ let analysisRequestController: AbortController | null = null
 
 const chartContainerRef = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
-
-// Per-series base color/width for the overlay chart, captured at render time so
-// table-row hover can dim/restore series directly (the legend itself fades others
-// natively via ECharts' hover focus/blur, which only kicks in for real hover events).
-let overlaySeriesStyles: { name: string; color: string; width: number }[] = []
 
 const rawAllData = ref<SeriesPoint[]>([])
 const rawSeasonalData = ref<SeriesPoint[]>([])
@@ -239,7 +192,7 @@ const seasonLabel = computed(() => {
 })
 
 const chartTitle = computed(() =>
-  `${chartView.value === 'overlay' ? 'All Years Overlaid' : 'Annual Summary'} — ${varName.value} (${primaryStat.value.toUpperCase()})`
+  `All Years Overlaid — ${varName.value} (${primaryStat.value.toUpperCase()})`
 )
 
 const extremeRecords = computed(() => {
@@ -254,58 +207,6 @@ const extremeRecords = computed(() => {
   }
   return (max && min) ? { max, min } : null
 })
-
-const statsHeaders = [
-  { title: 'Year', key: 'year' },
-  { title: 'Days', key: 'days' },
-  { title: 'Streak', key: 'streak' }
-]
-
-const statsSortBy = [{ key: 'year', order: 'desc' as const }]
-
-const yearlyStats = computed(() => {
-  const data = rawSeasonalData.value
-  if (!data.length) return []
-  const t = thresholdValue.value
-  const dir = thresholdDirection.value
-  const match = (v: number) => dir === '>' ? v > t : v < t
-
-  return groupByYear(data).map(({ year, data: pts }) => {
-    const days = pts.filter(d => d.value != null && match(d.value as number)).length
-
-    let maxStreak = 0, cur = 0
-    for (let i = 0; i < pts.length; i++) {
-      const { time, value } = pts[i]
-      const prev = pts[i - 1]
-      const adjacent = i > 0 && prev != null &&
-        new Date(time).getTime() - new Date(prev.time).getTime() === 86_400_000
-      if (value != null && match(value as number)) {
-        cur = adjacent ? cur + 1 : 1
-      } else {
-        cur = 0
-      }
-      if (cur > maxStreak) maxStreak = cur
-    }
-
-    return { year, days, streak: maxStreak }
-  })
-})
-
-const maxDays = computed(() => Math.max(0, ...yearlyStats.value.map(r => r.days)))
-const maxStreak = computed(() => Math.max(0, ...yearlyStats.value.map(r => r.streak)))
-
-function statCellStyle(val: number, max: number): Record<string, string> {
-  if (max === 0) return { color: 'rgba(180,180,180,0.4)' }
-  const t = Math.min(1, val / max)
-  const r = Math.round(180 + t * 75)   // 180 → 255
-  const g = Math.round(180 - t * 28)   // 180 → 152
-  const b = Math.round(180 - t * 180)  // 180 → 0
-  const a = (0.4 + t * 0.6).toFixed(2) // 0.40 → 1.00
-  return {
-    color: `rgba(${r},${g},${b},${a})`,
-    fontWeight: t > 0.6 ? '600' : 'normal',
-  }
-}
 
 // --- HELPERS ---
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -330,43 +231,6 @@ function fmtOverlayDate(ts: number): string {
   return `${MONTH_ABBR[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
-function thresholdMarkLine() {
-  return {
-    silent: true,
-    symbol: 'none',
-    lineStyle: { color: '##33cccc', type: 'dashed', width: 1.5 },
-    label: { formatter: String(thresholdValue.value), position: 'insideEndTop', fontSize: 9, color: '#33cccc' },
-    data: [{ yAxis: thresholdValue.value }]
-  }
-}
-
-/** Highlights a single year's series (overlay chart only) by dimming all others; null restores normal view. */
-function applyYearHighlight(year: string | null) {
-  if (!chartInstance || chartView.value !== 'overlay' || !overlaySeriesStyles.length) return
-  chartInstance.setOption({
-    series: overlaySeriesStyles.map(s => {
-      const focused = year != null && s.name === year
-      const dimmed = year != null && !focused
-      return {
-        name: s.name,
-        z: focused ? 10 : 5,
-        lineStyle: { color: s.color, width: focused ? s.width + 1.5 : s.width, opacity: dimmed ? 0.07 : 1 },
-        itemStyle: { color: s.color, opacity: dimmed ? 0.07 : 1 },
-      }
-    })
-  })
-}
-
-function onStatsRowMouseOver(e: MouseEvent) {
-  const target = (e.target as HTMLElement).closest('[data-year]') as HTMLElement | null
-  if (!target?.dataset.year) return
-  applyYearHighlight(target.dataset.year)
-}
-
-function onStatsRowMouseLeave() {
-  applyYearHighlight(null)
-}
-
 function initChart() {
   registerEchartsDarkTheme()
   if (chartInstance) { chartInstance.dispose(); chartInstance = null }
@@ -378,7 +242,6 @@ function initChart() {
 function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
   initChart()
   if (!chartInstance) return
-  overlaySeriesStyles = []
 
   const total = series.length
 
@@ -386,7 +249,6 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
     const t = total <= 1 ? 1 : idx / (total - 1)
     const color = yearColor(idx, total)
     const width = 1 + t * 1.5   // 1px (oldest) → 2.5px (newest)
-    overlaySeriesStyles.push({ name: String(s.year), color, width })
 
     // Points placed by actual calendar day on a shared synthetic-year axis
     // (see overlayTimestamp) rather than by array index, so a partial year
@@ -417,8 +279,6 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
       },
     }
   })
-
-  if (echartsSeries.length > 0) echartsSeries[0].markLine = thresholdMarkLine()
 
   chartInstance.setOption({
     tooltip: {
@@ -469,83 +329,9 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
   chartInstance.resize()
 }
 
-function renderAnnualSummaryChart(rows: BoxRow[]) {
-  initChart()
-  if (!chartInstance) return
-
-  const years = rows.map(r => String(r.year))
-  const boxData = rows.map(r => r.box)
-  const meanData = rows.map(r => r.mean)
-
-  // Linear trend on annual means
-  const pts = rows.map((r, i) => ({ x: i, y: r.mean }))
-  const { slope, intercept } = linearRegression(pts)
-  const trendData = rows.map((_, i) => Number((slope * i + intercept).toFixed(4)))
-
-  chartInstance.setOption({
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      formatter: (params: any) => {
-        const items = Array.isArray(params) ? params : [params]
-        if (!items.length) return ''
-        const idx = items[0].dataIndex
-        const r = rows[idx]
-        if (!r) return ''
-        return `<strong>${r.year}</strong><br/>
-          Max: <strong>${r.box[4].toFixed(3)}</strong><br/>
-          Q3: <strong>${r.box[3].toFixed(3)}</strong><br/>
-          Median: <strong>${r.box[2].toFixed(3)}</strong><br/>
-          Q1: <strong>${r.box[1].toFixed(3)}</strong><br/>
-          Min: <strong>${r.box[0].toFixed(3)}</strong><br/>
-          Mean: <strong>${r.mean.toFixed(3)}</strong><br/>
-          Std: <strong>${r.std.toFixed(3)}</strong>`
-      }
-    },
-    legend: { data: ['Distribution', 'Mean', 'Trend'], top: 4, textStyle: { fontSize: 10 } },
-    grid: { left: '3%', right: '2%', bottom: '10%', top: '22%', containLabel: true },
-    xAxis: { type: 'category', data: years, axisLabel: { rotate: 45, fontSize: 9, color: '#ccc' } },
-    yAxis: { type: 'value', name: `${varName.value} (${primaryStat.value})`, nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10, color: '#ccc' }, min: 'dataMin', max: 'dataMax' },
-    dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 16 }],
-    series: [
-      {
-        name: 'Distribution',
-        type: 'boxplot',
-        data: boxData,
-        itemStyle: { color: 'rgba(255,152,0,0.25)', borderColor: '#ff9800', borderWidth: 1.5 },
-        boxWidth: ['20%', '50%'],
-        markLine: thresholdMarkLine()
-      },
-      {
-        name: 'Mean',
-        type: 'scatter',
-        data: meanData,
-        symbolSize: 9,
-        symbol: 'diamond',
-        itemStyle: { color: '#ff9800' },
-        z: 10
-      },
-      {
-        name: 'Trend',
-        type: 'line',
-        data: trendData,
-        smooth: false,
-        symbol: 'none',
-        lineStyle: { color: 'rgba(255,255,255,0.7)', width: 1.5, type: 'dashed' },
-        itemStyle: { color: 'rgba(255,255,255,0.7)' }
-      }
-    ]
-  }, true)
-  chartInstance.resize()
-}
-
 function renderChart(seasonal: SeriesPoint[]) {
   if (!seasonal.length) return
-  if (chartView.value === 'overlay') {
-    renderOverlayChart(groupByYear(seasonal))
-  } else {
-    renderAnnualSummaryChart(computeBoxplotData(seasonal))
-  }
+  renderOverlayChart(groupByYear(seasonal))
 }
 
 function reRenderChart() {
@@ -554,22 +340,14 @@ function reRenderChart() {
 }
 
 // --- WATCHERS ---
-watch(chartView, reRenderChart)
-
-watch(thresholdValue, () => {
-  if (!chartInstance || !hasActivePlot.value) return
-  chartInstance.setOption({ series: [{ markLine: thresholdMarkLine() }] })
-})
-
 watch(selectedSeason, () => {
   if (!rawAllData.value.length || isGenerating.value) return
   rawSeasonalData.value = filterBySeason(rawAllData.value, selectedSeason.value)
   reRenderChart()
 })
 
-// Auto-fetch on point/area, variable, or depth change — but only while this tab is visible.
-// primaryStat is intentionally excluded: switching Min/Mean/Max stays manual via the Run button.
-watch([lastClicked, variable, depth, queryMode], scheduleAutoRun)
+// Auto-fetch on point/area, variable, depth, or statistic change — but only while this tab is visible.
+watch([lastClicked, variable, depth, queryMode, primaryStat], scheduleAutoRun)
 
 // Switching into this tab fetches fresh data for whatever changed while it was hidden.
 watch(() => props.active, (active: boolean | undefined) => {
@@ -616,11 +394,10 @@ async function fetchRegionTimeseries(): Promise<SeriesPoint[]> {
 }
 
 // --- ACTIONS ---
-// Identifies the inputs that should trigger an automatic refetch (point/area, variable, depth).
-// Deliberately excludes primaryStat — switching Min/Mean/Max stays manual via the Run button.
+// Identifies the inputs that should trigger an automatic refetch.
 function currentSignature(): string {
   const pt = lastClicked.value
-  return JSON.stringify({ lat: pt?.lat, lng: pt?.lng, mode: queryMode.value, variable: variable.value, depth: depth.value })
+  return JSON.stringify({ lat: pt?.lat, lng: pt?.lng, mode: queryMode.value, variable: variable.value, depth: depth.value, stat: primaryStat.value })
 }
 
 function scheduleAutoRun() {
@@ -668,18 +445,6 @@ const runAnalysis = async () => {
   }
 }
 
-function resetParameters() {
-  chartView.value = 'overlay'
-  selectedSeason.value = 'full_year'
-  primaryStat.value = 'mean'
-  thresholdValue.value = 0
-  thresholdDirection.value = '>'
-  hasActivePlot.value = false
-  plotErrorMessage.value = null
-  rawAllData.value = []
-  rawSeasonalData.value = []
-  if (chartInstance) { chartInstance.dispose(); chartInstance = null }
-}
 </script>
 
 
@@ -720,13 +485,6 @@ function resetParameters() {
   padding: 0 4px !important;
 }
 
-.threshold-btn {
-  max-width: 80px !important;
-  flex: 1 !important;
-  padding: 0 4px !important;
-  font-size: 0.7rem !important;
-}
-
 .chart-loading {
   filter: grayscale(1);
   opacity: 0.45;
@@ -746,15 +504,5 @@ function resetParameters() {
   font-size: 0.65rem;
   color: rgba(255, 193, 7, 0.9);
   pointer-events: none;
-}
-
-.stats-table :deep(.v-data-table__td),
-.stats-table :deep(.v-data-table__th) {
-  font-size: 0.72rem !important;
-  padding: 2px 6px !important;
-}
-
-.stats-table :deep(.v-data-table__th) {
-  font-weight: 600 !important;
 }
 </style>

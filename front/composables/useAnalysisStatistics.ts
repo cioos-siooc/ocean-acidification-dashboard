@@ -282,29 +282,45 @@ export type ExtremeEvent = {
     meanIntensity: number;
 };
 
+/** Resolves the threshold (and, for anomaly math, the baseline it's measured against) for a given ISO date. */
+export type ThresholdLookup = (iso: string) => { threshold: number; baseline: number } | undefined;
+
+/** Threshold lookup backed by a day-of-year climatology — `direction: 'above'` uses p90, `'below'` uses p10. */
+export function climatologyThresholdLookup(climatology: ClimDay[], direction: 'above' | 'below'): ThresholdLookup {
+    const climByDoy = new Map(climatology.map(c => [c.doy, c]));
+    return (iso: string) => {
+        const clim = climatologyForDate(climByDoy, iso);
+        if (!clim || Number.isNaN(clim.p90)) return undefined;
+        return { threshold: direction === 'above' ? clim.p90 : clim.p10, baseline: clim.mean };
+    };
+}
+
+/** Threshold lookup backed by a single fixed value, constant across every date. */
+export function fixedThresholdLookup(value: number): ThresholdLookup {
+    return () => ({ threshold: value, baseline: value });
+}
+
 /**
- * Marine-heatwave-style event detection (Hobday et al. 2016), adapted for either tail.
- * `direction: 'above'` flags days exceeding the p90 baseline (e.g. temperature highs);
- * `'below'` flags days under the p10 baseline (e.g. pH/omega/oxygen lows).
+ * Marine-heatwave-style event detection (Hobday et al. 2016), adapted for either tail and
+ * either a percentile climatology or a fixed threshold via `thresholdLookup`.
+ * `direction: 'above'` flags days exceeding the threshold (e.g. temperature highs);
+ * `'below'` flags days under it (e.g. pH/omega/oxygen lows).
  */
 export function detectExtremeEvents(
     series: SeriesPoint[],
-    climatology: ClimDay[],
+    thresholdLookup: ThresholdLookup,
     direction: 'above' | 'below',
     minDurationDays = 5,
     maxGapDays = 2,
 ): ExtremeEvent[] {
-    const climByDoy = new Map(climatology.map(c => [c.doy, c]));
-
     type FlaggedDay = { time: string; value: number; threshold: number; baseline: number; isFlagged: boolean };
     const flagged: FlaggedDay[] = [];
     for (const d of series) {
         if (d.value == null) continue;
-        const clim = climatologyForDate(climByDoy, d.time);
-        if (!clim || Number.isNaN(clim.p90)) continue;
-        const threshold = direction === 'above' ? clim.p90 : clim.p10;
-        const isFlagged = direction === 'above' ? d.value > threshold : d.value < threshold;
-        flagged.push({ time: d.time, value: d.value, threshold, baseline: clim.mean, isFlagged });
+        const t = thresholdLookup(d.time);
+        if (!t) continue;
+        const isFlagged = direction === 'above' ? d.value > t.threshold : d.value < t.threshold;
+        flagged.push({ time: d.time, value: d.value, threshold: t.threshold, baseline: t.baseline, isFlagged });
     }
 
     type RawRun = { startIdx: number; endIdx: number };
