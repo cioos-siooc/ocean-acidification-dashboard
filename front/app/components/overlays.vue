@@ -1,62 +1,60 @@
 <template>
-  <v-card class="colorbar" width="40px">
-    <v-col class="pa-0">
-
+  <v-card class="colorbar" :class="{ 'colorbar--expanded': isHovering }" @mouseenter="isHovering = true"
+    @mouseleave="isHovering = false">
+    <div class="colorbar-inner">
       <!-- TOGGLE NAVIGATION PANEL -->
-      <v-btn icon size="20px" flat :variant="isControlPanelOpen ? 'elevated' : 'text'"
-        @click="mainStore.toggleIsControlPanelOpen" title="Toggle Navigation Panel" class="ma-2">
-        <v-icon size="16px">{{ isControlPanelOpen ? 'mdi-menu-open' : 'mdi-menu' }}</v-icon>
-      </v-btn>
+        <v-btn flat :variant="isControlPanelOpen ? 'elevated' : 'text'"
+          @click="mainStore.toggleIsControlPanelOpen" class="ma-1 overlay-btn">
+          <v-icon size="16px">{{ isControlPanelOpen ? 'mdi-menu-open' : 'mdi-menu' }}</v-icon>
+          <span class="overlay-btn__label">Toggle Navigation Panel</span>
+        </v-btn>
 
-      <v-divider></v-divider>
+        <v-divider></v-divider>
 
-      <!-- BATHYMETRY CONTOURS -->
-      <v-btn icon size="20px" flat :variant="showBathymetryContours ? 'elevated' : 'text'"
-        :color="showBathymetryContours ? 'primary' : undefined"
-        @click="mainStore.setShowBathymetryContours(!showBathymetryContours)" title="Bathymetry Contours" class="ma-2">
-        <IconsContour />
-      </v-btn>
+        <!-- BATHYMETRY CONTOURS -->
+        <v-btn flat :variant="showBathymetryContours ? 'elevated' : 'text'"
+          :color="showBathymetryContours ? 'primary' : undefined"
+          @click="mainStore.setShowBathymetryContours(!showBathymetryContours)" class="ma-1 overlay-btn">
+          <IconsContour />
+          <span class="overlay-btn__label">Bathymetry Contours</span>
+        </v-btn>
 
-      <!-- CURSOR COORDINATES -->
-      <v-btn icon size="20px" flat :variant="showCursorCoords ? 'elevated' : 'text'"
-        @click="mainStore.setShowCursorCoords(!showCursorCoords)" title="Cursor Coordinates" class="ma-2">
-        <v-icon size="16px">{{ showCursorCoords ? 'mdi-cursor-default' : 'mdi-cursor-default-outline' }}</v-icon>
-      </v-btn>
+        <!-- CURSOR COORDINATES -->
+        <v-btn flat :variant="showCursorCoords ? 'elevated' : 'text'"
+          @click="mainStore.setShowCursorCoords(!showCursorCoords)" class="ma-1 overlay-btn">
+          <v-icon size="16px">{{ showCursorCoords ? 'mdi-cursor-default' : 'mdi-cursor-default-outline' }}</v-icon>
+          <span class="overlay-btn__label">Cursor Coordinates</span>
+        </v-btn>
 
-      <!-- VERTICAL PROFILE -->
-      <v-btn icon size="20px" flat @click="toggleVerticalProfile" title="Vertical Profile" class="ma-2">
-        <IconsProfile />
-      </v-btn>
+        <!-- VERTICAL PROFILE -->
+        <v-btn flat @click="toggleVerticalProfile" class="ma-1 overlay-btn">
+          <IconsProfile />
+          <span class="overlay-btn__label">Vertical Profile</span>
+        </v-btn>
 
-      <!-- MONTHLY CLIMATOLOGY -->
-      <v-btn icon size="20px" flat title="Long-term climatology" class="ma-2" 
-        @click="mainStore.setShowClimatologyDialog(true)">
-         <IconsStats />
-      </v-btn>
+        <v-divider></v-divider>
 
-      <v-divider></v-divider>
+        <!-- AUTO COLOR -->
+        <v-btn flat
+          :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled"
+          @click="autorange" class="ma-1 overlay-btn">
+          <IconsAutorange />
+          <span class="overlay-btn__label">Auto Color</span>
+        </v-btn>
 
-      <!-- AUTO COLOR -->
-      <v-btn icon size="20px" flat
-        :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled"
-        @click="autorange" title="Auto Color" class="ma-2">
-        <IconsAutorange />
-      </v-btn>
+        <!-- COLOR SETTINGS -->
+        <v-btn flat @click="showColorbarSettings = !showColorbarSettings" class="ma-1 overlay-btn">
+          <IconsConfig />
+          <span class="overlay-btn__label">Color Settings</span>
+        </v-btn>
 
-      <!-- COLOR SETTINGS -->
-      <v-btn size="20px" flat icon @click="showColorbarSettings = !showColorbarSettings" title="Color Settings"
-        class="ma-2">
-        <IconsConfig />
-      </v-btn>
+        <!-- <v-divider></v-divider> -->
 
-      <!-- <v-divider></v-divider> -->
-
-      <!-- <v-row class="mx-1 my-1 px-0"> -->
-      <!-- <v-btn icon size="20px" flat @click="showHow" title="How to Use" class="ma-2" disabled>
-        <IconsHelp />
-      </v-btn> -->
-      <!-- </v-row> -->
-    </v-col>
+        <!-- <v-btn flat @click="showHow" class="ma-1 overlay-btn" disabled>
+          <IconsHelp />
+          <span class="overlay-btn__label">How to Use</span>
+        </v-btn> -->
+    </div>
   </v-card>
 </template>
 
@@ -64,6 +62,7 @@
 import { computed, toRef, ref, watch } from 'vue';
 
 import { useMainStore } from '../stores/main'
+
 const mainStore = useMainStore();
 
 const emit = defineEmits<{
@@ -71,6 +70,10 @@ const emit = defineEmits<{
   (e: 'show-how'): void;
   (e: 'autorange'): void;
 }>();
+
+////////////////////////////////////// STATE //////////////////////////////////////
+
+const isHovering = ref(false);
 
 ////////////////////////////////////// COMPUTED //////////////////////////////////////
 
@@ -107,12 +110,44 @@ const showHow = () => {
 <style scoped>
 .colorbar {
   padding: 3px;
-  width: fit-content;
-  transition: left 0.3s ease;
-  /* background: rgba(255, 255, 255, 0.9); */
+  width: 40px;
+  transition: width 0.25s ease;
   border-radius: 6px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
   font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue';
   font-size: 11px;
+  overflow: hidden;
+}
+
+.colorbar--expanded {
+  width: 190px;
+}
+
+.colorbar-inner {
+  display: flex;
+  flex-direction: column;
+}
+
+.overlay-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0 !important;
+  padding: 0 8px !important;
+  overflow: hidden;
+}
+
+.overlay-btn__label {
+  margin-left: 8px;
+  white-space: nowrap;
+  opacity: 0;
+  max-width: 0;
+  overflow: hidden;
+  transition: opacity 0.15s ease, max-width 0.2s ease;
+}
+
+.colorbar--expanded .overlay-btn__label {
+  opacity: 1;
+  max-width: 160px;
 }
 </style>
