@@ -58,7 +58,7 @@ export const useMainStore = defineStore('main', {
 
         queryMode: 'point' as 'point' | 'area',
 
-        showCursorCoords: true,
+        showCursorCoords: false,
 
         activeBottomTab: 'timeseries' as 'timeseries' | 'analysis' | 'comparison' | 'sensorAnalysis',
     }),
