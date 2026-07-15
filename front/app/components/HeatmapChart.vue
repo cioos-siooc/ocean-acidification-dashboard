@@ -63,6 +63,7 @@ import axios from 'axios';
 import moment from 'moment';
 
 import { useMainStore } from '../stores/main';
+import { resolveColormap } from '../../composables/useColormapResolver';
 const mainStore = useMainStore();
 
 import colors from 'vuetify/util/colors';
@@ -132,7 +133,7 @@ const colormapColors = computed(() => {
     const mainVar = mainStore.variables?.find((v: any) => v.var === plotVariable.value);
     if (!mainVar || !mainVar.colormap) return getDefaultColormap();
     
-    const colormap = mainStore.colormaps[mainVar.colormap];
+    const colormap = resolveColormap(mainStore.colormaps, mainVar.colormap);
     if (!colormap || !colormap.stops) return getDefaultColormap();
     
     // If stops is an array of [value, color] pairs, extract just the colors

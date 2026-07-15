@@ -174,6 +174,7 @@ import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties, Feature, Polygon } from 'geojson';
 import { var2name } from '../../composables/useVar2Name'
+import { resolveColormap } from '../../composables/useColormapResolver'
 import { utc2pst } from '../../composables/useUTC2PST'
 import useStationsInteraction from '../../composables/useStationsInteraction';
 import { addBuoyLayer, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '../../composables/useBuoyLayer';
@@ -286,7 +287,7 @@ const lastClicked = computed(() => mainStore.lastClickedMapPoint);
 
 const selectedColormap = computed(() => {
     const name = mainStore.selected_variable.colormap;
-    if (name) return mainStore.colormaps[name] ?? null;
+    if (name) return resolveColormap(mainStore.colormaps, name);
     // Fallback to a default colormap (DB doesn't store colormap field)
     return null;
 });

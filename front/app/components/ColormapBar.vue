@@ -15,7 +15,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useMainStore } from '../stores/main';
-import { color } from 'echarts';
+import { resolveColormap } from '../../composables/useColormapResolver';
 
 const mainStore = useMainStore();
 
@@ -39,7 +39,7 @@ const selectedColormap = computed(() => selectedVariable.value.colormap);
 const colormaps = computed(() => mainStore.colormaps);
 
 const barStyle = computed(() => {
-    const palette = colormaps.value[selectedColormap.value]?.stops;
+    const palette = resolveColormap(colormaps.value, selectedColormap.value)?.stops;
     const stops = palette?.map(s => `${s[1]} ${Math.round(s[0] * 100)}%`).join(', ');
     return {
         background: `linear-gradient(90deg, ${stops})`,
