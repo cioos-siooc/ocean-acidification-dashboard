@@ -20,7 +20,8 @@
                             as global and provincial emissions continue to rise. These shifts in the marine environment
                             directly affect coastal Canadian communities and industry.
                             <br><br>
-                            The Ocean Environmental Conditions Observer app combines data from moored instruments and regional
+                            The Ocean Environmental Conditions Observer app combines data from moored instruments and
+                            regional
                             ocean models to provide users with live maps and climatological records of ocean
                             temperature, salinity, pH, oxygen content, and the 'corrosiveness' of seawater to shelled
                             organisms across southern to central BC.
@@ -42,13 +43,22 @@
                             Who We Are
                         </v-card-title>
                         <v-card-text class="text-body-1 text-medium-emphasis pl-4 pr-4" style="line-height: 1.6;">
-                            The Ocean Environmental Conditions Observer app is developed and maintained by the Canadian Integrated
+                            <!-- The Ocean Environmental Conditions Observer app is developed and maintained by the Canadian Integrated
                             Ocean Observing System (<a href="https://www.cioospacific.ca/" target="_blank"
                                 rel="noopener noreferrer"
                                 class="text-primary text-decoration-none font-weight-bold">CIOOS</a>) Pacific region in
                             partnership with data providers, which include Ocean Networks Canada, Hakai Institute,
                             Fisheries and Oceans Canada, the University of British Columbia, and the University of
-                            Washington.
+                            Washington. -->
+
+                            The Ocean Environmental Conditions Observer is developed and maintained by the Canadian
+                            Integrated Ocean Observing System
+                            (<a href="https://www.cioospacific.ca/" target="_blank" rel="noopener noreferrer"
+                                class="text-primary text-decoration-none font-weight-bold">CIOOS</a>)
+                            Pacific region. The tool supports the British Columbia Ocean Acidification and Hypoxia
+                            Action Plan and is a collaboration with partners and data providers, including the MEOPAR OA
+                            Community of Practice, Ocean Networks Canada, the Hakai Institute, Fisheries and Oceans
+                            Canada, the University of British Columbia, and the University of Washington.
                         </v-card-text>
                     </v-card>
                 </v-col>
@@ -120,7 +130,7 @@
                                                 <div class="text-body-2">{{ sensor.contactName }}</div>
                                                 <a :href="`mailto:${sensor.contactEmail}`"
                                                     class="text-body-2 text-decoration-none text-primary">{{
-                                                    sensor.contactEmail }}</a>
+                                                        sensor.contactEmail }}</a>
                                             </td>
                                             <td class="py-3">
                                                 <div class="d-flex align-center mb-1">
@@ -177,7 +187,8 @@
                                     Get in Touch
                                 </h3>
                                 <p class="text-body-1 text-medium-emphasis mb-0" style="max-width: 600px;">
-                                    Have feedback or datasets you'd like to see incorporated into the OceanECO app? We'd love to hear from you.
+                                    Have feedback or datasets you'd like to see incorporated into the OceanECO app? We'd
+                                    love to hear from you.
                                 </p>
                             </div>
                             <div class="d-flex flex-column flex-sm-row gap-4">
@@ -327,7 +338,7 @@ const sensors: Sensor[] = [
         orgClass: 'org-onc',
         decommissioned: true
     },
-        {
+    {
         id: 'ORCA1-Twanoh',
         organization: 'Northwest Environmental Moorings Group at University of Washington - Applied Physical Laboratory',
         coordinates: '47.375, -123.00833333',
@@ -418,7 +429,7 @@ const sensors: Sensor[] = [
         coordinates: '49.04, -123.32',
         variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU)',
         depth: '170m',
-        dataUrl:'https://data.oceannetworks.ca/DataSearch?locationCode=SGE',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?locationCode=SGE',
         orgClass: 'org-onc'
     },
     {
@@ -427,7 +438,7 @@ const sensors: Sensor[] = [
         coordinates: '51.12835, -129.47609',
         variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU)',
         depth: '40m',
-        dataUrl:'https://explore.cioos.ca/?lat=51.10935634566201&lon=-129.48571073830323&zoom=7.429494329687231&eovs=oxygen&platforms=mooring%2Cunknown&organizations=16%2C9%2C78%2C29%2C21%2C44&lang=en',
+        dataUrl: 'https://explore.cioos.ca/?lat=51.10935634566201&lon=-129.48571073830323&zoom=7.429494329687231&eovs=oxygen&platforms=mooring%2Cunknown&organizations=16%2C9%2C78%2C29%2C21%2C44&lang=en',
         orgClass: 'org-onc'
     },
     {
@@ -436,7 +447,7 @@ const sensors: Sensor[] = [
         coordinates: '49.28333, -126.614685',
         variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU)',
         depth: '35m',
-        dataUrl:'',
+        dataUrl: '',
         orgClass: 'org-onc'
     },
     {
@@ -445,7 +456,7 @@ const sensors: Sensor[] = [
         coordinates: '50.41325, -128.00562',
         variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU)',
         depth: '40m',
-        dataUrl:'',
+        dataUrl: '',
         orgClass: 'org-onc'
     },
     {
@@ -454,7 +465,7 @@ const sensors: Sensor[] = [
         coordinates: '48.9528, -125.5423',
         variables: 'Temp (K), Practical salinity (PSU)',
         depth: 'Surface',
-        dataUrl:'https://open.canada.ca/data/en/dataset/719955f2-bf8e-44f7-bc26-6bd623e82884/resource/3226f487-d7a8-4e08-8bef-c6a1d87e7af3',
+        dataUrl: 'https://open.canada.ca/data/en/dataset/719955f2-bf8e-44f7-bc26-6bd623e82884/resource/3226f487-d7a8-4e08-8bef-c6a1d87e7af3',
         orgClass: 'org-onc'
     },
     {
@@ -463,7 +474,7 @@ const sensors: Sensor[] = [
         coordinates: '53.4928, -130.6358',
         variables: 'Temp (K), Practical salinity (PSU)',
         depth: 'Surface',
-        dataUrl:'https://open.canada.ca/data/en/dataset/719955f2-bf8e-44f7-bc26-6bd623e82884/resource/3226f487-d7a8-4e08-8bef-c6a1d87e7af3',
+        dataUrl: 'https://open.canada.ca/data/en/dataset/719955f2-bf8e-44f7-bc26-6bd623e82884/resource/3226f487-d7a8-4e08-8bef-c6a1d87e7af3',
         orgClass: 'org-onc'
     }
 ]
