@@ -18,7 +18,7 @@ import argparse
 
 TIFF_PATTERN = 'NONNA*.tiff'   # glob pattern for input GeoTIFF files
 OUTPUT_DIR   = 'raster_tiles'   # all files write here (flat mosaic tileset)
-MIN_ZOOM  = 14
+MIN_ZOOM  = 2
 MAX_ZOOM  = 14
 MIN_ORG   = -3000        # minimum encodable value
 STEP      = 1            # value precision / color-table step
@@ -107,9 +107,6 @@ def _init_worker(filepath):
 
 def render_tile(z, tx, ty):
     """Warp source file directly into tile bounds using rasterio (fast C path)."""
-    if (tx != 2577 or ty != 5639):
-        return  # TEMP: render only one tile for testing
-    
     mx_min, my_min, mx_max, my_max = _tile_mercator_bounds(z, tx, ty)
 
     dst_transform = from_bounds(mx_min, my_min, mx_max, my_max, TILE_SIZE, TILE_SIZE)
@@ -177,8 +174,8 @@ def _get_mercator_bounds(filepath):
 ###################################################################
 ###########################  MAIN  ################################
 
-def main(tiff_dir='.'):
-    pattern = os.path.join(tiff_dir, TIFF_PATTERN)
+def main(tiff_dir='.', pattern=TIFF_PATTERN):
+    pattern = os.path.join(tiff_dir, pattern)
     tiff_files = sorted(glob.glob(pattern))
     if not tiff_files:
         print(f'No GeoTIFF files found matching: {pattern}')
@@ -227,8 +224,13 @@ if __name__ == '__main__':
         default='.',
         help='Directory containing TIFF files (default: current directory)'
     )
+    parser.add_argument(
+        '--pattern',
+        default=TIFF_PATTERN,
+        help=f'Glob pattern (relative to --tiff-dir) for input GeoTIFF files (default: {TIFF_PATTERN!r})'
+    )
     args = parser.parse_args()
-    main(tiff_dir=args.tiff_dir)
+    main(tiff_dir=args.tiff_dir, pattern=args.pattern)
 
 
 
