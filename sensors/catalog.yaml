@@ -508,7 +508,7 @@ sensors:
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
     - "salinity:salinity:PSU:1.0:CTD"
     - "temperature:temperature:C:1.0:CTD"
-    
+
   # ── ERDDAP tabledap (fixed depth) ───────────────────────────────────────────
   # - name: "My ERDDAP Sensor"
   #   lat: 49.123
@@ -536,3 +536,63 @@ sensors:
   #   - "temperature:temperature:C:1.0"
   #   - "salinity:salinity:PSU:1.0"
 
+  - name: "Seawater Carbon Dioxide (CO2) Content from the Burke-o-Lator pCO2/TCO2 analyzer located at the Hakai Institute\u2019s Quadra Island Field Station, Hyacinthe Bay, BC, Canada (Research)"
+    lat: 50.116
+    lon: -125.222
+    depth: 0.0
+    api: ERDDAP
+    organization: Hakai
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiQuadraBoLResearch"
+    variables:
+    - "omega_arag:Omega_arag::1.0"
+    - "omega_cal:Omega_calc::1.0"
+    - "ph_total:pH_T::1.0"
+    - "salinity:TSG_S:PSU:1.0"
+    - "temperature:TSG_T:C:1.0"
+
+  - name: "Seawater Carbon Dioxide (CO2) Content from the Burke-o-Lator pCO2/TCO2 Analyzer located at Bamfield Marine Sciences Centre, Bamfield, BC, Canada (Provisional)"
+    lat: 48.836633
+    lon: -125.1362667
+    depth: -1
+    api: ERDDAP
+    organization: Hakai
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiBamfieldBoL5min"
+    variables:
+    - "ph_total:calcpH_Med::1.0"
+    - "salinity:TSG_S_Med:PSU:1.0"
+    - "temperature:TSG_T_Med:C:1.0"
+
+  - name: "Surface Seawater and Marine Boundary Layer CO2 Time Series from the Bute Inlet Ocean Observing Station (BIOOS) Buoy, Bute Inlet, BC, Canada (Research)"
+    lat: 50.597
+    lon: -124.899
+    depth: 0.5
+    api: ERDDAP
+    organization: Hakai
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiBIOOSBuoyResearch"
+    variables:
+    - "co2_partial_pressure:pCO2_SW_sat:µatm:1.0"
+    - "salinity:Salinity:PSU:1.0"
+    - "temperature:SST:C:1.0"
+
+  - name: "Surface Seawater and Marine Boundary Layer CO2 Time Series from the Kwakshua Channel (KC) Buoy, Central Coast, BC, Canada (Provisional)"
+    lat: 51.6499
+    lon: -127.9663
+    depth: 0.5
+    api: ERDDAP
+    organization: Hakai
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiKCBuoy1hour"
+    variables:
+    - "dissolved_oxygen:Oxygen_Concentration:ml/L:1.0"  # source unit: mL/L — check factor!
+    - "salinity:WaterSalinity:PSU:1.0"
+    - "temperature:WaterTemp:C:1.0"
+
+  - name: "Water Property Measurements from the Bute Inlet Ocean Observing Station (BIOOS) Wirewalker, Bute Inlet, BC, Canada (Provisional)"
+    lat: 50.5744
+    lon: -124.9009
+    depth: 0.0
+    api: ERDDAP
+    organization: Hakai
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiWirewalkerProvisional"
+    variables:
+    - "dissolved_oxygen:dissolved_o2:ml/L:1.0"  # source unit: mL/L — check factor!
+    - "temperature:temperature:C:1.0"
