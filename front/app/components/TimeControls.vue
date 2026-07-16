@@ -20,6 +20,8 @@
 
     <!-- <v-btn size="x-small" icon flat :title="'Move to start'"
       @click="moveToStart"><v-icon>mdi-skip-backward</v-icon></v-btn> -->
+    <v-btn size="20px" icon flat :title="'Back 24 hours'" @click="stepBackwardDay"><v-icon
+        size="14px">mdi-rewind</v-icon></v-btn>
     <v-btn size="20px" icon flat :title="'Step backward'" @click="stepBackward"><v-icon
         size="14px">mdi-skip-previous</v-icon></v-btn>
     <v-btn size="20px" icon flat :title="playing ? 'Pause' : 'Play'" @click="togglePlay">
@@ -27,6 +29,8 @@
       <v-icon size="14px" v-else>mdi-pause </v-icon>
     </v-btn>
     <v-btn size="20px" icon flat :title="'Step forward'" @click="stepForward"><v-icon size="14px">mdi-skip-next</v-icon></v-btn>
+    <v-btn size="20px" icon flat :title="'Forward 24 hours'" @click="stepForwardDay"><v-icon
+        size="14px">mdi-fast-forward</v-icon></v-btn>
     <!-- <v-btn size="x-small" icon flat :title="'Move to end'" @click="moveToEnd"><v-icon>mdi-skip-forward</v-icon></v-btn> -->
 
     <v-divider vertical class="mx-2" style="height: 24px"></v-divider>
@@ -175,6 +179,34 @@ function stepBackward() {
   else {
     return false
   }
+}
+
+function stepForwardDay() {
+  const idx = currentIndex();
+  if (idx < 0) return false
+  const target = dts.value[idx].clone().add(1, 'day');
+  if (target.valueOf() > midDate.value?.clone().add(DFN.value, 'days').valueOf()) {
+    return false
+  }
+  const newIdx = getIndexForDt(target);
+  if (newIdx < 0 || newIdx === idx) return false
+  const dt = moment.utc(dts.value[newIdx]);
+  mainStore.updateSelectedVariable({ dt });
+  return true
+}
+
+function stepBackwardDay() {
+  const idx = currentIndex();
+  if (idx < 0) return false
+  const target = dts.value[idx].clone().subtract(1, 'day');
+  if (target.valueOf() < midDate.value?.clone().subtract(DFN.value, 'days').valueOf()) {
+    return false
+  }
+  const newIdx = getIndexForDt(target);
+  if (newIdx < 0 || newIdx === idx) return false
+  const dt = moment.utc(dts.value[newIdx]);
+  mainStore.updateSelectedVariable({ dt });
+  return true
 }
 
 // function moveToStart() {
