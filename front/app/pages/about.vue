@@ -43,22 +43,10 @@
                             Who We Are
                         </v-card-title>
                         <v-card-text class="text-body-1 text-medium-emphasis pl-4 pr-4" style="line-height: 1.6;">
-                            <!-- The Ocean Environmental Conditions Observer app is developed and maintained by the Canadian Integrated
-                            Ocean Observing System (<a href="https://www.cioospacific.ca/" target="_blank"
-                                rel="noopener noreferrer"
-                                class="text-primary text-decoration-none font-weight-bold">CIOOS</a>) Pacific region in
-                            partnership with data providers, which include Ocean Networks Canada, Hakai Institute,
-                            Fisheries and Oceans Canada, the University of British Columbia, and the University of
-                            Washington. -->
-
-                            The Ocean Environmental Conditions Observer is developed and maintained by the Canadian
-                            Integrated Ocean Observing System
+                            The Ocean Environmental Conditions Observer app is developed and maintained by the Canadian Integrated Ocean Observing System 
                             (<a href="https://www.cioospacific.ca/" target="_blank" rel="noopener noreferrer"
                                 class="text-primary text-decoration-none font-weight-bold">CIOOS</a>)
-                            Pacific region. The tool supports the British Columbia Ocean Acidification and Hypoxia
-                            Action Plan and is a collaboration with partners and data providers, including the MEOPAR OA
-                            Community of Practice, Ocean Networks Canada, the Hakai Institute, Fisheries and Oceans
-                            Canada, the University of British Columbia, and the University of Washington.
+                            Pacific regional association. OceanECO is designed to be a supporting tool for the "British Columbia Ocean Acidification and Hypoxia Action Plan" and "MEOPAR Ocean Acidification Community of Practice" partners. Data access is made possible by our data partners, which include Ocean Networks Canada, Hakai Institute, Fisheries and Oceans Canada, the University of British Columbia, and the University of Washington.
                         </v-card-text>
                     </v-card>
                 </v-col>
