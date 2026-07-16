@@ -31,6 +31,53 @@ docker compose -f docker-compose.prod.api.yml run --rm sensors \
 
 ---
 
+## Discovering sensors
+
+Before adding a sensor, use these helper scripts to look up what's available and generate a ready-to-paste `catalog.yaml` entry (run locally with `uv run`, not inside the container).
+
+### ONC locations: `discover_location.py`
+
+Looks up an ONC `locationCode` and prints the sensor variables available there, mapped to canonical names via the `CANONICAL` dict in the script.
+
+```bash
+cd sensors
+uv run python discover_location.py SCVIP
+uv run python discover_location.py SCVIP SEVIP FGPD   # multiple at once
+
+# Also show unmapped sensor codes as commented-out lines (useful for extending CANONICAL)
+uv run python discover_location.py SCVIP --all
+```
+
+When given multiple location codes, a failure on one (e.g. an invalid code) doesn't abort the others — failed codes are collected and reported at the end.
+
+### ERDDAP servers: `discover_erddap.py`
+
+Queries an ERDDAP server's tabledap datasets and generates catalog entries.
+
+```bash
+# List all tabledap datasets on a server
+uv run python discover_erddap.py https://catalogue.hakai.org/erddap
+
+# One specific dataset
+uv run python discover_erddap.py https://catalogue.hakai.org/erddap --dataset HakaiBIOOSBuoy1hour
+
+# Filter by keyword in title or dataset ID
+uv run python discover_erddap.py https://catalogue.hakai.org/erddap --filter buoy
+
+# Also show unmapped variables as commented-out lines
+uv run python discover_erddap.py https://catalogue.hakai.org/erddap --filter buoy --all
+```
+
+Progress messages go to stderr and the catalog YAML goes to stdout, so redirect stdout to save the output:
+
+```bash
+uv run python discover_erddap.py https://catalogue.hakai.org/erddap --filter buoy > candidates.yaml
+```
+
+Review the generated YAML (remove variables you don't want, double-check dissolved-oxygen unit conversion factors) before pasting into `sensors/catalog.yaml`.
+
+---
+
 ## Adding sensors
 
 ### Preferred: catalog file (batch)
