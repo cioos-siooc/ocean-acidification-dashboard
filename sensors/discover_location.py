@@ -146,8 +146,17 @@ def main():
     if args.show_unmapped:
         print("# Unmapped variables shown as comments — add to CANONICAL dict to enable.\n")
     print("sensors:")
+    failed = []
     for code in args.location_codes:
-        print(discover(code.upper(), show_unmapped=args.show_unmapped))
+        try:
+            print(discover(code.upper(), show_unmapped=args.show_unmapped))
+        except Exception as e:
+            failed.append((code.upper(), str(e)))
+
+    if failed:
+        print("\n# Failed location codes:", file=sys.stderr)
+        for code, err in failed:
+            print(f"#   {code}: {err}", file=sys.stderr)
 
 
 if __name__ == "__main__":
