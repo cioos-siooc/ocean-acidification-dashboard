@@ -497,3 +497,15 @@ sensors:
     - "salinity:salinity:PSU:1.0:CTD"
     - "temperature:temperature:C:1.0:CTD"
 
+  - name: "JF2C Mooring"
+    lat: 48.356652
+    lon: -124.215378
+    depth: 181.911111
+    api: ONC
+    organization: ONC
+    location_code: JF2C
+    source_link: "https://data.oceannetworks.ca/DataSearch?location=JF2C"
+    variables:
+    - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
+    - "salinity:salinity:PSU:1.0:CTD"
+    - "temperature:temperature:C:1.0:CTD"
