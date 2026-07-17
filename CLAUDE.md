@@ -134,6 +134,8 @@ Config via `nuxt.config.ts`. Runtime env vars: `NUXT_PUBLIC_API_BASE_URL`, `NUXT
 
 **UI conventions**: Prefer Vuetify components (`v-btn`, `v-card`, `v-sheet`, etc.) over raw `div`/`button` elements, even when heavily restyled — apply custom look via scoped CSS classes on top of the component (e.g. `selectedInfo.vue`'s `.colorbar` class on a `v-card`) rather than dropping to plain HTML. Use `:deep()` to reach into a component's internal classes (e.g. `.v-btn__content`) when the override needs to target inner markup.
 
+**Charts/plots**: Always use ECharts for any chart or plot — never hand-roll rendering on a raw `<canvas>` (custom heatmaps, hit-testing, tooltips, zoom, etc. reimplement things ECharts already does correctly, e.g. its `dataZoom` component for zoom/pan). Even non-standard visualizations (variable-height heatmap cells, custom hatching) are buildable as an ECharts `custom` series with `renderItem` — see `app/components/comparison/DepthProfile.vue`'s Model/Sensor/Diff panels. One gotcha: ECharts enables progressive rendering by default for `custom` series above a low item-count threshold, which silently paints only the first chunk of data for larger grids (thousands of cells) — set `progressive: false` on the series when the full render is cheap enough to do in one pass. Register the dark theme via `composables/useEchartsTheme.ts`.
+
 #### Frontend Feature Map
 
 `app/pages/index.vue` hosts a bottom `v-footer` tab rail (`activeTab`, bound to `mainStore.activeBottomTab`) with four tabs:

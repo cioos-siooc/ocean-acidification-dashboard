@@ -44,7 +44,7 @@
 
         <!-- COLOR SETTINGS -->
         <v-btn flat @click="showColorbarSettings = !showColorbarSettings" class="ma-1 overlay-btn">
-          <IconsConfig />
+          <v-icon size="16px">mdi-palette</v-icon>
           <span class="overlay-btn__label">Color Settings</span>
         </v-btn>
 
