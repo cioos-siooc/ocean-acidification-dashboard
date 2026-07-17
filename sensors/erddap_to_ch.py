@@ -26,6 +26,7 @@ import math
 import os
 from datetime import datetime, timedelta, timezone
 
+import gsw
 import netCDF4
 import numpy as np
 import requests
@@ -47,17 +48,19 @@ def get_active_erddap_sensors(ch_client, sensor_id_filter: str | None) -> list[d
     if sensor_id_filter is not None:
         where += f" AND id = '{sensor_id_filter}'"
     rows = ch_client.query(
-        f"SELECT id, name, depth, variables, source FROM sensors FINAL "
+        f"SELECT id, name, latitude, longitude, depth, variables, source FROM sensors FINAL "
         f"WHERE active = 1 AND {where}"
     ).result_rows
     sensors = []
     for row in rows:
-        source = json.loads(row[4]) if row[4] else {}
+        source = json.loads(row[6]) if row[6] else {}
         sensors.append({
             "id": str(row[0]),
             "name": row[1],
-            "depth": float(row[2]) if row[2] is not None else -1.0,
-            "variables": json.loads(row[3]) if row[3] else {},
+            "latitude": float(row[2]),
+            "longitude": float(row[3]),
+            "depth": float(row[4]) if row[4] is not None else -1.0,
+            "variables": json.loads(row[5]) if row[5] else {},
             "source": source,
             "link": source.get("link", ""),
         })
@@ -93,6 +96,33 @@ def apply_conversion(value: float, canonical: str, variables: dict) -> float:
     if isinstance(info, dict):
         return value * info.get("conversion_factor", 1.0)
     return value
+
+
+# Depth-axis units that are actually pressure and need a TEOS-10 conversion,
+# not the linear `conversion_factor` used for ordinary data variables.
+PRESSURE_UNITS = {"dbar", "decibar"}
+
+
+def depth_axis_unit(variables: dict) -> str:
+    """The declared unit of the `depth` canonical entry, defaulting to metres."""
+    return (variables.get("depth") or {}).get("unit", "m")
+
+
+def resolve_depth_value(raw_value: float, axis_unit: str, latitude: float) -> float:
+    """Convert a raw depth-axis reading to depth in metres, positive down.
+
+    Some profilers (e.g. wirewalkers) have no "depth" variable on the wire at
+    all — they report pressure in dbar instead. `sensor_timeseries.depth` is
+    always metres, so this conversion happens once, here at ingestion, and
+    the database never sees a raw pressure value. dbar-to-metres isn't linear
+    (it depends on latitude and the local density profile via the seawater
+    equation of state), so this uses gsw's TEOS-10 implementation rather than
+    a fixed `conversion_factor`. gsw.z_from_p returns height (negative below
+    the sea surface); depth is its negation.
+    """
+    if axis_unit.lower() not in PRESSURE_UNITS:
+        return raw_value
+    return float(-gsw.z_from_p(raw_value, latitude))
 
 
 # ── ERDDAP tabledap fetch ─────────────────────────────────────────────────────
@@ -297,6 +327,16 @@ def fetch_and_store(sensor_id_filter: str | None = None):
                 print(f"  ERROR: {e}")
                 continue
 
+            # Convert once per level, not per (time, level) cell — the axis
+            # unit doesn't vary across the grid.
+            axis_unit = depth_axis_unit(variables)
+            depth_levels_m = [
+                resolve_depth_value(float(d), axis_unit, sensor["latitude"])
+                for d in depth_levels
+            ]
+            if axis_unit.lower() in PRESSURE_UNITS:
+                print(f"  Depth axis '{depth_col}' is pressure ({axis_unit}) — converted via gsw.z_from_p")
+
             for erddap_col, canonical in erddap_to_canonical.items():
                 if erddap_col not in grids:
                     continue
@@ -304,7 +344,7 @@ def fetch_and_store(sensor_id_filter: str | None = None):
                 rows = []
                 for ti, t_epoch in enumerate(times_epoch):
                     t_dt = (EPOCH + timedelta(seconds=float(t_epoch))).replace(tzinfo=None)
-                    for di, d in enumerate(depth_levels):
+                    for di, d in enumerate(depth_levels_m):
                         v = float(arr[ti, di])
                         if math.isnan(v):
                             continue
@@ -346,6 +386,15 @@ def fetch_and_store(sensor_id_filter: str | None = None):
             records = bin_to_hourly(records)
             fixed_depth = sensor["depth"] if sensor["depth"] >= 0 else 0.0
             print(f"  Binned into {len(records)} hourly slot(s).")
+        else:
+            # Per-cast depth came straight off the wire in fetch_tabledap_csv —
+            # convert once here if that axis was actually pressure.
+            axis_unit = depth_axis_unit(variables)
+            if axis_unit.lower() in PRESSURE_UNITS:
+                print(f"  Depth axis '{depth_col}' is pressure ({axis_unit}) — converted via gsw.z_from_p")
+                for rec in records:
+                    if "depth" in rec:
+                        rec["depth"] = resolve_depth_value(rec["depth"], axis_unit, sensor["latitude"])
 
         for erddap_col, canonical in erddap_to_canonical.items():
             rows = []

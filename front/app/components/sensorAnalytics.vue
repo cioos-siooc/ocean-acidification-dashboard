@@ -27,7 +27,8 @@
 
       <v-spacer />
 
-      <v-btn block color="warning" size="small" prepend-icon="mdi-open-in-full" @click="advancedOpen = true">
+      <v-btn block color="warning" size="small" prepend-icon="mdi-open-in-full" :disabled="isVariableDepth"
+        @click="advancedOpen = true">
         Advanced Analysis
       </v-btn>
     </div>
@@ -65,6 +66,15 @@
           class="ma-3" density="compact">
           {{ plotErrorMessage }}
         </v-alert>
+
+        <div v-else-if="isVariableDepth"
+          class="d-flex flex-column align-center justify-center h-100 text-center px-6">
+          <v-icon size="56" color="grey-darken-1">mdi-chart-timeline-variant</v-icon>
+          <div class="text-caption text-grey-darken-1 mt-2" style="max-width:260px;">
+            This sensor profiles the water column instead of sitting at one depth — per-depth
+            analysis isn't available here yet. See the Comparison tab's Depth Profile view.
+          </div>
+        </div>
 
         <div v-else-if="!hasActivePlot && !isGenerating && !plotErrorMessage"
           class="d-flex flex-column align-center justify-center h-100 text-center px-6">
@@ -135,6 +145,11 @@ const sensorInfo = computed(() => {
 })
 // Sensors report at their own fixed deployment depth, not the model's selected depth.
 const depth = computed(() => selectedSensor.value?.depth ?? null)
+
+// depth === -1 means the sensor profiles the water column (see sensorComparison.vue's
+// isVariableDepth) — there's no single depth for this tab's per-depth analysis to run
+// against, so it's disabled here rather than silently analysing an arbitrary cast depth.
+const isVariableDepth = computed(() => sensorInfo.value?.depth === -1)
 
 const advancedLocation = computed<AnalysisLocation | null>(() =>
   sensorInfo.value ? { sensorId: sensorInfo.value.id } : null
@@ -379,7 +394,7 @@ function currentSignature(): string {
 
 function scheduleAutoRun() {
   if (!props.active) return
-  if (!sensorInfo.value || !variable.value || depth.value == null) return
+  if (!sensorInfo.value || !variable.value || depth.value == null || isVariableDepth.value) return
   const sig = currentSignature()
   if (sig === lastFetchSignature) return
   if (autoRunTimer) clearTimeout(autoRunTimer)

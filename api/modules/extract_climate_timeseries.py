@@ -7,21 +7,12 @@ historical years to produce daily climatological mean, min, and max — one entr
 per calendar day in the window mapped back onto the requested dates.
 """
 import math
-import os
 import logging
 import pandas as pd
-import clickhouse_connect
+
+from modules.clickhouse_helpers import get_ch_client as _get_ch_client
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ch_client():
-    return clickhouse_connect.get_client(
-        host=os.getenv("CH_HOST", "localhost"),
-        port=int(os.getenv("CH_PORT", "8123")),
-        username=os.getenv("CH_USER", "default"),
-        password=os.getenv("CH_PASSWORD", os.getenv("CLICKHOUSE_PASSWORD", "")),
-    )
 
 
 def _clean(v):

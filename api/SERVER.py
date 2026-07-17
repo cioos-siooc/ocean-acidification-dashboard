@@ -27,6 +27,7 @@ from modules.extract_climate_timeseries import extract_climate_timeseries
 from modules.extractMinMax import extract_minmax
 from modules.pngGenerator import generate_png_for_variable
 from modules.extractSensorTimeseries import extract_sensor_timeseries
+from modules.extract_depth_profile import extract_depth_profile
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
 from modules.sync_hourly import import_native_file, import_daily_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
 from modules.posthog_helpers import capture_event, client_distinct_id
@@ -419,6 +420,71 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: 
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.exception("get_sensor_timeseries failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        _extract_semaphore.release()
+
+#######################################
+
+class depthProfileRequest(BaseModel):
+    source: str
+    var: str
+    sensorId: str  # UUID
+    lat: float
+    lon: float
+    fromDate: str
+    toDate: str
+
+@app.post("/depthProfile")
+async def get_depth_profile(request: depthProfileRequest, http_request: Request):
+    """Bin a variable-depth sensor's raw casts onto the model's depth levels
+    and hourly time buckets, alongside the model's own values at that grid —
+    the Comparison tab's Depth Profile (Hovmöller) view.
+
+    Response: { time: [iso...], depths: [float...], model: [[float,...],...],
+                sensor: [[float|null,...],...] }  — both grids depths x time.
+    """
+    logger.info(f"START depthProfile: {request.source}, {request.var}, sensor={request.sensorId}, from={request.fromDate}, to={request.toDate}")
+    try:
+        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
+    except (asyncio.TimeoutError, Exception):
+        logger.warning("Semaphore timeout in depthProfile")
+        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
+
+    try:
+        result = await asyncio.wait_for(
+            run_in_threadpool(
+                extract_depth_profile,
+                source=request.source,
+                var=request.var,
+                sensor_id=request.sensorId,
+                lat=request.lat,
+                lon=request.lon,
+                from_date=request.fromDate,
+                to_date=request.toDate,
+            ),
+            timeout=THREADPOOL_TIMEOUT,
+        )
+        logger.info(f"FINISH depthProfile: {request.var}, sensor={request.sensorId} - returned {len(result.get('depths', []))} depths x {len(result.get('time', []))} hours")
+        capture_event(client_distinct_id(http_request), "depth_profile", {
+            "sensorId": request.sensorId, "source": request.source, "var": request.var,
+            "fromDate": request.fromDate, "toDate": request.toDate,
+        })
+        return result
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        # Out-of-domain coordinates, grid issues, or an empty window are client errors.
+        if ("km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc)
+                or "No depth levels found" in str(exc) or "No model data found" in str(exc)):
+            logger.warning(f"Depth profile request error: {exc}")
+            raise HTTPException(status_code=400, detail=str(exc))
+        logger.exception("extract_depth_profile failed with RuntimeError")
+        raise HTTPException(status_code=500, detail=str(exc))
+    except Exception as exc:
+        logger.exception("get_depth_profile failed")
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         _extract_semaphore.release()

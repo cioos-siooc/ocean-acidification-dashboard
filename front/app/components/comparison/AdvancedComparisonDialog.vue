@@ -10,14 +10,16 @@
           </v-chip>
         </v-toolbar-title>
         <v-spacer />
-        <span class="ctrl-label mr-2">Season</span>
-        <v-btn-toggle v-model="selectedSeason" mandatory density="compact" variant="tonal" class="mr-4">
-          <v-btn value="all" size="x-small">All</v-btn>
-          <v-btn value="mam" size="x-small">MAM</v-btn>
-          <v-btn value="jja" size="x-small">JJA</v-btn>
-          <v-btn value="son" size="x-small">SON</v-btn>
-          <v-btn value="djf" size="x-small">DJF</v-btn>
-        </v-btn-toggle>
+        <template v-if="activeTab !== 'depth'">
+          <span class="ctrl-label mr-2">Season</span>
+          <v-btn-toggle v-model="selectedSeason" mandatory density="compact" variant="tonal" class="mr-4">
+            <v-btn value="all" size="x-small">All</v-btn>
+            <v-btn value="mam" size="x-small">MAM</v-btn>
+            <v-btn value="jja" size="x-small">JJA</v-btn>
+            <v-btn value="son" size="x-small">SON</v-btn>
+            <v-btn value="djf" size="x-small">DJF</v-btn>
+          </v-btn-toggle>
+        </template>
         <v-btn icon="mdi-close" variant="text" @click="isOpen = false" title="Close" />
       </v-toolbar>
 
@@ -25,19 +27,24 @@
         <v-tab value="scatter">Scatter</v-tab>
         <v-tab value="residuals">Residuals</v-tab>
         <v-tab value="seasonal">Seasonal Cycle</v-tab>
+        <v-tab v-if="variableDepth" value="depth">Depth Profile</v-tab>
       </v-tabs>
 
       <!-- Content row: chart + sidebar -->
       <div class="flex-grow-1 d-flex" style="min-height:0; overflow:hidden;">
 
         <!-- Chart area -->
-        <div class="flex-grow-1 d-flex flex-column pa-2" style="min-width:0; min-height:0;">
-          <div v-if="!hasChartData"
-            class="d-flex flex-column align-center justify-center flex-grow-1 text-center">
-            <v-icon size="48" color="grey-darken-1">mdi-chart-scatter-plot</v-icon>
-            <div class="text-caption text-grey-darken-1 mt-2">No matched pairs for this season.</div>
-          </div>
-          <div v-else ref="chartRef" class="flex-grow-1" style="min-height:0;" />
+        <div class="flex-grow-1 d-flex flex-column pa-2" style="min-width:0; min-height:0; overflow-y:auto;">
+          <DepthProfile v-if="activeTab === 'depth'" :var-name="varName"
+            @stats="depthProfileStats = $event" @depth-selected="emit('depth-selected', $event)" />
+          <template v-else>
+            <div v-if="!hasChartData"
+              class="d-flex flex-column align-center justify-center flex-grow-1 text-center">
+              <v-icon size="48" color="grey-darken-1">mdi-chart-scatter-plot</v-icon>
+              <div class="text-caption text-grey-darken-1 mt-2">No matched pairs for this season.</div>
+            </div>
+            <div v-else ref="chartRef" class="flex-grow-1" style="min-height:0;" />
+          </template>
         </div>
 
         <!-- Right sidebar: description + statistics -->
@@ -49,7 +56,14 @@
             {{ tabDescription }}
           </p>
 
-          <template v-if="hasChartData && currentStats.length">
+          <template v-if="activeTab === 'depth'">
+            <div v-if="depthProfileStats.length" class="ctrl-label mb-2">Statistics</div>
+            <div v-for="stat in depthProfileStats" :key="stat.label" class="stat-row">
+              <span class="stat-label">{{ stat.label }}</span>
+              <span class="stat-value" :class="stat.cls || ''">{{ stat.value }}</span>
+            </div>
+          </template>
+          <template v-else-if="hasChartData && currentStats.length">
             <div class="ctrl-label mb-2">Statistics</div>
             <div v-for="stat in currentStats" :key="stat.label" class="stat-row">
               <span class="stat-label">{{ stat.label }}</span>
@@ -69,6 +83,7 @@
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '../../../composables/useEchartsTheme'
+import DepthProfile from './DepthProfile.vue'
 import {
   filterBySeason,
   maskBySeason,
@@ -80,18 +95,25 @@ import {
   type Season,
 } from '../../../composables/useComparisonFetch'
 
+type Tab = 'scatter' | 'residuals' | 'seasonal' | 'depth'
+
 const props = defineProps<{
   data: ComparisonPoint[]
   sensorName: string
   varName: string
   depthLabel: string
   initialSeason?: Season
+  variableDepth?: boolean
+  initialTab?: Tab
 }>()
+
+const emit = defineEmits<{ 'depth-selected': [number] }>()
 
 const isOpen = defineModel<boolean>()
 
-const activeTab = ref<'scatter' | 'residuals' | 'seasonal'>('scatter')
+const activeTab = ref<Tab>(props.initialTab ?? 'scatter')
 const selectedSeason = ref<Season>(props.initialSeason ?? 'all')
+const depthProfileStats = ref<{ label: string, value: string, cls?: string }[]>([])
 const chartRef = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
 
@@ -135,6 +157,8 @@ const tabDescription = computed(() => {
     return 'Each point is a matched model–observation daily pair. The dashed line is the 1:1 reference; the solid line is the linear best fit. Points above the 1:1 line indicate model overestimation.'
   if (activeTab.value === 'residuals')
     return 'Daily (model − obs) over time. Positive values mean the model overestimates. The dashed trend line reveals whether model bias is drifting systematically over the sensor record.'
+  if (activeTab.value === 'depth')
+    return 'Sensor casts are binned onto the model\'s own depth levels within the visible window. Click a depth band to inspect that level\'s timeseries and stats.'
   return 'Climatological monthly means over the full sensor record. Reveals whether the model correctly captures the amplitude and timing of the annual cycle — regardless of the season filter above.'
 })
 
@@ -410,6 +434,9 @@ watch([activeTab, selectedSeason, () => props.data], async () => {
 
 watch(isOpen, async (open) => {
   if (!open) return
+  // The dialog instance persists across sensor changes, so re-apply the caller's
+  // requested tab each time it opens rather than only at component creation.
+  activeTab.value = props.initialTab ?? 'scatter'
   await nextTick()
   initAndRender()
 })

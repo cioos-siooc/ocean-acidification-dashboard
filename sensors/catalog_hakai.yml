@@ -5,7 +5,7 @@ sensors:
     lon: -125.222
     depth: 0.0
     api: ERDDAP
-    organization: 
+    organization: Hakai
     source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiQuadraBoLResearch"
     variables:
     - "omega_arag:Omega_arag::1.0"
@@ -19,7 +19,7 @@ sensors:
     lon: -125.1362667
     depth: -1
     api: ERDDAP
-    organization: 
+    organization: Hakai
     source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiBamfieldBoL5min"
     variables:
     - "ph_total:calcpH_Med::1.0"
@@ -31,7 +31,7 @@ sensors:
     lon: -124.899
     depth: 0.5
     api: ERDDAP
-    organization: 
+    organization: Hakai
     source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiBIOOSBuoyResearch"
     variables:
     - "co2_partial_pressure:pCO2_SW_sat:µatm:1.0"
@@ -43,7 +43,7 @@ sensors:
     lon: -127.9663
     depth: 0.5
     api: ERDDAP
-    organization: 
+    organization: Hakai
     source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiKCBuoy1hour"
     variables:
     - "dissolved_oxygen:Oxygen_Concentration:ml/L:1.0"  # source unit: mL/L — check factor!
@@ -53,10 +53,11 @@ sensors:
   - name: "Water Property Measurements from the Bute Inlet Ocean Observing Station (BIOOS) Wirewalker, Bute Inlet, BC, Canada (Provisional)"
     lat: 50.5744
     lon: -124.9009
-    depth: 0.0
+    depth: -1
     api: ERDDAP
-    organization: 
+    organization: Hakai
     source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiWirewalkerProvisional"
     variables:
+    - "depth:pressure:dbar:1.0"  # pressure axis — converted to depth at ingestion
     - "dissolved_oxygen:dissolved_o2:ml/L:1.0"  # source unit: mL/L — check factor!
     - "temperature:temperature:C:1.0"

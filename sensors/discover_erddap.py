@@ -39,6 +39,17 @@ Adjust the factor to match what erddap_to_ch.py expects:
     µmol/L → ml/L : factor = 0.02239   (÷ 44.66)
     ml/L   → ml/L : factor = 1.0
     mg/L   → ml/L : factor = 0.6997
+
+NOTE on profilers that report pressure instead of depth
+---------------------------------------------------------
+Some datasets (e.g. wirewalkers) have no "depth" variable at all — only
+"pressure" (dbar). This script detects a "pressure" axis variable the same
+way it detects "depth" (sets depth: -1, variable-depth sensor) and emits a
+`"depth:<pressure_col>:dbar:1.0"` variable line instead of a "depth:...:m:..."
+one. erddap_to_ch.py checks that unit at ingestion — "dbar" triggers a
+TEOS-10 pressure→depth conversion (gsw.z_from_p) instead of treating the raw
+number as already being depth in metres. Nothing downstream of ingestion
+(sensor_timeseries, the API, the frontend) ever sees a pressure value.
 """
 
 from __future__ import annotations
@@ -114,8 +125,11 @@ CANONICAL: dict[str, tuple[str, str, float]] = {
 }
 
 # Variables that are coordinate axes — not data variables to map.
+# "pressure" is included here because some profilers (e.g. wirewalkers) report
+# pressure (dbar) instead of depth — it's a vertical axis, not a data variable,
+# even though the value needs a TEOS-10 conversion before it means "depth".
 AXIS_VARS = {"time", "latitude", "longitude", "depth", "altitude", "z",
-             "station", "profile", "trajectory", "obs", "row"}
+             "station", "profile", "trajectory", "obs", "row", "pressure"}
 
 
 # ── ERDDAP helpers ────────────────────────────────────────────────────────────
@@ -226,19 +240,25 @@ def _resolve(var_name: str, attrs: dict[str, str]) -> tuple[str, str, float] | N
 def _map_variables(
     v_attrs: dict[str, dict[str, str]],
     show_unmapped: bool,
-) -> tuple[list[str], list[str], bool]:
+) -> tuple[list[str], list[str], bool, str | None]:
     """
-    Returns (variable_lines, unmapped_lines, has_depth_variable).
-    variable_lines are ready for catalog.yaml.
+    Returns (variable_lines, unmapped_lines, has_depth_variable, pressure_col).
+    variable_lines are ready for catalog.yaml. pressure_col is the ERDDAP
+    variable name of the pressure axis when the dataset has one and no literal
+    "depth" variable — erddap_to_ch.py converts pressure → depth at ingestion
+    (see resolve_depth_value), never storing raw pressure.
     """
     mapped: dict[str, tuple[str, str, float, str]] = {}  # canonical → (erddap_col, unit, factor, src_unit)
     unmapped: list[tuple[str, str]] = []
     has_depth_var = False
+    pressure_col: str | None = None
 
     for var_name, attrs in v_attrs.items():
         if var_name.lower() in AXIS_VARS:
             if var_name.lower() == "depth":
                 has_depth_var = True
+            elif var_name.lower() == "pressure":
+                pressure_col = var_name
             continue
 
         result = _resolve(var_name, attrs)
@@ -252,6 +272,12 @@ def _map_variables(
             unmapped.append((var_name, src_unit))
 
     variable_lines: list[str] = []
+    # A pressure-only dataset's vertical axis isn't a "depth" ERDDAP variable,
+    # but it maps to the same "depth" canonical key erddap_to_ch.py looks for —
+    # unit "dbar" is what tells it to run the pressure→depth conversion.
+    if not has_depth_var and pressure_col:
+        variable_lines.append(f'    - "depth:{pressure_col}:dbar:1.0"  # pressure axis — converted to depth at ingestion')
+
     for canonical, (erddap_col, unit, factor, src_unit) in sorted(mapped.items()):
         line = f'    - "{canonical}:{erddap_col}:{unit}:{factor}"'
         # Annotate dissolved oxygen with source unit so the user can verify factor
@@ -268,7 +294,7 @@ def _map_variables(
             f'    # - "UNMAPPED:{v}:{u}:1.0"' for v, u in unmapped
         ]
 
-    return variable_lines, unmapped_lines, has_depth_var
+    return variable_lines, unmapped_lines, has_depth_var, pressure_col
 
 
 # ── Per-dataset entry ─────────────────────────────────────────────────────────
@@ -282,10 +308,10 @@ def discover_one(base: str, dataset_id: str, show_unmapped: bool) -> str:
     g_attrs, v_attrs = _parse_info(info_rows)
     title = g_attrs.get("title", dataset_id)
     lat, lon, depth = _infer_location(g_attrs)
-    var_lines, unmapped_lines, has_depth_var = _map_variables(v_attrs, show_unmapped)
+    var_lines, unmapped_lines, has_depth_var, pressure_col = _map_variables(v_attrs, show_unmapped)
 
-    if has_depth_var:
-        depth = -1  # variable-depth sensor
+    if has_depth_var or pressure_col:
+        depth = -1  # variable-depth sensor (depth axis, or pressure axis converted to depth)
 
     link = f"{base}/tabledap/{dataset_id}"
     vars_block = "\n".join(var_lines + unmapped_lines)

@@ -77,7 +77,6 @@ depths:
   - 387.6
   - 414.5
   - 441.5
-  - -1
 
 variables:
   temperature:

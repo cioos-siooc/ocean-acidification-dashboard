@@ -143,6 +143,9 @@ services:
       - CH_HOST=db-ch
       - CH_PORT=8123
       - CH_PASSWORD=
+    # volumes:
+    #   - ./sensors:/app
+    #   - ./shared:/app/shared
     depends_on:
       db-ch:
         condition: service_healthy

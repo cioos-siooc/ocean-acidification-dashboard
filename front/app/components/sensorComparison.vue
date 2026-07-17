@@ -6,7 +6,7 @@
       style="height:30px; border-bottom:1px solid rgba(255,255,255,0.08); gap:8px;">
       <span class="text-caption font-weight-medium text-truncate" style="min-width:0;">
         {{ sensorInfo?.name || '—' }}
-        <span class="text-grey"> · {{ varName }} · {{ depthLabel }}</span>
+        <span class="text-grey"> · {{ varName }} · {{ variableDepthLabel }}</span>
       </span>
       <v-spacer />
       <v-progress-circular v-if="isLoading" indeterminate color="warning" size="14" width="2" class="flex-shrink-0" />
@@ -14,7 +14,7 @@
       <v-chip v-if="!isLoading && stats && stats.n > 0" size="x-small" color="teal" variant="tonal" class="flex-shrink-0">
         {{ stats.n }} days
       </v-chip>
-      <v-btn icon="mdi-fullscreen" size="x-small" variant="text" :disabled="!hasData"
+      <v-btn icon="mdi-fullscreen" size="x-small" variant="text" :disabled="!hasData && !isVariableDepth"
         title="Advanced Analysis" @click="advancedOpen = true" />
     </div>
 
@@ -37,6 +37,19 @@
           class="ma-3" density="compact">
           {{ errorMessage }}
         </v-alert>
+
+        <div v-else-if="isVariableDepth && sensorInfo"
+          class="d-flex flex-column align-center justify-center h-100 text-center px-6">
+          <v-icon size="48" color="teal-lighten-1">mdi-chart-timeline-variant</v-icon>
+          <div class="text-caption text-grey-lighten-1 mt-2" style="max-width:260px;">
+            This sensor profiles the water column instead of sitting at one depth — the daily
+            single-depth view doesn't apply here.
+          </div>
+          <v-btn size="small" variant="tonal" color="teal" class="mt-3" prepend-icon="mdi-fullscreen"
+            @click="advancedOpen = true">
+            Open Depth Profile
+          </v-btn>
+        </div>
 
         <div v-else-if="!hasData && !isLoading"
           class="d-flex flex-column align-center justify-center h-100 text-center px-6">
@@ -101,6 +114,9 @@
     :var-name="varName"
     :depth-label="depthLabel"
     :initial-season="selectedSeason"
+    :variable-depth="isVariableDepth"
+    :initial-tab="isVariableDepth ? 'depth' : 'scatter'"
+    @depth-selected="onDepthPicked"
   />
 </template>
 
@@ -135,6 +151,19 @@ const selectedSensor = computed(() => mainStore.selectedSensor)
 const sensorInfo = computed(() => {
   if (!selectedSensor.value?.id) return null
   return mainStore.sensors.find(s => s.id === selectedSensor.value!.id) ?? null
+})
+
+// Registry convention (see process/sensors/erddapTable_to_nc.py): depth === -1 means the
+// sensor profiles the water column instead of sitting at one fixed depth. The daily
+// single-depth chart below can't represent that — see the Depth Profile tab instead.
+const isVariableDepth = computed(() => sensorInfo.value?.depth === -1)
+
+const lastPickedDepth = ref<number | null>(null)
+function onDepthPicked(d: number) { lastPickedDepth.value = d }
+
+const variableDepthLabel = computed(() => {
+  if (!isVariableDepth.value) return depthLabel.value
+  return lastPickedDepth.value != null ? `variable depth · ${lastPickedDepth.value}m picked` : 'variable depth'
 })
 
 const varName = computed(() =>
@@ -336,16 +365,17 @@ watch([selectedSensor, variable, depth], () => {
   hasData.value = false
   rawComparisonData.value = []
   errorMessage.value = null
+  lastPickedDepth.value = null
   if (tsChart) { tsChart.dispose(); tsChart = null }
 
-  if (props.active && sensorInfo.value && depth.value != null) {
+  if (props.active && sensorInfo.value && depth.value != null && !isVariableDepth.value) {
     loadData()
   }
 })
 
 watch(() => props.active, (active) => {
   if (!active) return
-  if (!sensorInfo.value || depth.value == null) return
+  if (!sensorInfo.value || depth.value == null || isVariableDepth.value) return
   const sig = currentSignature()
   if (sig !== lastLoadedSig && !isLoading.value) loadData()
 })

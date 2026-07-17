@@ -135,17 +135,24 @@ export const useMainStore = defineStore('main', {
          */
         selectSensor(sensor_id: string, depth: number) {
             console.log("Selecting sensor", sensor_id, "at depth", depth);
-            const variable = this.selected_variable.var;
-            const depthsArray = this.variables.find((v) => v.var === variable)?.depths;
-            const closestDepth = depthsArray
-                ? [...depthsArray].sort((a, b) => Math.abs(a - depth) - Math.abs(b - depth))
-                : [];
-            if (closestDepth.length > 0) {
-                const newDepthNc = closestDepth[0] ?? null;
-                const newDepth = newDepthNc !== null ? formatDepthLabel(newDepthNc) : null;
-                if (newDepth && newDepth !== this.selected_variable.depth) {
-                    this.snackMessages.push({ color: 'warning', text: `Switched to closest available depth: ${newDepth}m` });
-                    this.updateSelectedVariable({ depth: newDepth, depth_nc: newDepthNc });
+            // depth === -1 here is the sensor registry's "profiles the water column"
+            // sentinel (see sensorComparison.vue's isVariableDepth) — a different meaning
+            // than the model's own -1 "bottom" pseudo-level in `depthsArray` below. There's
+            // no single fixed depth to snap the model view to for a profiler, so skip it;
+            // the model's currently-selected depth is left untouched.
+            if (depth !== -1) {
+                const variable = this.selected_variable.var;
+                const depthsArray = this.variables.find((v) => v.var === variable)?.depths;
+                const closestDepth = depthsArray
+                    ? [...depthsArray].sort((a, b) => Math.abs(a - depth) - Math.abs(b - depth))
+                    : [];
+                if (closestDepth.length > 0) {
+                    const newDepthNc = closestDepth[0] ?? null;
+                    const newDepth = newDepthNc !== null ? formatDepthLabel(newDepthNc) : null;
+                    if (newDepth && newDepth !== this.selected_variable.depth) {
+                        this.snackMessages.push({ color: 'warning', text: `Switched to closest available depth: ${newDepth}m` });
+                        this.updateSelectedVariable({ depth: newDepth, depth_nc: newDepthNc });
+                    }
                 }
             }
             this.setSelectedSensor({ id: sensor_id, depth: depth });

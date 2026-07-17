@@ -683,7 +683,11 @@ async function getTimeseriesPromises(lat: number, lon: number) {
         lat, lon,
         () => getTimeseriesFromApi(lat, lon, fromDate, toDate),
         () => getClimateTimeseries(lat, lon, fromDate, toDate),
-        () => mainStore.selectedSensor && mainStore.selectedSensor.id
+        // selectedSensor.depth === -1 means the sensor profiles the water column (see
+        // sensorComparison.vue's isVariableDepth) — there's no single depth to fetch a
+        // fixed-depth timeseries at, so skip it here (see the Comparison tab's Depth
+        // Profile view instead) rather than passing -1 through as a literal depth.
+        () => mainStore.selectedSensor && mainStore.selectedSensor.id && mainStore.selectedSensor.depth !== -1
             ? getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selectedSensor.depth)
             : Promise.resolve(null)
     );

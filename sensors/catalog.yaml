@@ -589,10 +589,11 @@ sensors:
   - name: "Water Property Measurements from the Bute Inlet Ocean Observing Station (BIOOS) Wirewalker, Bute Inlet, BC, Canada (Provisional)"
     lat: 50.5744
     lon: -124.9009
-    depth: 0.0
+    depth: -1
     api: ERDDAP
     organization: Hakai
     source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiWirewalkerProvisional"
     variables:
+    - "depth:pressure:dbar:1.0"  # pressure axis — converted to depth at ingestion
     - "dissolved_oxygen:dissolved_o2:ml/L:1.0"  # source unit: mL/L — check factor!
     - "temperature:temperature:C:1.0"

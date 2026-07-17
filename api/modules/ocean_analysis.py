@@ -9,20 +9,12 @@ analytics client-side.
 """
 
 import math
-import os
 import logging
 from typing import List, Tuple
-import clickhouse_connect
+
+from modules.clickhouse_helpers import get_ch_client as _get_ch_client
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ch_client():
-    host = os.getenv("CH_HOST", "localhost")
-    port = int(os.getenv("CH_PORT", "8123"))
-    user = os.getenv("CH_USER", "default")
-    password = os.getenv("CH_PASSWORD", os.getenv("CLICKHOUSE_PASSWORD", ""))
-    return clickhouse_connect.get_client(host=host, port=port, username=user, password=password)
 
 
 def lookup_nearest_grid_cell(lat: float, lon: float) -> List[Tuple[int, int]]:
