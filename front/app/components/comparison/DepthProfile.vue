@@ -350,9 +350,6 @@ type Which = 'model' | 'sensor' | 'diff'
 const CHART_GROUP = 'depthProfileHeatmaps'
 const AXIS_LEFT_PX = 44
 const DATAZOOM_RIGHT_PX = 26
-// a shared decal (diagonal hatch) pattern for "no cast in this bin" cells, matching the
-// hatch swatch in the legend
-const NO_CAST_DECAL = { symbol: 'line', dashArrayX: [1, 0] as [number, number], dashArrayY: [4, 4] as [number, number], rotation: Math.PI / 4, color: 'rgba(255,255,255,0.16)' }
 
 const mChartRef = ref<HTMLDivElement | null>(null)
 const sChartRef = ref<HTMLDivElement | null>(null)
@@ -403,9 +400,16 @@ function makeRenderItem(which: Which) {
     const y = Math.min(p0[1], p1[1])
     const width = Math.abs(p1[0] - p0[0]) + 0.6
     const height = Math.abs(p1[1] - p0[1]) + 0.6
-    if (v == null) {
-      return { type: 'rect', shape: { x, y, width, height }, style: { fill: '#161e26', decal: NO_CAST_DECAL } }
-    }
+    // "no cast" cells are stored as null, but ECharts' api.value() surfaces a null
+    // numeric-dimension entry as NaN (not null) — so guard on both, else a NaN would
+    // fall through to colorFor() and paint the top of the ramp (highest value).
+    // Render nothing for these — the panel's own CSS hatch background (.hm-panel) shows
+    // through instead of a per-cell decal. A per-cell decal looks identical but is
+    // pathological here: ECharts' CustomView unconditionally marks the decal object dirty
+    // on every renderItem call, so createOrUpdatePatternFromDecal regenerates the whole
+    // offscreen canvas pattern from scratch on every single "no cast" cell — with casts
+    // this sparse, thousands of cells per panel, which freezes the tab for many seconds.
+    if (v == null || Number.isNaN(v)) return undefined
     return { type: 'rect', shape: { x, y, width, height }, style: { fill: colorFor(which, v) } }
   }
 }
@@ -713,7 +717,13 @@ onBeforeUnmount(() => {
 .range-label--clickable:hover { color: #fff; text-decoration: underline dotted; }
 
 .hm-stack { display: flex; flex-direction: column; }
-.hm-panel { position: relative; margin-bottom: 3px; background: #161e26; border-radius: 3px; }
+.hm-panel {
+  position: relative; margin-bottom: 3px; border-radius: 3px;
+  background-color: #161e26;
+  /* shows through "no cast" cells (renderItem returns nothing for them) — same pattern as
+     the legend's .swatch-hatch, so unrendered cells and the legend swatch read as one thing */
+  background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.22) 0, rgba(255,255,255,0.22) 1px, transparent 1px, transparent 6px);
+}
 .hm-chart { width: 100%; height: 100%; cursor: crosshair; }
 .panel-label {
   position: absolute; top: 5px; left: 7px; font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
