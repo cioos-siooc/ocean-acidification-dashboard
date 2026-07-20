@@ -7,6 +7,16 @@ no code-resolution step is needed — just query by (sensor_id, variable, time
 range).  Depth selection (nearest) is handled in CH to avoid pulling all
 depths over the wire.
 
+Fixed-depth sensors (sensors.depth != -1) have one depth value recorded
+across their whole history, so "nearest stored depth, then exact match"
+degenerates to "the one depth". Variable-depth ("profiler") sensors
+(sensors.depth == -1, e.g. a Wirewalker) cast continuously through the water
+column — there is no single stored depth to match exactly, so a requested
+depth is instead snapped to the nearest *model* depth level (via `source`)
+and matched against a window around that level. See extract_depth_profile.py
+for the sibling endpoint that bins a profiler's full water column at once;
+this module only ever resolves to one target depth.
+
 Returns a dict ready to serialize as a JSON response:
   {"time": [...], "value": [...]}
   {"time": [...], "depth": [...], "value": [...]}   — when depth data exists
@@ -19,6 +29,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from modules.clickhouse_helpers import get_ch_client
+from modules.extractTimeseries import DATA_TABLE_BY_SOURCE, _get_depth_levels, _nearest_level_index
 
 
 def _fmt(dt_str: str) -> str:
@@ -29,12 +40,28 @@ def _fmt(dt_str: str) -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _is_profiler_sensor(client, sensor_id: str) -> bool:
+    safe_id = str(sensor_id).replace("'", "")
+    rows = client.query(
+        f"SELECT depth FROM sensors FINAL WHERE id = '{safe_id}' LIMIT 1"
+    ).result_rows
+    return bool(rows) and float(rows[0][0]) == -1.0
+
+
+def _voronoi_window(idx: int, levels: list[float]) -> tuple[float, float]:
+    """[lo, hi] band around levels[idx], bounded by midpoints to its neighbours."""
+    lo = -float("inf") if idx == 0 else (levels[idx - 1] + levels[idx]) / 2
+    hi = float("inf") if idx == len(levels) - 1 else (levels[idx] + levels[idx + 1]) / 2
+    return lo, hi
+
+
 def extract_sensor_timeseries(
     sensor_id: str,
     variable: str,
     from_date: str,
     to_date: str,
     depth: Optional[float] = None,
+    source: Optional[str] = None,
 ) -> dict:
     """
     Read sensor time series from ClickHouse.
@@ -46,6 +73,9 @@ def extract_sensor_timeseries(
     from_date : ISO-8601 string (start, inclusive)
     to_date   : ISO-8601 string (end, inclusive)
     depth     : optional depth in metres; if None, returns all depth levels
+    source    : model source (e.g. "SalishSeaCast"); only used to resolve
+                the model's depth levels for a variable-depth sensor's
+                depth-window query — ignored for fixed-depth sensors
 
     Returns
     -------
@@ -57,6 +87,8 @@ def extract_sensor_timeseries(
     Raises
     ------
     FileNotFoundError — no data found for this sensor / variable
+    ValueError — depth requested for a variable-depth sensor without a
+                 recognized `source`
     """
     client = get_ch_client()
 
@@ -67,6 +99,32 @@ def extract_sensor_timeseries(
     # request but is already validated by the caller against the sensors table).
     safe_var = variable.replace("'", "''")
     safe_id  = str(sensor_id).replace("'", "")
+
+    if depth is not None and _is_profiler_sensor(client, sensor_id):
+        if source not in DATA_TABLE_BY_SOURCE:
+            raise ValueError(f"A recognized 'source' is required to query a variable-depth sensor by depth (got {source!r}).")
+        levels = _get_depth_levels(client, DATA_TABLE_BY_SOURCE[source])
+        if not levels:
+            raise FileNotFoundError(f"No model depth levels found for source '{source}'.")
+        level_idx = _nearest_level_index(float(depth), levels)
+        target_level = levels[level_idx]
+        lo, hi = _voronoi_window(level_idx, levels)
+
+        result = client.query(
+            f"SELECT time, value FROM sensor_timeseries FINAL "
+            f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
+            f"  AND depth >= {lo} AND depth < {hi} "
+            f"  AND time >= toDateTime('{from_str}') "
+            f"  AND time <= toDateTime('{to_str}') "
+            f"ORDER BY time"
+        )
+        rows = result.result_rows
+        if not rows:
+            return {"time": [], "value": [], "depth": target_level}
+
+        times_out = [r[0].strftime("%Y-%m-%dT%H:%M:%S") for r in rows]
+        values_out = [None if math.isnan(r[1]) else float(r[1]) for r in rows]
+        return {"time": times_out, "depth": target_level, "value": values_out}
 
     if depth is not None:
         # Find the single stored depth closest to the requested value, then

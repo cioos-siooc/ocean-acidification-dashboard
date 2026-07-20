@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { useRuntimeConfig } from '#app';
 
-export async function getSensorTimeseries(sensorId: string|null, canonicalVariable: string, fromDate: string, toDate: string, depth: number|null = null) {
+export async function getSensorTimeseries(sensorId: string|null, canonicalVariable: string, fromDate: string, toDate: string, depth: number|null = null, source: string|null = null) {
     if (sensorId === null || sensorId === undefined) {
         return null
     }
@@ -17,6 +17,11 @@ export async function getSensorTimeseries(sensorId: string|null, canonicalVariab
     };
     if (depth !== null) {
         payload.depth = depth;
+    }
+    // Only needed to resolve depth for variable-depth ("profiler") sensors — see
+    // extractSensorTimeseries.py's profiler branch.
+    if (source !== null) {
+        payload.source = source;
     }
     const url = `${apiBaseUrl}/sensorTimeseries`;
     const r = await axios.post(url, payload);

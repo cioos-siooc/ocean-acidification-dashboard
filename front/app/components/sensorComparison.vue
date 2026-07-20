@@ -38,12 +38,12 @@
           {{ errorMessage }}
         </v-alert>
 
-        <div v-else-if="isVariableDepth && sensorInfo"
+        <div v-else-if="isVariableDepth && sensorInfo && !hasData"
           class="d-flex flex-column align-center justify-center h-100 text-center px-6">
           <v-icon size="48" color="teal-lighten-1">mdi-chart-timeline-variant</v-icon>
           <div class="text-caption text-grey-lighten-1 mt-2" style="max-width:260px;">
-            This sensor profiles the water column instead of sitting at one depth — the daily
-            single-depth view doesn't apply here.
+            This sensor profiles the water column instead of sitting at one depth — pick a depth
+            via the map's depth control or the Depth Profile view below to compare it.
           </div>
           <v-btn size="small" variant="tonal" color="teal" class="mt-3" prepend-icon="mdi-fullscreen"
             @click="advancedOpen = true">
@@ -126,7 +126,7 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import moment from 'moment-timezone'
 import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
-import { useMainStore } from '../stores/main'
+import { useMainStore, formatDepthLabel } from '../stores/main'
 import { fetchAnalysisSeries } from '../../composables/useAnalysisFetch'
 import { getSensorTimeseries } from '../../composables/useSensorTimeseries'
 import { availableVariables } from '../../composables/useAnalysisStatistics'
@@ -158,12 +158,16 @@ const sensorInfo = computed(() => {
 // single-depth chart below can't represent that — see the Depth Profile tab instead.
 const isVariableDepth = computed(() => sensorInfo.value?.depth === -1)
 
-const lastPickedDepth = ref<number | null>(null)
-function onDepthPicked(d: number) { lastPickedDepth.value = d }
+// Picking a depth in the Depth Profile heatmap writes into the same shared depth
+// the map layer / TimeControls / Timeseries tab already use — one source of truth,
+// so a pick here is immediately reflected everywhere else without reopening anything.
+function onDepthPicked(d: number) {
+  mainStore.updateSelectedVariable({ depth: formatDepthLabel(d), depth_nc: d })
+}
 
 const variableDepthLabel = computed(() => {
   if (!isVariableDepth.value) return depthLabel.value
-  return lastPickedDepth.value != null ? `variable depth · ${lastPickedDepth.value}m picked` : 'variable depth'
+  return depth.value != null ? `variable depth · ${depth.value}m picked` : 'variable depth'
 })
 
 const varName = computed(() =>
@@ -314,12 +318,16 @@ async function loadData() {
   try {
     loadingStep.value = 'Fetching sensor data…'
     const toDateStr = moment.utc().format('YYYY-MM-DDTHHmmss')
+    // Profilers have no fixed depth of their own (selectedSensor.depth === -1) — use the
+    // shared global depth instead, same as Timeseries/Sensor Analysis, so this stays in
+    // sync with whatever depth the user picked via the map control or Depth Profile.
     const sensorResp = await getSensorTimeseries(
       selectedSensor.value.id,
       variable.value,
       '2000-01-01T000000',
       toDateStr,
-      selectedSensor.value.depth
+      depth.value,
+      isVariableDepth.value ? mainStore.selected_variable.source : null
     )
 
     const sensorTimes: string[] = sensorResp?.data?.time ?? []
@@ -365,17 +373,16 @@ watch([selectedSensor, variable, depth], () => {
   hasData.value = false
   rawComparisonData.value = []
   errorMessage.value = null
-  lastPickedDepth.value = null
   if (tsChart) { tsChart.dispose(); tsChart = null }
 
-  if (props.active && sensorInfo.value && depth.value != null && !isVariableDepth.value) {
+  if (props.active && sensorInfo.value && depth.value != null) {
     loadData()
   }
 })
 
 watch(() => props.active, (active) => {
   if (!active) return
-  if (!sensorInfo.value || depth.value == null || isVariableDepth.value) return
+  if (!sensorInfo.value || depth.value == null) return
   const sig = currentSignature()
   if (sig !== lastLoadedSig && !isLoading.value) loadData()
 })

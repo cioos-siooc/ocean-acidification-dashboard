@@ -72,6 +72,9 @@ const props = defineProps<{
   location: AnalysisLocation | null
   yearRange: [number, number]
   pointLabel?: string
+  // Model source (e.g. "SalishSeaCast") — only needed to resolve `depth` for a
+  // variable-depth ("profiler") sensor location; ignored for model/fixed-depth locations.
+  source?: string | null
 }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
 
@@ -92,7 +95,7 @@ const pointLabel = computed(() => props.pointLabel || '')
 function fetchSeriesFor(variableId: string, depthVal: number, loc: AnalysisLocation): Promise<SeriesPoint[]> {
   if ('sensorId' in loc) {
     const [fromDate, toDate] = [`${yearRange.value[0]}-01-01T000000`, `${yearRange.value[1]}-12-31T235959`]
-    return fetchSensorAnalysisSeries(loc.sensorId, variableId, 'mean', depthVal, fromDate, toDate)
+    return fetchSensorAnalysisSeries(loc.sensorId, variableId, 'mean', depthVal, fromDate, toDate, props.source ?? null)
   }
   return fetchAnalysisSeries({ variable: variableId, stat: 'mean', depth: depthVal, location: loc, yearRange: yearRange.value })
 }

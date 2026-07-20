@@ -232,7 +232,13 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         if (Array.isArray(climateData)) climateData.forEach(row => push([row?.mean, row?.min, row?.max]));
         if (sensorData?.value) push(sensorData.value);
         if (!values.length) return 0;
-        const range = Math.max(...values) - Math.min(...values);
+        // Reduce rather than Math.max(...values)/Math.min(...values): a variable-depth
+        // ("profiler") sensor can return well over 100k points for a single depth band in
+        // a normal date range, and spreading that many arguments into Math.max/min throws
+        // "Maximum call stack size exceeded" (V8's argument-count limit, ~65k-125k).
+        let vMin = Infinity, vMax = -Infinity;
+        for (const v of values) { if (v < vMin) vMin = v; if (v > vMax) vMax = v; }
+        const range = vMax - vMin;
         if (!Number.isFinite(range)) return 0;
         if (range < 1) return 3;
         if (range < 5) return 2;
@@ -242,6 +248,13 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
 
     const hasClimate = Array.isArray(climateData) && climateData.length > 0;
     const hasSensorData = sensorData && Array.isArray(sensorData.time) && sensorData.time.length > 0;
+
+    // A variable-depth ("profiler") sensor queried fine but had no cast near the
+    // currently selected depth in this window — distinct from "no sensor selected",
+    // which just leaves sensorData null. See extractSensorTimeseries.py's profiler
+    // branch, which returns this well-formed empty shape rather than a 404.
+    const isProfilerNoCast = mainStore.selectedSensor?.depth === -1 && sensorData
+        && Array.isArray(sensorData.time) && sensorData.time.length === 0;
 
     if (!hasModelData && !hasClimate && !hasSensorData) {
         chart.setOption({
@@ -253,9 +266,15 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         return;
     }
 
-    chart.setOption({ graphic: [{ type: 'text', style: { text: '' } }] }, false);
-
     const option: any = {
+        graphic: [{
+            type: 'text',
+            right: 10,
+            top: 6,
+            style: isProfilerNoCast
+                ? { text: `No sensor cast near ${sensorData.depth != null ? sensorData.depth.toFixed(1) + 'm' : 'this depth'} in this window`, fill: 'rgba(255,255,255,0.4)', fontSize: 11 }
+                : { text: '' }
+        }],
         legend: { show: true, orient: 'vertical', left: 'left', top: 'center', itemWidth: 15, itemHeight: 10, textStyle: { fontSize: 10 }, icon: 'rect' },
         tooltip: {
             trigger: 'none',

@@ -684,12 +684,18 @@ async function getTimeseriesPromises(lat: number, lon: number) {
         () => getTimeseriesFromApi(lat, lon, fromDate, toDate),
         () => getClimateTimeseries(lat, lon, fromDate, toDate),
         // selectedSensor.depth === -1 means the sensor profiles the water column (see
-        // sensorComparison.vue's isVariableDepth) — there's no single depth to fetch a
-        // fixed-depth timeseries at, so skip it here (see the Comparison tab's Depth
-        // Profile view instead) rather than passing -1 through as a literal depth.
-        () => mainStore.selectedSensor && mainStore.selectedSensor.id && mainStore.selectedSensor.depth !== -1
-            ? getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selectedSensor.depth)
-            : Promise.resolve(null)
+        // sensorComparison.vue's isVariableDepth). There's no fixed depth to snap to on
+        // the sensor's own record, so use the shared global depth (the same one driving
+        // the map layer) instead — this is what makes changing the map's depth control
+        // refetch the profiler's overlay too, no Depth Profile round-trip needed.
+        () => {
+            if (!mainStore.selectedSensor || !mainStore.selectedSensor.id) return Promise.resolve(null);
+            if (mainStore.selectedSensor.depth === -1) {
+                if (mainStore.selected_variable.depth_nc == null) return Promise.resolve(null);
+                return getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selected_variable.depth_nc, mainStore.selected_variable.source);
+            }
+            return getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selectedSensor.depth);
+        }
     );
 }
 

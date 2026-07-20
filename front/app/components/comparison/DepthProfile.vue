@@ -562,13 +562,25 @@ function refreshCharts() {
 // ── DEPTH SELECTION ────────────────────────────────────────────────────────────────────
 const selectedDepthIdx = ref(0)
 watch(depths, (ds) => {
-  // keep pointing at ~14m (or the closest level) whenever the level set changes
+  // Prefer whatever depth is already selected elsewhere (map control / a prior pick
+  // here) so opening this view reflects it instead of always resetting to ~14m.
+  const target = mainStore.selected_variable.depth_nc ?? 14
   let best = 0, bestDist = Infinity
-  ds.forEach((d, i) => { const dist = Math.abs(d - 14); if (dist < bestDist) { bestDist = dist; best = i } })
+  ds.forEach((d, i) => { const dist = Math.abs(d - target); if (dist < bestDist) { bestDist = dist; best = i } })
   selectedDepthIdx.value = best
 }, { immediate: true })
 
 watch(selectedDepthIdx, () => { updateMarkLines(); updateLineChart() })
+
+// Live sync from outside (e.g. the map's depth control changing while this dialog is
+// open) — idempotent with onDepthPicked's own writes, since that always writes back a
+// value already equal to depths.value[idx], so this just resolves to the same index.
+watch(() => mainStore.selected_variable.depth_nc, (d) => {
+  if (d == null || !depths.value.length) return
+  let best = 0, bestDist = Infinity
+  depths.value.forEach((lvl, i) => { const dist = Math.abs(lvl - d); if (dist < bestDist) { bestDist = dist; best = i } })
+  selectedDepthIdx.value = best
+})
 
 const depthLabel = computed(() => {
   const d = depths.value[selectedDepthIdx.value]

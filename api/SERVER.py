@@ -378,6 +378,7 @@ class sensorTimeseriesRequest(BaseModel):
     fromDate: str
     toDate: str
     depth: Optional[float] = None
+    source: Optional[str] = None  # model source, only needed to resolve depth for variable-depth sensors
 
 @app.post("/sensorTimeseries")
 async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: Request):
@@ -404,6 +405,7 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: 
                 request.fromDate,
                 request.toDate,
                 request.depth,
+                request.source,
             ),
             timeout=THREADPOOL_TIMEOUT,
         )

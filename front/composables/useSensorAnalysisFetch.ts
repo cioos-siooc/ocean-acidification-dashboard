@@ -32,8 +32,9 @@ export async function fetchSensorAnalysisSeries(
     depth: number | null,
     fromDate: string,
     toDate: string,
+    source: string | null = null,
 ): Promise<SeriesPoint[]> {
-    const response = await getSensorTimeseries(sensorId, variable, fromDate, toDate, depth);
+    const response = await getSensorTimeseries(sensorId, variable, fromDate, toDate, depth, source);
     const times: string[] = response?.data?.time ?? [];
     const values: (number | null)[] = response?.data?.value ?? [];
     if (!times.length) return [];

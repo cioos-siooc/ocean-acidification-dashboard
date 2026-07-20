@@ -29,6 +29,7 @@ from modules.extractTimeseries import (
     GRID_TABLE_BY_SOURCE,
     _find_nearest_grid_point,
     _get_depth_levels,
+    _nearest_level_index,
 )
 
 
@@ -46,16 +47,6 @@ def _floor_hour(dt: datetime) -> datetime:
 
 def _is_bad(value) -> bool:
     return value is None or (isinstance(value, float) and math.isnan(value))
-
-
-def _nearest_level_index(depth: float, levels: list[float]) -> int:
-    """Index into `levels` (ascending) of the level nearest `depth`."""
-    best_i, best_dist = 0, float("inf")
-    for i, lvl in enumerate(levels):
-        dist = abs(lvl - depth)
-        if dist < best_dist:
-            best_dist, best_i = dist, i
-    return best_i
 
 
 def extract_depth_profile(

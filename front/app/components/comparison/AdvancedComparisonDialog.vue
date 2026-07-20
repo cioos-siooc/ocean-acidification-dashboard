@@ -24,10 +24,10 @@
       </v-toolbar>
 
       <v-tabs v-model="activeTab" density="compact" color="warning" class="flex-shrink-0">
+        <v-tab v-if="variableDepth" value="depth">Depth Profile</v-tab>
         <v-tab value="scatter">Scatter</v-tab>
         <v-tab value="residuals">Residuals</v-tab>
         <v-tab value="seasonal">Seasonal Cycle</v-tab>
-        <v-tab v-if="variableDepth" value="depth">Depth Profile</v-tab>
       </v-tabs>
 
       <!-- Content row: chart + sidebar -->
@@ -35,16 +35,24 @@
 
         <!-- Chart area -->
         <div class="flex-grow-1 d-flex flex-column pa-2" style="min-width:0; min-height:0; overflow-y:auto;">
-          <DepthProfile v-if="activeTab === 'depth'" :var-name="varName"
-            @stats="depthProfileStats = $event" @depth-selected="emit('depth-selected', $event)" />
-          <template v-else>
+          <!-- v-show (not v-if) on the tab content keeps both branches mounted across tab
+               switches, so Depth Profile's fetched window/depth and the scatter/residuals/
+               seasonal chart state survive navigating away and back instead of refetching
+               and resetting every time. Depth Profile itself is still gated by variableDepth
+               (v-if) — it fetches immediately on mount, and fixed-depth sensors never have
+               this tab, so it should never mount for them at all. -->
+          <template v-if="variableDepth">
+            <DepthProfile v-show="activeTab === 'depth'" :var-name="varName"
+              @stats="depthProfileStats = $event" @depth-selected="emit('depth-selected', $event)" />
+          </template>
+          <div v-show="activeTab !== 'depth'" class="d-flex flex-column flex-grow-1" style="min-height:0;">
             <div v-if="!hasChartData"
               class="d-flex flex-column align-center justify-center flex-grow-1 text-center">
               <v-icon size="48" color="grey-darken-1">mdi-chart-scatter-plot</v-icon>
               <div class="text-caption text-grey-darken-1 mt-2">No matched pairs for this season.</div>
             </div>
             <div v-else ref="chartRef" class="flex-grow-1" style="min-height:0;" />
-          </template>
+          </div>
         </div>
 
         <!-- Right sidebar: description + statistics -->

@@ -156,6 +156,16 @@ def _resolve_depth(client, table: str, grid_x: int, grid_y: int, depth: float) -
     return closest
 
 
+def _nearest_level_index(depth: float, levels: list[float]) -> int:
+    """Index into `levels` (ascending) of the level nearest `depth`."""
+    best_i, best_dist = 0, float("inf")
+    for i, lvl in enumerate(levels):
+        dist = abs(lvl - depth)
+        if dist < best_dist:
+            best_dist, best_i = dist, i
+    return best_i
+
+
 def extract_timeseries(
     *,
     source: str,

@@ -27,7 +27,7 @@
 
       <v-spacer />
 
-      <v-btn block color="warning" size="small" prepend-icon="mdi-open-in-full" :disabled="isVariableDepth"
+      <v-btn block color="warning" size="small" prepend-icon="mdi-open-in-full" :disabled="depth == null"
         @click="advancedOpen = true">
         Advanced Analysis
       </v-btn>
@@ -67,12 +67,12 @@
           {{ plotErrorMessage }}
         </v-alert>
 
-        <div v-else-if="isVariableDepth"
+        <div v-else-if="isVariableDepth && depth == null"
           class="d-flex flex-column align-center justify-center h-100 text-center px-6">
           <v-icon size="56" color="grey-darken-1">mdi-chart-timeline-variant</v-icon>
           <div class="text-caption text-grey-darken-1 mt-2" style="max-width:260px;">
-            This sensor profiles the water column instead of sitting at one depth — per-depth
-            analysis isn't available here yet. See the Comparison tab's Depth Profile view.
+            This sensor profiles the water column instead of sitting at one depth — pick a depth
+            via the map's depth control or the Comparison tab's Depth Profile view to analyze it.
           </div>
         </div>
 
@@ -112,7 +112,8 @@
   </div>
 
   <AdvancedAnalysisDialog v-model="advancedOpen" :variable="variable" :depth="depth" :location="advancedLocation"
-    :year-range="[minYear, maxYear]" :point-label="sensorInfo?.name || ''" />
+    :year-range="[minYear, maxYear]" :point-label="sensorInfo?.name || ''"
+    :source="isVariableDepth ? mainStore.selected_variable.source : null" />
 </template>
 
 
@@ -143,13 +144,13 @@ const sensorInfo = computed(() => {
   if (!selectedSensor.value?.id) return null
   return mainStore.sensors.find(s => s.id === selectedSensor.value!.id) ?? null
 })
-// Sensors report at their own fixed deployment depth, not the model's selected depth.
-const depth = computed(() => selectedSensor.value?.depth ?? null)
-
-// depth === -1 means the sensor profiles the water column (see sensorComparison.vue's
-// isVariableDepth) — there's no single depth for this tab's per-depth analysis to run
-// against, so it's disabled here rather than silently analysing an arbitrary cast depth.
+// depth === -1 on the registry means the sensor profiles the water column (see
+// sensorComparison.vue's isVariableDepth). Fixed-depth sensors report at their own
+// deployment depth; profilers have no fixed depth of their own, so fall back to the
+// shared global depth (the same one driving the map layer / Timeseries / Depth Profile)
+// — analysis then runs against whatever depth the user is currently looking at.
 const isVariableDepth = computed(() => sensorInfo.value?.depth === -1)
+const depth = computed(() => isVariableDepth.value ? mainStore.selected_variable.depth_nc : (selectedSensor.value?.depth ?? null))
 
 const advancedLocation = computed<AnalysisLocation | null>(() =>
   sensorInfo.value ? { sensorId: sensorInfo.value.id } : null
@@ -190,9 +191,10 @@ const seasonLabel = computed(() => {
   return labels[selectedSeason.value] || 'Full Year'
 })
 
-const chartTitle = computed(() =>
-  `All Years Overlaid — ${varName.value} (${primaryStat.value.toUpperCase()})`
-)
+const chartTitle = computed(() => {
+  const depthSuffix = isVariableDepth.value && depth.value != null ? ` @ ${depth.value}m` : ''
+  return `All Years Overlaid — ${varName.value}${depthSuffix} (${primaryStat.value.toUpperCase()})`
+})
 
 const extremeRecords = computed(() => {
   const data = rawSeasonalData.value
@@ -382,7 +384,8 @@ async function fetchSensorSeries(): Promise<SeriesPoint[]> {
   const fromDate = `${minYear.value}-01-01T000000`
   const toDate = `${maxYear.value}-12-31T235959`
   return fetchSensorAnalysisSeries(
-    sensorInfo.value.id, variable.value, primaryStat.value as 'min' | 'mean' | 'max', depth.value, fromDate, toDate
+    sensorInfo.value.id, variable.value, primaryStat.value as 'min' | 'mean' | 'max', depth.value, fromDate, toDate,
+    isVariableDepth.value ? mainStore.selected_variable.source : null
   )
 }
 
@@ -394,7 +397,7 @@ function currentSignature(): string {
 
 function scheduleAutoRun() {
   if (!props.active) return
-  if (!sensorInfo.value || !variable.value || depth.value == null || isVariableDepth.value) return
+  if (!sensorInfo.value || !variable.value || depth.value == null) return
   const sig = currentSignature()
   if (sig === lastFetchSignature) return
   if (autoRunTimer) clearTimeout(autoRunTimer)
