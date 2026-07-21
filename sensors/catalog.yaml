@@ -536,6 +536,7 @@ sensors:
   #   - "temperature:temperature:C:1.0"
   #   - "salinity:salinity:PSU:1.0"
 
+  # ── ERDDAP Hakai
   - name: "Seawater Carbon Dioxide (CO2) Content from the Burke-o-Lator pCO2/TCO2 analyzer located at the Hakai Institute\u2019s Quadra Island Field Station, Hyacinthe Bay, BC, Canada (Research)"
     lat: 50.116
     lon: -125.222
@@ -597,3 +598,16 @@ sensors:
     - "depth:pressure:dbar:1.0"  # pressure axis — converted to depth at ingestion
     - "dissolved_oxygen:dissolved_o2:ml/L:1.0"  # source unit: mL/L — check factor!
     - "temperature:temperature:C:1.0"
+
+  # ── ERDDAP University of Washington
+  - name: "ORCA1 - Twanoh: L3 Depth Gridded Data - 0.25 meter"
+    lat: 0.0
+    lon: 0.0
+    depth: -1
+    api: ERDDAP
+    organization: 
+    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/orca1_L3_depthgridded_025"
+    variables:
+    - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
+    - "salinity:sea_water_practical_salinity:PSU:1.0"
+    - "temperature:sea_water_temperature:C:1.0"
