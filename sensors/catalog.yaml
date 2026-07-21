@@ -608,6 +608,7 @@ sensors:
     organization: University of Washington
     source_link: "https://nwem.apl.uw.edu/erddap/griddap/orca1_L3_depthgridded_025"
     variables:
+    - "time:cast_start_time::1.0"
     - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
     - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"
     - "salinity:sea_water_practical_salinity:PSU:1.0"
