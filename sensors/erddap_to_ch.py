@@ -70,7 +70,8 @@ def get_active_erddap_sensors(ch_client, sensor_id_filter: str | None) -> list[d
 def get_last_stored_time(ch_client, sensor_id: str, canonical: str) -> datetime | None:
     rows = ch_client.query(
         "SELECT max(time) FROM sensor_timeseries "
-        f"WHERE sensor_id = '{sensor_id}' AND variable = '{canonical}'"
+        f"WHERE sensor_id = '{sensor_id}' AND variable = '{canonical}' "
+        "HAVING count() > 0"
     ).result_rows
     if rows and rows[0][0]:
         dt = rows[0][0]
