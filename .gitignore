@@ -57,6 +57,7 @@ data.tar.gz
 
 # === Docker / CI / Editor ===
 .dockerignore
+docker-compose.yml
 docker-compose.override.yml
 .vscode/
 .idea/
