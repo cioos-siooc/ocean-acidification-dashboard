@@ -637,9 +637,25 @@ function updateLineChart() {
         return s
       },
     },
-    grid: { left: '8%', right: '2%', bottom: '14%', top: '10%', containLabel: true },
-    xAxis: { type: 'time', boundaryGap: false, axisLabel: { fontSize: 9, color: '#ccc' } },
-    yAxis: { type: 'value', axisLabel: { fontSize: 9, color: '#ccc' }, min: 'dataMin', max: 'dataMax' },
+    // Same fixed left/right pixel margins as the 3 heatmap panels above (AXIS_LEFT_PX /
+    // DATAZOOM_RIGHT_PX), and an explicit min/max spanning the exact window bounds rather
+    // than the data's min/max timestamp — otherwise this panel's x-axis (percent-based
+    // margins, auto-fit to the data extent) drifts out of alignment with the heatmaps'
+    // (fixed-pixel margins, axis domain fixed to [0, WINDOW_HOURS]) as the plot area widths
+    // differ and the last data point sits one hour bin short of windowEnd.
+    grid: { left: AXIS_LEFT_PX, right: DATAZOOM_RIGHT_PX, bottom: 22, top: 10 },
+    xAxis: {
+      type: 'time', boundaryGap: false,
+      min: windowStart.value.getTime(), max: windowEnd.value.getTime(),
+      axisLabel: { fontSize: 9, color: '#ccc' },
+    },
+    // Unrounded axisLabel text (e.g. "20.86674690246582") is far wider than the heatmaps'
+    // "159m"-style labels, so it doesn't fit the shared fixed AXIS_LEFT_PX and pushes this
+    // panel's plot area right of the heatmaps' — round to keep the label width comparable.
+    yAxis: {
+      type: 'value', min: 'dataMin', max: 'dataMax',
+      axisLabel: { fontSize: 9, color: '#ccc', formatter: (v: number) => v.toFixed(1) },
+    },
     series: [
       { name: 'Model', type: 'line', data: model, symbol: 'none', lineStyle: { color: '#ff9800', width: 1.6 } },
       { name: 'Sensor', type: 'line', data: sensor, symbol: 'none', connectNulls: false, lineStyle: { color: '#a5d6a7', width: 1.6 } },
