@@ -601,12 +601,12 @@ sensors:
 
   # ── ERDDAP University of Washington
   - name: "ORCA1 - Twanoh: L3 Depth Gridded Data - 0.25 meter"
-    lat: 0.0
-    lon: 0.0
+    lat: 47.375
+    lon: -123.00833333
     depth: -1
     api: ERDDAP
     organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/orca1_L3_depthgridded_025"
+    source_link: "https://nwem.apl.uw.edu/erddap/griddap/orca1_L3_depthgridded_025"
     variables:
     - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
     - "salinity:sea_water_practical_salinity:PSU:1.0"
