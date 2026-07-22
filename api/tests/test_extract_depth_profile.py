@@ -159,3 +159,85 @@ def test_unknown_variable_raises(monkeypatch):
             source='SalishSeaCast', var='not_a_variable', sensor_id='abc',
             lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-01-01T01:59:59',
         )
+
+
+def test_unsupported_bin_hours_raises(monkeypatch):
+    _patch(monkeypatch, FakeClient(grid_row=GRID_ROW))
+
+    with pytest.raises(ValueError, match="Unsupported bin_hours"):
+        extract_depth_profile(
+            source='SalishSeaCast', var='temperature', sensor_id='abc',
+            lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-01-01T01:59:59',
+            bin_hours=3,
+        )
+
+
+def test_bin_hours_6_buckets_model_and_sensor(monkeypatch):
+    # NOTE: extractTimeseries._get_depth_levels caches by table name at module scope,
+    # so once test_happy_path_grids_shape_and_values (above) has run in this process,
+    # every later test sharing source='SalishSeaCast' gets that cached DEPTHS list
+    # regardless of its own `depths=` fixture — hence reusing DEPTHS here too.
+    #
+    # model_rows simulate ClickHouse's toStartOfInterval(..., INTERVAL 6 HOUR) GROUP BY
+    # output — one pre-aggregated row per (bucket, depth), same shape the FakeClient
+    # already returns unconditionally for the model query.
+    six_hour_model_rows = [
+        (datetime(2026, 1, 1, 0), 0.0, 9.0),
+        (datetime(2026, 1, 1, 0), 5.0, 8.0),
+        (datetime(2026, 1, 1, 0), 10.0, 7.0),
+        (datetime(2026, 1, 1, 6), 0.0, 9.5),
+        (datetime(2026, 1, 1, 6), 5.0, 8.5),
+        (datetime(2026, 1, 1, 6), 10.0, 7.5),
+    ]
+    sensor_rows = [
+        (datetime(2026, 1, 1, 1, 30), 0.2, 9.1),   # bucket [00:00, 06:00), nearest level 0.0
+        (datetime(2026, 1, 1, 5, 45), 0.1, 9.3),   # bucket [00:00, 06:00) -> grouped with above
+        (datetime(2026, 1, 1, 7, 0), 4.9, 8.6),    # bucket [06:00, 12:00), nearest level 5.0
+    ]
+    fake = FakeClient(grid_row=GRID_ROW, depths=DEPTHS, model_rows=six_hour_model_rows, sensor_rows=sensor_rows)
+    _patch(monkeypatch, fake)
+
+    result = extract_depth_profile(
+        source='SalishSeaCast', var='temperature', sensor_id='abc',
+        lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-01-01T11:59:59',
+        bin_hours=6,
+    )
+
+    assert result['time'] == ['2026-01-01T00:00:00', '2026-01-01T06:00:00']
+    assert result['model'] == [[9.0, 9.5], [8.0, 8.5], [7.0, 7.5]]
+    # depth 0.0: two casts in bucket0 -> median(9.1, 9.3) picks the upper of the pair
+    # (existing values[len//2] behavior for even-length groups); none in bucket1.
+    assert result['sensor'][0] == [9.3, None]
+    # depth 5.0: none in bucket0; one cast (nearest-level snapped) in bucket1.
+    assert result['sensor'][1] == [None, 8.6]
+    # depth 10.0: no casts landed near this level in either bucket.
+    assert result['sensor'][2] == [None, None]
+
+
+def test_bin_hours_24_daily_buckets(monkeypatch):
+    daily_model_rows = [
+        (datetime(2026, 1, 1, 0), 0.0, 9.0),
+        (datetime(2026, 1, 1, 0), 5.0, 8.0),
+        (datetime(2026, 1, 1, 0), 10.0, 7.0),
+        (datetime(2026, 1, 2, 0), 0.0, 9.2),
+        (datetime(2026, 1, 2, 0), 5.0, 8.2),
+        (datetime(2026, 1, 2, 0), 10.0, 7.2),
+    ]
+    sensor_rows = [
+        (datetime(2026, 1, 1, 14, 0), 0.0, 9.05),  # falls within day 1
+        (datetime(2026, 1, 2, 3, 0), 0.0, 9.25),   # falls within day 2
+    ]
+    fake = FakeClient(grid_row=GRID_ROW, depths=DEPTHS, model_rows=daily_model_rows, sensor_rows=sensor_rows)
+    _patch(monkeypatch, fake)
+
+    result = extract_depth_profile(
+        source='SalishSeaCast', var='temperature', sensor_id='abc',
+        lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-01-02T23:59:59',
+        bin_hours=24,
+    )
+
+    assert result['time'] == ['2026-01-01T00:00:00', '2026-01-02T00:00:00']
+    assert result['model'] == [[9.0, 9.2], [8.0, 8.2], [7.0, 7.2]]
+    assert result['sensor'][0] == [9.05, 9.25]
+    assert result['sensor'][1] == [None, None]
+    assert result['sensor'][2] == [None, None]

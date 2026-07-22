@@ -1,7 +1,11 @@
 <template>
   <div class="depth-profile d-flex flex-column flex-grow-1" ref="rootRef">
     <div class="d-flex align-center mb-2" style="gap:8px;">
-      <span class="ctrl-label">Bounded window &#183; hourly bins</span>
+      <v-btn-toggle v-model="binMode" mandatory variant="tonal" density="compact" :disabled="loading" class="bin-mode-toggle">
+        <v-btn value="hourly" size="x-small" :title="BIN_CONFIG.hourly.label">1H</v-btn>
+        <v-btn value="6h" size="x-small" :title="BIN_CONFIG['6h'].label">6H</v-btn>
+        <v-btn value="daily" size="x-small" :title="BIN_CONFIG.daily.label">1D</v-btn>
+      </v-btn-toggle>
       <v-progress-circular v-if="loading" indeterminate size="14" width="2" color="teal" />
       <v-spacer />
       <v-btn icon="mdi-chevron-left" size="x-small" variant="text" :disabled="!canPageBack || loading" @click="page(-1)" />
@@ -135,10 +139,24 @@ const source = computed(() => mainStore.selected_variable.source)
 const varId = computed(() => mainStore.selected_variable.var)
 
 // ── REAL DATA — POST /depthProfile, one bounded window at a time. ──────────────────────
-const WINDOW_HOURS = 336  // 14-day visible window, matching dfnDays (main.ts) used by the regular sensor Timeseries chart
-const STEP_HOURS = WINDOW_HOURS  // page by a full window, so prev/next moves to the entirely next/previous 14 days
+// Each bin resolution carries its own window length so bin *count* stays roughly
+// constant (~336-365) across modes regardless of bin width — see the progressive:false
+// note in baseOption() for why that invariant matters for render cost.
+type BinMode = 'hourly' | '6h' | 'daily'
+const BIN_CONFIG: Record<BinMode, { hours: 1 | 6 | 24; windowDays: number; gridlineBins: number; label: string }> = {
+  hourly: { hours: 1, windowDays: 14, gridlineBins: 24, label: 'Hourly bins · 14-day window' },
+  '6h': { hours: 6, windowDays: 91, gridlineBins: 28, label: '6-hour bins · 3-month window' },
+  daily: { hours: 24, windowDays: 365, gridlineBins: 30, label: 'Daily bins · 1-year window' },
+}
+const binMode = ref<BinMode>('hourly')
+const binHours = computed(() => BIN_CONFIG[binMode.value].hours)
+const windowHours = computed(() => BIN_CONFIG[binMode.value].windowDays * 24)
+const binCount = computed(() => windowHours.value / binHours.value)
 
-function floorHourUTC(d: Date) { const c = new Date(d); c.setUTCMinutes(0, 0, 0); return c }
+function floorToBin(d: Date, hours: number) {
+  const ms = hours * 3600e3
+  return new Date(Math.floor(d.getTime() / ms) * ms)
+}
 function toApiIso(d: Date) { return d.toISOString().slice(0, 19) + 'Z' }
 
 interface Grid { model: (number | null)[][]; sensor: (number | null)[][] }
@@ -147,32 +165,42 @@ const loading = ref(false)
 const loadError = ref<string | null>(null)
 
 // ── WINDOW PAGING ──────────────────────────────────────────────────────────────────────
-const windowEnd = ref<Date>(floorHourUTC(new Date()))
-const windowStart = computed(() => new Date(windowEnd.value.getTime() - WINDOW_HOURS * 3600e3))
+const windowEnd = ref<Date>(floorToBin(new Date(), 1))
+const windowStart = computed(() => new Date(windowEnd.value.getTime() - windowHours.value * 3600e3))
 
-const dataFloor = computed(() => sensorMeta.value?.first_data_at ? floorHourUTC(new Date(sensorMeta.value.first_data_at)) : null)
-const dataCeil = computed(() => floorHourUTC(sensorMeta.value?.latest_data_at ? new Date(sensorMeta.value.latest_data_at) : new Date()))
+const dataFloor = computed(() => sensorMeta.value?.first_data_at ? floorToBin(new Date(sensorMeta.value.first_data_at), binHours.value) : null)
+const dataCeil = computed(() => floorToBin(sensorMeta.value?.latest_data_at ? new Date(sensorMeta.value.latest_data_at) : new Date(), binHours.value))
 
 const canPageBack = computed(() => !dataFloor.value || windowStart.value.getTime() > dataFloor.value.getTime())
 const canPageForward = computed(() => windowEnd.value.getTime() < dataCeil.value.getTime())
 
 function clampWindowEnd(proposed: Date) {
   const ceil = dataCeil.value.getTime()
-  const floor = dataFloor.value ? dataFloor.value.getTime() + WINDOW_HOURS * 3600e3 : -Infinity
+  const floor = dataFloor.value ? dataFloor.value.getTime() + windowHours.value * 3600e3 : -Infinity
   if (proposed.getTime() > ceil) return new Date(ceil)
   if (proposed.getTime() < floor) return new Date(floor)
   return proposed
 }
 
 function page(dir: number) {
-  windowEnd.value = clampWindowEnd(new Date(windowEnd.value.getTime() + dir * STEP_HOURS * 3600e3))
+  windowEnd.value = clampWindowEnd(new Date(windowEnd.value.getTime() + dir * windowHours.value * 3600e3))
 }
 
+// Switching bin mode resets the window to "latest" rather than trying to preserve the
+// prior window's center — simpler, and consistent with how every other context change
+// here (sensor/source/variable) already behaves.
 function resetWindowToLatest() { windowEnd.value = dataCeil.value }
-watch([sensorId, source, varId], resetWindowToLatest, { immediate: true })
+watch([sensorId, source, varId, binMode], resetWindowToLatest, { immediate: true })
 
+// A plain month/day label was unambiguous while the window was always a 14-day span
+// within one year, but the 6h/daily modes' 3-month/1-year windows can span a year
+// boundary (or land almost exactly a year apart), where "Jul 22 – Jul 22" would
+// misread as a zero-length window — include the year once it's no longer implied.
 const rangeLabel = computed(() => {
-  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+  const crossesYear = windowStart.value.getUTCFullYear() !== windowEnd.value.getUTCFullYear()
+  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', timeZone: 'UTC' }
+  if (crossesYear || binMode.value !== 'hourly') opts.year = 'numeric'
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', opts)
   return `${fmt(windowStart.value)} – ${fmt(windowEnd.value)}`
 })
 
@@ -190,7 +218,7 @@ const maxDateStr = computed(() => dataCeil.value.toISOString().slice(0, 10))
 // local-side getters/constructor when talking to the picker — so the visible day never drifts.
 watch(dateMenuOpen, (open) => {
   if (!open) return
-  const centerInstant = new Date(windowStart.value.getTime() + (WINDOW_HOURS / 2) * 3600e3)
+  const centerInstant = new Date(windowStart.value.getTime() + (windowHours.value / 2) * 3600e3)
   pickedDate.value = new Date(centerInstant.getUTCFullYear(), centerInstant.getUTCMonth(), centerInstant.getUTCDate())
 })
 
@@ -198,7 +226,7 @@ function confirmDatePick() {
   if (pickedDate.value) {
     const d = pickedDate.value
     const centerUTC = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
-    windowEnd.value = clampWindowEnd(new Date(centerUTC.getTime() + (WINDOW_HOURS / 2) * 3600e3))
+    windowEnd.value = clampWindowEnd(new Date(centerUTC.getTime() + (windowHours.value / 2) * 3600e3))
   }
   dateMenuOpen.value = false
 }
@@ -215,18 +243,19 @@ function applyResponse(resp: DepthProfileResponse) {
   resp.time.forEach((iso, i) => timeIndex.set(new Date(iso.endsWith('Z') ? iso : iso + 'Z').getTime(), i))
 
   const ds = depths.value
-  const model: (number | null)[][] = ds.map(() => Array(WINDOW_HOURS).fill(null))
-  const sensor: (number | null)[][] = ds.map(() => Array(WINDOW_HOURS).fill(null))
+  const model: (number | null)[][] = ds.map(() => Array(binCount.value).fill(null))
+  const sensor: (number | null)[][] = ds.map(() => Array(binCount.value).fill(null))
   const winStartMs = windowStart.value.getTime()
+  const binMs = binHours.value * 3600e3
 
   ds.forEach((d, li) => {
     const ri = resp.depths.length ? nearestLevelIdx(d, resp.depths) : null
     if (ri === null) return
-    for (let hw = 0; hw < WINDOW_HOURS; hw++) {
-      const ti = timeIndex.get(winStartMs + hw * 3600e3)
+    for (let bi = 0; bi < binCount.value; bi++) {
+      const ti = timeIndex.get(winStartMs + bi * binMs)
       if (ti == null) continue
-      model[li][hw] = resp.model[ri]?.[ti] ?? null
-      sensor[li][hw] = resp.sensor[ri]?.[ti] ?? null
+      model[li][bi] = resp.model[ri]?.[ti] ?? null
+      sensor[li][bi] = resp.sensor[ri]?.[ti] ?? null
     }
   })
   grid.value = { model, sensor }
@@ -248,6 +277,7 @@ async function fetchWindow() {
       lon: meta.longitude,
       fromDate: toApiIso(windowStart.value),
       toDate: toApiIso(windowEnd.value),
+      binHours: binHours.value,
     })
     if (reqId !== fetchSeq) return
     applyResponse(resp)
@@ -255,13 +285,13 @@ async function fetchWindow() {
     if (reqId !== fetchSeq) return
     loadError.value = err?.response?.data?.detail || err?.message || 'Failed to load depth profile.'
     const ds = depths.value
-    grid.value = { model: ds.map(() => Array(WINDOW_HOURS).fill(null)), sensor: ds.map(() => Array(WINDOW_HOURS).fill(null)) }
+    grid.value = { model: ds.map(() => Array(binCount.value).fill(null)), sensor: ds.map(() => Array(binCount.value).fill(null)) }
   } finally {
     if (reqId === fetchSeq) loading.value = false
     refreshCharts()
   }
 }
-watch([windowEnd, depths], fetchWindow, { immediate: true })
+watch([windowEnd, depths, binMode], fetchWindow, { immediate: true })
 
 // ── SCALES — depth uses a sqrt scale so shallow levels (where most of the interesting
 // variability lives) get more vertical resolution than the compressed deep levels. ─────
@@ -373,7 +403,7 @@ function colorFor(which: Which, v: number) {
   return rgbCss(which === 'diff' ? divColor(v) : seqColor(v))
 }
 
-// one data row per (depth bin, hour): [hour, centerFrac, topFrac, bottomFrac, value, depthIdx]
+// one data row per (depth bin, time bin): [binIdx, centerFrac, topFrac, bottomFrac, value, depthIdx]
 function buildSeriesData(which: Which) {
   const ds = depths.value
   const b = bounds.value
@@ -381,8 +411,8 @@ function buildSeriesData(which: Which) {
   ds.forEach((_, d) => {
     const top = b[d]!, bottom = b[d + 1]!
     const center = (top + bottom) / 2
-    for (let h = 0; h < WINDOW_HOURS; h++) {
-      data.push([h, center, top, bottom, cellValue(which, d, h), d])
+    for (let bi = 0; bi < binCount.value; bi++) {
+      data.push([bi, center, top, bottom, cellValue(which, d, bi), d])
     }
   })
   return data
@@ -424,14 +454,14 @@ function baseOption(which: Which): echarts.EChartsOption {
     animation: false,
     grid: { left: AXIS_LEFT_PX, right: DATAZOOM_RIGHT_PX, top: 6, bottom: isBottom ? 20 : 6 },
     xAxis: {
-      type: 'value', min: 0, max: WINDOW_HOURS, interval: 24,
+      type: 'value', min: 0, max: binCount.value, interval: BIN_CONFIG[binMode.value].gridlineBins,
       axisLine: { lineStyle: { color: 'rgba(255,255,255,0.25)' } },
       axisTick: { show: false },
       splitLine: { show: false },
       axisLabel: isBottom
         ? {
             fontSize: 9.5, color: 'rgba(255,255,255,0.4)',
-            formatter: (val: number) => new Date(windowStart.value.getTime() + val * 3600e3).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            formatter: (val: number) => new Date(windowStart.value.getTime() + val * binHours.value * 3600e3).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           }
         : { show: false },
     },
@@ -459,15 +489,17 @@ function baseOption(which: Which): echarts.EChartsOption {
     series: [{
       type: 'custom',
       clip: true,
-      // one panel's worth of cells (depths × WINDOW_HOURS) comfortably exceeds ECharts'
+      // one panel's worth of cells (depths × binCount) comfortably exceeds ECharts'
       // default progressive-rendering threshold for custom series, which otherwise paints
       // only the first chunk (the shallowest depth bins, since data is ordered depth-major)
       // and silently never finishes the rest. A plain rect-per-cell render is cheap enough
-      // to just do in one pass.
+      // to just do in one pass — this holds across all 3 bin modes since each mode's window
+      // length was chosen specifically to keep binCount capped at ~365, never the "thousands
+      // of cells" scale this cliff would actually bite at.
       progressive: false,
       renderItem: makeRenderItem(which),
-      dimensions: ['hour', 'centerFrac', 'topFrac', 'bottomFrac', 'value', 'depthIdx'],
-      encode: { x: 'hour', y: 'centerFrac' },
+      dimensions: ['bin', 'centerFrac', 'topFrac', 'bottomFrac', 'value', 'depthIdx'],
+      encode: { x: 'bin', y: 'centerFrac' },
       data: buildSeriesData(which),
       markLine: {
         symbol: 'none', silent: true, animation: false,
@@ -491,17 +523,17 @@ const hoverInfo = ref<HoverInfo | null>(null)
 function formatCellValue(v: number | null) { return v == null ? 'no cast' : v.toFixed(2) }
 
 function handleChartMouseMove(chart: echarts.ECharts, x: number, y: number) {
-  const [hourVal, fracVal] = chart.convertFromPixel({ xAxisIndex: 0, yAxisIndex: 0 }, [x, y]) as [number, number]
-  if (hourVal < 0 || hourVal >= WINDOW_HOURS || fracVal < 0 || fracVal > 1) { hoverInfo.value = null; return }
-  const hour = Math.floor(hourVal)
+  const [binVal, fracVal] = chart.convertFromPixel({ xAxisIndex: 0, yAxisIndex: 0 }, [x, y]) as [number, number]
+  if (binVal < 0 || binVal >= binCount.value || fracVal < 0 || fracVal > 1) { hoverInfo.value = null; return }
+  const bin = Math.floor(binVal)
   const depthIdx = nearestLevelIdx(fracToDepth(fracVal), depths.value)
-  const dt = new Date(windowStart.value.getTime() + hour * 3600e3)
-  const mv = grid.value.model[depthIdx]?.[hour] ?? null
-  const sv = grid.value.sensor[depthIdx]?.[hour] ?? null
+  const dt = new Date(windowStart.value.getTime() + bin * binHours.value * 3600e3)
+  const mv = grid.value.model[depthIdx]?.[bin] ?? null
+  const sv = grid.value.sensor[depthIdx]?.[bin] ?? null
   const dv = (mv == null || sv == null) ? null : mv - sv
   const depth = depths.value[depthIdx]
   hoverInfo.value = {
-    dt: dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric' }),
+    dt: dt.toLocaleString('en-US', binMode.value === 'daily' ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', hour: 'numeric' }),
     depth: depth != null ? `${depth.toFixed(depth < 10 ? 1 : 0)}m` : '—',
     model: formatCellValue(mv),
     sensor: formatCellValue(sv),
@@ -533,9 +565,14 @@ function initCharts() {
 }
 
 function updateChartsData() {
-  modelChart?.setOption({ series: [{ data: buildSeriesData('model') }] })
-  sensorChart?.setOption({ series: [{ data: buildSeriesData('sensor') }] })
-  diffChart?.setOption({ series: [{ data: buildSeriesData('diff') }] })
+  // xAxis.max/interval were baked into each chart's option at initCharts() time from
+  // whatever binCount/gridlineBins were current then — re-patch them here (cheap, and
+  // ECharts merges partial setOption calls) so a bin-mode switch actually rescales the
+  // x-axis instead of clipping the new, differently-sized series to the old range.
+  const xAxisPatch = { xAxis: { max: binCount.value, interval: BIN_CONFIG[binMode.value].gridlineBins } }
+  modelChart?.setOption({ ...xAxisPatch, series: [{ data: buildSeriesData('model') }] })
+  sensorChart?.setOption({ ...xAxisPatch, series: [{ data: buildSeriesData('sensor') }] })
+  diffChart?.setOption({ ...xAxisPatch, series: [{ data: buildSeriesData('diff') }] })
 }
 
 function updateMarkLines() {
@@ -597,15 +634,16 @@ function updateLineChart() {
   const model: [number, number | null][] = []
   const sensor: [number, number | null][] = []
   const winStartMs = windowStart.value.getTime()
-  for (let hw = 0; hw < WINDOW_HOURS; hw++) {
-    const t = winStartMs + hw * 3600e3
-    model.push([t, grid.value.model[d]?.[hw] ?? null])
-    sensor.push([t, grid.value.sensor[d]?.[hw] ?? null])
+  const binMs = binHours.value * 3600e3
+  for (let bi = 0; bi < binCount.value; bi++) {
+    const t = winStartMs + bi * binMs
+    model.push([t, grid.value.model[d]?.[bi] ?? null])
+    sensor.push([t, grid.value.sensor[d]?.[bi] ?? null])
   }
 
   let n = 0, sumDiff = 0, sumSqDiff = 0, sm = 0, ss = 0, smm = 0, sss = 0, sms = 0
-  for (let hw = 0; hw < WINDOW_HOURS; hw++) {
-    const sv = sensor[hw][1]; const mv = model[hw][1]
+  for (let bi = 0; bi < binCount.value; bi++) {
+    const sv = sensor[bi][1]; const mv = model[bi][1]
     if (sv == null || mv == null) continue
     n++
     const diff = mv - sv
@@ -641,8 +679,8 @@ function updateLineChart() {
     // DATAZOOM_RIGHT_PX), and an explicit min/max spanning the exact window bounds rather
     // than the data's min/max timestamp — otherwise this panel's x-axis (percent-based
     // margins, auto-fit to the data extent) drifts out of alignment with the heatmaps'
-    // (fixed-pixel margins, axis domain fixed to [0, WINDOW_HOURS]) as the plot area widths
-    // differ and the last data point sits one hour bin short of windowEnd.
+    // (fixed-pixel margins, axis domain fixed to [0, binCount]) as the plot area widths
+    // differ and the last data point sits one bin short of windowEnd.
     grid: { left: AXIS_LEFT_PX, right: DATAZOOM_RIGHT_PX, bottom: 22, top: 10 },
     xAxis: {
       type: 'time', boundaryGap: false,

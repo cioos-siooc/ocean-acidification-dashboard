@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import List, Optional, Tuple
+from typing import List, Literal, Optional, Tuple
 from functools import partial
 import contextvars
 import os
@@ -436,17 +436,18 @@ class depthProfileRequest(BaseModel):
     lon: float
     fromDate: str
     toDate: str
+    binHours: Literal[1, 6, 24] = 1
 
 @app.post("/depthProfile")
 async def get_depth_profile(request: depthProfileRequest, http_request: Request):
     """Bin a variable-depth sensor's raw casts onto the model's depth levels
-    and hourly time buckets, alongside the model's own values at that grid —
-    the Comparison tab's Depth Profile (Hovmöller) view.
+    and time buckets at the requested resolution, alongside the model's own
+    values at that grid — the Comparison tab's Depth Profile (Hovmöller) view.
 
     Response: { time: [iso...], depths: [float...], model: [[float,...],...],
                 sensor: [[float|null,...],...] }  — both grids depths x time.
     """
-    logger.info(f"START depthProfile: {request.source}, {request.var}, sensor={request.sensorId}, from={request.fromDate}, to={request.toDate}")
+    logger.info(f"START depthProfile: {request.source}, {request.var}, sensor={request.sensorId}, from={request.fromDate}, to={request.toDate}, binHours={request.binHours}")
     try:
         await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
     except (asyncio.TimeoutError, Exception):
@@ -464,13 +465,14 @@ async def get_depth_profile(request: depthProfileRequest, http_request: Request)
                 lon=request.lon,
                 from_date=request.fromDate,
                 to_date=request.toDate,
+                bin_hours=request.binHours,
             ),
             timeout=THREADPOOL_TIMEOUT,
         )
-        logger.info(f"FINISH depthProfile: {request.var}, sensor={request.sensorId} - returned {len(result.get('depths', []))} depths x {len(result.get('time', []))} hours")
+        logger.info(f"FINISH depthProfile: {request.var}, sensor={request.sensorId} - returned {len(result.get('depths', []))} depths x {len(result.get('time', []))} bins")
         capture_event(client_distinct_id(http_request), "depth_profile", {
             "sensorId": request.sensorId, "source": request.source, "var": request.var,
-            "fromDate": request.fromDate, "toDate": request.toDate,
+            "fromDate": request.fromDate, "toDate": request.toDate, "binHours": request.binHours,
         })
         return result
     except HTTPException:
