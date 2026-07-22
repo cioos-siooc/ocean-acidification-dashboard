@@ -3,7 +3,6 @@
     <div class="d-flex align-center mb-2" style="gap:8px;">
       <v-btn-toggle v-model="binMode" mandatory variant="tonal" density="compact" :disabled="loading" class="bin-mode-toggle">
         <v-btn value="hourly" size="x-small" :title="BIN_CONFIG.hourly.label">1H</v-btn>
-        <v-btn value="6h" size="x-small" :title="BIN_CONFIG['6h'].label">6H</v-btn>
         <v-btn value="daily" size="x-small" :title="BIN_CONFIG.daily.label">1D</v-btn>
       </v-btn-toggle>
       <v-progress-circular v-if="loading" indeterminate size="14" width="2" color="teal" />
@@ -142,10 +141,9 @@ const varId = computed(() => mainStore.selected_variable.var)
 // Each bin resolution carries its own window length so bin *count* stays roughly
 // constant (~336-365) across modes regardless of bin width — see the progressive:false
 // note in baseOption() for why that invariant matters for render cost.
-type BinMode = 'hourly' | '6h' | 'daily'
-const BIN_CONFIG: Record<BinMode, { hours: 1 | 6 | 24; windowDays: number; gridlineBins: number; label: string }> = {
+type BinMode = 'hourly' | 'daily'
+const BIN_CONFIG: Record<BinMode, { hours: 1 | 24; windowDays: number; gridlineBins: number; label: string }> = {
   hourly: { hours: 1, windowDays: 14, gridlineBins: 24, label: 'Hourly bins · 14-day window' },
-  '6h': { hours: 6, windowDays: 91, gridlineBins: 28, label: '6-hour bins · 3-month window' },
   daily: { hours: 24, windowDays: 365, gridlineBins: 30, label: 'Daily bins · 1-year window' },
 }
 const binMode = ref<BinMode>('hourly')
@@ -193,9 +191,9 @@ function resetWindowToLatest() { windowEnd.value = dataCeil.value }
 watch([sensorId, source, varId, binMode], resetWindowToLatest, { immediate: true })
 
 // A plain month/day label was unambiguous while the window was always a 14-day span
-// within one year, but the 6h/daily modes' 3-month/1-year windows can span a year
-// boundary (or land almost exactly a year apart), where "Jul 22 – Jul 22" would
-// misread as a zero-length window — include the year once it's no longer implied.
+// within one year, but daily mode's 1-year window can span a year boundary (or land
+// almost exactly a year apart), where "Jul 22 – Jul 22" would misread as a
+// zero-length window — include the year once it's no longer implied.
 const rangeLabel = computed(() => {
   const crossesYear = windowStart.value.getUTCFullYear() !== windowEnd.value.getUTCFullYear()
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', timeZone: 'UTC' }
@@ -226,7 +224,13 @@ function confirmDatePick() {
   if (pickedDate.value) {
     const d = pickedDate.value
     const centerUTC = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
-    windowEnd.value = clampWindowEnd(new Date(centerUTC.getTime() + (windowHours.value / 2) * 3600e3))
+    // windowHours/2 isn't necessarily a whole number of bins (e.g. daily mode's 365-day
+    // window halves to 182.5 days), so centering naively can land windowEnd mid-bin —
+    // applyResponse() matches cells by exact timestamp against the backend's bin-aligned
+    // strings, so an unaligned windowEnd/windowStart makes every lookup miss and the
+    // whole chart render empty despite a valid response. Re-floor after centering.
+    const proposed = new Date(centerUTC.getTime() + (windowHours.value / 2) * 3600e3)
+    windowEnd.value = clampWindowEnd(floorToBin(proposed, binHours.value))
   }
   dateMenuOpen.value = false
 }
@@ -259,6 +263,7 @@ function applyResponse(resp: DepthProfileResponse) {
     }
   })
   grid.value = { model, sensor }
+  recomputeColorDomain(grid.value)
 }
 
 let fetchSeq = 0
@@ -358,8 +363,15 @@ function divColor(v: number) {
   return t <= 0 ? lerpRgb(DIV_MID, DIV_NEG, -t) : lerpRgb(DIV_MID, DIV_POS, t)
 }
 
-// recompute magnitude/diff ranges whenever the grid changes, so the ramps track real data
-watch(grid, (g) => {
+// Recompute magnitude/diff ranges whenever the grid changes, so the ramps track real data.
+// Called synchronously right where `grid.value` is assigned (applyResponse below) rather
+// than via a `watch(grid, ...)` — a watcher fires on the next microtask, which is too late:
+// refreshCharts()/updateChartsData() runs synchronously right after grid is set (in
+// fetchWindow's `finally`) and reads seqMin/seqMax while painting each cell, so it would
+// still see the *previous* window's range and paint stale colors until some unrelated later
+// setOption call (e.g. clicking a cell, which patches markLine) incidentally repainted with
+// the by-then-updated range.
+function recomputeColorDomain(g: { model: (number | null)[][]; sensor: (number | null)[][] }) {
   if (!g.model.length) return
   let lo = Infinity, hi = -Infinity, dLo = Infinity, dHi = -Infinity
   g.model.forEach((row, d) => row.forEach((mv, h) => {
@@ -371,7 +383,7 @@ watch(grid, (g) => {
   if (lo === Infinity) return
   seqMin.value = lo; seqMax.value = hi
   divRange.value = Math.max(0.3, Math.max(-dLo, dHi))
-})
+}
 
 // ── HEATMAP PANELS (ECharts, one instance per panel) — a real ECharts chart per panel is
 // what lets us use its native `dataZoom` (slider + scroll/drag) for the depth axis, with

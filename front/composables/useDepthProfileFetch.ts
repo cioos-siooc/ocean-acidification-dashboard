@@ -16,7 +16,7 @@ export type DepthProfileFetchParams = {
     lon: number;
     fromDate: string;  // ISO-8601
     toDate: string;    // ISO-8601
-    binHours: 1 | 6 | 24;
+    binHours: 1 | 24;
 };
 
 /** POSTs to /depthProfile — a profiler sensor's raw casts binned onto the model's own depth levels and time buckets of the requested resolution, for one bounded window. */

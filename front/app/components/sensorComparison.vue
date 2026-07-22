@@ -370,6 +370,11 @@ async function loadData() {
 
 // --- WATCHERS ---
 watch([selectedSensor, variable, depth], () => {
+  // While the Advanced dialog is open, this outer panel is hidden behind it and depth
+  // picks in the Depth Profile heatmap fire this watcher on every single click — reload
+  // once when the dialog closes instead (see the advancedOpen watcher below).
+  if (advancedOpen.value) return
+
   hasData.value = false
   rawComparisonData.value = []
   errorMessage.value = null
@@ -382,6 +387,13 @@ watch([selectedSensor, variable, depth], () => {
 
 watch(() => props.active, (active) => {
   if (!active) return
+  if (!sensorInfo.value || depth.value == null) return
+  const sig = currentSignature()
+  if (sig !== lastLoadedSig && !isLoading.value) loadData()
+})
+
+watch(advancedOpen, (open) => {
+  if (open) return
   if (!sensorInfo.value || depth.value == null) return
   const sig = currentSignature()
   if (sig !== lastLoadedSig && !isLoading.value) loadData()

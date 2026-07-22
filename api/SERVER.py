@@ -436,7 +436,7 @@ class depthProfileRequest(BaseModel):
     lon: float
     fromDate: str
     toDate: str
-    binHours: Literal[1, 6, 24] = 1
+    binHours: Literal[1, 24] = 1
 
 @app.post("/depthProfile")
 async def get_depth_profile(request: depthProfileRequest, http_request: Request):

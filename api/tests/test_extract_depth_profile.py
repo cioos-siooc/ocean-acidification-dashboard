@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 
@@ -11,11 +11,12 @@ class FakeResult:
 
 
 class FakeClient:
-    def __init__(self, grid_row=None, depths=None, model_rows=None, sensor_rows=None):
+    def __init__(self, grid_row=None, depths=None, model_rows=None, sensor_rows=None, daily_rows=None):
         self.grid_row = grid_row
         self.depths = depths or []
         self.model_rows = model_rows or []
         self.sensor_rows = sensor_rows or []
+        self.daily_rows = daily_rows or []
         self.closed = False
 
     def query(self, query, parameters=None):
@@ -26,6 +27,8 @@ class FakeClient:
             return FakeResult([(d,) for d in self.depths])
         if "from sensor_timeseries" in q:
             return FakeResult(self.sensor_rows)
+        if "from salishseacast_daily" in q:
+            return FakeResult(self.daily_rows)
         return FakeResult(self.model_rows)  # SalishSeaCast_hourly model query
 
     def close(self):
@@ -161,73 +164,40 @@ def test_unknown_variable_raises(monkeypatch):
         )
 
 
-def test_unsupported_bin_hours_raises(monkeypatch):
+@pytest.mark.parametrize('bin_hours', [3, 6])
+def test_unsupported_bin_hours_raises(monkeypatch, bin_hours):
     _patch(monkeypatch, FakeClient(grid_row=GRID_ROW))
 
     with pytest.raises(ValueError, match="Unsupported bin_hours"):
         extract_depth_profile(
             source='SalishSeaCast', var='temperature', sensor_id='abc',
             lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-01-01T01:59:59',
-            bin_hours=3,
+            bin_hours=bin_hours,
         )
 
 
-def test_bin_hours_6_buckets_model_and_sensor(monkeypatch):
+def test_bin_hours_24_reads_daily_table_directly(monkeypatch):
     # NOTE: extractTimeseries._get_depth_levels caches by table name at module scope,
     # so once test_happy_path_grids_shape_and_values (above) has run in this process,
     # every later test sharing source='SalishSeaCast' gets that cached DEPTHS list
     # regardless of its own `depths=` fixture — hence reusing DEPTHS here too.
     #
-    # model_rows simulate ClickHouse's toStartOfInterval(..., INTERVAL 6 HOUR) GROUP BY
-    # output — one pre-aggregated row per (bucket, depth), same shape the FakeClient
-    # already returns unconditionally for the model query.
-    six_hour_model_rows = [
-        (datetime(2026, 1, 1, 0), 0.0, 9.0),
-        (datetime(2026, 1, 1, 0), 5.0, 8.0),
-        (datetime(2026, 1, 1, 0), 10.0, 7.0),
-        (datetime(2026, 1, 1, 6), 0.0, 9.5),
-        (datetime(2026, 1, 1, 6), 5.0, 8.5),
-        (datetime(2026, 1, 1, 6), 10.0, 7.5),
-    ]
-    sensor_rows = [
-        (datetime(2026, 1, 1, 1, 30), 0.2, 9.1),   # bucket [00:00, 06:00), nearest level 0.0
-        (datetime(2026, 1, 1, 5, 45), 0.1, 9.3),   # bucket [00:00, 06:00) -> grouped with above
-        (datetime(2026, 1, 1, 7, 0), 4.9, 8.6),    # bucket [06:00, 12:00), nearest level 5.0
-    ]
-    fake = FakeClient(grid_row=GRID_ROW, depths=DEPTHS, model_rows=six_hour_model_rows, sensor_rows=sensor_rows)
-    _patch(monkeypatch, fake)
-
-    result = extract_depth_profile(
-        source='SalishSeaCast', var='temperature', sensor_id='abc',
-        lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-01-01T11:59:59',
-        bin_hours=6,
-    )
-
-    assert result['time'] == ['2026-01-01T00:00:00', '2026-01-01T06:00:00']
-    assert result['model'] == [[9.0, 9.5], [8.0, 8.5], [7.0, 7.5]]
-    # depth 0.0: two casts in bucket0 -> median(9.1, 9.3) picks the upper of the pair
-    # (existing values[len//2] behavior for even-length groups); none in bucket1.
-    assert result['sensor'][0] == [9.3, None]
-    # depth 5.0: none in bucket0; one cast (nearest-level snapped) in bucket1.
-    assert result['sensor'][1] == [None, 8.6]
-    # depth 10.0: no casts landed near this level in either bucket.
-    assert result['sensor'][2] == [None, None]
-
-
-def test_bin_hours_24_daily_buckets(monkeypatch):
+    # daily_rows simulate SalishSeaCast_daily's real shape: one pre-aggregated row per
+    # (day, depth, grid cell), `time` as a plain `date` (not `datetime`) — the actual
+    # ClickHouse column type — to exercise the date->datetime conversion for real.
     daily_model_rows = [
-        (datetime(2026, 1, 1, 0), 0.0, 9.0),
-        (datetime(2026, 1, 1, 0), 5.0, 8.0),
-        (datetime(2026, 1, 1, 0), 10.0, 7.0),
-        (datetime(2026, 1, 2, 0), 0.0, 9.2),
-        (datetime(2026, 1, 2, 0), 5.0, 8.2),
-        (datetime(2026, 1, 2, 0), 10.0, 7.2),
+        (date(2026, 1, 1), 0.0, 9.0),
+        (date(2026, 1, 1), 5.0, 8.0),
+        (date(2026, 1, 1), 10.0, 7.0),
+        (date(2026, 1, 2), 0.0, 9.2),
+        (date(2026, 1, 2), 5.0, 8.2),
+        (date(2026, 1, 2), 10.0, 7.2),
     ]
     sensor_rows = [
         (datetime(2026, 1, 1, 14, 0), 0.0, 9.05),  # falls within day 1
         (datetime(2026, 1, 2, 3, 0), 0.0, 9.25),   # falls within day 2
     ]
-    fake = FakeClient(grid_row=GRID_ROW, depths=DEPTHS, model_rows=daily_model_rows, sensor_rows=sensor_rows)
+    fake = FakeClient(grid_row=GRID_ROW, depths=DEPTHS, daily_rows=daily_model_rows, sensor_rows=sensor_rows)
     _patch(monkeypatch, fake)
 
     result = extract_depth_profile(
@@ -241,3 +211,22 @@ def test_bin_hours_24_daily_buckets(monkeypatch):
     assert result['sensor'][0] == [9.05, 9.25]
     assert result['sensor'][1] == [None, None]
     assert result['sensor'][2] == [None, None]
+
+
+def test_bin_hours_1_ignores_daily_table(monkeypatch):
+    # If bin_hours=1 accidentally read from daily_rows instead of model_rows, this
+    # would return the (wrong) daily fixture values instead of the hourly ones.
+    daily_rows_should_be_ignored = [(date(2026, 1, 1), 0.0, 999.0)]
+    fake = FakeClient(
+        grid_row=GRID_ROW, depths=DEPTHS, model_rows=MODEL_ROWS,
+        sensor_rows=[], daily_rows=daily_rows_should_be_ignored,
+    )
+    _patch(monkeypatch, fake)
+
+    result = extract_depth_profile(
+        source='SalishSeaCast', var='temperature', sensor_id='abc',
+        lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-01-01T01:59:59',
+        bin_hours=1,
+    )
+
+    assert result['model'] == [[9.0, 9.1], [8.0, 8.1], [7.0, 7.1]]

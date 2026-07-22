@@ -1,9 +1,9 @@
 """extract_depth_profile.py
 
 Bin a variable-depth ("profiler") sensor's raw casts onto the model's own
-discrete depth levels and time buckets of a requested resolution (hourly,
-6-hourly, or daily), alongside the model's own values at those same cells —
-the data behind the Comparison tab's Depth Profile (Hovmöller) view.
+discrete depth levels and time buckets of a requested resolution (hourly or
+daily), alongside the model's own values at those same cells — the data
+behind the Comparison tab's Depth Profile (Hovmöller) view.
 
 Unlike extractSensorTimeseries.py's nearest-depth mode (one fixed depth over
 a sensor's full history), this is for sensors with `sensors.depth == -1`:
@@ -85,7 +85,7 @@ def extract_depth_profile(
     sensor_id    : sensor UUID (matches sensor_timeseries.sensor_id)
     lat, lon     : sensor coordinate, used to look up the nearest model grid cell
     from_date, to_date : ISO-8601 window bounds (inclusive)
-    bin_hours    : time-bucket width in hours — 1 (hourly), 6, or 24 (daily)
+    bin_hours    : time-bucket width in hours — 1 (hourly) or 24 (daily)
 
     Returns
     -------
@@ -107,8 +107,8 @@ def extract_depth_profile(
         raise ValueError(f"Source '{source}' is not yet available via ClickHouse.")
     if var not in ALLOWED_VARIABLES:
         raise ValueError(f"Unknown variable '{var}'. Supported variables: {sorted(ALLOWED_VARIABLES)}")
-    if bin_hours not in (1, 6, 24):
-        raise ValueError(f"Unsupported bin_hours '{bin_hours}'. Supported: 1, 6, 24.")
+    if bin_hours not in (1, 24):
+        raise ValueError(f"Unsupported bin_hours '{bin_hours}'. Supported: 1, 24.")
 
     table = DATA_TABLE_BY_SOURCE[source]
     grid_table = GRID_TABLE_BY_SOURCE[source]
@@ -123,22 +123,31 @@ def extract_depth_profile(
 
         from_str, to_str = _fmt(from_date), _fmt(to_date)
 
-        # ── MODEL: every level at this grid cell, aggregated to bin_hours-wide
-        # buckets, for the window. Aggregation happens in ClickHouse (not pulled
-        # as raw hourly rows and averaged in Python) so a 1-year daily-mode
-        # request doesn't have to ship ~365*24*levels raw rows over the wire
-        # just to collapse them into 365 bins. toStartOfInterval already
-        # returns bucket-aligned timestamps, so each (bucket, depth) pair is
-        # unique in the result — no further Python-side aggregation needed.
-        model_rows = client.query(
-            f"SELECT toStartOfInterval(time, INTERVAL {bin_hours} HOUR) AS bucket, depth, avg({var}) AS value "
-            f"FROM {table} "
-            f"WHERE gridX = %(gx)s AND gridY = %(gy)s "
-            f"  AND time >= toDateTime(%(from)s) AND time <= toDateTime(%(to)s) "
-            f"GROUP BY bucket, depth "
-            f"ORDER BY bucket, depth",
-            parameters={"gx": grid_x, "gy": grid_y, "from": from_str, "to": to_str},
-        ).result_rows
+        if bin_hours == 24:
+            # SalishSeaCast_daily already stores one pre-aggregated row per
+            # (day, depth, grid cell) — a plain filtered select, no GROUP BY
+            # needed. It also covers 2007-present, vs. SalishSeaCast_hourly's
+            # 2026-present, so daily mode isn't silently truncated to whatever
+            # short window the hourly table happens to cover.
+            daily_rows = client.query(
+                f"SELECT time, depth, {var}_mean AS value FROM SalishSeaCast_daily "
+                f"WHERE gridX = %(gx)s AND gridY = %(gy)s "
+                f"  AND time >= toDate(%(from)s) AND time <= toDate(%(to)s) "
+                f"ORDER BY time, depth",
+                parameters={"gx": grid_x, "gy": grid_y, "from": from_str[:10], "to": to_str[:10]},
+            ).result_rows
+            model_rows = [(datetime(d.year, d.month, d.day), depth, value) for d, depth, value in daily_rows]
+        else:
+            # bin_hours == 1: every hourly row at this grid cell, for the window.
+            model_rows = client.query(
+                f"SELECT toStartOfInterval(time, INTERVAL {bin_hours} HOUR) AS bucket, depth, avg({var}) AS value "
+                f"FROM {table} "
+                f"WHERE gridX = %(gx)s AND gridY = %(gy)s "
+                f"  AND time >= toDateTime(%(from)s) AND time <= toDateTime(%(to)s) "
+                f"GROUP BY bucket, depth "
+                f"ORDER BY bucket, depth",
+                parameters={"gx": grid_x, "gy": grid_y, "from": from_str, "to": to_str},
+            ).result_rows
         if not model_rows:
             raise RuntimeError("No model data found in ClickHouse for the requested window.")
 
