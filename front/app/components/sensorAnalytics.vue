@@ -10,7 +10,7 @@
       </div>
 
       <div class="ctrl-label">Season</div>
-      <v-btn-toggle v-model="selectedSeason" mandatory variant="tonal" density="compact" class="flex-wrap w-100 mb-3">
+      <v-btn-toggle v-model="selectedSeason" mandatory variant="tonal" class="flex-wrap w-100 mb-3">
         <v-btn value="full_year" size="x-small" class="season-btn">All</v-btn>
         <v-btn value="mam" size="x-small" class="season-btn">MAM</v-btn>
         <v-btn value="jja" size="x-small" class="season-btn">JJA</v-btn>
@@ -19,7 +19,7 @@
       </v-btn-toggle>
 
       <div class="ctrl-label">Statistic</div>
-      <v-btn-toggle v-model="primaryStat" mandatory variant="outlined" density="compact" class="w-100 mb-3">
+      <v-btn-toggle v-model="primaryStat" mandatory variant="outlined" class="w-100 mb-3">
         <v-btn value="min" size="small">Min</v-btn>
         <v-btn value="mean" size="small">Mean</v-btn>
         <v-btn value="max" size="small">Max</v-btn>
@@ -63,7 +63,7 @@
         </div>
 
         <v-alert v-else-if="!hasActivePlot && plotErrorMessage" type="error" variant="tonal" border="start"
-          class="ma-3" density="compact">
+          class="ma-3">
           {{ plotErrorMessage }}
         </v-alert>
 

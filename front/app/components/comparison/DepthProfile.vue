@@ -1,7 +1,7 @@
 <template>
   <div class="depth-profile d-flex flex-column flex-grow-1" ref="rootRef">
     <div class="d-flex align-center mb-2" style="gap:8px;">
-      <v-btn-toggle v-model="binMode" mandatory variant="tonal" density="compact" :disabled="loading" class="bin-mode-toggle">
+      <v-btn-toggle v-model="binMode" mandatory variant="tonal" :disabled="loading" class="bin-mode-toggle">
         <v-btn value="hourly" size="x-small" :title="BIN_CONFIG.hourly.label">1H</v-btn>
         <v-btn value="daily" size="x-small" :title="BIN_CONFIG.daily.label">1D</v-btn>
       </v-btn-toggle>
@@ -24,7 +24,7 @@
       <v-btn icon="mdi-chevron-right" size="x-small" variant="text" :disabled="!canPageForward || loading" @click="page(1)" />
     </div>
 
-    <v-alert v-if="loadError" type="error" variant="tonal" density="compact" border="start" class="mb-2">
+    <v-alert v-if="loadError" type="error" variant="tonal" border="start" class="mb-2">
       {{ loadError }}
     </v-alert>
 
@@ -57,7 +57,7 @@
       <div class="legend">
         <v-menu v-model="paletteMenuOpen" :close-on-content-click="false" location="bottom start">
           <template #activator="{ props: menuProps }">
-            <v-btn v-bind="menuProps" icon size="x-small" variant="text" density="compact" title="Choose color palette">
+            <v-btn v-bind="menuProps" icon size="x-small" variant="text" title="Choose color palette">
               <v-icon size="14">mdi-palette</v-icon>
             </v-btn>
           </template>

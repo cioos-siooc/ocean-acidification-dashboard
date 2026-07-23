@@ -1,14 +1,14 @@
 <template>
   <v-dialog v-model="isOpen" fullscreen transition="dialog-bottom-transition" :scrim="false">
     <v-card class="d-flex flex-column" style="height:100vh;">
-      <v-toolbar density="compact" color="grey-darken-4">
+      <v-toolbar color="grey-darken-4">
         <v-toolbar-title class="text-body-2">
           Advanced Analysis — {{ varName }} @ {{ depth }}m
           <v-chip v-if="pointLabel" size="x-small" color="warning" variant="tonal" class="ml-2">{{ pointLabel }}</v-chip>
         </v-toolbar-title>
         <v-spacer />
         <span class="ctrl-label mr-2">Season</span>
-        <v-btn-toggle v-model="selectedSeason" mandatory density="compact" variant="tonal" class="mr-4">
+        <v-btn-toggle v-model="selectedSeason" mandatory variant="tonal" class="mr-4">
           <v-btn value="full_year" size="x-small">All</v-btn>
           <v-btn value="mam" size="x-small">MAM</v-btn>
           <v-btn value="jja" size="x-small">JJA</v-btn>
@@ -18,7 +18,7 @@
         <v-btn icon="mdi-close" variant="text" @click="isOpen = false" title="Close" />
       </v-toolbar>
 
-      <v-tabs v-model="activeTab" density="compact" color="warning" class="flex-shrink-0">
+      <v-tabs v-model="activeTab" color="warning" class="flex-shrink-0">
         <v-tab value="extremes">Extreme Events</v-tab>
         <v-tab value="compound">Compound Stress</v-tab>
         <v-tab value="trend">Trend</v-tab>

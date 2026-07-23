@@ -1,7 +1,7 @@
 <template>
   <div class="palette-picker">
-    <v-text-field v-model="paletteSearch" placeholder="Search palettes…" density="compact"
-      variant="outlined" hide-details prepend-inner-icon="mdi-magnify" class="mb-2" clearable />
+    <v-text-field v-model="paletteSearch" placeholder="Search palettes…"
+      hide-details prepend-inner-icon="mdi-magnify" class="mb-2" clearable />
 
     <div class="d-flex ga-2 mb-3">
       <v-btn size="small" :variant="reversedActive ? 'flat' : 'outlined'" :color="reversedActive ? 'primary' : undefined"

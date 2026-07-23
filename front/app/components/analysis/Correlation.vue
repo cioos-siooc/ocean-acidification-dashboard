@@ -3,11 +3,11 @@
     <div class="pa-2 d-flex flex-column flex-shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Variables (2-4)</div>
       <v-select v-model="selectedVariables" :items="selectableVariables" item-title="name" item-value="id" multiple
-        chips closable-chips density="compact" variant="outlined" hide-details class="mb-3"
+        chips closable-chips hide-details class="mb-3"
         :return-object="false" @update:model-value="onSelectionChange" />
 
       <template v-for="id in selectedVariables" :key="id">
-        <v-alert v-if="errorByVar[id]" type="error" variant="tonal" density="compact" class="mb-2">
+        <v-alert v-if="errorByVar[id]" type="error" variant="tonal" class="mb-2">
           {{ varName(id) }}: {{ errorByVar[id] }}
         </v-alert>
       </template>

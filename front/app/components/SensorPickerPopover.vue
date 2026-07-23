@@ -5,7 +5,7 @@
     :style="{ left: x + 'px', top: y + 'px' }"
   >
     <div class="sensor-picker__title">Select sensor</div>
-    <v-list density="compact" class="sensor-picker__list pa-0">
+    <v-list class="sensor-picker__list pa-0">
       <v-list-item
         v-for="sensor in sortedSensors"
         :key="sensor.id"

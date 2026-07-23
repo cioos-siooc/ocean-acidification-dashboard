@@ -40,8 +40,7 @@
                 <v-divider class="my-4"></v-divider>
 
                 <div class="d-flex align-center gap-2">
-                    <v-checkbox v-model="dontShowAgain" label="Don't show this again" hide-details
-                        density="compact"></v-checkbox>
+                    <v-checkbox v-model="dontShowAgain" label="Don't show this again" hide-details></v-checkbox>
                 </div>
             </v-card-text>
 

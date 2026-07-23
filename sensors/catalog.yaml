@@ -602,140 +602,7 @@ sensors:
   
   ###############################################################
   # ── ERDDAP University of Washington ──────────────────────────
-  - name: "Backyard Buoys - NANOOS - Washington: Quileute - Center"
-    lat: 47.8427765
-    lon: -124.6940315
-    depth: 0.0
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/backyardbuoys_quileute_center"
-    variables:
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "Backyard Buoys - NANOOS - Washington: Quileute - North"
-    lat: 47.941425
-    lon: -124.7637
-    depth: 0.0
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/backyardbuoys_quileute_north"
-    variables:
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "Backyard Buoys - NANOOS - Washington: Quileute - South"
-    lat: 47.8048665
-    lon: -124.6453235
-    depth: 0.0
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/backyardbuoys_quileute_south"
-    variables:
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "Backyard Buoys - NANOOS - Washington: Quileute Test"
-    lat: 47.814445000000006
-    lon: -124.645365
-    depth: 0.0
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/backyardbuoys_quileute_test"
-    variables:
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "Backyard Buoys - NANOOS - Washington: Quinault Mid"
-    lat: 47.3452065
-    lon: -124.3715935
-    depth: 0.0
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/backyardbuoys_quinault_mid"
-    variables:
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "Backyard Buoys - NANOOS - Washington: Quinault North"
-    lat: 47.453817
-    lon: -124.43635
-    depth: 0.0
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/backyardbuoys_quinault_north"
-    variables:
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "Backyard Buoys - NANOOS - Washington: Quinault South"
-    lat: 47.2839
-    lon: -124.32958350000001
-    depth: 0.0
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/backyardbuoys_quinault_south"
-    variables:
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "NEMO - Cha'Ba, CTD Data, Near-realtime (incomplete data)"
-    lat: 47.9653085
-    lon: -124.94745
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/chaba_ctd_nrt"
-    variables:
-    - "depth:sea_water_pressure:dbar:1.0"
-    - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
-    - "ph_total:sea_water_ph_reported_on_total_scale::1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "NEMO Cha'Ba: SBE-37 CTD"
-    lat: 47.9637915
-    lon: 8.499999999855845e-06
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/chaba_sbe37_historic"
-    variables:
-    - "depth:sea_water_pressure:dbar:1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "NEMO Cha'Ba: WQM"
-    lat: 47.965125
-    lon: -124.45917499999999
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/chaba_wqm_historic"
-    variables:
-    - "depth:sea_water_pressure:dbar:1.0"
-    - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "NEMO Subsurface, Seabird SBE37 CTD, Historical data"
-    lat: 47.966882999999996
-    lon: -124.9588
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/nemo-ss_sbe37_historic"
-    variables:
-    - "depth:sea_water_pressure:dbar:1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "NEMO Subsurface, Seabird SBE37 CTD, Near-realtime sampling (incomplete data)"
-    lat: 47.9667
-    lon: -124.9549
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/nemo-ss_sbe37_nrt"
-    variables:
-    - "depth:sea_water_pressure:dbar:1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "NPBY1 - Point Wells: L3 Depth Gridded Data - 0.25 meter"
+    - name: "NPBY1 - Point Wells: L3 Depth Gridded Data - 0.25 meter"
     lat: 47.76116666
     lon: -122.39716666
     depth: -1
@@ -747,6 +614,7 @@ sensors:
     - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
     - "salinity:sea_water_practical_salinity:PSU:1.0"
     - "temperature:sea_water_temperature:C:1.0"
+    - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"
 
   - name: "NPBY2 - Carr Inlet: L3 Depth Gridded Data - 0.25 meter"
     lat: 47.28
@@ -760,85 +628,6 @@ sensors:
     - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
     - "salinity:sea_water_practical_salinity:PSU:1.0"
     - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "OCNMS - Cape Elizabeth: SBE37 - CTD Data"
-    lat: 47.353133
-    lon: -124.488733
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/ocnms_ce42_lander_sbe37"
-    variables:
-    - "depth:sea_water_pressure:dbar:1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "OCNMS - Makah Bay: SBE37 - CTD Data"
-    lat: 48.323967
-    lon: -124.735383
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/ocnms_mb42_lander_sbe37"
-    variables:
-    - "depth:sea_water_pressure:dbar:1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
-
-  - name: "ORCA1 - Twanoh: L3 Depth Gridded Data - 0.25 meter"
-    lat: 47.375
-    lon: -123.00833333
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/griddap/orca1_L3_depthgridded_025"
-    variables:
-    - "time:cast_start_time::1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
-    - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
-    - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"
-
-  - name: "ORCA2 - Hoodsport: L3 Depth Gridded Data - 0.25 meter"
-    lat: 47.42181666
-    lon: -122.61258333
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/griddap/orca2_L3_depthgridded_025"
-    variables:
-    - "time:cast_start_time::1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
-    - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
-    - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"
-
-  - name: "ORCA3 - Hansville: L3 Depth Gridded Data - 0.25 meter"
-    lat: 47.907541665
-    lon: -122.62742499999999
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/griddap/orca3_L3_depthgridded_025"
-    variables:
-    - "time:cast_start_time::1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
-    - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
-    - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"
-
-  - name: "ORCA4 - Dabob Bay: L3 Depth Gridded Data - 0.25 meter"
-    lat: 47.80341666
-    lon: -122.80291666
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/griddap/orca4_L3_depthgridded_025"
-    variables:
-    - "time:cast_start_time::1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
-    - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
     - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"
 
   - name: "PISCES1 - PISCES-South: L3 Depth Gridded Data - 0.25 meter"
@@ -897,56 +686,58 @@ sensors:
     - "temperature:sea_water_temperature:C:1.0"
     - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"
 
-  - name: "Quileute Lander 2: SBE37 - CTD Data"
-    lat: 47.72419
-    lon: -124.702395
+  - name: "ORCA1 - Twanoh: L3 Depth Gridded Data - 0.25 meter"
+    lat: 47.375
+    lon: -123.00833333
     depth: -1
     api: ERDDAP
     organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/quileute2_lander_sbe37"
+    source_link: "https://nwem.apl.uw.edu/erddap/griddap/orca1_L3_depthgridded_025"
     variables:
-    - "depth:sea_water_pressure:dbar:1.0"
+    - "time:cast_start_time::1.0"
     - "salinity:sea_water_practical_salinity:PSU:1.0"
     - "temperature:sea_water_temperature:C:1.0"
-    - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"
-
-  - name: "Quileute Lander 3: SBE37 - CTD Data"
-    lat: 47.7759265
-    lon: -124.6735425
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/quileute3_lander_sbe37"
-    variables:
-    - "depth:sea_water_pressure:dbar:1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
-    - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"
-
-  - name: "Se'lhaem, Bellingham Bay Deep Hydrological Station Data"
-    lat: 48.723692
-    lon: -122.576532
-    depth: -1
-    api: ERDDAP
-    organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/bellinghambay_deephydro"
-    variables:
     - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
-    - "ph_total:sea_water_ph_reported_on_total_scale::1.0"
-    - "salinity:sea_water_practical_salinity:PSU:1.0"
-    - "temperature:sea_water_temperature:C:1.0"
     - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"
 
-  - name: "Se'lhaem, Bellingham Bay Surface Hydrological Station Data"
-    lat: 48.723692
-    lon: -122.576532
+  - name: "ORCA2 - Hoodsport: L3 Depth Gridded Data - 0.25 meter"
+    lat: 47.42181666
+    lon: -122.61258333
     depth: -1
     api: ERDDAP
     organization: University of Washington
-    source_link: "https://nwem.apl.uw.edu/erddap/tabledap/bellinghambay_surfhydro"
+    source_link: "https://nwem.apl.uw.edu/erddap/griddap/orca2_L3_depthgridded_025"
     variables:
-    - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
-    - "ph_total:sea_water_ph_reported_on_total_scale::1.0"
+    - "time:cast_start_time::1.0"
     - "salinity:sea_water_practical_salinity:PSU:1.0"
     - "temperature:sea_water_temperature:C:1.0"
+    - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
+    - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"
+
+  - name: "ORCA3 - Hansville: L3 Depth Gridded Data - 0.25 meter"
+    lat: 47.907541665
+    lon: -122.62742499999999
+    depth: -1
+    api: ERDDAP
+    organization: University of Washington
+    source_link: "https://nwem.apl.uw.edu/erddap/griddap/orca3_L3_depthgridded_025"
+    variables:
+    - "time:cast_start_time::1.0"
+    - "salinity:sea_water_practical_salinity:PSU:1.0"
+    - "temperature:sea_water_temperature:C:1.0"
+    - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
+    - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"
+
+  - name: "ORCA4 - Dabob Bay: L3 Depth Gridded Data - 0.25 meter"
+    lat: 47.80341666
+    lon: -122.80291666
+    depth: -1
+    api: ERDDAP
+    organization: University of Washington
+    source_link: "https://nwem.apl.uw.edu/erddap/griddap/orca4_L3_depthgridded_025"
+    variables:
+    - "time:cast_start_time::1.0"
+    - "salinity:sea_water_practical_salinity:PSU:1.0"
+    - "temperature:sea_water_temperature:C:1.0"
+    - "chlorophyll:mass_concentration_of_chlorophyll_a_in_sea_water:µg/L:1.0"
     - "dissolved_oxygen:mass_concentration_of_oxygen_in_sea_water:mg/L:1.0"

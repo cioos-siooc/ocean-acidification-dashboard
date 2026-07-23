@@ -3,14 +3,14 @@
     <v-card width="420px" class="ma-0 py-3 px-5">
         <!-- RANGE -->
         <div class="d-flex align-center ga-2 mt-4 mb-1">
-            <v-text-field v-model="minText" type="number" :step="numberStep" density="compact" variant="outlined"
+            <v-text-field v-model="minText" type="number" :step="numberStep"
                 hide-details class="range-input" @blur="commitMin" @keyup.enter="commitMin" />
-            <v-range-slider v-model="sliderEnds" thumb-label strict density="compact" hide-details class="flex-grow-1">
+            <v-range-slider v-model="sliderEnds" thumb-label strict hide-details class="flex-grow-1">
                 <template #thumb-label="{ modelValue }">
                     {{ (default_colormapMin + (default_colormapMax - default_colormapMin) * (modelValue / 100)).toFixed(precisionDigits) }}
                 </template>
             </v-range-slider>
-            <v-text-field v-model="maxText" type="number" :step="numberStep" density="compact" variant="outlined"
+            <v-text-field v-model="maxText" type="number" :step="numberStep"
                 hide-details class="range-input" @blur="commitMax" @keyup.enter="commitMax" />
         </div>
 

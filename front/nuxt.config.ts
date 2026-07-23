@@ -1,4 +1,5 @@
 import vuetify, { transformAssetUrls } from 'vite-plugin-vuetify'
+import { fileURLToPath } from 'node:url'
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -35,7 +36,12 @@ export default defineNuxtConfig({
     (_options, nuxt) => {
       nuxt.hooks.hook('vite:extendConfig', (config) => {
         // @ts-expect-error
-        config.plugins.push(vuetify({ autoImport: { labs: true } }))
+        config.plugins.push(vuetify({
+          autoImport: { labs: true },
+          styles: {
+            configFile: fileURLToPath(new URL('./app/assets/vuetify-settings.scss', import.meta.url)),
+          },
+        }))
       })
     },
   ],

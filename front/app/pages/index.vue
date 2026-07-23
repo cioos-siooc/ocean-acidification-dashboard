@@ -7,7 +7,7 @@
 
         <v-divider></v-divider>
 
-        <v-list density="compact" nav>
+        <v-list nav>
             <v-list-item prepend-icon="mdi-folder" title="My Files" value="myfiles"></v-list-item>
             <v-list-item prepend-icon="mdi-account-multiple" title="Shared with me" value="shared"></v-list-item>
             <v-list-item prepend-icon="mdi-star" title="Starred" value="starred"></v-list-item>
@@ -46,7 +46,7 @@
 
             <!-- Query mode toggle -->
             <div style="position:absolute; top:10px; right:10px; z-index:10;">
-                <v-btn-toggle :model-value="mainStore.queryMode" mandatory density="compact" variant="tonal"
+                <v-btn-toggle :model-value="mainStore.queryMode" mandatory variant="tonal"
                     @update:model-value="(v) => mainStore.setQueryMode(v)">
                     <v-btn value="point" size="small" title="Point query">
                         <v-icon size="16">mdi-map-marker</v-icon>

@@ -3,22 +3,22 @@
     <div class="pa-2 d-flex flex-column flex-shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Primary variable</div>
       <div class="text-caption mb-3">{{ varName(primaryVariable) }} {{ primaryDirection === '>' ? '>' : '<' }} {{ primaryThreshold }}</div>
-      <v-btn-toggle v-model="primaryDirection" mandatory direction="vertical" variant="tonal" density="compact" class="mb-1">
+      <v-btn-toggle v-model="primaryDirection" mandatory direction="vertical" variant="tonal" class="mb-1">
         <v-btn value=">" size="x-small">Above</v-btn>
         <v-btn value="<" size="x-small">Below</v-btn>
       </v-btn-toggle>
-      <v-text-field v-model.number="primaryThreshold" type="number" variant="outlined" density="compact" hide-details class="mb-3" />
+      <v-text-field v-model.number="primaryThreshold" type="number" hide-details class="mb-3" />
 
       <div class="ctrl-label">Compare against</div>
       <v-select v-model="secondaryVariable" :items="otherVariables" item-title="name" item-value="id"
-        density="compact" variant="outlined" hide-details class="mb-3" />
-      <v-btn-toggle v-model="secondaryDirection" mandatory direction="vertical" variant="tonal" density="compact" class="mb-1">
+        hide-details class="mb-3" />
+      <v-btn-toggle v-model="secondaryDirection" mandatory direction="vertical" variant="tonal" class="mb-1">
         <v-btn value=">" size="x-small">Above</v-btn>
         <v-btn value="<" size="x-small">Below</v-btn>
       </v-btn-toggle>
-      <v-text-field v-model.number="secondaryThreshold" type="number" variant="outlined" density="compact" hide-details class="mb-3" />
+      <v-text-field v-model.number="secondaryThreshold" type="number" hide-details class="mb-3" />
 
-      <v-alert v-if="secondaryError" type="error" variant="tonal" density="compact" class="mt-2">{{ secondaryError }}</v-alert>
+      <v-alert v-if="secondaryError" type="error" variant="tonal" class="mt-2">{{ secondaryError }}</v-alert>
     </div>
 
     <div class="flex-grow-1 d-flex flex-column" style="min-width:0; position:relative;">
@@ -32,7 +32,7 @@
       <div ref="chartContainerRef" class="w-100" style="height:55%; flex-shrink:0;" />
       <div class="flex-grow-1 pa-2" style="overflow-y:auto;">
         <div class="ctrl-label mb-1">Per-year days both conditions hold</div>
-        <v-data-table :headers="yearHeaders" :items="yearRows" density="compact" hide-default-footer
+        <v-data-table :headers="yearHeaders" :items="yearRows" hide-default-footer
           :items-per-page="-1" :sort-by="[{ key: 'year', order: 'desc' as const }]" class="stats-table" />
       </div>
     </div>

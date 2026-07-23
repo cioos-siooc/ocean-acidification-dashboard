@@ -6,15 +6,15 @@
                 <v-card-text>
                     <v-row class="mb-4 align-center">
                         <v-select v-model="selectedSensor" :items="sensors" label="Select Sensor ID"
-                            density="compact" variant="outlined" hide-details @update:modelValue="onSelectionChange" />
+                            hide-details @update:modelValue="onSelectionChange" />
                     </v-row>
                     <v-row class="mb-4 align-center">
                         <v-select v-model="selectedVariable" :items="variables" label="Select Variable"
-                            density="compact" variant="outlined" hide-details @update:modelValue="onSelectionChange" />
+                            hide-details @update:modelValue="onSelectionChange" />
                     </v-row>
                     <v-row class="mb-4 align-center">
-                        <v-select v-model="selectedModel" :items="models" label="Select Model" density="compact"
-                            variant="outlined" hide-details @update:modelValue="onSelectionChange" />
+                        <v-select v-model="selectedModel" :items="models" label="Select Model"
+                            hide-details @update:modelValue="onSelectionChange" />
                     </v-row>
                     <v-row class="mb-4 align-center">
                         <v-btn color="primary" @click="fetchEvalData" :loading="loading" block>
@@ -29,8 +29,8 @@
                         <v-menu v-model="fromDateMenu" :close-on-content-click="false"
                             :disabled="isDatePickersDisabled">
                             <template #activator="{ props }">
-                                <v-text-field :model-value="fromDateDisplay" label="From Date" variant="outlined" hide-details
-                                    density="compact" readonly :disabled="isDatePickersDisabled" v-bind="props" />
+                                <v-text-field :model-value="fromDateDisplay" label="From Date" hide-details
+                                    readonly :disabled="isDatePickersDisabled" v-bind="props" />
                             </template>
                             <v-date-picker v-model="fromDate" :min="minDate" :max="toDate || maxDate" @update:model-value="onDateChange" />
                         </v-menu>
@@ -38,8 +38,8 @@
                     <v-row class="mb-4 align-center">
                         <v-menu v-model="toDateMenu" :close-on-content-click="false" :disabled="isDatePickersDisabled">
                             <template #activator="{ props }">
-                                <v-text-field :model-value="toDateDisplay" label="To Date" variant="outlined" hide-details
-                                    density="compact" readonly :disabled="isDatePickersDisabled" v-bind="props" />
+                                <v-text-field :model-value="toDateDisplay" label="To Date" hide-details
+                                    readonly :disabled="isDatePickersDisabled" v-bind="props" />
                             </template>
                             <v-date-picker v-model="toDate" :min="fromDate || minDate" :max="maxDate" @update:model-value="onDateChange" />
                         </v-menu>

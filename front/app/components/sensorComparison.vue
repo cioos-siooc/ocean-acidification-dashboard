@@ -34,7 +34,7 @@
         </div>
 
         <v-alert v-else-if="!hasData && errorMessage" type="error" variant="tonal" border="start"
-          class="ma-3" density="compact">
+          class="ma-3">
           {{ errorMessage }}
         </v-alert>
 
@@ -63,7 +63,7 @@
         style="width:210px; min-width:210px; border-left:1px solid rgba(255,255,255,0.08); overflow:hidden;">
 
         <div class="ctrl-label mb-1">Season</div>
-        <v-btn-toggle v-model="selectedSeason" mandatory variant="tonal" density="compact" class="w-100 mb-3 flex-wrap">
+        <v-btn-toggle v-model="selectedSeason" mandatory variant="tonal" class="w-100 mb-3 flex-wrap">
           <v-btn value="all" size="x-small">All</v-btn>
           <v-btn value="djf" size="x-small">DJF</v-btn>
           <v-btn value="mam" size="x-small">MAM</v-btn>

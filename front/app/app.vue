@@ -1,6 +1,6 @@
 <template>
   <v-app theme="dark">
-    <v-app-bar density="compact" class="px-5" app>
+    <v-app-bar class="px-5" app>
       <div class="d-flex align-center" style="flex-shrink:0;">
         <iconsOceanECOLogo :size="40" :loop="false" style="display:block;" />
       </div>
@@ -17,10 +17,10 @@
 
       <!-- Optional: Add menu items here -->
       <NuxtLink to="/modeleval" target="_blank">
-        <v-btn density="compact" text>Model Evaluation</v-btn>
+        <v-btn text>Model Evaluation</v-btn>
       </NuxtLink>
       <NuxtLink to="/about" target="_blank">
-        <v-btn density="compact" text>About</v-btn>
+        <v-btn text>About</v-btn>
       </NuxtLink>
     </v-app-bar>
 

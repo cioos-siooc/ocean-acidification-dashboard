@@ -2,14 +2,14 @@
   <div class="d-flex h-100" style="overflow:hidden;">
     <div class="pa-2 d-flex flex-column flex-shrink-0" style="width:200px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Baseline window (± days)</div>
-      <v-text-field v-model.number="windowDays" type="number" variant="outlined" density="compact" hide-details class="mb-3" min="1" max="30" />
+      <v-text-field v-model.number="windowDays" type="number" hide-details class="mb-3" min="1" max="30" />
       <div class="text-caption text-grey">
         Each year's daily values are plotted as their deviation from a day-of-year climatological mean
         (pooled across all years, smoothed over the baseline window), so it's easy to see which years ran
         warmer/cooler, more/less acidic, etc. relative to the long-term average for that calendar day.
       </div>
 
-      <v-alert v-if="isShortHistory" type="warning" variant="tonal" density="compact" icon="mdi-alert-outline"
+      <v-alert v-if="isShortHistory" type="warning" variant="tonal" icon="mdi-alert-outline"
         class="mt-3 text-caption">
         Only {{ yearSpan }} year{{ yearSpan === 1 ? '' : 's' }} of data available. The "mean" here isn't a true
         multi-year climatology — it's a local ±{{ windowDays }}-day rolling average of this same record, so

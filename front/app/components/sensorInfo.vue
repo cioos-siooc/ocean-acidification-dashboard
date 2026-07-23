@@ -8,18 +8,18 @@
                 <!-- FILTERS -->
                 <v-row class="ma-0 pa-0" dense>
                     <v-col cols="12" class="pa-1">
-                        <v-text-field v-model="searchQuery" label="Search sensors" variant="outlined"
-                            density="compact" hide-details clearable prepend-inner-icon="mdi-magnify"
+                        <v-text-field v-model="searchQuery" label="Search sensors"
+                            hide-details clearable prepend-inner-icon="mdi-magnify"
                             rounded></v-text-field>
                     </v-col>
                     <v-col cols="12" class="pa-1">
                         <v-select v-model="organizationFilter" :items="organizationOptions" label="Organization"
-                            variant="outlined" density="compact" hide-details clearable multiple chips
+                            hide-details clearable multiple chips
                             closable-chips></v-select>
                     </v-col>
                     <v-col cols="12" class="pa-1">
                         <v-select v-model="variableFilter" :items="variableOptions" item-title="label"
-                            item-value="value" label="Variable" variant="outlined" density="compact" hide-details
+                            item-value="value" label="Variable" hide-details
                             clearable multiple chips closable-chips></v-select>
                     </v-col>
                 </v-row>
@@ -54,7 +54,7 @@
 
                             <div class="mt-1 d-flex flex-wrap gap-1">
                                 <v-chip v-for="varKey in Object.keys(sensor.variables)" :key="varKey" size="x-small"
-                                    density="compact" variant="tonal" color="grey">
+                                    variant="tonal" color="grey">
                                     {{ varShortName(varKey) }}
                                 </v-chip>
                             </div>
@@ -62,14 +62,14 @@
                             <v-row class="mt-2 d-flex gap-1">
                                 <v-spacer />
                                 <v-col cols="auto">
-                                    <v-btn icon size="x-small" variant="tonal" color="yellow" density="compact"
+                                    <v-btn icon size="x-small" variant="tonal" color="yellow"
                                         @click.stop="openInfoDialog(sensor)">
                                         <v-icon size="12px">mdi-information-variant</v-icon>
                                     </v-btn>
                                 </v-col>
                                 <v-col cols="auto">
                                     <v-btn v-if="sensor.id === selectedSensor?.id" icon size="x-small" variant="tonal"
-                                        color="red-lighten-2" density="compact"
+                                        color="red-lighten-2"
                                         @click.stop="mainStore.setActiveBottomTab('comparison')">
                                         <v-icon size="12px">mdi-chart-bar</v-icon>
                                     </v-btn>
@@ -101,7 +101,7 @@
             </v-card-title>
             <v-card-subtitle v-if="infoDialogSensor.organization">{{ infoDialogSensor.organization }}</v-card-subtitle>
             <v-card-text>
-                <v-list density="compact">
+                <v-list>
                     <v-list-item>
                         <v-list-item-title class="text-caption text-medium-emphasis">Location</v-list-item-title>
                         <v-list-item-subtitle>{{ coordTxt(infoDialogSensor.latitude, infoDialogSensor.longitude)

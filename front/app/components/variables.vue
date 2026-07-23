@@ -3,12 +3,12 @@
     <div class="label">
       <!-- VARIABLES -->
       <v-select v-model="selectedVarName" label="Field" :items="variableItems" :disabled="variableItems.length === 0"
-        item-title="label" item-value="var" density="compact" hide-details variant="outlined" class="my-4"
+        item-title="label" item-value="var" hide-details class="my-4"
         :menu-props="{ location: 'end', offset: 35, zIndex: 9999 }" style="width: 100%"></v-select>
 
       <!-- SOURCES -->
       <v-select v-model="selectedSource" :items="sourceItems" label="Source" item-title="label" item-value="source"
-        :disabled="sourceItems.length === 0" density="compact" hide-details variant="outlined" class="my-4"
+        :disabled="sourceItems.length === 0" hide-details class="my-4"
         :menu-props="{ location: 'end', offset: 35, zIndex: 9999 }" style="width: 100%">
         <template #prepend-inner>
           <v-btn icon size="12px" @click="showSourceInfo = !showSourceInfo" title="About this data source">
@@ -19,8 +19,8 @@
 
       <!-- DEPTHS -->
       <v-select v-if="depths && depths.length > 0" v-model="selectedDepth" :items="depths" label="Depth"
-        item-title="title" item-value="value" :disabled="!depths || depths.length === 0" density="compact" hide-details
-        variant="outlined" class="my-4" :menu-props="{ location: 'end', offset: 75, zIndex: 9999 }" style="width: 100%">
+        item-title="title" item-value="value" :disabled="!depths || depths.length === 0" hide-details
+        class="my-4" :menu-props="{ location: 'end', offset: 75, zIndex: 9999 }" style="width: 100%">
         <template #item="{ props, item }">
           <v-list-item v-bind="props" :title="item.title"></v-list-item>
         </template>

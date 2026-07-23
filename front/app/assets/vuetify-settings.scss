@@ -1,0 +1,19 @@
+// Overrides Vuetify's base component metrics before its "density" prop
+// is applied on top. Vuetify computes compact-density heights as
+// `base - fixed_step` (e.g. field height = $field-control-height - 16px),
+// so density="compact" alone can't go below these bases — this is the lever.
+@forward 'vuetify/settings' with (
+  $field-control-height: 40px,
+  $field-control-padding-top: 4px,
+  $field-control-padding-bottom: 4px,
+  $field-font-size: 14px,
+
+  $list-item-min-height: 32px,
+  $list-item-padding: 2px 12px,
+
+  $button-height: 28px,
+
+  $expansion-panel-title-min-height: 36px,
+  $expansion-panel-active-title-min-height: 40px,
+  $expansion-panel-title-padding: 8px 16px,
+);

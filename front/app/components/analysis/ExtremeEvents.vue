@@ -2,31 +2,31 @@
   <div class="d-flex h-100" style="overflow:hidden;">
     <div class="pa-2 d-flex flex-column flex-shrink-0" style="width:200px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Threshold Mode</div>
-      <v-btn-toggle v-model="thresholdMode" mandatory variant="tonal" density="compact" class="w-100 mb-3">
+      <v-btn-toggle v-model="thresholdMode" mandatory variant="tonal" class="w-100 mb-3">
         <v-btn value="percentile" size="small">Percentile</v-btn>
         <v-btn value="fixed" size="small">Fixed value</v-btn>
       </v-btn-toggle>
 
       <div class="ctrl-label">Direction</div>
-      <v-btn-toggle v-model="direction" mandatory variant="tonal" density="compact" class="w-100 mb-3">
+      <v-btn-toggle v-model="direction" mandatory variant="tonal" class="w-100 mb-3">
         <v-btn value="above" size="small">Above (high)</v-btn>
         <v-btn value="below" size="small">Below (low)</v-btn>
       </v-btn-toggle>
 
       <template v-if="thresholdMode === 'percentile'">
         <div class="ctrl-label">Baseline window (± days)</div>
-        <v-text-field v-model.number="windowDays" type="number" variant="outlined" density="compact" hide-details class="mb-3" min="1" max="30" />
+        <v-text-field v-model.number="windowDays" type="number" hide-details class="mb-3" min="1" max="30" />
       </template>
       <template v-else>
         <div class="ctrl-label">Fixed threshold</div>
-        <v-text-field v-model.number="fixedThreshold" type="number" variant="outlined" density="compact" hide-details class="mb-3" />
+        <v-text-field v-model.number="fixedThreshold" type="number" hide-details class="mb-3" />
       </template>
 
       <div class="ctrl-label">Min duration (days)</div>
-      <v-text-field v-model.number="minDurationDays" type="number" variant="outlined" density="compact" hide-details class="mb-3" min="1" />
+      <v-text-field v-model.number="minDurationDays" type="number" hide-details class="mb-3" min="1" />
 
       <div class="ctrl-label">Max merge gap (days)</div>
-      <v-text-field v-model.number="maxGapDays" type="number" variant="outlined" density="compact" hide-details class="mb-3" min="0" />
+      <v-text-field v-model.number="maxGapDays" type="number" hide-details class="mb-3" min="0" />
 
       <div class="text-caption text-grey mt-2">
         <template v-if="thresholdMode === 'percentile'">
@@ -40,7 +40,7 @@
         </template>
       </div>
 
-      <v-alert v-if="thresholdMode === 'percentile' && isShortHistory" type="warning" variant="tonal" density="compact" icon="mdi-alert-outline"
+      <v-alert v-if="thresholdMode === 'percentile' && isShortHistory" type="warning" variant="tonal" icon="mdi-alert-outline"
         class="mt-3 text-caption">
         Only {{ yearSpan }} year{{ yearSpan === 1 ? '' : 's' }} of data available. The dashed threshold isn't a
         true multi-year climatology here — it's a local ±{{ windowDays }}-day rolling percentile of this same
@@ -53,12 +53,12 @@
       <div class="flex-grow-1 d-flex" style="min-height:0; overflow:hidden;">
         <div class="flex-grow-1 pa-2" style="overflow-y:auto;">
           <div class="ctrl-label mb-1">Events ({{ events.length }})</div>
-          <v-data-table :headers="eventHeaders" :items="eventRows" density="compact" hide-default-footer
+          <v-data-table :headers="eventHeaders" :items="eventRows" hide-default-footer
             :items-per-page="-1" :sort-by="[{ key: 'peakAnomaly', order: 'desc' as const }]" class="stats-table" />
         </div>
         <div style="width:260px; border-left:1px solid rgba(255,255,255,0.08); overflow-y:auto;" class="pa-2 flex-shrink-0">
           <div class="ctrl-label mb-1">Per-year summary</div>
-          <v-data-table :headers="yearHeaders" :items="yearRows" density="compact" hide-default-footer
+          <v-data-table :headers="yearHeaders" :items="yearRows" hide-default-footer
             :items-per-page="-1" :sort-by="[{ key: 'year', order: 'desc' as const }]" class="stats-table" />
         </div>
       </div>

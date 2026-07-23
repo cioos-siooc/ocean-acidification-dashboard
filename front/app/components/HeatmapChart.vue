@@ -2,19 +2,19 @@
     <v-card class="pa-4" style="width: 100%; height: 100%;">
         <v-row>
             <v-col v-if="showDateWarning" cols="12">
-                <v-alert type="warning" density="compact">
+                <v-alert type="warning">
                     {{ dateWarning }}
                 </v-alert>
             </v-col>
 
             <v-col cols="auto" style="align-content: center;">
                 <v-select v-model="plotVariable" :items="sensorVariables" label="Variable" item-title="label"
-                    item-value="var" density="compact" hide-details variant="outlined" class="my-4">
+                    item-value="var" hide-details class="my-4">
                 </v-select>
             </v-col>
 
             <v-col cols="auto" style="align-content: center;">
-                <v-btn-group density="compact" variant="outlined" class="ml-2">
+                <v-btn-group variant="outlined" class="ml-2">
                     <v-btn size="small" @click="setPresetDateRange(7)">1W</v-btn>
                     <v-btn size="small" @click="setPresetDateRange(30)">1M</v-btn>
                     <v-btn size="small" @click="setPresetDateRange(90)">3M</v-btn>
