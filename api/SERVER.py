@@ -63,6 +63,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Silence posthog's feature-flag warning noise (we don't use feature flags,
+# only event capture, so its local-evaluation poller has nothing to do).
+logging.getLogger("posthog").setLevel(logging.ERROR)
+
 
 app = FastAPI()
 
