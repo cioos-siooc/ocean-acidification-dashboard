@@ -602,7 +602,7 @@ sensors:
   
   ###############################################################
   # ── ERDDAP University of Washington ──────────────────────────
-    - name: "NPBY1 - Point Wells: L3 Depth Gridded Data - 0.25 meter"
+  - name: "NPBY1 - Point Wells: L3 Depth Gridded Data - 0.25 meter"
     lat: 47.76116666
     lon: -122.39716666
     depth: -1
