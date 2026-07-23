@@ -19,25 +19,37 @@ function makeSplitSvg() {
     </svg>`;
 }
 
+// Vertical double-headed arrow badge for variable-depth (profiler) sensors. Drawn as a
+// raster image — like the buoy icons — rather than a Mapbox text glyph, since Unicode
+// arrow glyphs (e.g. U+2195) aren't guaranteed to be present in the glyph server's range.
+function makeVariableDepthBadgeSvg() {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14">
+        <circle cx="7" cy="7" r="7" fill="#333333"/>
+        <path d="M7 2 L4.5 5 L6 5 L6 9 L4.5 9 L7 12 L9.5 9 L8 9 L8 5 L9.5 5 Z" fill="#ffffff"/>
+    </svg>`;
+}
+
 export const STATIONS_LAYER_ID = 'stations-circles';
 export const SOURCE_ID = 'stations';
 const LAYER_BADGE_ID = 'stations-badge';
+const LAYER_VARIABLE_DEPTH_BADGE_ID = 'stations-variable-depth-badge';
 const IMAGE_REALTIME = 'buoy-realtime';
 const IMAGE_ACTIVE   = 'buoy-active';
 const IMAGE_INACTIVE = 'buoy-inactive';
 const IMAGE_MIXED    = 'buoy-mixed';
+const IMAGE_VARIABLE_DEPTH_BADGE = 'buoy-variable-depth-badge';
 
-async function loadImage(map: any, id: string, svg: string): Promise<void> {
+async function loadImage(map: any, id: string, svg: string, size = 30): Promise<void> {
     if (map.hasImage(id)) map.removeImage(id);
     const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     return new Promise<void>((resolve) => {
-        const img = new Image(30, 30);
+        const img = new Image(size, size);
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            canvas.width = 30;
-            canvas.height = 30;
+            canvas.width = size;
+            canvas.height = size;
             canvas.getContext('2d')!.drawImage(img, 0, 0);
-            map.addImage(id, canvas.getContext('2d')!.getImageData(0, 0, 30, 30));
+            map.addImage(id, canvas.getContext('2d')!.getImageData(0, 0, size, size));
             resolve();
         };
         img.onerror = () => resolve();
@@ -49,6 +61,8 @@ export type MultiSensorCandidate = {
     id: string;
     name: string;
     depth: number;
+    depth_min?: number | null;
+    depth_max?: number | null;
     isRealtime: boolean;
     lat: number;
     lon: number;
@@ -70,9 +84,11 @@ export async function addBuoyLayer(
         loadImage(map, IMAGE_ACTIVE,   makeSvg('#FFA726')),   // orange — active but only historical
         loadImage(map, IMAGE_INACTIVE, makeSvg('#888888')),   // grey   — inactive
         loadImage(map, IMAGE_MIXED,    makeSplitSvg()),       // half green / half orange — mixed group
+        loadImage(map, IMAGE_VARIABLE_DEPTH_BADGE, makeVariableDepthBadgeSvg(), 14),
     ]);
 
     // Remove existing layers/source before re-adding
+    try { if (map.getLayer(LAYER_VARIABLE_DEPTH_BADGE_ID)) map.removeLayer(LAYER_VARIABLE_DEPTH_BADGE_ID); } catch (e) { }
     try { if (map.getLayer(LAYER_BADGE_ID)) map.removeLayer(LAYER_BADGE_ID); } catch (e) { }
     try { if (map.getLayer(STATIONS_LAYER_ID)) map.removeLayer(STATIONS_LAYER_ID); } catch (e) { }
     try { if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID); } catch (e) { }
@@ -117,6 +133,22 @@ export async function addBuoyLayer(
             'text-color': '#ffffff',
             'text-halo-color': '#333333',
             'text-halo-width': 5,
+        },
+    });
+
+    // Badge layer: bottom-left marker for locations with a variable-depth (profiler) sensor,
+    // so profilers are visually distinguishable from fixed-depth sensors on the map.
+    map.addLayer({
+        id: LAYER_VARIABLE_DEPTH_BADGE_ID,
+        type: 'symbol',
+        source: SOURCE_ID,
+        filter: ['==', ['get', 'isVariableDepth'], true],
+        layout: {
+            'icon-image': IMAGE_VARIABLE_DEPTH_BADGE,
+            'icon-size': 1,
+            'icon-offset': [-15, 15],
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
         },
     });
 

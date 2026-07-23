@@ -760,11 +760,14 @@ function buildSensorGeoJSON(groups: any[][], sensorIsRealtime: (s: any) => boole
                 active: anyActive,
                 isRealtime,
                 hasMixed,
+                isVariableDepth: group.some((s: any) => s.depth < 0),
                 sensorsJson: JSON.stringify(
                     group.map((s: any) => ({
                         id: s.id,
                         name: s.name,
                         depth: s.depth,
+                        depth_min: s.depth_min ?? null,
+                        depth_max: s.depth_max ?? null,
                         isRealtime: sensorIsRealtime(s),
                         lat: s.latitude,
                         lon: s.longitude,

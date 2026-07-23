@@ -323,12 +323,15 @@ async def get_sensors():
             SELECT
                 s.id, s.name, s.latitude, s.longitude, s.depth,
                 s.device_config, s.variables, s.active,
-                ts.first_data_at, ts.latest_data_at, s.source, s.organization
+                ts.first_data_at, ts.latest_data_at, ts.depth_min, ts.depth_max,
+                s.source, s.organization
             FROM sensors AS s FINAL
             LEFT JOIN (
                 SELECT sensor_id,
                        MIN(time) AS first_data_at,
-                       MAX(time) AS latest_data_at
+                       MAX(time) AS latest_data_at,
+                       MIN(depth) AS depth_min,
+                       MAX(depth) AS depth_max
                 FROM sensor_timeseries
                 GROUP BY sensor_id
             ) ts ON ts.sensor_id = s.id
@@ -347,8 +350,10 @@ async def get_sensors():
                 "active": bool(row[7]),
                 "first_data_at": row[8].isoformat() if row[8] else None,
                 "latest_data_at": row[9].isoformat() if row[9] else None,
-                "source": json.loads(row[10]) if row[10] else {},
-                "organization": row[11] if row[11] else "",
+                "depth_min": float(row[10]) if row[10] is not None else None,
+                "depth_max": float(row[11]) if row[11] is not None else None,
+                "source": json.loads(row[12]) if row[12] else {},
+                "organization": row[13] if row[13] else "",
             })
         return sensors
 

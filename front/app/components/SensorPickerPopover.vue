@@ -13,7 +13,7 @@
         @click="pick(sensor)"
       >
         <v-list-item-title class="text-body-2">{{ sensor.name }}</v-list-item-title>
-        <v-list-item-subtitle class="text-caption">{{ sensor.depth }} m depth</v-list-item-subtitle>
+        <v-list-item-subtitle class="text-caption">{{ depthTxt(sensor) }}</v-list-item-subtitle>
       </v-list-item>
     </v-list>
   </div>
@@ -38,6 +38,15 @@ const emit = defineEmits<{
 const sortedSensors = computed(() =>
   [...props.sensors].sort((a, b) => a.depth - b.depth)
 );
+
+function depthTxt(sensor: MultiSensorCandidate): string {
+  if (sensor.depth < 0) {
+    return sensor.depth_min != null && sensor.depth_max != null
+      ? `Variable depth (${sensor.depth_min.toFixed(0)}–${sensor.depth_max.toFixed(0)} m)`
+      : 'Variable depth';
+  }
+  return `${sensor.depth} m depth`;
+}
 
 function pick(sensor: MultiSensorCandidate) {
   emit('pick', sensor);

@@ -36,7 +36,7 @@ export const useMainStore = defineStore('main', {
          */
         midDate: null as moment.Moment | null,
 
-        sensors: [] as Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null, source: { api?: string }, organization: string }>,
+        sensors: [] as Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, depth_min: number | null, depth_max: number | null, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null, source: { api?: string }, organization: string }>,
         selectedSensor: {} as { id: string, depth: number } | null,
 
         // Sensor panel filters — shared with the map so markers stay in sync with the sensor list.
@@ -114,7 +114,7 @@ export const useMainStore = defineStore('main', {
             this.midDate = date;
         },
 
-        setSensors(sensors: Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null, source: { api?: string }, organization: string }>) {
+        setSensors(sensors: Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, depth_min: number | null, depth_max: number | null, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null, source: { api?: string }, organization: string }>) {
             this.sensors = sensors;
         },
         setSelectedSensor(sensor: { id: string, depth: number } | null) {

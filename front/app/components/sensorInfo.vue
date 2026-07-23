@@ -42,7 +42,7 @@
                         <div class="ml-4">
                             <v-list-item-subtitle class="text-label-small">
                                 <span v-if="sensor.organization" class="sensor-org">{{ sensor.organization }} </span>
-                                {{ depth2txt(sensor.depth) }}
+                                {{ depth2txt(sensor) }}
                             </v-list-item-subtitle>
 
                             <v-list-item-subtitle class="text-label-small">
@@ -109,7 +109,7 @@
                     </v-list-item>
                     <v-list-item>
                         <v-list-item-title class="text-caption text-medium-emphasis">Depth</v-list-item-title>
-                        <v-list-item-subtitle>{{ depth2txt(infoDialogSensor.depth) }}</v-list-item-subtitle>
+                        <v-list-item-subtitle>{{ depth2txt(infoDialogSensor) }}</v-list-item-subtitle>
                     </v-list-item>
                     <v-list-item>
                         <v-list-item-title class="text-caption text-medium-emphasis">Data range</v-list-item-title>
@@ -239,8 +239,14 @@ function varShortName(varKey: string): string {
     return VAR_SHORT[varKey] ?? varKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function depth2txt(depth: number): string {
-    if (depth == null || depth < 0) return 'Variable depth';
+function depth2txt(sensor: { depth: number, depth_min?: number | null, depth_max?: number | null }): string {
+    const { depth, depth_min, depth_max } = sensor;
+    if (depth == null || depth < 0) {
+        if (depth_min != null && depth_max != null) {
+            return `Variable depth (${depth_min.toFixed(0)}–${depth_max.toFixed(0)} m)`;
+        }
+        return 'Variable depth';
+    }
     if (depth === 0) return 'Surface';
     return depth.toFixed(0) + ' m';
 }
