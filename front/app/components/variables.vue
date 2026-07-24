@@ -7,7 +7,7 @@
         :menu-props="{ location: 'end', offset: 35, zIndex: 9999 }" style="width: 100%"></v-select>
 
       <!-- SOURCES -->
-      <v-select v-model="selectedSource" :items="sourceItems" label="Source" item-title="label" item-value="source"
+      <v-select v-model="selectedSource" :items="sourceItems" label="Model Source" item-title="label" item-value="source"
         :disabled="sourceItems.length === 0" hide-details class="my-4"
         :menu-props="{ location: 'end', offset: 35, zIndex: 9999 }" style="width: 100%">
         <template #prepend-inner>
