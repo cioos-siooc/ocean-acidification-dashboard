@@ -10,6 +10,7 @@ import contextvars
 import os
 import logging
 import asyncio
+import time
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from urllib import request as urllib_request
@@ -30,7 +31,7 @@ from modules.extractSensorTimeseries import extract_sensor_timeseries
 from modules.extract_depth_profile import extract_depth_profile
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
 from modules.sync_hourly import import_native_file, import_daily_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
-from modules.posthog_helpers import capture_event, client_distinct_id
+from modules.posthog_helpers import capture_event
 
 async def run_in_process(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
@@ -79,6 +80,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _stamp_request_start_time(request: Request, call_next):
+    """Stamps a start time so posthog_helpers.capture_event can report
+    duration_ms without every handler having to time itself."""
+    request.state.start_time = time.perf_counter()
+    return await call_next(request)
 
 # Mount static files directory for convenience (still add explicit endpoint below to control headers)
 # app.mount("/png", StaticFiles(directory="/opt/data/png"), name="png")
@@ -418,7 +427,7 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: 
             ),
             timeout=THREADPOOL_TIMEOUT,
         )
-        capture_event(client_distinct_id(http_request), "sensor_timeseries", {
+        capture_event(http_request, "sensor_timeseries", {
             "sensorId": request.sensorId, "modelVariable": request.modelVariable,
             "fromDate": request.fromDate, "toDate": request.toDate, "depth": request.depth,
         })
@@ -479,7 +488,7 @@ async def get_depth_profile(request: depthProfileRequest, http_request: Request)
             timeout=THREADPOOL_TIMEOUT,
         )
         logger.info(f"FINISH depthProfile: {request.var}, sensor={request.sensorId} - returned {len(result.get('depths', []))} depths x {len(result.get('time', []))} bins")
-        capture_event(client_distinct_id(http_request), "depth_profile", {
+        capture_event(http_request, "depth_profile", {
             "sensorId": request.sensorId, "source": request.source, "var": request.var,
             "fromDate": request.fromDate, "toDate": request.toDate, "binHours": request.binHours,
         })
@@ -730,7 +739,7 @@ async def fn_extract_timeseries(request: timeseriesRequest, http_request: Reques
                 request.toDate,
                 len(merged.get("time", [])),
             )
-            capture_event(client_distinct_id(http_request), "extract_timeseries", {
+            capture_event(http_request, "extract_timeseries", {
                 "source": request.source, "var": request.var,
                 "lat": request.lat, "lon": request.lon,
                 "polygon": has_polygon, "depth": request.depth,
@@ -763,7 +772,7 @@ async def fn_extract_timeseries(request: timeseriesRequest, http_request: Reques
             request.toDate,
             len(payload.get("time", [])),
         )
-        capture_event(client_distinct_id(http_request), "extract_timeseries", {
+        capture_event(http_request, "extract_timeseries", {
             "source": request.source, "var": request.var,
             "lat": request.lat, "lon": request.lon,
             "polygon": has_polygon, "depth": request.depth,
@@ -810,7 +819,7 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_
             raise HTTPException(status_code=500, detail="Climatology extraction failed")
 
         logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
-        capture_event(client_distinct_id(http_request), "extract_climate_timeseries", {
+        capture_event(http_request, "extract_climate_timeseries", {
             "var": request.var, "lat": request.lat, "lon": request.lon,
             "depth": request.depth, "fromDate": request.fromDate, "toDate": request.toDate,
         })
@@ -870,7 +879,7 @@ async def fn_get_minmax(request: minmaxRequest, http_request: Request):
         )
 
         logger.info(f"FINISH getMinMax: source={request.source}, var={request.var}, range=[{min_val}, {max_val}]")
-        capture_event(client_distinct_id(http_request), "get_minmax", {
+        capture_event(http_request, "get_minmax", {
             "source": request.source, "var": request.var,
             "dt": request.dt, "depth": request.depth,
         })
@@ -919,7 +928,7 @@ async def fn_get_monthly_climatology(request: monthlyClimRequest, http_request: 
             # Let module pick DB environment vars
         )
         logger.info(f"FINISH getMonthlyClimatologyAtCoord: {request.variable}, {request.lat}, {request.lon}, depth={request.depth}")
-        capture_event(client_distinct_id(http_request), "get_monthly_climatology", {
+        capture_event(http_request, "get_monthly_climatology", {
             "variable": request.variable, "lat": request.lat,
             "lon": request.lon, "depth": request.depth,
         })
@@ -974,7 +983,7 @@ async def fn_get_profile(request: profileRequest, http_request: Request):
             timeout=THREADPOOL_TIMEOUT,
         )
         logger.info(f"FINISH getProfile: source={source}, var={var}, lat={lat}, lng={lng}, dt={dt} - returned {len(profile)} points")
-        capture_event(client_distinct_id(http_request), "get_profile", {
+        capture_event(http_request, "get_profile", {
             "source": source, "var": var, "lat": lat, "lng": lng, "dt": dt,
         })
         return profile
@@ -1021,7 +1030,7 @@ async def fn_get_eval(request: evalRequest, http_request: Request):
         )
         
         logger.info(f"FINISH getEval: {request.variable} - returned {len(result['time'])} timesteps for model={model}")
-        capture_event(client_distinct_id(http_request), "get_eval", {
+        capture_event(http_request, "get_eval", {
             "sensor": request.sensor, "variable": request.variable, "model": model,
         })
         return result
@@ -1109,7 +1118,7 @@ async def analysis_timeseries(request: AnalysisRequest, http_request: Request):
             stat=request.primaryMetric.stat,
             year_range=request.temporal["yearRange"],
         )
-        capture_event(client_distinct_id(http_request), "analysis_timeseries", {
+        capture_event(http_request, "analysis_timeseries", {
             "variable": request.primaryMetric.variable, "stat": request.primaryMetric.stat,
             "depth": request.depth, "mode": "polygon" if has_polygon else "point",
             "yearRange": request.temporal.get("yearRange"),

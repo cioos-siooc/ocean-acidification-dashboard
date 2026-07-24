@@ -9,7 +9,7 @@ Usage (from the process/ directory):
   python -m SSC.cli promote     [--limit N]
   python -m SSC.cli ingest      [--date YYYY-MM-DD] [--limit N] [--force]
   python -m SSC.cli sync        [--date YYYY-MM-DD] [--limit N] [--force]
-  python -m SSC.cli run         [--date YYYY-MM-DD] [--limit N] [--workers N] [--force]
+  python -m SSC.cli run         [--date YYYY-MM-DD] [--limit N] [--workers N] [--force] [--init-days N]
   python -m SSC.cli status      [--date YYYY-MM-DD]
 
 Commands:
@@ -31,13 +31,15 @@ Commands:
               SYNC_API_DATA_DIR / SYNC_API_BASE_URL / SYNC_API_TOKEN
               to be configured (see config.py) — a no-op error on a
               local-only deployment that hasn't set these.
-  run         Run all steps in order: download -> check_image -> compute ->
-                                       check_image -> image -> promote ->
-                                       ingest -> promote -> sync. Without
-              --date, sweeps all pending rows in batches (--limit per step).
-              With --date, scopes the whole pipeline to that one date, reusing
-              each stage's single-date skip/--force logic — so a date already
-              at e.g. pending_image resumes from imaging onward rather than
+  run         Run all steps in order: check -> download -> check_image ->
+                                       compute -> check_image -> image ->
+                                       promote -> ingest -> promote -> sync.
+              Without --date, sweeps all pending rows in batches (--limit per
+              step). With --date, scopes the whole pipeline to that one date
+              (check is passed date_override so it only seeds rows for
+              variables newly available for that date), reusing each stage's
+              single-date skip/--force logic — so a date already at e.g.
+              pending_image resumes from imaging onward rather than
               restarting at download.
   status      Print pipeline status for a date (default: last 7 days).
 
@@ -45,6 +47,11 @@ Every command that accepts --date only acts on rows in the expected pending
 state for that stage; rows already past the stage are skipped (logged), and
 rows that previously failed are retried. Pass --force to act regardless of
 current status (e.g. to force a redundant re-download or re-compute).
+
+Bulk sweeps (no --date) also retry failed_* rows automatically, as long as
+their attempts count is under config.MAX_RETRY_ATTEMPTS (default 3, override
+via SSC_MAX_RETRY_ATTEMPTS) — rows that exhaust the cap stay failed_* until
+you intervene with `--date ... --force` or by inspecting `status`.
 """
 from __future__ import annotations
 
@@ -327,10 +334,12 @@ def cmd_sync(args) -> None:
 
 
 def cmd_run(args) -> None:
-    """Run all pipeline steps in sequence: for pending work in general, or for a
-    single date (download -> check_image -> compute -> check_image -> image ->
-    promote -> ingest -> promote -> sync) when --date is given."""
+    """Run all pipeline steps in sequence: check, then either pending work in
+    general, or a single date (download -> check_image -> compute ->
+    check_image -> image -> promote -> ingest -> promote -> sync) when --date
+    is given."""
     from .config import IMAGE_BASE_DIR, NC_BASE_DIR, SYNC_API_BASE_URL
+    from .downloader import check_erddap
 
     client    = _get_client()
     nc_dir    = os.getenv('SSC_NC_DIR', NC_BASE_DIR)
@@ -340,6 +349,9 @@ def cmd_run(args) -> None:
     if args.date:
         from .db import check_image_ready_for_date, promote_date_if_ready
         date_val = _parse_date(args.date)
+
+        logger.info('=== check (%s) ===', date_val)
+        check_erddap(client, init_days=args.init_days, date_override=args.date)
 
         logger.info('=== download (%s) ===', date_val)
         _download_date(client, date_val, force=args.force)
@@ -381,6 +393,10 @@ def cmd_run(args) -> None:
     from .ingest import process_pending_ingests
     from .sync import process_pending_syncs
     from .db import check_image_ready, promote_ready_dates
+
+    logger.info('=== check ===')
+    new_dates = check_erddap(client, init_days=args.init_days)
+    logger.info('check: %d new date(s) queued', len(new_dates))
 
     logger.info('=== download ===')
     process_pending_downloads(client, limit=args.limit)
@@ -517,8 +533,10 @@ def main(argv=None) -> None:
     _add_date(p); _add_limit(p, default=5); _add_force(p)
     p.set_defaults(func=cmd_sync)
 
-    p = sub.add_parser('run', help='Run all pipeline steps for pending work')
+    p = sub.add_parser('run', help='Run all pipeline steps for pending work, starting with check')
     _add_date(p); _add_limit(p, default=10); _add_workers(p, default=4); _add_force(p)
+    p.add_argument('--init-days', type=int, default=3, metavar='N',
+                   help='Days back to start from when no download history exists (default 3)')
     p.set_defaults(func=cmd_run)
 
     p = sub.add_parser('status', help='Print pipeline status summary')

@@ -141,6 +141,12 @@ STATUS_SYNCING           = 'syncing'
 STATUS_SUCCESS_SYNC      = 'success_sync'
 STATUS_FAILED_SYNC       = 'failed_sync'
 
+# Bulk sweeps (`run`/`download`/`compute`/`image`/`ingest`/`sync` without --date)
+# also pick up failed_* rows with fewer than this many attempts, so transient
+# failures (network blips, timeouts) self-heal without manual --force retries.
+# Rows that exhaust this cap stay failed_* until a human intervenes.
+MAX_RETRY_ATTEMPTS = int(os.getenv('SSC_MAX_RETRY_ATTEMPTS', '3'))
+
 # Statuses indicating a download variable has moved past its download stage.
 # Used as the compute gate: all 5 download vars must be in this set.
 PAST_DOWNLOAD_STATUSES: frozenset[str] = frozenset({

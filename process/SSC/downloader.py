@@ -107,7 +107,10 @@ def check_erddap(client, init_days: int = 3, date_override: Optional[str] = None
 
     Returns the list of new dates initialised.
     """
-    new_dates: set[date] = set()
+    # Which variables actually have upstream data for each newly-seen date.
+    # The two ERDDAP datasets (chemistry/physics) publish independently, so a
+    # date can be available for one and not the other yet.
+    variables_by_date: dict[date, set[str]] = {}
 
     for variable in DOWNLOAD_VARIABLES:
         base_url = erddap_base_url(variable)
@@ -154,13 +157,13 @@ def check_erddap(client, init_days: int = 3, date_override: Optional[str] = None
 
         for d in dates_to_check:
             if get_row(client, d, variable) is None:
-                new_dates.add(d)
+                variables_by_date.setdefault(d, set()).add(variable)
 
-    for d in sorted(new_dates):
-        init_date(client, d)
-        logger.info('Queued new date: %s', d)
+    for d in sorted(variables_by_date):
+        init_date(client, d, download_variables=sorted(variables_by_date[d]))
+        logger.info('Queued new date: %s (%s)', d, ', '.join(sorted(variables_by_date[d])))
 
-    return sorted(new_dates)
+    return sorted(variables_by_date)
 
 
 # ---------------------------------------------------------------------------

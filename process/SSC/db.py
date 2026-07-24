@@ -21,7 +21,9 @@ import clickhouse_connect
 from .config import (
     ALL_VARIABLES, COMPUTE_VARIABLES, DOWNLOAD_VARIABLES,
     CH_HOST, CH_PASSWORD, CH_PORT, CH_REMOTE_URL, CH_USE_REMOTE, CH_USER,
-    PAST_DOWNLOAD_STATUSES,
+    MAX_RETRY_ATTEMPTS, PAST_DOWNLOAD_STATUSES,
+    STATUS_FAILED_COMPUTE, STATUS_FAILED_DOWNLOAD, STATUS_FAILED_IMAGE,
+    STATUS_FAILED_INGEST, STATUS_FAILED_SYNC,
     STATUS_IMAGING, STATUS_INGESTING,
     STATUS_PENDING_COMPUTE, STATUS_PENDING_DOWNLOAD,
     STATUS_PENDING_IMAGE, STATUS_PENDING_INGEST, STATUS_PENDING_SYNC,
@@ -390,27 +392,31 @@ def promote_date_if_ready(client, date_val: date) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def get_pending_downloads(client, limit: int = 20) -> list[tuple[date, str]]:
+    """pending_download rows, plus failed_download rows under the retry cap
+    (transient failures self-heal in bulk sweeps without --force)."""
     result = client.query(
         f"""
         SELECT date, variable FROM SalishSeaCast_status FINAL
-        WHERE status = %(s)s
+        WHERE status = %(sp)s
+           OR (status = %(sf)s AND attempts < %(cap)s)
         ORDER BY date, variable
         {_limit_sql(limit)}
         """,
-        parameters={'s': STATUS_PENDING_DOWNLOAD},
+        parameters={'sp': STATUS_PENDING_DOWNLOAD, 'sf': STATUS_FAILED_DOWNLOAD, 'cap': MAX_RETRY_ATTEMPTS},
     )
     return [(r[0], r[1]) for r in result.result_rows]
 
 
 def get_dates_pending_compute(client, limit: int = 10) -> list[date]:
-    """Dates where compute vars are pending_compute AND all 5 downloads are done."""
+    """Dates where compute vars are pending_compute (or failed_compute under the
+    retry cap) AND all 5 downloads are done."""
     past = "', '".join(PAST_DOWNLOAD_STATUSES)
     result = client.query(
         f"""
         SELECT DISTINCT date
         FROM SalishSeaCast_status FINAL
         WHERE variable IN ('{"', '".join(COMPUTE_VARIABLES)}')
-          AND status = %(s)s
+          AND (status = %(sp)s OR (status = %(sf)s AND attempts < %(cap)s))
           AND date IN (
               SELECT date FROM SalishSeaCast_status FINAL
               WHERE variable IN ('{"', '".join(DOWNLOAD_VARIABLES)}')
@@ -422,7 +428,9 @@ def get_dates_pending_compute(client, limit: int = 10) -> list[date]:
         {_limit_sql(limit)}
         """,
         parameters={
-            's': STATUS_PENDING_COMPUTE,
+            'sp': STATUS_PENDING_COMPUTE,
+            'sf': STATUS_FAILED_COMPUTE,
+            'cap': MAX_RETRY_ATTEMPTS,
             'ndl': len(DOWNLOAD_VARIABLES),
         },
     )
@@ -433,11 +441,12 @@ def get_pending_images(client, limit: int = 40) -> list[tuple[date, str]]:
     result = client.query(
         f"""
         SELECT date, variable FROM SalishSeaCast_status FINAL
-        WHERE status = %(s)s
+        WHERE status = %(sp)s
+           OR (status = %(sf)s AND attempts < %(cap)s)
         ORDER BY date, variable
         {_limit_sql(limit)}
         """,
-        parameters={'s': STATUS_PENDING_IMAGE},
+        parameters={'sp': STATUS_PENDING_IMAGE, 'sf': STATUS_FAILED_IMAGE, 'cap': MAX_RETRY_ATTEMPTS},
     )
     return [(r[0], r[1]) for r in result.result_rows]
 
@@ -446,11 +455,12 @@ def get_dates_pending_ingest(client, limit: int = 5) -> list[date]:
     result = client.query(
         f"""
         SELECT DISTINCT date FROM SalishSeaCast_status FINAL
-        WHERE status = %(s)s
+        WHERE status = %(sp)s
+           OR (status = %(sf)s AND attempts < %(cap)s)
         ORDER BY date
         {_limit_sql(limit)}
         """,
-        parameters={'s': STATUS_PENDING_INGEST},
+        parameters={'sp': STATUS_PENDING_INGEST, 'sf': STATUS_FAILED_INGEST, 'cap': MAX_RETRY_ATTEMPTS},
     )
     return [r[0] for r in result.result_rows]
 
@@ -459,11 +469,12 @@ def get_dates_pending_sync(client, limit: int = 5) -> list[date]:
     result = client.query(
         f"""
         SELECT DISTINCT date FROM SalishSeaCast_status FINAL
-        WHERE status = %(s)s
+        WHERE status = %(sp)s
+           OR (status = %(sf)s AND attempts < %(cap)s)
         ORDER BY date
         {_limit_sql(limit)}
         """,
-        parameters={'s': STATUS_PENDING_SYNC},
+        parameters={'sp': STATUS_PENDING_SYNC, 'sf': STATUS_FAILED_SYNC, 'cap': MAX_RETRY_ATTEMPTS},
     )
     return [r[0] for r in result.result_rows]
 
@@ -472,13 +483,20 @@ def get_dates_pending_sync(client, limit: int = 5) -> list[date]:
 # Date initialisation
 # ---------------------------------------------------------------------------
 
-def init_date(client, date_val: date) -> None:
+def init_date(client, date_val: date, download_variables: Optional[list[str]] = None) -> None:
     """Seed status rows for a new date.
 
-    Download variables start at pending_download.
+    Download variables start at pending_download. Only `download_variables`
+    (default: all of them) are seeded — callers pass a subset when a date is
+    only confirmed available upstream for some variables (e.g. one of the two
+    ERDDAP datasets hasn't published that day yet); the others get seeded on
+    a later check() once their own dataset catches up.
     Compute variables start at pending_compute.
     Idempotent: existing rows are not overwritten.
     """
+    if download_variables is None:
+        download_variables = DOWNLOAD_VARIABLES
+
     existing_result = client.query(
         "SELECT variable FROM SalishSeaCast_status FINAL WHERE date = %(d)s",
         parameters={'d': date_val},
@@ -487,7 +505,7 @@ def init_date(client, date_val: date) -> None:
 
     now = _now()
     rows = []
-    for var in DOWNLOAD_VARIABLES:
+    for var in download_variables:
         if var not in already:
             rows.append([date_val, var, STATUS_PENDING_DOWNLOAD, '', 0, '', now])
     for var in COMPUTE_VARIABLES:
