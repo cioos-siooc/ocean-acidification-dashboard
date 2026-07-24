@@ -48,6 +48,12 @@
         <div v-show="hasActivePlot" ref="chartContainerRef" class="w-100 h-100"
           :class="{ 'chart-loading': isGenerating }" />
 
+        <!-- Floating label naming the year under the cursor, riding next to the hovered point -->
+        <div v-if="hoverInfo" class="overlay-hover-label"
+          :style="{ left: `${hoverInfo.x + 10}px`, top: `${hoverInfo.y - 10}px`, color: hoverInfo.color }">
+          {{ hoverInfo.name }}
+        </div>
+
         <!-- First-time load spinner (no chart yet) -->
         <div v-if="isGenerating && !hasActivePlot"
           class="d-flex flex-column align-center justify-center fill-height">
@@ -113,7 +119,8 @@ import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
 import { useMainStore } from '../stores/main'
 import { fetchAnalysisSeries, type SeriesPoint, type AnalysisLocation } from '../../composables/useAnalysisFetch'
 import {
-  availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor,
+  availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor, attachSeriesFocusInteractions,
+  type SeriesHoverInfo,
 } from '../../composables/useAnalysisStatistics'
 import AdvancedAnalysisDialog from './analysis/AdvancedAnalysisDialog.vue'
 
@@ -142,6 +149,7 @@ const primaryStat = ref('mean')
 const isGenerating = ref(false)
 const hasActivePlot = ref(false)
 const plotErrorMessage = ref<string | null>(null)
+const hoverInfo = ref<SeriesHoverInfo | null>(null)
 
 let autoRunTimer: ReturnType<typeof setTimeout> | null = null
 let activeRequestId = 0
@@ -236,6 +244,7 @@ function initChart() {
   if (chartInstance) { chartInstance.dispose(); chartInstance = null }
   if (!chartContainerRef.value) return
   chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
+  attachSeriesFocusInteractions(chartInstance, (info) => { hoverInfo.value = info })
 }
 
 // --- CHART RENDERERS ---
@@ -270,6 +279,9 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
       lineStyle: { width, color },
       itemStyle: { color },
       data: points,
+      // Disables the legend's own mouseover/mouseout highlight so it doesn't fight with
+      // attachStickyLegendHighlight's click-driven, persistent highlight below.
+      legendHoverLink: false,
       emphasis: {
         focus: 'series',
         lineStyle: { width: width + 1.5, opacity: 1, color },
@@ -504,5 +516,15 @@ const runAnalysis = async () => {
   font-size: 0.65rem;
   color: rgba(255, 193, 7, 0.9);
   pointer-events: none;
+}
+
+.overlay-hover-label {
+  position: absolute;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-shadow: 0 0 3px #000, 0 0 3px #000, 0 1px 2px #000;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 5;
 }
 </style>

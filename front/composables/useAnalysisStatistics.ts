@@ -1,4 +1,5 @@
 import type { SeriesPoint } from './useAnalysisFetch';
+import type { ECharts } from 'echarts';
 
 export const availableVariables = [
     { id: 'temperature', name: 'Temperature' },
@@ -110,15 +111,177 @@ export function linearRegression(pts: { x: number; y: number }[]): { slope: numb
 
 /**
  * Maps a year's position in the dataset (0=oldest -> 1=newest) to a colour.
- * Oldest: muted steel-blue, low opacity. Newest: vivid orange-red, fully opaque.
+ * Oldest: muted steel-blue. Newest: vivid orange-red, fully opaque.
+ * Alpha floor is kept high enough that the oldest years stay legible on a dark background.
  */
 export function yearColor(idx: number, total: number): string {
     const t = total <= 1 ? 1 : idx / (total - 1);
     const hue = Math.round(220 - t * 205);
     const sat = Math.round(45 + t * 50);
     const lit = Math.round(65 - t * 7);
-    const alpha = (0.18 + t * 0.82).toFixed(2);
+    const alpha = (0.5 + t * 0.5).toFixed(2);
     return `hsla(${hue},${sat}%,${lit}%,${alpha})`;
+}
+
+/**
+ * Replaces ECharts' default legend click behavior (hide the series) with a
+ * persistent isolate/fade: clicking a legend entry fades every other series
+ * out, until the same entry is clicked again or another one is picked. All
+ * series stay visible/selectable in the legend itself.
+ *
+ * This deliberately does not use ECharts' `highlight`/`downplay` actions (the
+ * emphasis/blur state machine behind hover). That state is transient by
+ * design — ECharts clears all emphasis/blur globally the moment the pointer
+ * crosses any "empty" canvas area (its internal high-down mouseout handling),
+ * which happens constantly as the user moves the mouse around the chart. A
+ * highlight set that way cannot survive normal mouse movement, so the fade is
+ * instead baked directly into each series' own `lineStyle.opacity` via
+ * `setOption`, independent of hover state.
+ */
+export function attachStickyLegendHighlight(chart: ECharts): void {
+    let stickyName: string | null = null;
+
+    function applyStickyStyles(): void {
+        const series = ((chart.getOption().series as any[]) || []);
+        chart.setOption({
+            series: series.map(s => {
+                const isSticky = s.name === stickyName;
+                return {
+                    name: s.name,
+                    lineStyle: { opacity: stickyName == null || isSticky ? 1 : 0.08 },
+                    z: isSticky ? 10 : 0,
+                };
+            }),
+        });
+    }
+
+    chart.on('legendselectchanged', (params: any) => {
+        // ECharts' own click handling for legend items (dispatchSelectAction in
+        // LegendView) always re-highlights/re-toggles the just-clicked series right
+        // after this event fires, as part of the same synchronous call. Deferring to
+        // a macrotask lets that finish first, so undoing the hide below has the
+        // final say instead of being immediately overridden.
+        setTimeout(() => {
+            // Undo the default click-to-hide — legend selection is repurposed below.
+            chart.dispatchAction({ type: 'legendAllSelect' });
+            stickyName = params.name === stickyName ? null : params.name;
+            applyStickyStyles();
+        }, 0);
+    });
+}
+
+/** Binary-searches `points` (sorted ascending by x) for the value of whichever endpoint is nearest `x`. */
+function nearestPointValue(points: [number, number | null][], x: number): number | null {
+    let lo = 0, hi = points.length - 1;
+    if (hi < 0) return null;
+    while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (points[mid][0] < x) lo = mid + 1;
+        else hi = mid;
+    }
+    let best: number | null = null;
+    let bestDist = Infinity;
+    for (const p of [points[lo], points[lo - 1]]) {
+        if (!p || p[1] == null) continue;
+        const d = Math.abs(p[0] - x);
+        if (d < bestDist) { bestDist = d; best = p[1]; }
+    }
+    return best;
+}
+
+export type SeriesHoverInfo = { name: string; x: number; y: number; color: string };
+
+/**
+ * Same persistent isolate/fade as {@link attachStickyLegendHighlight}, but also lets
+ * hovering directly over a line isolate it — showing which year is under the cursor,
+ * something the chart previously gave no way to tell apart from the rest of the stack.
+ * `onHoverChange` fires with the hovered point's pixel position (relative to the chart's
+ * own container) and the series' color, so the caller can render a label riding right
+ * next to the hovered point instead of somewhere disconnected from the line itself. This
+ * deliberately doesn't render the label via ECharts' own `graphic` component — replacing
+ * that graphic element every animation frame corrupts its internal hover/dispose
+ * bookkeeping (`Cannot read properties of undefined (reading '__ec_inner_*')`) — so the
+ * caller is expected to render a plain absolutely-positioned element instead.
+ *
+ * This can't use ECharts' own per-series `mouseover` — with `tooltip.trigger:'axis'`,
+ * ECharts installs a chart-wide hit-catcher for the crosshair that swallows the pick
+ * before it ever reaches an individual line, so `chart.on('mouseover', ...)` never
+ * fires here. Instead, on every raw pointer move this finds whichever series' value is
+ * pixel-closest to the cursor at that x and treats that as hovered. A sticky legend
+ * click (see attachStickyLegendHighlight) takes priority over hover for the fade, but
+ * the floating label only ever tracks live hover (there's no cursor position to anchor
+ * it to for a sticky-only selection — the highlighted line and legend already say which
+ * year that is).
+ */
+export function attachSeriesFocusInteractions(chart: ECharts, onHoverChange?: (info: SeriesHoverInfo | null) => void): void {
+    let stickyName: string | null = null;
+    let hoverName: string | null = null;
+    const HOVER_PIXEL_THRESHOLD = 18;
+
+    function applyStyles(): void {
+        const focusName = stickyName ?? hoverName;
+        const series = ((chart.getOption().series as any[]) || []);
+        chart.setOption({
+            series: series.map(s => {
+                const isFocused = s.name === focusName;
+                return {
+                    name: s.name,
+                    lineStyle: { opacity: focusName == null || isFocused ? 1 : 0.08 },
+                    z: isFocused ? 10 : 0,
+                };
+            }),
+        });
+    }
+
+    chart.on('legendselectchanged', (params: any) => {
+        setTimeout(() => {
+            chart.dispatchAction({ type: 'legendAllSelect' });
+            stickyName = params.name === stickyName ? null : params.name;
+            applyStyles();
+        }, 0);
+    });
+
+    let rafPending = false;
+    chart.getZr().on('mousemove', (e: any) => {
+        if (rafPending) return;
+        rafPending = true;
+        requestAnimationFrame(() => {
+            rafPending = false;
+            const point = chart.convertFromPixel({ xAxisIndex: 0, yAxisIndex: 0 }, [e.offsetX, e.offsetY]) as number[] | undefined;
+            if (!point) return;
+            const series = ((chart.getOption().series as any[]) || []);
+            let bestName: string | null = null;
+            let bestColor = '#fff';
+            let bestPixel: number[] | null = null;
+            let bestDist = Infinity;
+            for (const s of series) {
+                const y = nearestPointValue(s.data, point[0]);
+                if (y == null) continue;
+                const px = chart.convertToPixel({ xAxisIndex: 0, yAxisIndex: 0 }, [point[0], y]) as number[] | undefined;
+                if (!px) continue;
+                const dist = Math.abs(px[1] - e.offsetY);
+                if (dist < bestDist) { bestDist = dist; bestName = s.name; bestPixel = px; bestColor = s.lineStyle?.color ?? '#fff'; }
+            }
+            const newHover = bestDist <= HOVER_PIXEL_THRESHOLD ? bestName : null;
+            if (newHover !== hoverName) {
+                hoverName = newHover;
+                if (!stickyName) applyStyles();
+            }
+            if (newHover && bestPixel) {
+                onHoverChange?.({ name: newHover, x: bestPixel[0], y: bestPixel[1], color: bestColor });
+            } else {
+                onHoverChange?.(null);
+            }
+        });
+    });
+
+    chart.getZr().on('globalout', () => {
+        if (hoverName != null) {
+            hoverName = null;
+            if (!stickyName) applyStyles();
+        }
+        onHoverChange?.(null);
+    });
 }
 
 // --- TREND SIGNIFICANCE (Mann-Kendall + Theil-Sen) ---

@@ -30,7 +30,7 @@ import { registerEchartsDarkTheme } from '../../../composables/useEchartsTheme'
 import type { SeriesPoint } from '../../../composables/useAnalysisFetch'
 import {
   filterBySeason, groupByYear, breakDataGaps, computeClimatologyBaseline, climatologyForDate, yearColor,
-  distinctYearSpan,
+  distinctYearSpan, attachStickyLegendHighlight,
 } from '../../../composables/useAnalysisStatistics'
 
 const props = defineProps<{ series: SeriesPoint[]; season: string }>()
@@ -74,7 +74,10 @@ let resizeObserver: ResizeObserver | null = null
 function render() {
   if (!chartContainerRef.value) return
   registerEchartsDarkTheme()
-  if (!chartInstance) chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
+  if (!chartInstance) {
+    chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
+    attachStickyLegendHighlight(chartInstance)
+  }
 
   const total = anomalySeries.value.length
   const series = anomalySeries.value.map((s, idx) => ({
@@ -86,6 +89,9 @@ function render() {
     lineStyle: { width: 1 + (total <= 1 ? 1 : idx / (total - 1)) * 1.5, color: yearColor(idx, total) },
     itemStyle: { color: yearColor(idx, total) },
     data: s.points,
+    // Disables the legend's own mouseover/mouseout highlight so it doesn't fight with
+    // attachStickyLegendHighlight's click-driven, persistent highlight below.
+    legendHoverLink: false,
     emphasis: { focus: 'series' },
   }))
   if (series.length) (series[0] as any).markLine = { silent: true, symbol: 'none', lineStyle: { color: '#fff', opacity: 0.4, type: 'solid', width: 1 }, data: [{ yAxis: 0 }] }

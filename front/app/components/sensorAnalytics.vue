@@ -125,7 +125,7 @@ import { useMainStore } from '../stores/main'
 import type { SeriesPoint, AnalysisLocation } from '../../composables/useAnalysisFetch'
 import { fetchSensorAnalysisSeries } from '../../composables/useSensorAnalysisFetch'
 import {
-  availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor,
+  availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor, attachStickyLegendHighlight,
 } from '../../composables/useAnalysisStatistics'
 import AdvancedAnalysisDialog from './analysis/AdvancedAnalysisDialog.vue'
 
@@ -237,6 +237,7 @@ function initChart() {
   if (chartInstance) { chartInstance.dispose(); chartInstance = null }
   if (!chartContainerRef.value) return
   chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
+  attachStickyLegendHighlight(chartInstance)
 }
 
 // --- CHART RENDERERS ---
@@ -271,6 +272,9 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
       lineStyle: { width, color },
       itemStyle: { color },
       data: points,
+      // Disables the legend's own mouseover/mouseout highlight so it doesn't fight with
+      // attachStickyLegendHighlight's click-driven, persistent highlight below.
+      legendHoverLink: false,
       emphasis: {
         focus: 'series',
         lineStyle: { width: width + 1.5, opacity: 1, color },
