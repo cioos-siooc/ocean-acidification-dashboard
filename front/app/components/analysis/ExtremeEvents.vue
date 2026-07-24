@@ -125,11 +125,19 @@ const yearRows = computed(() => yearlySummary.value.map(y => ({
 const chartContainerRef = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
+// Preserved across re-renders so changing a param on the left doesn't reset the user's zoom.
+let zoomRange = { start: 0, end: 100 }
 
 function render() {
   if (!chartContainerRef.value) return
   registerEchartsDarkTheme()
-  if (!chartInstance) chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
+  if (!chartInstance) {
+    chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
+    chartInstance.on('datazoom', () => {
+      const dz = (chartInstance!.getOption().dataZoom as any[]) || []
+      if (dz[0]) zoomRange = { start: dz[0].start, end: dz[0].end }
+    })
+  }
 
   // Masked (not compacted) so off-season months render as a real gap in the line
   // instead of a straight diagonal connecting e.g. last August to next March. Gap-broken
@@ -151,7 +159,10 @@ function render() {
     grid: { left: '4%', right: '3%', bottom: '12%', top: '8%', containLabel: true },
     xAxis: { type: 'time', axisLabel: { fontSize: 9, color: '#ccc' } },
     yAxis: { type: 'value', axisLabel: { fontSize: 10, color: '#ccc' }, scale: true },
-    dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 14 }],
+    dataZoom: [
+      { type: 'inside', start: zoomRange.start, end: zoomRange.end },
+      { type: 'slider', bottom: 4, height: 14, start: zoomRange.start, end: zoomRange.end },
+    ],
     series: [
       {
         name: 'Value', type: 'line', showSymbol: false, data: valuePoints, connectNulls: false,
