@@ -3,16 +3,16 @@
     @mouseleave="isHovering = false">
     <div class="colorbar-inner">
       <!-- TOGGLE NAVIGATION PANEL -->
-        <v-btn flat :variant="isControlPanelOpen ? 'elevated' : 'text'"
+        <v-btn flat :variant="isControlPanelOpen ? 'elevated' : 'text'" density="comfortable"
           @click="mainStore.toggleIsControlPanelOpen" class="ma-1 overlay-btn">
           <v-icon size="16px">{{ isControlPanelOpen ? 'mdi-menu-open' : 'mdi-menu' }}</v-icon>
-          <span class="overlay-btn__label">Toggle Navigation Panel</span>
+          <span class="overlay-btn__label">Toggle Left Panel</span>
         </v-btn>
 
         <v-divider></v-divider>
 
         <!-- BATHYMETRY CONTOURS -->
-        <v-btn flat :variant="showBathymetryContours ? 'elevated' : 'text'"
+        <v-btn flat :variant="showBathymetryContours ? 'elevated' : 'text'" density="comfortable"
           :color="showBathymetryContours ? 'primary' : undefined"
           @click="mainStore.setShowBathymetryContours(!showBathymetryContours)" class="ma-1 overlay-btn">
           <IconsContour />
@@ -20,14 +20,14 @@
         </v-btn>
 
         <!-- CURSOR COORDINATES -->
-        <v-btn flat :variant="showCursorCoords ? 'elevated' : 'text'"
+        <v-btn flat :variant="showCursorCoords ? 'elevated' : 'text'" density="comfortable"
           @click="mainStore.setShowCursorCoords(!showCursorCoords)" class="ma-1 overlay-btn">
           <v-icon size="16px">{{ showCursorCoords ? 'mdi-cursor-default' : 'mdi-cursor-default-outline' }}</v-icon>
           <span class="overlay-btn__label">Cursor Coordinates</span>
         </v-btn>
 
         <!-- VERTICAL PROFILE -->
-        <v-btn flat @click="toggleVerticalProfile" class="ma-1 overlay-btn">
+        <v-btn flat @click="toggleVerticalProfile" density="comfortable" class="ma-1 overlay-btn">
           <IconsProfile />
           <span class="overlay-btn__label">Vertical Profile</span>
         </v-btn>
@@ -35,7 +35,7 @@
         <v-divider></v-divider>
 
         <!-- AUTO COLOR -->
-        <v-btn flat
+        <v-btn flat density="comfortable"
           :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled"
           @click="autorange" class="ma-1 overlay-btn">
           <IconsAutorange />
@@ -43,7 +43,7 @@
         </v-btn>
 
         <!-- COLOR SETTINGS -->
-        <v-btn flat @click="showColorbarSettings = !showColorbarSettings" class="ma-1 overlay-btn">
+        <v-btn flat density="comfortable" @click="showColorbarSettings = !showColorbarSettings" class="ma-1 overlay-btn">
           <v-icon size="16px">mdi-palette</v-icon>
           <span class="overlay-btn__label">Color Settings</span>
         </v-btn>
