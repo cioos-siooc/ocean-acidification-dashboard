@@ -359,10 +359,18 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         const min = climateData.map((row: any) => row.min);
         const maxDiff = climateData.map((row: any) => row.max - row.min);
 
+        // endLabel renders at each series' own last (for _stats_mean) or stacked-cumulative
+        // (for the stack:'minmax' pair, where the rendered height is min, then min+range=max)
+        // pixel position, so labelling "Min"/"Max"/"Mean" here lines up with the band's
+        // actual top/bottom edges and the dashed mean line without any extra computation.
+        const statsEndLabel = (formatter: string) => ({
+            show: true, formatter, color: mainStore.colors.stats, fontSize: 14, distance: -28,
+        });
+
         const fmt = (ts: number[], vals: any[]) => ts.map((t, i) => [moment.utc(t).tz(tz).format(), vals[i]]);
-        seriesArr.push({ name: '_stats_min_base', type: 'line', data: fmt(climate_ts, min), lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none' });
-        seriesArr.push({ name: '_stats_max_range', type: 'line', data: fmt(climate_ts, maxDiff), lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, stack: 'minmax', symbol: 'none' });
-        seriesArr.push({ name: '_stats_mean', type: 'line', data: fmt(climate_ts, mean), smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 2, type: 'dashed' }, symbol: 'none' });
+        seriesArr.push({ name: '_stats_min_base', type: 'line', data: fmt(climate_ts, min), lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none', endLabel: statsEndLabel('Min') });
+        seriesArr.push({ name: '_stats_max_range', type: 'line', data: fmt(climate_ts, maxDiff), lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, stack: 'minmax', symbol: 'none', endLabel: statsEndLabel('Max') });
+        seriesArr.push({ name: '_stats_mean', type: 'line', data: fmt(climate_ts, mean), smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 2, type: 'dashed' }, symbol: 'none', endLabel: statsEndLabel('Mean') });
         seriesArr.push({ name: 'Climatology', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
     }
 
@@ -408,8 +416,9 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
             const visible = params.selected['Climatology'];
             chart!.setOption({
                 series: [
-                    { name: '_stats_max_range', areaStyle: { color: mainStore.colors.stats, opacity: visible ? 0.2 : 0 } },
-                    { name: '_stats_mean', lineStyle: { color: mainStore.colors.stats, opacity: visible ? 0.8 : 0, width: 2, type: 'dashed' } },
+                    { name: '_stats_min_base', endLabel: { show: visible } },
+                    { name: '_stats_max_range', areaStyle: { color: mainStore.colors.stats, opacity: visible ? 0.2 : 0 }, endLabel: { show: visible } },
+                    { name: '_stats_mean', lineStyle: { color: mainStore.colors.stats, opacity: visible ? 0.8 : 0, width: 2, type: 'dashed' }, endLabel: { show: visible } },
                 ]
             });
         };
