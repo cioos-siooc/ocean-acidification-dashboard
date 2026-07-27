@@ -7,13 +7,6 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   app: {
     head: {
-      script: [
-        {
-          async: true,
-          src: 'https://analytics.oa.cioospacificlabs.ca/script.js',
-          'data-website-id': 'cc6fb6f2-ce6e-4d01-9a4a-96a1efc0d801' // Replace with the ID from Umami
-        }
-      ],
       link: [
         { rel: 'icon', type: 'image/png', href: '/OA_logo.png' },
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },

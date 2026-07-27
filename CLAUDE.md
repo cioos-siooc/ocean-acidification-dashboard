@@ -113,6 +113,8 @@ FastAPI app in `SERVER.py`. All blocking work runs in a `ProcessPoolExecutor` vi
 
 **Federation**: When `FEDERATION_ENABLED=true` and `REMOTE_B_API_BASE` is set, SSC requests are routed between two servers (A = local, B = remote archive) based on `nc_jobs.misc` ownership flags.
 
+Most POST endpoints above (all except `/admin/syncHourly` and tile-serving routes) fire a PostHog usage-analytics event on success — see Usage Analytics (PostHog) below.
+
 ### Process Pipeline (`process/`)
 Entry point: `MAIN.py` → `modules/cli.py`. Key modules:
 - `modules/downloader.py` — ERDDAP HTTP fetching with backfill
@@ -130,7 +132,7 @@ Nuxt 3 + Vuetify + Pinia. Key structure:
 - `app/stores/` — Pinia stores for app-wide state
 - `composables/` — MapboxGL layer logic (`useRasterLayer`, `useVectorTileLayer`, `useBuoyLayer`, `useMapAnimator`, etc.) and data fetching (`useSensorTimeseries`)
 
-Config via `nuxt.config.ts`. Runtime env vars: `NUXT_PUBLIC_API_BASE_URL`, `NUXT_PUBLIC_MAPBOX_TOKEN`.
+Config via `nuxt.config.ts`. Runtime env vars: `NUXT_PUBLIC_API_BASE_URL`, `NUXT_PUBLIC_MAPBOX_TOKEN`, `NUXT_PUBLIC_POSTHOG_KEY`, `NUXT_PUBLIC_POSTHOG_HOST` (see Usage Analytics below).
 
 **UI conventions**: Prefer Vuetify components (`v-btn`, `v-card`, `v-sheet`, etc.) over raw `div`/`button` elements, even when heavily restyled — apply custom look via scoped CSS classes on top of the component (e.g. `selectedInfo.vue`'s `.colorbar` class on a `v-card`) rather than dropping to plain HTML. Use `:deep()` to reach into a component's internal classes (e.g. `.v-btn__content`) when the override needs to target inner markup.
 
@@ -157,6 +159,17 @@ Config via `nuxt.config.ts`. Runtime env vars: `NUXT_PUBLIC_API_BASE_URL`, `NUXT
 The dialog fetches one shared "primary series" per point/variable/depth (reused across sub-tabs), plus a memoized `cachedFetch` helper for secondary-variable series used by CompoundStress and Correlation. Client-side stats helpers live in `composables/useAnalysisStatistics.ts`; ECharts dark theme registration in `composables/useEchartsTheme.ts`.
 
 Other chart-related components: `app/components/EchartsLineDialog.vue` — a separate monthly-chart dialog, unrelated to Model Analysis. `app/components/sensorInfo.vue` — despite the name, this is the left-panel searchable/filterable sensor list (mounted in `controlPanel.vue`'s "Sensors" expansion panel); it also bundles the per-sensor metadata dialog (info icon) and a heatmap dialog. Selecting a sensor here or on the map both call `mainStore.selectSensor(id, depth)`, and the list auto-scrolls the selected `v-list-item` into view via a `watch` on `mainStore.selectedSensor`.
+
+### Usage Analytics (PostHog)
+
+Both `api/` and `front/` send usage events to **PostHog Cloud** (not self-hosted — the official self-hosted stack bundles its own Postgres/Redis/ClickHouse/Zookeeper/Kafka/MinIO, which would duplicate what this project already runs; this was a deliberate call). Capture is a silent no-op on either side when its key is unset — safe to leave blank in any environment.
+
+- **API** (`api/modules/posthog_helpers.py`): `capture_event(http_request, event, properties)`, configured via `POSTHOG_API_KEY`/`POSTHOG_HOST`. Called from `sensorTimeseries`, `depthProfile`, `extractTimeseries`, `extract_climateTimeseries`, `getMinMax`, `getMonthlyClimatologyAtCoord`, `getProfile`, `getEval`, and `analysis/timeseries` — tile-serving and `/admin/syncHourly` are deliberately excluded (too high-volume / not user behavior).
+- **Frontend** (`front/app/plugins/posthog.client.ts` + `front/composables/useAnalytics.ts`'s `trackEvent()`), configured via `NUXT_PUBLIC_POSTHOG_KEY`/`NUXT_PUBLIC_POSTHOG_HOST`. Custom events only — no PostHog autocapture, no session replay (deliberate: avoids noise from this canvas/map-heavy UI and keeps event volume down). Events: `sensor_selected` (list vs. map), `model_point_queried` (map-click point/area model query), `model_eval_requested`, `climatology_requested`, `tab_switched` / `query_mode_changed` (centralized in `main.ts`'s store actions, covering every call site), `variable_changed`, `advanced_analysis_opened` (tagged by `dialog_type`). Deliberately *not* instrumented: `getMinMax`'s `autorange()` and the Model Analysis tab's auto-refetch (`scheduleAutoRun`) — both fire on every map pan/zoom or dependent-state change rather than a discrete user action, and would flood PostHog with near-duplicates of events already captured upstream.
+- **Identity correlation**: the frontend plugin sets `axios.defaults.headers.common['X-PostHog-Distinct-Id']` to posthog-js's distinct_id once, globally — this codebase has no shared `axios.create()` instance, so every composable's `axios.post/get` picks it up automatically. `SERVER.py`'s `_stamp_request_start_time` middleware reads that header into `request.state.distinct_id` once per request; `capture_event` prefers it over IP-based attribution, falling back to IP for non-browser callers (curl, health checks, direct API access). `disable_geoip` always stays IP-based regardless of which distinct_id is used.
+- **Gotcha**: editing `POSTHOG_API_KEY` / `NUXT_PUBLIC_POSTHOG_KEY` in `.env.dev` does not affect an already-running container — env vars are baked in at container creation, not read live. Use `docker compose up -d --force-recreate front api` (a plain `restart` reuses the old environment). The Vercel-deployed frontend has the equivalent gotcha: env var changes need a new deployment to take effect, and the repo's `vercel.json` sets `git.deploymentEnabled: false`, so git pushes don't auto-deploy — trigger a manual deploy after changing env vars there too.
+
+PostHog is now the **only** usage-analytics tool — a pre-existing self-hosted Umami setup (script tag in `nuxt.config.ts`'s `<head>`, plus a `umami`/`umami-db` service pair in `docker-compose.prod.frontend.yml`) was removed once PostHog covered pageviews and more. If `analytics.oa.cioospacificlabs.ca` still resolves anywhere (external DNS/reverse proxy, outside this repo), that's now a dangling route to clean up separately.
 
 ## Python Environment
 
