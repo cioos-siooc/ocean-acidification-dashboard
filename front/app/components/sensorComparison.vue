@@ -15,7 +15,7 @@
         {{ stats.n }} days
       </v-chip>
       <v-btn icon="mdi-fullscreen" size="x-small" variant="text" :disabled="!hasData && !isVariableDepth"
-        title="Advanced Analysis" @click="advancedOpen = true" />
+        title="Advanced Analysis" @click="openAdvanced('icon')" />
     </div>
 
     <!-- MAIN ROW: chart + stats -->
@@ -46,7 +46,7 @@
             via the map's depth control or the Depth Profile view below to compare it.
           </div>
           <v-btn size="small" variant="tonal" color="teal" class="mt-3" prepend-icon="mdi-fullscreen"
-            @click="advancedOpen = true">
+            @click="openAdvanced('depth_profile_prompt')">
             Open Depth Profile
           </v-btn>
         </div>
@@ -126,6 +126,7 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import moment from 'moment-timezone'
 import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
+import { trackEvent } from '../../composables/useAnalytics'
 import { useMainStore, formatDepthLabel } from '../stores/main'
 import { fetchAnalysisSeries } from '../../composables/useAnalysisFetch'
 import { getSensorTimeseries } from '../../composables/useSensorTimeseries'
@@ -199,6 +200,11 @@ const loadingStep = ref('')
 const hasData = ref(false)
 const errorMessage = ref<string | null>(null)
 const advancedOpen = ref(false)
+
+function openAdvanced(trigger: 'icon' | 'depth_profile_prompt') {
+  trackEvent('advanced_analysis_opened', { dialog_type: 'sensor_comparison', trigger })
+  advancedOpen.value = true
+}
 
 const rawComparisonData = ref<ComparisonPoint[]>([])
 

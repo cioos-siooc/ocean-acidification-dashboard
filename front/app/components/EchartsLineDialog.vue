@@ -20,6 +20,7 @@
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import * as echarts from 'echarts';
 import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
+import { trackEvent } from '../../composables/useAnalytics';
 import axios from 'axios';
 
 import { useMainStore } from '../stores/main'
@@ -162,6 +163,9 @@ const close = () => {
 
 const getDataForCoord = async () => {
     if (!coord.value || coord.value.lat === undefined || coord.value.lng === undefined || !variable.value) return null;
+    trackEvent('climatology_requested', {
+        variable: variable.value, depth: depth.value, lat: coord.value.lat, lng: coord.value.lng,
+    });
     loading.value = true;
     try {
         const response = await axios.post(`${apiBaseUrl}/getMonthlyClimatologyAtCoord`, {

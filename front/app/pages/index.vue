@@ -188,6 +188,7 @@ import SensorAnalytics from '../components/sensorAnalytics.vue'
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
+import { trackEvent } from '../../composables/useAnalytics'
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
@@ -661,6 +662,12 @@ function maybeInitClick() {
 function initClick(lat: number, lng: number) {
     if (!map) return;
 
+    trackEvent('model_point_queried', {
+        lat, lon: lng,
+        source: mainStore.selected_variable.source,
+        variable: mainStore.selected_variable.var,
+        query_mode: mainStore.queryMode,
+    });
     mainStore.setLastClickedMapPoint({ lat, lng });
 
     // Abort any in-flight timeseries requests and create a new controller
@@ -871,6 +878,7 @@ function clickSensorFromSpiderfy(sensor: MultiSensorCandidate) {
 }
 
 function clickSensor(sensor_id: string, depth: number) {
+    trackEvent('sensor_selected', { sensor_id, source: 'map' });
     sensorPicker.value.visible = false;
     // Set flag BEFORE selectSensor so the var/depth watcher skips its own fetch.
     // The lastClickedMapPoint watcher (via setLastClickedMapPoint below) will

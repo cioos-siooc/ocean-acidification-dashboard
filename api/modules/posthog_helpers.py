@@ -81,12 +81,18 @@ def capture_event(http_request, event: str, properties: Optional[dict] = None) -
         return
     try:
         ip = client_ip(http_request)
+        # Prefer the frontend's posthog-js distinct_id (stamped onto request.state
+        # by SERVER.py's _stamp_request_start_time middleware) so a visitor's UI
+        # events and their resulting API calls land under one PostHog identity.
+        # Non-browser callers (curl, health checks) have no such header and fall
+        # back to IP, same as before. geoip must stay IP-based either way.
+        distinct_id = getattr(http_request.state, "distinct_id", None) or ip
         props = dict(properties or {})
         start_time = getattr(http_request.state, "start_time", None)
         if start_time is not None:
             props["duration_ms"] = round((time.perf_counter() - start_time) * 1000, 1)
         _client.capture(
-            distinct_id=ip,
+            distinct_id=distinct_id,
             event=event,
             properties=props,
             disable_geoip=not _is_routable_public_ip(ip),

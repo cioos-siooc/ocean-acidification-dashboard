@@ -73,6 +73,7 @@
 import { computed, toRef, ref, watch } from 'vue';
 import moment from 'moment-timezone';
 import { var2name } from '../../composables/useVar2Name';
+import { trackEvent } from '../../composables/useAnalytics';
 import colors from 'vuetify/util/colors'
 
 import { useMainStore, formatDepthLabel } from '../stores/main'
@@ -175,6 +176,7 @@ const selectedSource = computed({
 const selectedVarName = computed({
   get() { return selectedVariable.value.var },
   set(v: string) {
+    trackEvent('variable_changed', { variable: v, source: selectedVariable.value.source });
     const matchingVar = variables.value.find(variable => variable.source === selectedVariable.value.source && variable.var === v);
     const colormap = matchingVar?.colormap ?? null;
     const colormapMin = matchingVar?.colormapMin ?? null;

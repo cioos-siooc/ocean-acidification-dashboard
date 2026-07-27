@@ -1,6 +1,7 @@
 import type moment from 'moment';
 import { defineStore } from 'pinia'
 import colors from 'vuetify/util/colors';
+import { trackEvent } from '../../composables/useAnalytics';
 
 // Depths are plain numbers (the WebP filename stem too, e.g. 18.0 -> "18.0.webp")
 // — -1 is the synthetic bottom-layer sentinel ("bottom.webp").
@@ -183,10 +184,16 @@ export const useMainStore = defineStore('main', {
         },
 
         setQueryMode(mode: 'point' | 'area') {
+            if (mode !== this.queryMode) {
+                trackEvent('query_mode_changed', { mode });
+            }
             this.queryMode = mode;
         },
 
         setActiveBottomTab(tab: 'timeseries' | 'analysis' | 'comparison' | 'sensorAnalysis') {
+            if (tab !== this.activeBottomTab) {
+                trackEvent('tab_switched', { from_tab: this.activeBottomTab, to_tab: tab });
+            }
             this.activeBottomTab = tab;
         },
     }

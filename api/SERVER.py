@@ -85,8 +85,12 @@ app.add_middleware(
 @app.middleware("http")
 async def _stamp_request_start_time(request: Request, call_next):
     """Stamps a start time so posthog_helpers.capture_event can report
-    duration_ms without every handler having to time itself."""
+    duration_ms without every handler having to time itself. Also stashes the
+    frontend-supplied PostHog distinct_id (if any), letting posthog_helpers
+    correlate frontend/backend events without every capture_event call site
+    needing to know about the header."""
     request.state.start_time = time.perf_counter()
+    request.state.distinct_id = request.headers.get("x-posthog-distinct-id", "").strip() or None
     return await call_next(request)
 
 # Mount static files directory for convenience (still add explicit endpoint below to control headers)

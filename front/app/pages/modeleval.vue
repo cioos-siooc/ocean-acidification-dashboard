@@ -75,6 +75,7 @@ import { useRuntimeConfig } from '#app'
 import EvalTimeseries from '~/components/eval/timeseries.vue'
 import EvalScatter from '~/components/eval/scatter.vue'
 import EvalResidual from '~/components/eval/residual.vue'
+import { trackEvent } from '../../composables/useAnalytics'
 import { da } from 'vuetify/locale'
 
 // Configuration
@@ -171,6 +172,9 @@ async function fetchEvalData() {
         return
     }
 
+    trackEvent('model_eval_requested', {
+        sensor: selectedSensor.value, variable: selectedVariable.value, model: selectedModel.value,
+    });
     loading.value = true
     error.value = ''
 

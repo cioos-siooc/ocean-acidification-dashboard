@@ -27,7 +27,7 @@
 
       <v-spacer />
 
-      <v-btn block color="warning" size="small" prepend-icon="mdi-open-in-full" @click="advancedOpen = true">
+      <v-btn block color="warning" size="small" prepend-icon="mdi-open-in-full" @click="openAdvanced">
         Advanced Analysis
       </v-btn>
     </div>
@@ -110,6 +110,7 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
+import { trackEvent } from '../../composables/useAnalytics'
 import { useMainStore } from '../stores/main'
 import { fetchAnalysisSeries, type SeriesPoint, type AnalysisLocation } from '../../composables/useAnalysisFetch'
 import {
@@ -124,6 +125,11 @@ const mainStore = useMainStore()
 const props = defineProps<{ active?: boolean }>()
 
 const advancedOpen = ref(false)
+
+function openAdvanced() {
+  trackEvent('advanced_analysis_opened', { dialog_type: 'model_analysis' })
+  advancedOpen.value = true
+}
 
 // --- STORE-DERIVED STATE ---
 const variable = computed(() => mainStore.selected_variable.var)

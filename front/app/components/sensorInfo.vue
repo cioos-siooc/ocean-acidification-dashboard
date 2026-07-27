@@ -140,6 +140,7 @@ import { storeToRefs } from 'pinia';
 import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import colors from 'vuetify/util/colors';
 import { sensorStatusColor } from '../../composables/useSensorStatus';
+import { trackEvent } from '../../composables/useAnalytics';
 
 const mainStore = useMainStore();
 
@@ -209,6 +210,7 @@ watch(() => selectedSensor.value?.id, async (id: string | undefined) => {
 function selectSensor(sensorID: string) {
     const sensor = sensors.value.find(s => s.id === sensorID);
     if (sensor) {
+        trackEvent('sensor_selected', { sensor_id: sensorID, source: 'list' });
         mainStore.selectSensor(sensorID, sensor.depth);
         mainStore.setLastClickedMapPoint({ lat: sensor.latitude, lng: sensor.longitude });
         mainStore.setMapCenter({ lat: sensor.latitude, lng: sensor.longitude });
