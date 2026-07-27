@@ -63,7 +63,6 @@
   <v-dialog v-model="showSourceInfo" max-width="50%">
     <v-card class="pa-5">
       <about-ssc v-if="selectedSource === 'SalishSeaCast'"></about-ssc>
-      <about-liveocean v-else-if="selectedSource === 'LiveOcean'"></about-liveocean>
       <about-nonna v-else-if="selectedSource === 'NONNA'"></about-nonna>
     </v-card>
   </v-dialog>

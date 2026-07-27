@@ -10,7 +10,6 @@ Host ports come from `docker-compose.dev.yml`'s `${VAR:-default}` fallbacks, ove
 |---|---|---|
 | `front` | Nuxt 3 frontend | 9010 |
 | `api` | FastAPI backend | 9011 |
-| `db` | PostgreSQL/PostGIS | 9012 |
 | `db-ch` | ClickHouse (analytics) | 9013 (HTTP), 9014 (native) |
 | `process` | Data pipeline worker | — |
 
@@ -20,7 +19,7 @@ Host ports come from `docker-compose.dev.yml`'s `${VAR:-default}` fallbacks, ove
 ```bash
 docker compose -f docker-compose.dev.yml --env-file .env.dev up
 ```
-Without `--env-file .env.dev`, compose falls back to the in-file defaults (front 3000, api 4000, db 5432) and can recreate dependent services on the wrong ports.
+Without `--env-file .env.dev`, compose falls back to the in-file defaults (front 3000, api 4000) and can recreate dependent services on the wrong ports.
 
 **Frontend (outside Docker):**
 ```bash
@@ -38,15 +37,16 @@ pytest tests/
 pytest tests/test_extract_timeseries_all.py  # single file
 ```
 
-**Process CLI** (run inside the `process` container or with uv):
+**Process CLI** (run inside the `process` container or with uv — see Process Pipeline below):
 ```bash
-python MAIN.py check_download
-python MAIN.py download [--limit 10] [--date YYYY-MM-DD] [--variable temp]
-python MAIN.py compute [--workers 4] [--id <nc_jobs_id>]
-python MAIN.py image [--workers 4]
-python MAIN.py liveocean_download [--liveocean-date YYYY-MM-DD]
-python MAIN.py liveocean_process
-python MAIN.py bottom_layer
+python -m SSC.cli check       [--date YYYY-MM-DD] [--init-days N]
+python -m SSC.cli download    [--date YYYY-MM-DD] [--variable VAR] [--limit N]
+python -m SSC.cli compute     [--date YYYY-MM-DD] [--limit N] [--workers N]
+python -m SSC.cli image       [--date YYYY-MM-DD] [--variable VAR] [--limit N] [--workers N]
+python -m SSC.cli ingest      [--date YYYY-MM-DD] [--limit N]
+python -m SSC.cli sync        [--date YYYY-MM-DD] [--limit N]
+python -m SSC.cli run         [--date YYYY-MM-DD] [--limit N] [--workers N]  # all steps in order
+python -m SSC.cli status      [--date YYYY-MM-DD]
 ```
 
 **ClickHouse client:**
@@ -63,39 +63,17 @@ docker compose -f docker-compose.dev.yml exec db-ch clickhouse-client --query "S
 ## Architecture
 
 ### Data Sources
-- **SalishSeaCast (SSC)** — daily NetCDF files downloaded from ERDDAP (`salishsea.eos.ubc.ca/erddap`). Covers the Salish Sea with a curvilinear sigma-coordinate grid.
-- **LiveOcean (LO)** — daily `layers.nc` files downloaded from S3.
+- **SalishSeaCast (SSC)** — daily NetCDF files downloaded from ERDDAP (`salishsea.eos.ubc.ca/erddap`). Covers the Salish Sea with a curvilinear sigma-coordinate grid. The only data source currently implemented — LiveOcean support was removed (not yet being implemented).
 
 ### Storage Layout
 Data is mounted at `/opt/data/` in containers (maps to `./data/` locally):
 - `SalishSeaCast/nc/` — raw daily NetCDF files
 - `SalishSeaCast/images/` — rendered WebP tiles (served by API)
-- `LiveOcean/nc/` — LiveOcean NetCDF files
 - `sensors/{id}/{sensorCategoryCode}.nc` — compressed sensor NC files
-- `cache/` — cached grid lookup NPZ files
-
-### PostgreSQL/PostGIS (`oa` database)
-Core relational store for pipeline state and spatial metadata:
-- `datasets` / `fields` — ERDDAP dataset registry and variable configuration
-- `nc_jobs` — **pipeline state machine** (see below)
-- `grid` — SSC curvilinear grid cells (row/col → lat/lon, used for nearest-neighbor lookups)
-- `lo_grid` — LiveOcean grid cells
-- `sensors` — sensor metadata including `variables` JSONB (maps canonical model variable names to sensor-specific category codes)
-- `colormaps` — colormap definitions served to the frontend
+- `cache/` — cached grid lookup NPZ file (`oa_grid_cache.npz`, populated from ClickHouse's `grid_SSC` table on first use)
 
 ### ClickHouse (`db-ch`)
-Stores time-series data for fast analytical queries. The API queries it via `api/modules/clickhouse_helpers.py`, which selects between a local instance (`CH_HOST`/`CH_PORT`) and a remote one (`CH_USE_REMOTE=true` + `CH_REMOTE_URL`). Used by `extractTimeseries` when the source is `SalishSeaCast` (reads `grid_SSC` and `SalishSeaCast_hourly` — raw per-hour values, no mean/min/max aggregation).
-
-### `nc_jobs` State Machine
-Every NetCDF file/day-variable combination is tracked as a row. States:
-```
-pending_download → downloading → success_download
-  → pending_compute → computing → success_compute
-  → pending_image / pending_bottom
-  → imaging / bottoming
-  → success_image / success_bottom
-```
-The `process` CLI commands advance rows through these states. `check_download` creates new rows; `download` fetches files; `compute` derives biogeochemical variables; `image` renders WebP tiles via `nc2tile.py`.
+The sole database — stores time-series data, pipeline state, sensor metadata, and the SSC curvilinear grid. The API queries it via `api/modules/clickhouse_helpers.py`, which selects between a local instance (`CH_HOST`/`CH_PORT`) and a remote one (`CH_USE_REMOTE=true` + `CH_REMOTE_URL`). Key tables: `grid_SSC` (curvilinear grid cells — `gridX`/`gridY`/`longitude`/`latitude`, used for nearest-neighbor lookups by both the API and `shared/nc2tile.py`'s tile rendering), `SalishSeaCast_hourly`/`SalishSeaCast_daily` (raw and pre-aggregated timeseries), `SalishSeaCast_status` (the process pipeline's own state machine — see below), `sensors`/`sensor_timeseries` (sensor metadata and observations). Colormap/variable metadata (precision, colormap bounds) lives in `shared/variable_config.yml` + `shared/colormaps.json` instead of a database table.
 
 ### API (`api/`)
 FastAPI app in `SERVER.py`. All blocking work runs in a `ProcessPoolExecutor` via `run_in_process()`, limited by `_extract_semaphore` (default 4 concurrent). Key endpoints:
@@ -107,23 +85,33 @@ FastAPI app in `SERVER.py`. All blocking work runs in a `ProcessPoolExecutor` vi
 | `POST /sensorTimeseries` | `modules/extractSensorTimeseries.py` |
 | `POST /extract_climateTimeseries` | `modules/extract_climate_timeseries.py` |
 | `POST /analysis/timeseries` | `modules/ocean_analysis.py` |
-| `GET /png/{source}/{var}/{dt}/{depth}` | `modules/pngGenerator.py` (generates on-demand if missing) |
+| `GET /png/{source}/{var}/{dt}/{depth}` | Serves a preprocessed WebP/PNG tile directly (all depths are preprocessed ahead of time by `process/SSC`'s `image` step — this route never generates on-demand, 404s if the file doesn't exist) |
 | `GET /variables` | `modules/variables.py` |
 | `POST /admin/syncHourly` | `modules/sync_hourly.py` (bearer-token auth via `SYNC_API_TOKEN`; imports a date's Native-format export rsynced in by a remote `process` pipeline — see `SalishSeaCast_sync_log`) |
-
-**Federation**: When `FEDERATION_ENABLED=true` and `REMOTE_B_API_BASE` is set, SSC requests are routed between two servers (A = local, B = remote archive) based on `nc_jobs.misc` ownership flags.
 
 Most POST endpoints above (all except `/admin/syncHourly` and tile-serving routes) fire a PostHog usage-analytics event on success — see Usage Analytics (PostHog) below.
 
 ### Process Pipeline (`process/`)
-Entry point: `MAIN.py` → `modules/cli.py`. Key modules:
-- `modules/downloader.py` — ERDDAP HTTP fetching with backfill
-- `modules/compute.py` — biogeochemical derived variables (pH, Ω aragonite) via PyCO2SYS
-- `modules/png_worker.py` — renders WebP tiles, advances `nc_jobs` to `success_image`
-- `modules/live_ocean.py` — LiveOcean-specific download and processing
-- `liveOcean/` — LiveOcean grid init and imaging utilities
+Entry point: `process/SSC/cli.py` (`python -m SSC.cli <command>`). Every NetCDF file/day-variable
+combination is tracked as a row in ClickHouse's `SalishSeaCast_status` table, advancing through:
+```
+pending_download → downloading → success_download
+  → pending_compute → computing → success_compute
+  → pending_image → imaging → success_image
+  → pending_ingest → success_ingest
+  → pending_sync → success_sync
+```
+Key modules:
+- `SSC/downloader.py` — ERDDAP HTTP fetching with backfill
+- `SSC/compute.py` — biogeochemical derived variables (pH, Ω aragonite) via PyCO2SYS
+- `SSC/imaging.py` — renders WebP tiles via `nc2tile.py`, advances status to `success_image`
+- `SSC/sync.py` — exports a date's hourly rows to Native format and rsyncs them + WebP images to the API machine (via `cloudflared access ssh` as a ProxyCommand), triggering `POST /admin/syncHourly`
 
-Shared between `api` and `process` containers: `shared/nc2tile.py` (curvilinear → Web-Mercator WebP reprojection).
+`run` executes all steps in order: `check → download → check_image → compute → check_image → image → promote → ingest → promote → sync`.
+
+Shared between `api` and `process` containers: `shared/nc2tile.py` (curvilinear → Web-Mercator WebP reprojection). Sources the grid from ClickHouse's `grid_SSC` table (cached locally to an `.npz` file) and variable precision/colormap bounds from `shared/variable_config.py` — no database credentials of its own beyond the standard `CH_*` ClickHouse env vars.
+
+Sensor ingestion (ONC/ERDDAP → ClickHouse) lives in the top-level `sensors/` directory, its own docker-compose service — unrelated to `process/`. An older, Postgres-backed `process/sensors/` subsystem existed before that migration; it's been removed entirely, superseded by `sensors/`.
 
 ### Frontend (`front/`)
 Nuxt 3 + Vuetify + Pinia. Key structure:
@@ -158,14 +146,14 @@ Config via `nuxt.config.ts`. Runtime env vars: `NUXT_PUBLIC_API_BASE_URL`, `NUXT
 
 The dialog fetches one shared "primary series" per point/variable/depth (reused across sub-tabs), plus a memoized `cachedFetch` helper for secondary-variable series used by CompoundStress and Correlation. Client-side stats helpers live in `composables/useAnalysisStatistics.ts`; ECharts dark theme registration in `composables/useEchartsTheme.ts`.
 
-Other chart-related components: `app/components/EchartsLineDialog.vue` — a separate monthly-chart dialog, unrelated to Model Analysis. `app/components/sensorInfo.vue` — despite the name, this is the left-panel searchable/filterable sensor list (mounted in `controlPanel.vue`'s "Sensors" expansion panel); it also bundles the per-sensor metadata dialog (info icon) and a heatmap dialog. Selecting a sensor here or on the map both call `mainStore.selectSensor(id, depth)`, and the list auto-scrolls the selected `v-list-item` into view via a `watch` on `mainStore.selectedSensor`.
+Other chart-related components: `app/components/sensorInfo.vue` — despite the name, this is the left-panel searchable/filterable sensor list (mounted in `controlPanel.vue`'s "Sensors" expansion panel); it also bundles the per-sensor metadata dialog (info icon) and a heatmap dialog. Selecting a sensor here or on the map both call `mainStore.selectSensor(id, depth)`, and the list auto-scrolls the selected `v-list-item` into view via a `watch` on `mainStore.selectedSensor`.
 
 ### Usage Analytics (PostHog)
 
 Both `api/` and `front/` send usage events to **PostHog Cloud** (not self-hosted — the official self-hosted stack bundles its own Postgres/Redis/ClickHouse/Zookeeper/Kafka/MinIO, which would duplicate what this project already runs; this was a deliberate call). Capture is a silent no-op on either side when its key is unset — safe to leave blank in any environment.
 
-- **API** (`api/modules/posthog_helpers.py`): `capture_event(http_request, event, properties)`, configured via `POSTHOG_API_KEY`/`POSTHOG_HOST`. Called from `sensorTimeseries`, `depthProfile`, `extractTimeseries`, `extract_climateTimeseries`, `getMinMax`, `getMonthlyClimatologyAtCoord`, `getProfile`, `getEval`, and `analysis/timeseries` — tile-serving and `/admin/syncHourly` are deliberately excluded (too high-volume / not user behavior).
-- **Frontend** (`front/app/plugins/posthog.client.ts` + `front/composables/useAnalytics.ts`'s `trackEvent()`), configured via `NUXT_PUBLIC_POSTHOG_KEY`/`NUXT_PUBLIC_POSTHOG_HOST`. Custom events only — no PostHog autocapture, no session replay (deliberate: avoids noise from this canvas/map-heavy UI and keeps event volume down). Events: `sensor_selected` (list vs. map), `model_point_queried` (map-click point/area model query), `model_eval_requested`, `climatology_requested`, `tab_switched` / `query_mode_changed` (centralized in `main.ts`'s store actions, covering every call site), `variable_changed`, `advanced_analysis_opened` (tagged by `dialog_type`). Deliberately *not* instrumented: `getMinMax`'s `autorange()` and the Model Analysis tab's auto-refetch (`scheduleAutoRun`) — both fire on every map pan/zoom or dependent-state change rather than a discrete user action, and would flood PostHog with near-duplicates of events already captured upstream.
+- **API** (`api/modules/posthog_helpers.py`): `capture_event(http_request, event, properties)`, configured via `POSTHOG_API_KEY`/`POSTHOG_HOST`. Called from `sensorTimeseries`, `depthProfile`, `extractTimeseries`, `extract_climateTimeseries`, `getMinMax`, `getProfile`, `getEval`, and `analysis/timeseries` — tile-serving and `/admin/syncHourly` are deliberately excluded (too high-volume / not user behavior).
+- **Frontend** (`front/app/plugins/posthog.client.ts` + `front/composables/useAnalytics.ts`'s `trackEvent()`), configured via `NUXT_PUBLIC_POSTHOG_KEY`/`NUXT_PUBLIC_POSTHOG_HOST`. Custom events only — no PostHog autocapture, no session replay (deliberate: avoids noise from this canvas/map-heavy UI and keeps event volume down). Events: `sensor_selected` (list vs. map), `model_point_queried` (map-click point/area model query), `model_eval_requested`, `tab_switched` / `query_mode_changed` (centralized in `main.ts`'s store actions, covering every call site), `variable_changed`, `advanced_analysis_opened` (tagged by `dialog_type`). Deliberately *not* instrumented: `getMinMax`'s `autorange()` and the Model Analysis tab's auto-refetch (`scheduleAutoRun`) — both fire on every map pan/zoom or dependent-state change rather than a discrete user action, and would flood PostHog with near-duplicates of events already captured upstream.
 - **Identity correlation**: the frontend plugin sets `axios.defaults.headers.common['X-PostHog-Distinct-Id']` to posthog-js's distinct_id once, globally — this codebase has no shared `axios.create()` instance, so every composable's `axios.post/get` picks it up automatically. `SERVER.py`'s `_stamp_request_start_time` middleware reads that header into `request.state.distinct_id` once per request; `capture_event` prefers it over IP-based attribution, falling back to IP for non-browser callers (curl, health checks, direct API access). `disable_geoip` always stays IP-based regardless of which distinct_id is used.
 - **Gotcha**: editing `POSTHOG_API_KEY` / `NUXT_PUBLIC_POSTHOG_KEY` in `.env.dev` does not affect an already-running container — env vars are baked in at container creation, not read live. Use `docker compose up -d --force-recreate front api` (a plain `restart` reuses the old environment). The Vercel-deployed frontend has the equivalent gotcha: env var changes need a new deployment to take effect, and the repo's `vercel.json` sets `git.deploymentEnabled: false`, so git pushes don't auto-deploy — trigger a manual deploy after changing env vars there too.
 

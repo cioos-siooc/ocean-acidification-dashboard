@@ -78,7 +78,6 @@
                                 <v-col cols="12">
                                     <div class="d-flex flex-column gap-6">
                                         <about-ssc />
-                                        <about-liveocean />
                                         <about-nonna />
                                     </div>
                                 </v-col>

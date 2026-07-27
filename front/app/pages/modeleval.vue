@@ -91,7 +91,7 @@ const sensors = ref<string[]>([
 ])
 const variables = ref<string[]>(['temperature', 'salinity', 'dissolved_oxygen', 'pCO2'])
 const models = ref<{ value: string; title: string }[]>(
-    [{ value: 'SSC', title: 'SalishSeaCast' }, { value: 'LiveOcean', title: 'Live Ocean' }]
+    [{ value: 'SSC', title: 'SalishSeaCast' }]
 )
 
 const loading = ref(false)

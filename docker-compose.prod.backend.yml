@@ -11,18 +11,10 @@ services:
       - ./data:/opt/data
       - /media/taimaz/OA/allDepths:/opt/archive
     environment:
-      - DB_HOST=${DB_HOST:-db}
-      - DB_PORT=5432 # default Postgres port inside the Docker network
-      - DB_NAME=oa
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
       - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
       - SSC_NC_DIR_ARCHIVE=${SSC_NC_DIR_ARCHIVE:-/opt/archive/SSC/nc}
       - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
       - SSC_IMAGE_DIR_ARCHIVE=${SSC_IMAGE_DIR_ARCHIVE:-/opt/archive/SSC/images}
-      - SSC_CLIM_DIR=${SSC_CLIM_DIR:-/opt/data/SSC/climatology}
-      - LO_NC_DIR=${LO_NC_DIR:-/opt/data/LO/nc}
-      - LO_IMAGE_DIR=${LO_IMAGE_DIR:-/opt/data/LO/images}
       - EVAL_DATA_DIR=${EVAL_DATA_DIR:-/opt/data/eval}
       # ClickHouse: local docker-compose instance (db-ch service) by default
       - CH_HOST=${CH_HOST:-db-ch}
@@ -38,26 +30,7 @@ services:
       - POSTHOG_API_KEY=${POSTHOG_API_KEY:-}
       - POSTHOG_HOST=${POSTHOG_HOST:-https://us.i.posthog.com}
     depends_on:
-      - db
       - db-ch
-    restart: unless-stopped
-
-  db:
-    image: postgis/postgis:16-master
-    environment:
-      - POSTGRES_DB=oa
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-    volumes:
-      - oa_db:/var/lib/postgresql/data
-      # - ./DB:/var/lib/postgresql/data
-    ports:
-      - "${DB_PORT:-5432}:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
     restart: unless-stopped
 
   db-ch:
@@ -77,33 +50,3 @@ services:
     environment:
       CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
     restart: unless-stopped
-
-  process:
-    build:
-      context: .
-      dockerfile: process/Dockerfile
-    user: "${UID:-1000}:${GID:-1000}"
-    profiles: ["tools"]
-    environment:
-      - PGHOST=${DB_HOST:-db}
-      - PGPORT=5432 # default Postgres port inside the Docker network
-      - PGDATABASE=oa
-      - PGUSER=postgres
-      - PGPASSWORD=postgres
-      - UV_CACHE_DIR=/tmp/uv-cache
-      - UV_NO_SYNC=1
-      - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
-      - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
-      - LO_NC_DIR=${LO_NC_DIR:-/opt/data/LO/nc}
-      - LO_IMAGE_DIR=${LO_IMAGE_DIR:-/opt/data/LO/images}
-      - LO_GRID_CACHE=${LO_GRID_CACHE:-/opt/data/cache/lo_grid_cache.npz}
-    volumes:
-      - ./shared:/app/shared
-      - ./data:/opt/data
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-
-volumes:
-  oa_db:

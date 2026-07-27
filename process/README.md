@@ -1,105 +1,54 @@
 # process
 
-This package contains the `dl2` downloader utilities used by the OA project.
+Data pipeline for the OA project. The active pipeline is `process/SSC` — a ClickHouse-native
+downloader/compute/imaging/sync pipeline for SalishSeaCast. (The older Postgres-backed
+`nc_jobs` pipeline and LiveOcean support have both been removed — see git history if you need
+to look at that code.)
 
 ## Overview
 
-- `process/MAIN.py` — thin CLI entrypoint that delegates to `modules.cli`.
-- `process/modules` — library with modular components:
-  - `db` — database helpers and `ensure_schema` to create required tables and staged columns.
-  - `das` — functions to fetch and parse ERDDAP DAS text.
-  - `detector` — detection logic to compute per-day chunks and create `nc_jobs` rows.
-  - `downloader` — download worker functions that fetch NetCDF slices and update DB status.
-  - `png_worker` / `nc2tile` — generate PNG tiles from downloads.
-  - `cli` — command-line wiring that exposes `check`, `download`, `run`, `check_image`, `image`, and `compute` commands.
-
-## Key concepts
-
-- Pipeline stages are tracked in the `nc_jobs` table using a single ENUM column `status` with the following values:
-  - `pending_download`, `downloading`, `failed_download`, `success_download`,
-    `pending_image`, `imaging`, `failed_image`, `success_image`,
-    `pending_compute`, `computing`, `failed_compute`, `success_compute`.
-- `process/configs.json` controls behavior (depth indices and compression options).
-
-## Configuration
-
-- `process/configs.json` fields of interest:
-  - `compression`: controls NetCDF compression when writing downloaded files. Example:
-
-```json
-{
-  "compression": {"zlib": true, "complevel": 4, "shuffle": true, "apply_to_downloads": false}
-}
-```
-
-- Environment variables (defaults):
-  - `ERDDAP_BASE` (default: `https://salishsea.eos.ubc.ca/erddap`)
-  - `NC_ROOT` (default: `/opt/data/nc`)
-  - `IMAGE_ROOT` (default: `/opt/data/image`)
-  - Standard Postgres env vars: `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`.
-
-## CLI usage (examples) ✅
-
-- Check all datasets for new full-day chunks and create pending rows:
-
-```bash
-python -m modules.cli check
-```
-
-- Create pending rows for a single UTC date (force existing rows to pending with `--force`):
-
-```bash
-python -m modules.cli check --date 2026-01-05 [--force]
-```
-
-- Re-run the full pipeline for a date (create rows for the date and run download+image):
-
-```bash
-python -m modules.cli run --date 2026-01-05 --force
-```
-
-- Download worker; optionally requeue failed downloads before starting and set concurrency limits:
-
-```bash
-python -m modules.cli download [--requeue-failed] [--limit 20]
-```
-
-- PNG worker (produce PNGs from downloads). The `--workers` number controls the internal `nc2tile` worker count used during tiling:
-
-```bash
-python -m modules.cli image [--limit 10] [--workers 2]
-```
-
-## Retry & reprocessing notes 🔄
-
-- Use `--force` when creating rows for a date to reset an existing successful row to `status='pending_download'` so the full pipeline will run again for that date.
-- `--requeue-failed` (passed to `download`) resets rows with `status='failed_download'` to `pending_download` so they will be retried by the download worker.
-- To re-run only downstream stages you can update `nc_jobs` directly (SQL) and then run the relevant worker:
-  - If you need to re-run PNG generation for a specific date/variable: `UPDATE nc_jobs SET status='pending_image', attempts=0 WHERE start_time='2026-01-05 00:30:00' AND end_time='2026-01-05 23:30:00';` then `python -m modules.cli image`.
-
-  ## Live Ocean downloader
-
-  The Live Ocean workflow downloads a daily `layers.nc` file and splits it into
-  per-variable, per-day NetCDFs while merging depth-suffixed variables into a
-  single variable with a `depth` dimension.
-
-  Example:
-
-  ```bash
-  python process/dl_LO/main.py --url <LAYERS_NC_URL> --input /opt/data/nc/liveOcean/layers.nc --out-dir /opt/data/nc
+- Entry point: `python -m SSC.cli <command>`.
+- Every NetCDF file/day-variable combination is tracked as a row in ClickHouse's
+  `SalishSeaCast_status` table (see `SSC/db.py`), advancing through:
   ```
-
-  To run the Live Ocean workflow with DB monitoring (separate table) and then feed the PNG worker:
-
-  ```bash
-  python -m modules.cli liveocean_download --liveocean-url <LAYERS_NC_URL> --liveocean-input /opt/data/nc/liveOcean/layers.nc --liveocean-out /opt/data/nc
-  python -m modules.cli liveocean_process --limit 1
+  pending_download → downloading → success_download
+    → pending_compute → computing → success_compute
+    → pending_image → imaging → success_image
+    → pending_ingest → success_ingest
+    → pending_sync → success_sync
   ```
+- Key modules:
+  - `SSC/downloader.py` — ERDDAP HTTP fetching with backfill
+  - `SSC/compute.py` — biogeochemical derived variables (pH, Ω aragonite) via PyCO2SYS
+  - `SSC/imaging.py` — renders WebP tiles via `nc2tile.py` (curvilinear grid sourced from
+    ClickHouse's `grid_SSC` table, cached locally to an `.npz` file)
+  - `SSC/ingest.py` — inserts hourly rows into `SalishSeaCast_hourly`
+  - `SSC/sync.py` — exports a date's hourly rows + WebP images and rsyncs them to the API
+    machine (via `cloudflared access ssh` as a ProxyCommand), triggering `POST /admin/syncHourly`
 
-## Testing & CI
+## CLI usage (examples)
 
-- Unit tests are in `process/tests/` and CI runs them on PRs via `.github/workflows/ci.yml`. When running locally inside the container, set `PYTHONPATH=process` (or run from the repo root where tests expect package imports).
+```bash
+python -m SSC.cli check       [--date YYYY-MM-DD] [--init-days N]   # query ERDDAP, queue new dates
+python -m SSC.cli download    [--date YYYY-MM-DD] [--variable VAR] [--limit N]
+python -m SSC.cli compute     [--date YYYY-MM-DD] [--limit N] [--workers N]
+python -m SSC.cli check_image [--limit N]                            # promote fully-downloaded+computed dates to pending_image
+python -m SSC.cli image       [--date YYYY-MM-DD] [--variable VAR] [--limit N] [--workers N]
+python -m SSC.cli ingest      [--date YYYY-MM-DD] [--limit N]
+python -m SSC.cli promote     [--limit N]                            # advance success_image → pending_ingest, success_ingest → pending_sync
+python -m SSC.cli sync        [--date YYYY-MM-DD] [--limit N]
+python -m SSC.cli run         [--date YYYY-MM-DD] [--limit N] [--workers N]  # all steps in order
+python -m SSC.cli status      [--date YYYY-MM-DD]                    # print pipeline status summary
+```
 
----
+`--force` (where supported) acts on a row regardless of its current status, useful for a
+redundant re-download or re-compute.
 
-If you'd like, I can add a small admin subcommand (`requeue` or `reprocess`) to wrap the common SQL requeue/reset operations. Would you like that added? 🔧
+## Other subsystems in this directory
+
+Sensor ingestion (ONC/ERDDAP → ClickHouse) is a separate service — see the top-level `sensors/`
+directory, not part of `process/`. An older, Postgres-backed `process/sensors/` existed before
+that migration; it's been removed entirely.
+
+- `process/calc_carbon_grid_shm_memmap*.py`, `process/extract_bottom.py` — standalone
+  biogeochemical/bottom-layer calculation scripts, independent of the `SSC/` pipeline above.

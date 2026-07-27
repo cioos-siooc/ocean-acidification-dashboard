@@ -1,8 +1,8 @@
 services:
   # Local ClickHouse for the SSC pipeline's own status tracking
   # (SalishSeaCast_status) on this machine — only the finished hourly data +
-  # images get pushed home via the `sync` stage, same "process locally,
-  # network only at the end" philosophy as the LiveOcean LOCAL_STATE_DIR.
+  # images get pushed home via the `sync` stage ("process locally, network
+  # only at the end").
   db-ch:
     image: clickhouse/clickhouse-server:latest
     profiles: ["tools"]
@@ -23,20 +23,9 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     profiles: ["tools"]
     environment:
-      # API machine's Postgres (read via cloudflared tunnel from this PROCESS machine)
-      - PGHOST=${DB_HOST:-localhost}
-      - PGPORT=${DB_PORT:-19012}
-      - PGDATABASE=oa
-      - PGUSER=postgres
-      - PGPASSWORD=postgres
-      - DB_HOST=${DB_HOST:-localhost}
-      - DB_PORT=${DB_PORT:-19012}
       # Python/uv
       - UV_CACHE_DIR=/tmp/uv-cache
       - UV_NO_SYNC=1
-      # API machine paths (rsync destination)
-      - API_NC_DIR=${API_NC_DIR:-/home/cioos/OA_data/LO/nc}
-      - API_IMAGE_DIR=${API_IMAGE_DIR:-/home/cioos/OA_data/LO/images}
       # SSH to the API machine via `cloudflared access ssh` as a ProxyCommand
       # (see process/SSC/sync.py) — service-token auth, no tunnel container.
       - API_SSH_HOST=${API_SSH_HOST:-ssh.cioospacificlabs.ca}
@@ -45,12 +34,6 @@ services:
       - API_SSH_KNOWN_HOSTS=${API_SSH_KNOWN_HOSTS:-/run/secrets/known_hosts}
       - CF_TOKEN_ID=${CF_TOKEN_ID:-}
       - CF_TOKEN_SECRET=${CF_TOKEN_SECRET:-}
-      # PROCESS machine local scratch dirs (processing output before transfer)
-      - LOCAL_NC_DIR=${LOCAL_NC_DIR:-/opt/data/local/LO/nc}
-      - LOCAL_IMAGE_DIR=${LOCAL_IMAGE_DIR:-/opt/data/local/LO/images}
-      - LOCAL_STATE_DIR=${LOCAL_STATE_DIR:-/opt/data/local/LO/state}
-      # Grid cache
-      - LO_GRID_CACHE=${LO_GRID_CACHE:-/opt/data/cache/lo_grid_cache.npz}
       # SSC pipeline: local ClickHouse (db-ch above) for status tracking
       - CH_HOST=${CH_HOST:-localhost}
       - CH_PORT=${CH_PORT:-8123}

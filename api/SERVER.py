@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Literal, Optional, Tuple
@@ -13,8 +13,6 @@ import asyncio
 import time
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
-from urllib import request as urllib_request
-from urllib import error as urllib_error
 import json
 from functools import partial
 import contextvars
@@ -26,7 +24,6 @@ from modules.extract_profile import extract_profile
 from modules.eval_extractor import extract_eval_data
 from modules.extract_climate_timeseries import extract_climate_timeseries
 from modules.extractMinMax import extract_minmax
-from modules.pngGenerator import generate_png_for_variable
 from modules.extractSensorTimeseries import extract_sensor_timeseries
 from modules.extract_depth_profile import extract_depth_profile
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
@@ -50,12 +47,6 @@ _extract_executor = ProcessPoolExecutor(max_workers=MAX_CONCURRENT_EXTRACTS)
 # If a filesystem stall or bad file causes a thread to hang, this ensures the
 # semaphore slot and the anyio threadpool slot are eventually released.
 THREADPOOL_TIMEOUT = int(os.getenv("THREADPOOL_TIMEOUT", "120"))
-
-# PNG generation runs in a dedicated single-process executor so CPU-heavy
-# interpolation work never touches the shared anyio threadpool that serves
-# all other API endpoints.  One worker = one PNG at a time, no starvation.
-_png_executor = ProcessPoolExecutor(max_workers=1)
-_png_gen_semaphore = asyncio.Semaphore(1)
 
 # Configure logging
 logging.basicConfig(
@@ -117,137 +108,6 @@ def _get_image_roots(source: str) -> list:
     return [r for r in roots if r]
 
 
-def _get_nc_data_dirs(source: str) -> str | None:
-    """Return the SSC NC data directory spec (str or list) from environment.
-
-    Set SSC_NC_DIR for the primary directory (default /opt/data/SSC/nc).
-    Optionally set SSC_NC_DIR_ARCHIVE to a second directory that is searched
-    when a file is not found in the primary (e.g. an external disk mount).
-    """
-    return f"/opt/data/{source.replace(' ', '')}/nc"
-
-
-# Read DB config from environment at import time so route handlers can access it
-db_host = os.getenv("DB_HOST", "db")
-db_port = int(os.getenv("DB_PORT", 5432))
-db_name = os.getenv("DB_NAME", "oa")
-db_user = os.getenv("DB_USER", "postgres")
-db_password = os.getenv("DB_PASSWORD", "postgres")
-
-# Federation config (phase-1: SSC only)
-FEDERATION_ENABLED = os.getenv("FEDERATION_ENABLED", "true").lower() in {"true", "1", "yes"}
-REMOTE_B_API_BASE = os.getenv("REMOTE_B_API_BASE", "").rstrip("/") if FEDERATION_ENABLED else ""
-REMOTE_B_TIMEOUT = int(os.getenv("REMOTE_B_TIMEOUT", "25"))
-FED_SSC_OWNER_MISC_KEYS = ("location", "storage_location", "server", "node")
-
-
-def _parse_iso_utc(dt_str: str) -> datetime:
-    return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-
-
-def _resolve_nc_job_owner(nc_path: str | None, misc) -> str:
-    """Resolve owner node for an nc_jobs record.
-
-    Resolution order:
-    1) misc JSON keys location/storage_location/server/node (A/B values)
-    2) local file existence check on nc_path
-    3) default A
-    """
-    if isinstance(misc, str):
-        try:
-            misc = json.loads(misc)
-        except Exception:
-            misc = None
-    if isinstance(misc, dict):
-        for key in FED_SSC_OWNER_MISC_KEYS:
-            value = str(misc.get(key, "")).strip().upper()
-            if value in {"A", "B"}:
-                return value
-    if nc_path and os.path.isfile(nc_path):
-        return "A"
-    if REMOTE_B_API_BASE:
-        return "B"
-    return "A"
-
-
-def _fetch_ssc_nc_jobs(var: str, from_date: str, to_date: str) -> list[dict]:
-    """Fetch SSC nc_jobs rows overlapping requested range for routing decisions."""
-    import psycopg2
-    conn = None
-    try:
-        conn = psycopg2.connect(
-            host=db_host,
-            port=db_port,
-            dbname=db_name,
-            user=db_user,
-            password=db_password,
-            connect_timeout=5,
-        )
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT nj.start_time, nj.end_time, nj.nc_path, nj.misc
-            FROM nc_jobs nj
-            JOIN fields f ON nj.variable_id = f.id
-            JOIN datasets d ON f.dataset_id = d.id
-            WHERE d.source = 'SalishSeaCast'
-              AND f.variable = %s
-              AND nj.status = 'success_image'
-              AND nj.start_time <= %s::timestamp
-              AND nj.end_time >= %s::timestamp
-            ORDER BY nj.start_time
-            """,
-            (var, to_date, from_date),
-        )
-        rows = cur.fetchall()
-        return [
-            {
-                "start_time": r[0],
-                "end_time": r[1],
-                "nc_path": r[2],
-                "misc": r[3],
-                "owner": _resolve_nc_job_owner(r[2], r[3]),
-            }
-            for r in rows
-        ]
-    finally:
-        if conn:
-            conn.close()
-
-
-def _route_ssc_point(var: str, dt_str: str) -> str:
-    """Route a point request to A/B based on nc_jobs overlap at dt."""
-    rows = _fetch_ssc_nc_jobs(var, dt_str, dt_str)
-    if not rows:
-        return "A"
-    owners = {r["owner"] for r in rows}
-    if owners == {"B"}:
-        return "B"
-    return "A"
-
-
-def _route_ssc_range(var: str, from_date: str, to_date: str) -> dict:
-    """Route a range request; returns whether A and/or B should be queried."""
-    rows = _fetch_ssc_nc_jobs(var, from_date, to_date)
-    if not rows:
-        return {"has_a": False, "has_b": False}
-    owners = {r["owner"] for r in rows}
-    return {"has_a": "A" in owners, "has_b": "B" in owners}
-
-
-def _call_remote_b_extract_timeseries(payload: dict) -> dict:
-    if not REMOTE_B_API_BASE:
-        raise RuntimeError("REMOTE_B_API_BASE is not configured")
-    url = f"{REMOTE_B_API_BASE}/extractTimeseries"
-    req = urllib_request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib_request.urlopen(req, timeout=REMOTE_B_TIMEOUT) as resp:
-        body = resp.read().decode("utf-8")
-    return json.loads(body)
 
 
 def _format_timeseries_result(result):
@@ -265,44 +125,6 @@ def _format_timeseries_result(result):
     value_list = [None if (isinstance(v, float) and np.isnan(v)) else v for v in value.tolist()]
     return {"time": time_list, "value": value_list}
 
-
-def _merge_timeseries_payloads(parts: list[dict]) -> dict:
-    if not parts:
-        return {"time": [], "value": []}
-
-    # all-depth response shape
-    if any("depth" in p for p in parts):
-        rows = []
-        for p in parts:
-            for t, d, v in zip(p.get("time", []), p.get("depth", []), p.get("value", [])):
-                rows.append((str(t), float(d), v))
-        # de-duplicate by (time, depth), keep first non-null encountered
-        best = {}
-        for t, d, v in rows:
-            key = (t, d)
-            if key not in best or (best[key] is None and v is not None):
-                best[key] = v
-        merged = sorted([(t, d, v) for (t, d), v in best.items()], key=lambda x: (x[0], x[1]))
-        return {
-            "time": [r[0] for r in merged],
-            "depth": [r[1] for r in merged],
-            "value": [r[2] for r in merged],
-        }
-
-    # single-depth response shape
-    rows = []
-    for p in parts:
-        for t, v in zip(p.get("time", []), p.get("value", [])):
-            rows.append((str(t), v))
-    best = {}
-    for t, v in rows:
-        if t not in best or (best[t] is None and v is not None):
-            best[t] = v
-    merged = sorted(best.items(), key=lambda x: x[0])
-    return {
-        "time": [r[0] for r in merged],
-        "value": [r[1] for r in merged],
-    }
 
 
 #######################################
@@ -533,7 +355,10 @@ async def get_depth_profile(request: depthProfileRequest, http_request: Request)
 
 @app.get("/png/{source}/{var}/{dt}/{depth}")
 async def get_png(source: str, var: str, dt: str, depth: str):
-    """Serve PNG for variable/datetime/depth, generating on-demand if needed."""
+    """Serve a preprocessed PNG/WebP tile for variable/datetime/depth.
+
+    All depths are preprocessed ahead of time (see process/SSC's `image` step) —
+    this route only ever serves an existing file, never generates one."""
     # Serve the PNG file for a specific variable, datetime, and depth
     safe_source = os.path.basename(source)
     safe_var = os.path.basename(var)
@@ -543,20 +368,8 @@ async def get_png(source: str, var: str, dt: str, depth: str):
     if safe_source != "SalishSeaCast":
         raise HTTPException(status_code=400, detail=f"Unsupported source: {safe_source}")
 
-    # Federation routing (phase-1: SSC only): redirect to B when ownership is remote
-    if FEDERATION_ENABLED and safe_source == "SalishSeaCast" and REMOTE_B_API_BASE:
-        try:
-            owner = await run_in_threadpool(_route_ssc_point, safe_var, safe_dt)
-            if owner == "B":
-                target = f"{REMOTE_B_API_BASE}/png/{safe_source}/{safe_var}/{safe_dt}/{safe_depth}"
-                return RedirectResponse(url=target, status_code=307)
-        except Exception as exc:
-            logger.warning("SSC png routing fallback to local due to resolver error: %s", exc)
-
-    # Try both .webp (from on-demand generation) and .png (legacy), across all image roots
     for image_root in _get_image_roots(safe_source):
         path = os.path.join(image_root, safe_var, safe_dt)
-        print("##" , path, flush=True)  # Debug log to verify path construction
         for ext in ['.webp', '.png']:
             filename = f"{safe_depth}{ext}"
             full_path = os.path.join(path, filename)
@@ -573,27 +386,8 @@ async def get_png(source: str, var: str, dt: str, depth: str):
                 }
                 media_type = "image/webp" if ext == '.webp' else "image/png"
                 return FileResponse(full_path, media_type=media_type, headers=headers)
-    
-    # File doesn't exist; try to generate it
-    try:
-        depth_value = float(depth)
-        data_dir = _get_nc_data_dirs(safe_source)
-        full_path = await generate_png_for_variable(
-            source, var, dt, depth_value, data_dir, _get_image_roots(source), _png_gen_semaphore, _png_executor
-        )
-        
-        headers = {
-            "Cache-Control": "public, max-age=31536000, immutable",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
-            "Access-Control-Allow-Headers": "*",
-            "Vary": "Origin",
-            "ETag": f'"{full_path}-v1"',
-        }
-        return FileResponse(full_path, media_type="image/webp", headers=headers)
-    except Exception as e:
-        logger.error(f"Failed to generate or retrieve PNG for {var}/{dt}/{depth}: {e}")
-        raise HTTPException(status_code=404, detail=f"PNG not found and generation failed: {str(e)}")
+
+    raise HTTPException(status_code=404, detail=f"PNG not found for {var}/{dt}/{depth}")
 
 @app.get("/vector/{z}/{x}/{y}.pbf")
 async def get_vector(z: int, x: int, y: int):
@@ -685,73 +479,6 @@ async def fn_extract_timeseries(request: timeseriesRequest, http_request: Reques
         # use provided depth exactly (float value passed from frontend); None means all depths
         depth = float(request.depth) if request.depth is not None else None
 
-        # Federation routing (phase-1: SSC only)
-        if FEDERATION_ENABLED and request.source == "SalishSeaCast" and REMOTE_B_API_BASE:
-            route = await run_in_threadpool(_route_ssc_range, request.var, request.fromDate, request.toDate)
-            if not route["has_a"] and not route["has_b"]:
-                raise HTTPException(status_code=422, detail="No processed data available for the requested date range")
-
-            parts = []
-            warnings = []
-
-            if route["has_a"]:
-                local_result = await asyncio.wait_for(
-                    run_in_process(
-                        extract_timeseries,
-                        source=request.source,
-                        var=request.var,
-                        lat=request.lat,
-                        lon=request.lon,
-                        polygon=request.polygon,
-                        depth=depth,
-                        from_date=request.fromDate,
-                        to_date=request.toDate,
-                    ),
-                    timeout=THREADPOOL_TIMEOUT,
-                )
-                parts.append(_format_timeseries_result(local_result))
-
-            if route["has_b"]:
-                try:
-                    remote_payload = {
-                        "source": request.source,
-                        "var": request.var,
-                        "lat": request.lat,
-                        "lon": request.lon,
-                        "polygon": request.polygon,
-                        "depth": request.depth,
-                        "fromDate": request.fromDate,
-                        "toDate": request.toDate,
-                    }
-                    remote_result = await run_in_threadpool(_call_remote_b_extract_timeseries, remote_payload)
-                    parts.append(remote_result)
-                except Exception as exc:
-                    if route["has_a"]:
-                        warnings.append(f"Remote archive server unavailable: {exc}")
-                        logger.warning("B unavailable; returning A partial data for extractTimeseries: %s", exc)
-                    else:
-                        raise HTTPException(status_code=503, detail=f"Remote archive server unavailable: {exc}")
-
-            merged = _merge_timeseries_payloads(parts)
-            if warnings:
-                merged["warnings"] = warnings
-            logger.info(
-                "FINISH extractTimeseries (federated): %s, %s, from=%s, to=%s - returned %s points",
-                request.var,
-                location_desc,
-                request.fromDate,
-                request.toDate,
-                len(merged.get("time", [])),
-            )
-            capture_event(http_request, "extract_timeseries", {
-                "source": request.source, "var": request.var,
-                "lat": request.lat, "lon": request.lon,
-                "polygon": has_polygon, "depth": request.depth,
-                "fromDate": request.fromDate, "toDate": request.toDate,
-            })
-            return merged
-
-        # non-federated flow
         result = await asyncio.wait_for(
             run_in_process(
                 extract_timeseries,
@@ -898,50 +625,6 @@ async def fn_get_minmax(request: minmaxRequest, http_request: Request):
         raise HTTPException(status_code=500, detail=str(exc))
     except Exception as exc:
         logger.exception("getMinMax failed")
-        raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        _extract_semaphore.release()
-
-#######################################
-
-class monthlyClimRequest(BaseModel):
-    variable: str
-    lat: float
-    lon: float
-    depth: float
-
-@app.post("/getMonthlyClimatologyAtCoord")
-async def fn_get_monthly_climatology(request: monthlyClimRequest, http_request: Request):
-    logger.info(f"START getMonthlyClimatologyAtCoord: {request.variable}, {request.lat}, {request.lon}, depth={request.depth}")
-    try:
-        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
-    except (asyncio.TimeoutError, Exception):
-        logger.warning("Semaphore timeout in getMonthlyClimatologyAtCoord")
-        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
-
-    try:
-        from modules.monthly_climatology import get_monthly_climatology_at_coord
-        ssc_root = os.getenv("SSC_MAIN_DIR", "/opt/data/SalishSeaCast")
-        result = await run_in_threadpool(
-            get_monthly_climatology_at_coord,
-            lat=request.lat,
-            lon=request.lon,
-            depth=request.depth,
-            variable=request.variable,
-            data_root=ssc_root,
-            # Let module pick DB environment vars
-        )
-        logger.info(f"FINISH getMonthlyClimatologyAtCoord: {request.variable}, {request.lat}, {request.lon}, depth={request.depth}")
-        capture_event(http_request, "get_monthly_climatology", {
-            "variable": request.variable, "lat": request.lat,
-            "lon": request.lon, "depth": request.depth,
-        })
-        return result
-    except FileNotFoundError as fnf:
-        logger.exception("monthly climatology file not found")
-        raise HTTPException(status_code=404, detail=str(fnf))
-    except Exception as exc:
-        logger.exception("get_monthly_climatology_at_coord failed")
         raise HTTPException(status_code=500, detail=str(exc))
     finally:
         _extract_semaphore.release()

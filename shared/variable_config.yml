@@ -18,8 +18,8 @@
 # the colormap (see colormaps.json) before coloring a tile — independent of
 # `precision`, which only controls storage/transport quantization.
 #
-# LiveOcean is intentionally not covered here — it's still on the old
-# Postgres-backed pipeline and out of scope for this migration.
+# LiveOcean is intentionally not covered here — support for it was removed
+# entirely (not yet being implemented), so there's nothing to migrate.
 
 source: SalishSeaCast
 

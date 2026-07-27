@@ -55,7 +55,6 @@ export const useMainStore = defineStore('main', {
         isControlPanelOpen: true,
 
         showColorbarSettings: false,
-        showClimatologyDialog: false,
 
         queryMode: 'point' as 'point' | 'area',
 
@@ -177,10 +176,6 @@ export const useMainStore = defineStore('main', {
 
         setShowColorbarSettings(value: boolean) {
             this.showColorbarSettings = value;
-        },
-
-        setShowClimatologyDialog(value: boolean) {
-            this.showClimatologyDialog = value;
         },
 
         setQueryMode(mode: 'point' | 'area') {

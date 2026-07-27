@@ -159,13 +159,6 @@ def run_bench(args):
         'lat': args.lat if args.lat is not None else 0.0,
         'lon': args.lon if args.lon is not None else 0.0,
         'depth': args.depth,
-        'db_dsn': args.db_dsn,
-        'db_host': args.db_host,
-        'db_port': args.db_port,
-        'db_user': args.db_user,
-        'db_password': args.db_password,
-        'db_name': args.db_name,
-        'db_table': args.db_table,
         'verbose': False,
     }
 
@@ -282,15 +275,6 @@ def main(argv=None):
     p.add_argument("--data-dir", default=os.environ.get('DATA_DIR', '/opt/data/nc'))
     p.add_argument("--days", type=int, default=5, help="How many distinct recent dates to include")
     p.add_argument("--repeats", type=int, default=3)
-
-    # DB connection (used when lat/lon provided and row/col absent)
-    p.add_argument("--db-dsn", default=None)
-    p.add_argument("--db-host", default=os.environ.get('PGHOST', 'db'))
-    p.add_argument("--db-port", default=int(os.environ.get('PGPORT', 5432)), type=int)
-    p.add_argument("--db-user", default=os.environ.get('PGUSER', 'postgres'))
-    p.add_argument("--db-password", default=os.environ.get('PGPASSWORD', 'postgres'))
-    p.add_argument("--db-name", default=os.environ.get('PGDATABASE', 'oa'))
-    p.add_argument("--db-table", default='grid')
 
     args = p.parse_args(argv)
 

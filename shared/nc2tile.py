@@ -2,8 +2,8 @@
 """Reproject NetCDF variables to Web-Mercator and write per-timestep grayscale PNGs.
 
 Behavior (defaults chosen according to your inputs):
-- Uses xarray to open a `ds_data` NetCDF file (contains variables and time). Lat/lon grid is read from the Postgres `grid` table.
-- Reads lat/lon arrays from the Postgres `grid` table (columns: row_idx, col_idx, lat, lon). If the DB cannot be reached or the grid is missing the script will raise an error and exit.
+- Uses xarray to open a `ds_data` NetCDF file (contains variables and time). Lat/lon grid is read from the ClickHouse `grid_SSC` table.
+- Reads lat/lon arrays from the ClickHouse `grid_SSC` table (columns: gridX, gridY, latitude, longitude). If ClickHouse cannot be reached or the grid is missing the script will raise an error and exit.
 - For each variable in `ds_data` (or a selected subset) and for each time step,
   regrids the variable from the source curvilinear grid to a regular Web-Mercator (EPSG:3857) grid
   using `scipy.interpolate.griddata` (linear interpolation by default).
@@ -40,10 +40,11 @@ import xarray as xr
 from scipy.interpolate import griddata
 from scipy.spatial import Delaunay, cKDTree
 from PIL import Image
+from urllib.parse import urlparse
 
-# DB access for curvilinear grid
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import clickhouse_connect
+
+from shared.variable_config import load_variable_config
 
 try:
     from pyproj import Transformer
@@ -69,15 +70,31 @@ logger = logging.getLogger("nc2tile")
 
 
 
-# ---- DB helpers for curvilinear grid ---------------------------------
+# ---- ClickHouse helpers for curvilinear grid ---------------------------------
 
-def get_db_conn():
-    host = os.getenv('PGHOST', 'db')
-    port = int(os.getenv('PGPORT', 5432))
-    db = os.getenv('PGDATABASE', 'oa')
-    user = os.getenv('PGUSER', 'postgres')
-    pw = os.getenv('PGPASSWORD', 'postgres')
-    return psycopg2.connect(host=host, port=port, dbname=db, user=user, password=pw)
+def _get_ch_client():
+    """Return a clickhouse_connect client, local or remote (same CH_* env
+    convention as api/modules/clickhouse_helpers.py and process/SSC/config.py)."""
+    use_remote = os.getenv('CH_USE_REMOTE', '').strip().lower() in ('1', 'true', 'yes')
+    ch_user = os.getenv('CH_USER', 'default')
+    ch_password = os.getenv('CH_PASSWORD', os.getenv('CLICKHOUSE_PASSWORD', ''))
+    if use_remote:
+        remote_url = os.getenv('CH_REMOTE_URL', '')
+        if not remote_url:
+            raise RuntimeError('CH_USE_REMOTE is set but CH_REMOTE_URL is empty')
+        url = remote_url if '://' in remote_url else f'https://{remote_url}'
+        parsed = urlparse(url)
+        secure = parsed.scheme != 'http'
+        port = parsed.port or (8443 if secure else 8123)
+        user = parsed.username or os.getenv('CH_REMOTE_USER', ch_user)
+        password = parsed.password or os.getenv('CH_REMOTE_PASSWORD', ch_password)
+        return clickhouse_connect.get_client(
+            host=parsed.hostname, port=port, username=user, password=password, secure=secure,
+        )
+    return clickhouse_connect.get_client(
+        host=os.getenv('CH_HOST', 'localhost'), port=int(os.getenv('CH_PORT', '8123')),
+        username=ch_user, password=ch_password,
+    )
 
 
 def _load_grid_cache(path: str) -> Tuple[np.ndarray, np.ndarray] | None:
@@ -101,10 +118,10 @@ def _write_grid_cache(path: str, lon: np.ndarray, lat: np.ndarray) -> None:
         logger.exception("Failed to write grid cache to %s", path)
 
 
-def get_grid_from_db(table: str = 'grid') -> Tuple[np.ndarray, np.ndarray]:
-    """Load curvilinear grid lon/lat arrays from Postgres table named `table`.
+def get_grid_from_db(table: str = 'grid_SSC') -> Tuple[np.ndarray, np.ndarray]:
+    """Load curvilinear grid lon/lat arrays from ClickHouse table named `table`.
 
-    Expects columns: row_idx, col_idx, lon, lat
+    Expects columns: gridX, gridY, longitude, latitude
     Returns lon2d, lat2d shaped (nrows, ncols) aligned by sorted unique row/col indices.
     Caches result in module-level GRID_CACHE.
     """
@@ -118,19 +135,15 @@ def get_grid_from_db(table: str = 'grid') -> Tuple[np.ndarray, np.ndarray]:
         logger.info("Loaded grid from cache %s", GRID_CACHE_PATH)
         return GRID_CACHE
 
-    conn = get_db_conn()
-    try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(f"SELECT row_idx, col_idx, lon, lat FROM {table}")
-            rows = cur.fetchall()
-    finally:
-        conn.close()
+    client = _get_ch_client()
+    result = client.query(f"SELECT gridX, gridY, longitude, latitude FROM {table}")
+    rows = result.result_rows
 
     if not rows:
         raise ValueError(f"Grid table '{table}' is empty or missing")
 
-    row_idxs = sorted({r['row_idx'] for r in rows})
-    col_idxs = sorted({r['col_idx'] for r in rows})
+    row_idxs = sorted({r[0] for r in rows})
+    col_idxs = sorted({r[1] for r in rows})
     row_pos = {v: i for i, v in enumerate(row_idxs)}
     col_pos = {v: j for j, v in enumerate(col_idxs)}
 
@@ -139,15 +152,15 @@ def get_grid_from_db(table: str = 'grid') -> Tuple[np.ndarray, np.ndarray]:
     lon = np.full((nrows, ncols), np.nan, dtype=float)
     lat = np.full((nrows, ncols), np.nan, dtype=float)
 
-    for r in rows:
-        i = row_pos[r['row_idx']]
-        j = col_pos[r['col_idx']]
-        lon[i, j] = float(r['lon'])
-        lat[i, j] = float(r['lat'])
+    for gridX, gridY, longitude, latitude in rows:
+        i = row_pos[gridX]
+        j = col_pos[gridY]
+        lon[i, j] = float(longitude)
+        lat[i, j] = float(latitude)
 
     GRID_CACHE = (lon, lat)
     _write_grid_cache(GRID_CACHE_PATH, lon, lat)
-    logger.info("Worker loaded grid from DB table 'grid' and cached to %s", GRID_CACHE_PATH)
+    logger.info("Worker loaded grid from ClickHouse table '%s' and cached to %s", table, GRID_CACHE_PATH)
     return GRID_CACHE
 
 
@@ -317,7 +330,7 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
 
     # Load curvilinear grid from DB (no fallback). This will raise if DB not available.
     # get_grid_from_db logs a message only on the first load per process to avoid repeated DB hits.
-    lon_src, lat_src = get_grid_from_db('grid')
+    lon_src, lat_src = get_grid_from_db('grid_SSC')
 
     # build mercator grid in worker to avoid large pickled arrays
     xs = np.linspace(minx, maxx, int(w))
@@ -645,7 +658,7 @@ def process_variable(
     depth_images: Optional[list[str]] = None,
 ):
     # Load curvilinear grid from DB table 'grid'. Fail hard if unavailable.
-    lon_src, lat_src = get_grid_from_db('grid')
+    lon_src, lat_src = get_grid_from_db('grid_SSC')
     # get_grid_from_db logs a message only on the first load per process to avoid repeated DB hits.
 
     # Open ds_data and compute mercator bounds
@@ -658,33 +671,24 @@ def process_variable(
     if verbose:
         print(f"Target grid size: {w}x{h} (max_dim={max_dim})")
 
-    # Fetch min/max from database (pre-computed, no file scanning needed)
+    # Fetch min/max from shared/variable_config.yml (pre-computed, no file scanning needed)
     vmin = None
     vmax = None
     erddap_min = None
     erddap_max = None
     try:
-        conn = get_db_conn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT min, max FROM fields WHERE variable=%s LIMIT 1",
-                    (varname,),
-                )
-                row = cur.fetchone()
-                if row:
-                    erddap_min, erddap_max = row[0], row[1]
-                    # Use database bounds for scaling (no expensive file scan)
-                    if global_scale:
-                        vmin, vmax = erddap_min, erddap_max
-                        if verbose:
-                            print(f"Global scale for {varname}: using database min/max: vmin={vmin}, vmax={vmax}")
-        finally:
-            conn.close()
+        var_cfg = load_variable_config().get('variables', {}).get(varname)
+        if var_cfg:
+            erddap_min = var_cfg.get('colormapMin')
+            erddap_max = var_cfg.get('colormapMax')
+            if global_scale:
+                vmin, vmax = erddap_min, erddap_max
+                if verbose:
+                    print(f"Global scale for {varname}: using variable_config min/max: vmin={vmin}, vmax={vmax}")
     except Exception:
-        # Don't fail if DB is not available; just proceed without bounds
+        # Don't fail if the config is unavailable; just proceed without bounds
         if verbose:
-            print(f"Warning: Could not fetch min/max from database for {varname}")
+            print(f"Warning: Could not fetch min/max from variable_config for {varname}")
 
     # compute overall bounds for the variable (don't write meta.json yet - wait until we know time/depth info)
     if Transformer is None:

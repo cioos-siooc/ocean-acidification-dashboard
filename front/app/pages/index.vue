@@ -149,9 +149,6 @@
 
             </div>
 
-            <!-- Dialog component for monthly chart -->
-            <EchartsLineDialog />
-
         </v-footer>
         <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
             <div ref="globalChartContainer" class="w-100 h-100"></div>
@@ -179,7 +176,6 @@ import { utc2pst } from '../../composables/useUTC2PST'
 import useStationsInteraction from '../../composables/useStationsInteraction';
 import { addBuoyLayer, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '../../composables/useBuoyLayer';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
-import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 import TimeseriesChart from '../components/TimeseriesChart.vue';
 import Analytics from '../components/analytics.vue'
 import SensorComparison from '../components/sensorComparison.vue'
