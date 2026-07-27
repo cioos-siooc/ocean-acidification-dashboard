@@ -61,13 +61,13 @@
 
                             <v-row class="mt-2 d-flex gap-1">
                                 <v-spacer />
-                                <v-col cols="auto">
+                                <v-col cols="1">
                                     <v-btn icon size="x-small" variant="tonal" color="yellow"
                                         @click.stop="openInfoDialog(sensor)">
                                         <v-icon size="12px">mdi-information-variant</v-icon>
                                     </v-btn>
                                 </v-col>
-                                <v-col cols="auto">
+                                <v-col cols="1">
                                     <v-btn v-if="sensor.id === selectedSensor?.id" icon size="x-small" variant="tonal"
                                         color="red-lighten-2"
                                         @click.stop="mainStore.setActiveBottomTab('comparison')">

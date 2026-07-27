@@ -80,6 +80,36 @@ export function percentileOf(sorted: number[], p: number): number {
     return lo === hi ? sorted[lo]! : sorted[lo]! + (idx - lo) * (sorted[hi]! - sorted[lo]!);
 }
 
+export type BandStatsPoint = { ts: number; mean: number; min: number; max: number; p10: number; p90: number };
+
+/**
+ * Cross-year statistics per calendar-day slot: pools every year's value at the same overlay
+ * timestamp (see callers' OVERLAY_REF_YEAR alignment) and computes mean/min/max/p10/p90 across
+ * whichever years have data for that day. Unlike computeClimatologyBaseline this does not pool a
+ * +/- day window — each point only compares same-day values, matching what the "Min-Max Range"
+ * band and percentile lines actually draw on the overlay chart.
+ */
+export function computeYearBandStats(perYearPoints: [number, number | null][][]): BandStatsPoint[] {
+    const byTs = new Map<number, number[]>();
+    for (const points of perYearPoints) {
+        for (const [ts, value] of points) {
+            if (value == null) continue;
+            if (!byTs.has(ts)) byTs.set(ts, []);
+            byTs.get(ts)!.push(value);
+        }
+    }
+    const out: BandStatsPoint[] = [];
+    for (const [ts, values] of byTs.entries()) {
+        const sorted = values.sort((a, b) => a - b);
+        const mean = sorted.reduce((s, v) => s + v, 0) / sorted.length;
+        out.push({
+            ts, mean, min: sorted[0], max: sorted[sorted.length - 1],
+            p10: percentileOf(sorted, 10), p90: percentileOf(sorted, 90),
+        });
+    }
+    return out.sort((a, b) => a.ts - b.ts);
+}
+
 export type BoxRow = { year: number; box: [number, number, number, number, number]; mean: number; std: number };
 
 export function computeBoxplotData(data: SeriesPoint[]): BoxRow[] {
@@ -167,120 +197,6 @@ export function attachStickyLegendHighlight(chart: ECharts): void {
             stickyName = params.name === stickyName ? null : params.name;
             applyStickyStyles();
         }, 0);
-    });
-}
-
-/** Binary-searches `points` (sorted ascending by x) for the value of whichever endpoint is nearest `x`. */
-function nearestPointValue(points: [number, number | null][], x: number): number | null {
-    let lo = 0, hi = points.length - 1;
-    if (hi < 0) return null;
-    while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (points[mid][0] < x) lo = mid + 1;
-        else hi = mid;
-    }
-    let best: number | null = null;
-    let bestDist = Infinity;
-    for (const p of [points[lo], points[lo - 1]]) {
-        if (!p || p[1] == null) continue;
-        const d = Math.abs(p[0] - x);
-        if (d < bestDist) { bestDist = d; best = p[1]; }
-    }
-    return best;
-}
-
-export type SeriesHoverInfo = { name: string; x: number; y: number; color: string };
-
-/**
- * Same persistent isolate/fade as {@link attachStickyLegendHighlight}, but also lets
- * hovering directly over a line isolate it — showing which year is under the cursor,
- * something the chart previously gave no way to tell apart from the rest of the stack.
- * `onHoverChange` fires with the hovered point's pixel position (relative to the chart's
- * own container) and the series' color, so the caller can render a label riding right
- * next to the hovered point instead of somewhere disconnected from the line itself. This
- * deliberately doesn't render the label via ECharts' own `graphic` component — replacing
- * that graphic element every animation frame corrupts its internal hover/dispose
- * bookkeeping (`Cannot read properties of undefined (reading '__ec_inner_*')`) — so the
- * caller is expected to render a plain absolutely-positioned element instead.
- *
- * This can't use ECharts' own per-series `mouseover` — with `tooltip.trigger:'axis'`,
- * ECharts installs a chart-wide hit-catcher for the crosshair that swallows the pick
- * before it ever reaches an individual line, so `chart.on('mouseover', ...)` never
- * fires here. Instead, on every raw pointer move this finds whichever series' value is
- * pixel-closest to the cursor at that x and treats that as hovered. A sticky legend
- * click (see attachStickyLegendHighlight) takes priority over hover for the fade, but
- * the floating label only ever tracks live hover (there's no cursor position to anchor
- * it to for a sticky-only selection — the highlighted line and legend already say which
- * year that is).
- */
-export function attachSeriesFocusInteractions(chart: ECharts, onHoverChange?: (info: SeriesHoverInfo | null) => void): void {
-    let stickyName: string | null = null;
-    let hoverName: string | null = null;
-    const HOVER_PIXEL_THRESHOLD = 18;
-
-    function applyStyles(): void {
-        const focusName = stickyName ?? hoverName;
-        const series = ((chart.getOption().series as any[]) || []);
-        chart.setOption({
-            series: series.map(s => {
-                const isFocused = s.name === focusName;
-                return {
-                    name: s.name,
-                    lineStyle: { opacity: focusName == null || isFocused ? 1 : 0.08 },
-                    z: isFocused ? 10 : 0,
-                };
-            }),
-        });
-    }
-
-    chart.on('legendselectchanged', (params: any) => {
-        setTimeout(() => {
-            chart.dispatchAction({ type: 'legendAllSelect' });
-            stickyName = params.name === stickyName ? null : params.name;
-            applyStyles();
-        }, 0);
-    });
-
-    let rafPending = false;
-    chart.getZr().on('mousemove', (e: any) => {
-        if (rafPending) return;
-        rafPending = true;
-        requestAnimationFrame(() => {
-            rafPending = false;
-            const point = chart.convertFromPixel({ xAxisIndex: 0, yAxisIndex: 0 }, [e.offsetX, e.offsetY]) as number[] | undefined;
-            if (!point) return;
-            const series = ((chart.getOption().series as any[]) || []);
-            let bestName: string | null = null;
-            let bestColor = '#fff';
-            let bestPixel: number[] | null = null;
-            let bestDist = Infinity;
-            for (const s of series) {
-                const y = nearestPointValue(s.data, point[0]);
-                if (y == null) continue;
-                const px = chart.convertToPixel({ xAxisIndex: 0, yAxisIndex: 0 }, [point[0], y]) as number[] | undefined;
-                if (!px) continue;
-                const dist = Math.abs(px[1] - e.offsetY);
-                if (dist < bestDist) { bestDist = dist; bestName = s.name; bestPixel = px; bestColor = s.lineStyle?.color ?? '#fff'; }
-            }
-            const newHover = bestDist <= HOVER_PIXEL_THRESHOLD ? bestName : null;
-            if (newHover !== hoverName) {
-                hoverName = newHover;
-                if (!stickyName) applyStyles();
-            }
-            if (newHover && bestPixel) {
-                onHoverChange?.({ name: newHover, x: bestPixel[0], y: bestPixel[1], color: bestColor });
-            } else {
-                onHoverChange?.(null);
-            }
-        });
-    });
-
-    chart.getZr().on('globalout', () => {
-        if (hoverName != null) {
-            hoverName = null;
-            if (!stickyName) applyStyles();
-        }
-        onHoverChange?.(null);
     });
 }
 

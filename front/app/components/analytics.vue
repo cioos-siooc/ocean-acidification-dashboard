@@ -48,12 +48,6 @@
         <div v-show="hasActivePlot" ref="chartContainerRef" class="w-100 h-100"
           :class="{ 'chart-loading': isGenerating }" />
 
-        <!-- Floating label naming the year under the cursor, riding next to the hovered point -->
-        <div v-if="hoverInfo" class="overlay-hover-label"
-          :style="{ left: `${hoverInfo.x + 10}px`, top: `${hoverInfo.y - 10}px`, color: hoverInfo.color }">
-          {{ hoverInfo.name }}
-        </div>
-
         <!-- First-time load spinner (no chart yet) -->
         <div v-if="isGenerating && !hasActivePlot"
           class="d-flex flex-column align-center justify-center fill-height">
@@ -119,8 +113,7 @@ import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
 import { useMainStore } from '../stores/main'
 import { fetchAnalysisSeries, type SeriesPoint, type AnalysisLocation } from '../../composables/useAnalysisFetch'
 import {
-  availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor, attachSeriesFocusInteractions,
-  type SeriesHoverInfo,
+  availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor, computeYearBandStats,
 } from '../../composables/useAnalysisStatistics'
 import AdvancedAnalysisDialog from './analysis/AdvancedAnalysisDialog.vue'
 
@@ -149,7 +142,6 @@ const primaryStat = ref('mean')
 const isGenerating = ref(false)
 const hasActivePlot = ref(false)
 const plotErrorMessage = ref<string | null>(null)
-const hoverInfo = ref<SeriesHoverInfo | null>(null)
 
 let autoRunTimer: ReturnType<typeof setTimeout> | null = null
 let activeRequestId = 0
@@ -200,7 +192,7 @@ const seasonLabel = computed(() => {
 })
 
 const chartTitle = computed(() =>
-  `All Years Overlaid — ${varName.value} (${primaryStat.value.toUpperCase()})`
+  `Historical Range — ${varName.value} (${primaryStat.value.toUpperCase()})`
 )
 
 const extremeRecords = computed(() => {
@@ -227,6 +219,11 @@ const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep
 // the axis, matching how a single winter actually runs Dec → Jan → Feb.
 const OVERLAY_REF_YEAR = 2000
 
+// Fixed baseline cutoff for the historical band/mean/percentile stats — years after this
+// are excluded regardless of the current calendar year (so e.g. in 2027, 2026 still isn't
+// pooled into the baseline), since only years through 2025 are treated as complete/settled.
+const STATS_BASELINE_MAX_YEAR = 2025
+
 function overlayTimestamp(iso: string): number {
   const month = parseInt(iso.slice(5, 7), 10)
   const day = parseInt(iso.slice(8, 10), 10)
@@ -244,7 +241,6 @@ function initChart() {
   if (chartInstance) { chartInstance.dispose(); chartInstance = null }
   if (!chartContainerRef.value) return
   chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
-  attachSeriesFocusInteractions(chartInstance, (info) => { hoverInfo.value = info })
 }
 
 // --- CHART RENDERERS ---
@@ -253,11 +249,13 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
   if (!chartInstance) return
 
   const total = series.length
+  const perYearPoints: [number, number | null][][] = []
 
-  const echartsSeries: any[] = series.map((s, idx) => {
-    const t = total <= 1 ? 1 : idx / (total - 1)
+  const yearSeries: any[] = series.map((s, idx) => {
     const color = yearColor(idx, total)
-    const width = 1 + t * 1.5   // 1px (oldest) → 2.5px (newest)
+    // Uniform width — with most years hidden by default, there's no clutter left to
+    // de-emphasize older years for; only the color gradient still distinguishes them.
+    const width = 2
 
     // Points placed by actual calendar day on a shared synthetic-year axis
     // (see overlayTimestamp) rather than by array index, so a partial year
@@ -269,6 +267,9 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
     const points = breakDataGaps(s.data)
       .map(d => [overlayTimestamp(d.time), d.value] as [number, number | null])
       .sort((a, b) => a[0] - b[0])
+    // Years after STATS_BASELINE_MAX_YEAR are excluded from the baseline stats
+    // (see below) but still get their own toggleable line.
+    if (s.year <= STATS_BASELINE_MAX_YEAR) perYearPoints.push(points)
 
     return {
       name: String(s.year),
@@ -279,8 +280,9 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
       lineStyle: { width, color },
       itemStyle: { color },
       data: points,
-      // Disables the legend's own mouseover/mouseout highlight so it doesn't fight with
-      // attachStickyLegendHighlight's click-driven, persistent highlight below.
+      // Only a handful of years are ever visible at once (the rest are toggled off by
+      // default), so there's nothing left to isolate — hovering the legend shouldn't
+      // fade the few lines that are already shown.
       legendHoverLink: false,
       emphasis: {
         focus: 'series',
@@ -292,26 +294,74 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
     }
   })
 
+  // Cross-year mean/min/max/p10/p90 per calendar day — computed once from every year
+  // present, regardless of which individual year lines are toggled on in the legend.
+  const bandStats = computeYearBandStats(perYearPoints)
+  const bandStatsByTs = new Map(bandStats.map(b => [b.ts, b]))
+
+  // Shared between lineStyle/areaStyle and itemStyle below so the legend swatch (which
+  // reads itemStyle.color, not lineStyle.color) can't drift out of sync with the actual
+  // line/fill color.
+  const BAND_FILL_COLOR = 'rgba(200,200,200,0.16)'
+  const PCTL_COLOR = 'rgba(220,220,220,0.6)'
+  const MEAN_COLOR = '#eaeaea'
+
+  const statsSeries: any[] = [
+    {
+      name: 'Min-Max Range', type: 'line', stack: 'band', symbol: 'none', silent: true, z: 1,
+      lineStyle: { opacity: 0 }, areaStyle: { opacity: 0 }, itemStyle: { color: BAND_FILL_COLOR }, legendHoverLink: false,
+      data: bandStats.map(b => [b.ts, b.min]),
+    },
+    {
+      name: 'Min-Max Range', type: 'line', stack: 'band', symbol: 'none', silent: true, z: 1,
+      lineStyle: { opacity: 0 }, areaStyle: { color: BAND_FILL_COLOR }, itemStyle: { color: BAND_FILL_COLOR }, legendHoverLink: false,
+      data: bandStats.map(b => [b.ts, b.max - b.min]),
+    },
+    {
+      name: 'P10', type: 'line', symbol: 'none', z: 2, legendHoverLink: false,
+      lineStyle: { width: 1, type: 'dashed', color: PCTL_COLOR }, itemStyle: { color: PCTL_COLOR },
+      data: bandStats.map(b => [b.ts, b.p10]),
+    },
+    {
+      name: 'P90', type: 'line', symbol: 'none', z: 2, legendHoverLink: false,
+      lineStyle: { width: 1, type: 'dashed', color: PCTL_COLOR }, itemStyle: { color: PCTL_COLOR },
+      data: bandStats.map(b => [b.ts, b.p90]),
+    },
+    {
+      name: 'Mean', type: 'line', symbol: 'none', z: 3, legendHoverLink: false,
+      lineStyle: { width: 2.2, color: MEAN_COLOR }, itemStyle: { color: MEAN_COLOR },
+      data: bandStats.map(b => [b.ts, b.mean]),
+    },
+  ]
+
+  // Only the most recent year is overlaid by default; clicking a legend entry
+  // adds/removes that year's line (native ECharts legend toggle behavior).
+  const defaultYear = series.length ? series[series.length - 1].year : null
+
   chartInstance.setOption({
     tooltip: {
       trigger: 'axis',
       confine: true,
       formatter: (params: any) => {
-        const items = (Array.isArray(params) ? params : [params])
-          .filter((p: any) => p.value?.[1] != null)
+        const rawItems = Array.isArray(params) ? params : [params]
+        const items = rawItems
+          .filter((p: any) => p.value?.[1] != null && p.seriesName !== 'Min-Max Range')
           .sort((a: any, b: any) => (b.value[1] ?? 0) - (a.value[1] ?? 0))
         if (!items.length) return ''
-        const header = `<strong>${fmtOverlayDate(items[0].value[0])}</strong><br/>`
+        const ts = items[0].value[0]
+        const band = bandStatsByTs.get(ts)
+        const header = `<strong>${fmtOverlayDate(ts)}</strong><br/>`
+        const rangeLine = band ? `Range: <strong>${band.min.toFixed(3)} – ${band.max.toFixed(3)}</strong><br/>` : ''
         const cols = items.length > 15 ? 3 : items.length > 8 ? 2 : 1
         if (cols === 1) {
-          let s = header
+          let s = header + rangeLine
           items.forEach((p: any) => {
             s += `${p.marker} ${p.seriesName}: <strong>${Number(p.value[1]).toFixed(3)}</strong><br/>`
           })
           return s
         }
         const rows = Math.ceil(items.length / cols)
-        let table = `${header}<table style="border-collapse:collapse;line-height:1.4;">`
+        let table = `${header}${rangeLine}<table style="border-collapse:collapse;line-height:1.4;">`
         for (let r = 0; r < rows; r++) {
           table += '<tr>'
           for (let c = 0; c < cols; c++) {
@@ -326,7 +376,16 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
         return table
       }
     },
-    legend: { top: 4, type: 'scroll', textStyle: { fontSize: 10 } },
+    legend: {
+      top: 4, type: 'scroll', textStyle: { fontSize: 10 },
+      // A thin rect reads as a little line swatch — the default line+circle combo icon
+      // implied a per-point marker that these lines (all symbol:'none') don't actually have.
+      icon: 'rect', itemWidth: 14, itemHeight: 2,
+      selected: {
+        'Min-Max Range': true, P10: true, P90: true, Mean: true,
+        ...Object.fromEntries(series.map(s => [String(s.year), s.year === defaultYear])),
+      },
+    },
     grid: { left: '3%', right: '2%', bottom: '10%', top: '22%', containLabel: true },
     xAxis: {
       type: 'time',
@@ -335,7 +394,7 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
     },
     yAxis: { type: 'value', name: `${varName.value} (${primaryStat.value})`, nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10, color: '#ccc' }, min: 'dataMin', max: 'dataMax' },
     dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 16 }],
-    series: echartsSeries
+    series: [...statsSeries, ...yearSeries]
   }, true)
 
   chartInstance.resize()
@@ -516,15 +575,5 @@ const runAnalysis = async () => {
   font-size: 0.65rem;
   color: rgba(255, 193, 7, 0.9);
   pointer-events: none;
-}
-
-.overlay-hover-label {
-  position: absolute;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-shadow: 0 0 3px #000, 0 0 3px #000, 0 1px 2px #000;
-  pointer-events: none;
-  white-space: nowrap;
-  z-index: 5;
 }
 </style>
