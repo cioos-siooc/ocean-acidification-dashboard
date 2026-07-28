@@ -114,10 +114,6 @@
                                             </td>
                                             <td class="py-3">
                                                 <div class="font-weight-medium">{{ sensor.organization }}</div>
-                                                <div class="text-body-2">{{ sensor.contactName }}</div>
-                                                <a :href="`mailto:${sensor.contactEmail}`"
-                                                    class="text-body-2 text-decoration-none text-primary">{{
-                                                        sensor.contactEmail }}</a>
                                             </td>
                                             <td class="py-3">
                                                 <div class="d-flex align-center mb-1">
@@ -216,252 +212,453 @@ interface Sensor {
 
 const sensors: Sensor[] = [
     {
-        id: 'Kwakshua Channel CO2 sensor',
+        id: 'Quadra Island Hyacinthe Bay Burke-o-Lator (Research)',
         organization: 'Hakai Institute',
-        // contactName: 'Hakai Institute',
-        // contactEmail: 'wiley.evans@hakai.org',
-        coordinates: '51.65, -127.97',
-        variables: 'pCO2 (uatm), Temp (degC), Salinity (g/kg)',
+        coordinates: '50.1160, -125.2220',
+        variables: 'Omega aragonite, Omega calcite, pH, Salinity (PSU), Temp (degC)',
         depth: 'Surface',
-        dataUrl: 'https://catalogue.hakai.org/erddap/tabledap/HakaiKCBuoyResearch.html',
+        dataUrl: 'https://catalogue.hakai.org/erddap/tabledap/HakaiQuadraBoLResearch',
         orgClass: 'org-hakai'
     },
     {
-        id: 'Bamfield Marine Science Centre Burke-o-Lator',
+        id: 'Kwakshua Channel CO2 Buoy (Provisional)',
         organization: 'Hakai Institute',
-        // contactName: 'Hakai Institute',
-        // contactEmail: 'wiley.evans@hakai.org',
-        coordinates: '48.837, -125.136',
-        variables: 'pCO2 (uatm), DIC (umol/kg), Temp (degC), Salinity (g/kg), Total Alkalinity (umol/kg), pH, Omega aragonite, Omega calcite',
-        depth: '20m',
-        dataUrl: 'https://catalogue.hakai.org/erddap/tabledap/HakaiBamfieldBoL5min.html',
+        coordinates: '51.6499, -127.9663',
+        variables: 'Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '0.5m',
+        dataUrl: 'https://catalogue.hakai.org/erddap/tabledap/HakaiKCBuoy1hour',
         orgClass: 'org-hakai'
     },
     {
-        id: 'Bamfield Marine Science Centre PEARL Lab',
-        organization: 'Ocean Networks Canada',
-        // contactName: 'Ocean Networks Canada',
-        // contactEmail: 'wiley.evans@hakai.org',
-        coordinates: '48.837, -125.136',
-        variables: 'Temp (degC), Salinity (g/kg), dO2 (mL/L)',
-        depth: 'Surface',
-        dataUrl: 'https://docs.google.com/document/d/1qHz_-IKc52c4snH105f8YSwqFDXGOETEzTEIZyTpgKM/edit?tab=t.0',
-        orgClass: 'org-hakai'
-    },
-    {
-        id: 'Bute Inlet',
+        id: 'Bute Inlet BIOOS Buoy (Research)',
         organization: 'Hakai Institute',
-        // contactName: 'Hakai Institute',
-        coordinates: '50.60, -124.90',
-        variables: 'pCO2 (uatm), Temp (degC), Salinity (g/kg)',
+        coordinates: '50.5970, -124.8990',
+        variables: 'pCO2 (uatm), Salinity (PSU), Temp (degC)',
+        depth: '0.5m',
+        dataUrl: 'https://catalogue.hakai.org/erddap/tabledap/HakaiBIOOSBuoyResearch',
+        orgClass: 'org-hakai'
+    },
+    {
+        id: 'Bute Inlet BIOOS Wirewalker (Provisional)',
+        organization: 'Hakai Institute',
+        coordinates: '50.5744, -124.9009',
+        variables: 'Depth (dbar), Dissolved O2 (mL/L), Temp (degC)',
         depth: 'Profile',
-        dataUrl: 'https://catalogue.hakai.org/erddap/tabledap/HakaiButeInletBuoy.html',
+        dataUrl: 'https://catalogue.hakai.org/erddap/tabledap/HakaiWirewalkerProvisional',
         orgClass: 'org-hakai'
     },
     {
-        id: 'Quadra Island Hyacinthe Bay Burke-o-Lator',
+        id: 'Bamfield Marine Sciences Centre Burke-o-Lator (Provisional)',
         organization: 'Hakai Institute',
-        // contactName: 'Hakai Institute',
-        // contactEmail: 'wiley.evans@hakai.org',
-        coordinates: '50.116, -125.222',
-        variables: 'Temp (degC), Salinity (g/kg), pCO2 (uatm), pH, Total Alkalinity (umol/kg), DIC (umol/kg), Omega aragonite, Omega calcite',
-        depth: 'Surface',
-        dataUrl: 'https://catalogue.hakai.org/erddap/tabledap/HakaiQuadraBoLResearch.html',
+        coordinates: '48.8366, -125.1363',
+        variables: 'pH, Salinity (PSU), Temp (degC)',
+        depth: '20m',
+        dataUrl: 'https://catalogue.hakai.org/erddap/tabledap/HakaiBamfieldBoL5min',
         orgClass: 'org-hakai'
     },
     {
-        id: 'Rivers Inlet',
-        organization: 'Hakai Institute',
-        // contactName: 'Hakai Institute',
-        // contactEmail: 'wiley.evans@hakai.org',
-        coordinates: '51.60, -127.53',
-        variables: 'Temp (degC), Salinity (g/kg), dO2 (mL/L)',
-        depth: '90m, 245m',
-        dataUrl: 'https://catalogue.hakai.org/erddap/tabledap/HakaiRiversInletMooringResearch.html',
-        orgClass: 'org-hakai'
-    },
-    {
-        id: 'Folger Pinnacle',
+        id: '40mbss',
         organization: 'Ocean Networks Canada',
-        // contactName: 'Stef Mellon',
-        // contactEmail: 'smellon@uvic.ca',
-        coordinates: '48.81, -125.28',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU)',
-        depth: '25m',
-        dataUrl: 'https://data.oceannetworks.ca/DataSearch?locationCode=FGPPN',
+        coordinates: '49.4869, -124.7693',
+        variables: 'Dissolved O2 (mL/L), pH, Salinity (PSU), Temp (degC)',
+        depth: '41m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=BSM.J3',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Hartley Bay Underwater Network',
+        organization: 'Ocean Networks Canada',
+        coordinates: '53.4223, -129.2468',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '80m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=HBIP',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'China Creek Underwater Network',
+        organization: 'Ocean Networks Canada',
+        coordinates: '49.1538, -124.8024',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '110m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=CCIP',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Red Island Shoal Buoy',
+        organization: 'Ocean Networks Canada',
+        coordinates: '47.3104, -54.0784',
+        variables: 'Temp (degC)',
+        depth: 'Surface',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=RISB',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Upper Slope South',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.4269, -126.1746',
+        variables: 'Temp (degC)',
+        depth: '394m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=BACUS',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Bullseye',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.6706, -126.8480',
+        variables: 'Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '1257m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=NC89',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Campbell River Underwater Network',
+        organization: 'Ocean Networks Canada',
+        coordinates: '50.0208, -125.2354',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '8.2m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=CRIP',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Instrument Float',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.6224, -123.4988',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '0.1m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=YPVPF',
         orgClass: 'org-onc'
     },
     {
         id: 'Folger Deep',
         organization: 'Ocean Networks Canada',
-        // contactName: 'Stef Mellon',
-        // contactEmail: 'smellon@uvic.ca',
-        coordinates: '48.8082916667, -125.2815',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU)',
-        depth: '95m',
-        dataUrl: 'https://data.oceannetworks.ca/DataSearch?locationCode=FGPD',
+        coordinates: '48.8138, -125.2806',
+        variables: 'Salinity (PSU), Temp (degC)',
+        depth: '96m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=FGPD',
         orgClass: 'org-onc'
     },
     {
-        id: 'Baynes Sound Profiling Instrument',
+        id: 'Folger Pinnacle',
         organization: 'Ocean Networks Canada',
-        // contactName: 'Zarah Zheng',
-        // contactEmail: 'zarahzheng@uvic.ca',
-        coordinates: '49.487, -124.7693',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU)',
-        depth: 'Full water column',
-        dataUrl: 'https://data.oceannetworks.ca/DataSearch?locationCode=BSPS',
+        coordinates: '48.8083, -125.2815',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '25m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=FGPPN',
         orgClass: 'org-onc'
     },
     {
-        id: 'Baynes Sound Historical Mooring',
+        id: 'Saanich Inlet Sill',
         organization: 'Ocean Networks Canada',
-        // contactName: 'Zarah Zheng',
-        // contactEmail: 'zarahzheng@uvic.ca',
-        coordinates: '49.487, -124.7693',
-        variables: 'pCO2 (uatm), O2 (mL/L), Temp',
-        depth: '5, 20, 40m',
-        dataUrl: 'https://data.oceannetworks.ca/DataSearch?locationCode=BSM',
-        orgClass: 'org-onc',
-        decommissioned: true
+        coordinates: '48.6887, -123.5002',
+        variables: 'Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '88m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=SILL',
+        orgClass: 'org-onc'
     },
     {
-        id: 'ORCA1-Twanoh',
-        organization: 'Northwest Environmental Moorings Group at University of Washington - Applied Physical Laboratory',
-        coordinates: '47.375, -123.00833333',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU), Chlorophyll (mg/m3), NO3 (umol/kg)',
-        depth: 'Profile',
-        dataUrl: 'https://erddap.nanoos.org/erddap/griddap/orca_hydro_twanoh.html',
+        id: 'Holyrood Bay Underwater Network',
+        organization: 'Ocean Networks Canada',
+        coordinates: '47.4258, -53.1211',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), pH, Salinity (PSU), Temp (degC)',
+        depth: '84m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=HRBIP',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Wally Land',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.3118, -126.0656',
+        variables: 'Chlorophyll (ug/L), Salinity (PSU), Temp (degC)',
+        depth: '863m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=BACWL',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Barkley Canyon Mid-West',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.3151, -126.0588',
+        variables: 'Temp (degC)',
+        depth: '891m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=BACMW',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Microsquid Digital Camera Frame',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.6509, -123.4873',
+        variables: 'Salinity (PSU), Temp (degC)',
+        depth: '101m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=PDCF',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Strait of Georgia East VENUS Instrument Platform',
+        organization: 'Ocean Networks Canada',
+        coordinates: '49.0426, -123.3170',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '167m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=SEVIP',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'St. John\'s Buoy',
+        organization: 'Ocean Networks Canada',
+        coordinates: '47.5668, -52.6303',
+        variables: 'Temp (degC)',
+        depth: 'Surface',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=STJB',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Kitamaat Village Underwater Network',
+        organization: 'Ocean Networks Canada',
+        coordinates: '53.9747, -128.6571',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '45m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=KVIP',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Port aux Basques Buoy',
+        organization: 'Ocean Networks Canada',
+        coordinates: '47.5499, -59.0742',
+        variables: 'Temp (degC)',
+        depth: 'Surface',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=PABB',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Main Endeavour Field',
+        organization: 'Ocean Networks Canada',
+        coordinates: '47.9488, -129.0984',
+        variables: 'Temp (degC)',
+        depth: '2190m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=KEMF',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'ODP 1026',
+        organization: 'Ocean Networks Canada',
+        coordinates: '47.7626, -127.7586',
+        variables: 'Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '2658m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=NC27',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Macaulay Outfall Mooring',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.4011, -123.4088',
+        variables: 'Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '56m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=MAC',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Bottom Boundary Layer',
+        organization: 'Ocean Networks Canada',
+        coordinates: '49.0807, -123.3395',
+        variables: 'Salinity (PSU), Temp (degC)',
+        depth: '145m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=LSBBL',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Barkley Canyon Mid-East',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.3149, -126.0583',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '895m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=BACME',
+        orgClass: 'org-onc'
+    },
+    {
+        id: '20mbss',
+        organization: 'Ocean Networks Canada',
+        coordinates: '49.4869, -124.7693',
+        variables: 'Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '21m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=BSM.J2',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'JF2C Mooring',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.3567, -124.2154',
+        variables: 'Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '182m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=JF2C',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Barkley Upper Slope',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.4273, -126.1745',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '397m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=NCBC',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'AS04 Mooring',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.3007, -123.3911',
+        variables: 'Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '113m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=AS04',
+        orgClass: 'org-onc'
+    },
+    {
+        id: '5mbss',
+        organization: 'Ocean Networks Canada',
+        coordinates: '49.4869, -124.7693',
+        variables: 'Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '4.9m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=BSM.J1',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Boundary Pass Mooring',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.7661, -123.0396',
+        variables: 'Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '223m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=BDYPM',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Burrard Inlet Underwater Network',
+        organization: 'Ocean Networks Canada',
+        coordinates: '49.3010, -123.1111',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), pH, Salinity (PSU), Temp (degC)',
+        depth: '28m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=BIIP',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Barkley Canyon Axis',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.3167, -126.0505',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '984m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=BACAX',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Strait of Georgia VENUS Instrument Platform',
+        organization: 'Ocean Networks Canada',
+        coordinates: '49.0398, -123.4257',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), Salinity (PSU), Temp (degC)',
+        depth: '299m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=SCVIP',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Cambridge Bay Underwater Network',
+        organization: 'Ocean Networks Canada',
+        coordinates: '69.1131, -105.0636',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mL/L), pH, Salinity (PSU), Temp (degC)',
+        depth: '8.5m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=CBYIP',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'Saanich Inlet VENUS Instrument Platform',
+        organization: 'Ocean Networks Canada',
+        coordinates: '48.6513, -123.4864',
+        variables: 'Temp (degC)',
+        depth: '96m',
+        dataUrl: 'https://data.oceannetworks.ca/DataSearch?location=PVIP',
         orgClass: 'org-onc'
     },
     {
         id: 'ORCA2-Hoodsport',
-        organization: 'Northwest Environmental Moorings Group at University of Washington - Applied Physical Laboratory',
-        coordinates: '47.42181666, -123.11258333',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU), Chlorophyll (mg/m3), NO3 (umol/kg)',
+        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        coordinates: '47.4218, -122.6126',
+        variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
         depth: 'Profile',
-        dataUrl: 'https://erddap.nanoos.org/erddap/griddap/orca_hydro_hoodsport.html',
-        orgClass: 'org-onc'
-    },
-    {
-        id: 'ORCA3-Hansville',
-        organization: 'Northwest Environmental Moorings Group at University of Washington - Applied Physical Laboratory',
-        coordinates: '47.90733333, -122.62708333',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU), Chlorophyll (mg/m3), NO3 (umol/kg)',
-        depth: 'Profile',
-        dataUrl: 'https://erddap.nanoos.org/erddap/griddap/orca_hydro_hansville.html',
+        dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/orca2_L3_depthgridded_025',
         orgClass: 'org-onc'
     },
     {
         id: 'ORCA4-DabobBay',
-        organization: 'Northwest Environmental Moorings Group at University of Washington - Applied Physical Laboratory',
-        coordinates: '47.80341666, -122.80291666',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU), Chlorophyll (mg/m3), NO3 (umol/kg)',
+        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        coordinates: '47.8034, -122.8029',
+        variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
         depth: 'Profile',
-        dataUrl: 'https://erddap.nanoos.org/erddap/griddap/orca_hydro_dabobbay.html',
-        orgClass: 'org-onc'
-    },
-    {
-        id: 'PISCES1-South',
-        organization: 'Northwest Environmental Moorings Group at University of Washington - Applied Physical Laboratory',
-        coordinates: '47.665112, -122.873272',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU), Chlorophyll (mg/m3), NO3 (umol/kg)',
-        depth: 'Surface & Profile',
-        dataUrl: 'https://nwem.apl.uw.edu/erddap/tabledap/pisces2_L1_profiles.html',
-        orgClass: 'org-onc'
-    },
-    {
-        id: 'PISCES2-North',
-        organization: 'Northwest Environmental Moorings Group at University of Washington - Applied Physical Laboratory',
-        coordinates: '47.692312, -122.865058',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU), Chlorophyll (mg/m3), NO3 (umol/kg)',
-        depth: 'Surface',
-        dataUrl: 'https://nwem.apl.uw.edu/erddap/tabledap/pisces2_surfctd.html',
-        orgClass: 'org-onc'
-    },
-    {
-        id: 'NPBY2-Carr Inlet',
-        organization: 'Northwest Environmental Moorings Group at University of Washington - Applied Physical Laboratory',
-        coordinates: '47.28, -122.73',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU), Chlorophyll (mg/m3), NO3 (umol/kg)',
-        depth: 'Profile',
-        dataUrl: 'https://erddap.nanoos.org/erddap/griddap/orca_hydro_carrinlet.html',
+        dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/orca4_L3_depthgridded_025',
         orgClass: 'org-onc'
     },
     {
         id: 'NPBY1-Pt Wells',
-        organization: 'Northwest Environmental Moorings Group at University of Washington - Applied Physical Laboratory',
-        coordinates: '47.76116666, -122.39716666',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU), Chlorophyll (mg/m3), NO3 (umol/kg)',
+        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        coordinates: '47.7612, -122.3972',
+        variables: 'Chlorophyll (ug/L), Salinity (PSU), Temp (degC)',
         depth: 'Profile',
-        dataUrl: 'https://erddap.nanoos.org/erddap/griddap/orca_hydro_pointwells.html',
+        dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/npby1_L3_depthgridded_025',
         orgClass: 'org-onc'
     },
     {
-        id: 'Central Strait of Georgia platform',
-        organization: 'Ocean Networks Canada',
-        // contactName: 'Alice Bui',
-        // contactEmail: 'aovbui@uvic.ca',
-        coordinates: '49.05, -123.42',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU)',
-        depth: '300m',
-        dataUrl: 'https://data.oceannetworks.ca/DataSearch?locationCode=SGC',
-        orgClass: 'org-onc'
-    },
-    {
-        id: 'Strait of Georgia East',
-        organization: 'Ocean Networks Canada',
-        // contactName: 'Alice Bui',
-        // contactEmail: 'aovbui@uvic.ca',
-        coordinates: '49.04, -123.32',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU)',
-        depth: '170m',
-        dataUrl: 'https://data.oceannetworks.ca/DataSearch?locationCode=SGE',
-        orgClass: 'org-onc'
-    },
-    {
-        id: 'Scott2 - North Island Shelf',
-        organization: 'IOS CTD mooring',
-        coordinates: '51.12835, -129.47609',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU)',
-        depth: '40m',
-        dataUrl: 'https://explore.cioos.ca/?lat=51.10935634566201&lon=-129.48571073830323&zoom=7.429494329687231&eovs=oxygen&platforms=mooring%2Cunknown&organizations=16%2C9%2C78%2C29%2C21%2C44&lang=en',
-        orgClass: 'org-onc'
-    },
-    {
-        id: 'E01- Southern Vancouver Island Shelf',
-        organization: 'IOS CTD mooring',
-        coordinates: '49.28333, -126.614685',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU)',
-        depth: '35m',
-        dataUrl: '',
-        orgClass: 'org-onc'
-    },
-    {
-        id: 'quat1-Quatsino Sound North Island',
-        organization: 'IOS CTD mooring',
-        coordinates: '50.41325, -128.00562',
-        variables: 'Temp (K), dO2 (mL/L), Practical salinity (PSU)',
-        depth: '40m',
-        dataUrl: '',
-        orgClass: 'org-onc'
-    },
-    {
-        id: 'Amphirite Point',
-        organization: 'BC Lightstation monitoring program (DFO)',
-        coordinates: '48.9528, -125.5423',
-        variables: 'Temp (K), Practical salinity (PSU)',
+        id: 'PISCES1-South (Surface Hydrological Station)',
+        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        coordinates: '47.6651, -122.8733',
+        variables: 'Chlorophyll (ug/L), pH, Salinity (PSU), Temp (degC), Dissolved O2 (mg/L)',
         depth: 'Surface',
-        dataUrl: 'https://open.canada.ca/data/en/dataset/719955f2-bf8e-44f7-bc26-6bd623e82884/resource/3226f487-d7a8-4e08-8bef-c6a1d87e7af3',
+        dataUrl: 'https://nwem.apl.uw.edu/erddap/tabledap/pisces1_surfctd',
         orgClass: 'org-onc'
     },
     {
-        id: 'Bonilla Island',
-        organization: 'BC Lightstation monitoring program (DFO)',
-        coordinates: '53.4928, -130.6358',
-        variables: 'Temp (K), Practical salinity (PSU)',
+        id: 'PISCES2-North (Depth-Gridded Profile)',
+        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        coordinates: '47.6923, -122.8651',
+        variables: 'Chlorophyll (ug/L), Salinity (PSU), Temp (degC), Dissolved O2 (mg/L)',
+        depth: 'Profile',
+        dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/pisces2_L3_depthgridded_025',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'PISCES2-North (Surface Hydrological Station)',
+        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        coordinates: '47.6923, -122.8651',
+        variables: 'Chlorophyll (ug/L), pH, Salinity (PSU), Temp (degC), Dissolved O2 (mg/L)',
         depth: 'Surface',
-        dataUrl: 'https://open.canada.ca/data/en/dataset/719955f2-bf8e-44f7-bc26-6bd623e82884/resource/3226f487-d7a8-4e08-8bef-c6a1d87e7af3',
+        dataUrl: 'https://nwem.apl.uw.edu/erddap/tabledap/pisces2_surfctd',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'ORCA3-Hansville',
+        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        coordinates: '47.9075, -122.6274',
+        variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
+        depth: 'Profile',
+        dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/orca3_L3_depthgridded_025',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'NPBY2-Carr Inlet',
+        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        coordinates: '47.2800, -122.7300',
+        variables: 'Chlorophyll (ug/L), Salinity (PSU), Temp (degC)',
+        depth: 'Profile',
+        dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/npby2_L3_depthgridded_025',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'PISCES1-South (Depth-Gridded Profile)',
+        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        coordinates: '47.6651, -122.8733',
+        variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
+        depth: 'Profile',
+        dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/pisces1_L3_depthgridded_025',
+        orgClass: 'org-onc'
+    },
+    {
+        id: 'ORCA1-Twanoh',
+        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        coordinates: '47.3750, -123.0083',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',
+        depth: 'Profile',
+        dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/orca1_L3_depthgridded_025',
         orgClass: 'org-onc'
     }
 ]
