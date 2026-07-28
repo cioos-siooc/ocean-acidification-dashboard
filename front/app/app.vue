@@ -8,6 +8,13 @@
       <v-app-bar-title>
         <span class="">OceanECO</span>
         <span class="text-label-medium mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
+        <v-tooltip location="bottom" max-width="280">
+          <template #activator="{ props }">
+            <v-chip v-bind="props" size="small" color="warning" variant="flat" label>BETA</v-chip>
+          </template>
+          <span>This dashboard is in active development. Data, features, and layout may change without
+            notice.</span>
+        </v-tooltip>
       </v-app-bar-title>
 
       <a href="https://cioospacific.ca/" target="_blank" rel="noopener noreferrer" class="logo-link"
@@ -16,9 +23,9 @@
       </a>
 
       <!-- Optional: Add menu items here -->
-      <NuxtLink to="/modeleval" target="_blank">
+      <!-- <NuxtLink to="/modeleval" target="_blank">
         <v-btn text>Model Evaluation</v-btn>
-      </NuxtLink>
+      </NuxtLink> -->
       <NuxtLink to="/about" target="_blank">
         <v-btn text>About</v-btn>
       </NuxtLink>

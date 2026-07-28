@@ -5,9 +5,9 @@
             <v-progress-circular indeterminate color="warning" :size="64" :width="12" class="progress" />
         </div>
 
-        <v-btn icon variant="text" flat size="18px" class="chart-info" @click="showChartInfo = true">
+        <!-- <v-btn icon variant="text" flat size="18px" class="chart-info" @click="showChartInfo = true">
             <v-icon color="yellow" size="14px">mdi-information-variant</v-icon>
-        </v-btn>
+        </v-btn> -->
 
         <!-- CHART USAGE AND PLOTS HELP DIALOG -->
         <v-dialog v-model="showChartInfo" max-width="75%">
