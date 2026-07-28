@@ -23,12 +23,19 @@
       </a>
 
       <!-- Optional: Add menu items here -->
+      <!-- FEEDBACK FORM -->
+      <v-btn text href="https://docs.google.com/forms/d/e/1FAIpQLSdGiIclM5wvIbPReZydsXKiRBXbZsQVEdoQPlA0EruKIoNJkg/viewform?usp=dialog" target="_blank" rel="noopener noreferrer">
+        Feedback
+      </v-btn>
+
       <!-- <NuxtLink to="/modeleval" target="_blank">
         <v-btn text>Model Evaluation</v-btn>
       </NuxtLink> -->
+      
       <NuxtLink to="/about" target="_blank">
         <v-btn text>About</v-btn>
       </NuxtLink>
+
     </v-app-bar>
 
     <NuxtRouteAnnouncer />
