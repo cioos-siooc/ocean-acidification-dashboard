@@ -4,8 +4,10 @@
 Mirrors the logic of compute.py / compute_for_group(), but accepts a date
 directly from the user instead of pulling pending jobs from the DB.
 
-Invokes calc_carbon_grid_shm_memmap.py (the same script the process service uses)
-to compute ph_total, omega_arag, and omega_cal from downloaded NetCDF files.
+Invokes calc_carbon_grid_shm_memmap_year_aware.py to compute ph_total,
+omega_arag, and omega_cal from downloaded NetCDF files. (The live process
+service computes these via PyCO2SYS directly in SSC/compute.py; this
+standalone path is for ad-hoc, DB-free runs.)
 
 Usage:
   python compute_standalone.py --date 2025-01-01

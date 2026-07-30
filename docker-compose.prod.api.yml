@@ -18,7 +18,6 @@ services:
       - SSC_NC_DIR_ARCHIVE=${SSC_NC_DIR_ARCHIVE:-/opt/archive/SSC/nc}
       - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
       - SSC_IMAGE_DIR_ARCHIVE=${SSC_IMAGE_DIR_ARCHIVE:-/opt/archive/SSC/images}
-      - SSC_CLIM_DIR=${SSC_CLIM_DIR:-/opt/data/SSC/climatology}
       - LO_NC_DIR=${LO_NC_DIR:-/opt/data/LO/nc}
       - LO_IMAGE_DIR=${LO_IMAGE_DIR:-/opt/data/LO/images}
       # Bathymetry contour vector tiles (GET /vector/{z}/{x}/{y}.pbf), built by

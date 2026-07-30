@@ -45,12 +45,11 @@ The "engine" that transforms raw external data into precisely-tiled, color-corre
 *   **WebP Pipeline**: `SSC/imaging.py` renders tiles with PST/UTC timezone handling and consistent color scaling.
 
 ### Derived Calculations
-*   **Biogeochemical Models**: Specialized calculators (`calc_carbon.py`, `calc_carbon_grid_shm`) to derive pH, Aragonite Saturation (Omega), and Inorganic Carbon.
-*   **Shared Memory Scaling**: Optimized calculations via `shm_memmap` to allow high-concurrency processing without memory duplication.
+*   **Biogeochemical Models**: The live pipeline derives pH, Aragonite Saturation (Omega), and Inorganic Carbon via PyCO2SYS in `process/SSC/compute.py`.
+*   **Shared Memory Scaling**: A standalone `calc_carbon_grid_shm_memmap_year_aware.py` offers shared-memory (`shm_memmap`) high-concurrency computation for ad-hoc, DB-free runs.
 
 ### Statistics & Climatology
-*   **Monthly Batching**: Efficiently calculates statistics (mean, median, quantiles) using NumPy-based batching to avoid RAM crashes.
-*   **Circular Smoothing**: Periodic rolling mean smoothing in `smooth_stats.py` that correctly handles December-to-January boundaries.
+*   **Climatology**: Day-of-year climatology (mean/min/max) is aggregated in ClickHouse (`SalishSeaCast_daily`) and served by the API's `/extract_climateTimeseries`; the Analysis Builder derives trends, thresholds, and anomalies client-side.
 
 ---
 
