@@ -71,8 +71,8 @@
 <script setup lang="ts">
 import { computed, toRef, ref, watch } from 'vue';
 import moment from 'moment-timezone';
-import { var2name } from '../../composables/useVar2Name';
-import { trackEvent } from '../../composables/useAnalytics';
+import { var2name } from '~~/composables/useVar2Name';
+import { trackEvent } from '~~/composables/useAnalytics';
 import colors from 'vuetify/util/colors'
 
 import { useMainStore, formatDepthLabel } from '../stores/main'

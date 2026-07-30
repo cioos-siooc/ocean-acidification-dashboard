@@ -125,12 +125,12 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import moment from 'moment-timezone'
-import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
-import { trackEvent } from '../../composables/useAnalytics'
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
+import { trackEvent } from '~~/composables/useAnalytics'
 import { useMainStore, formatDepthLabel } from '../stores/main'
-import { fetchAnalysisSeries } from '../../composables/useAnalysisFetch'
-import { getSensorTimeseries } from '../../composables/useSensorTimeseries'
-import { availableVariables } from '../../composables/useAnalysisStatistics'
+import { fetchAnalysisSeries } from '~~/composables/useAnalysisFetch'
+import { getSensorTimeseries } from '~~/composables/useSensorTimeseries'
+import { availableVariables } from '~~/composables/useAnalysisStatistics'
 import {
   aggregateSensorToDaily,
   buildComparisonSeries,
@@ -138,7 +138,7 @@ import {
   computeComparisonStats,
   type ComparisonPoint,
   type Season,
-} from '../../composables/useComparisonFetch'
+} from '~~/composables/useComparisonFetch'
 import AdvancedComparisonDialog from './comparison/AdvancedComparisonDialog.vue'
 
 const props = defineProps<{ active?: boolean }>()

@@ -56,9 +56,9 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { fetchAnalysisSeries, type SeriesPoint, type AnalysisLocation } from '../../../composables/useAnalysisFetch'
-import { fetchSensorAnalysisSeries } from '../../../composables/useSensorAnalysisFetch'
-import { availableVariables } from '../../../composables/useAnalysisStatistics'
+import { fetchAnalysisSeries, type SeriesPoint, type AnalysisLocation } from '~~/composables/useAnalysisFetch'
+import { fetchSensorAnalysisSeries } from '~~/composables/useSensorAnalysisFetch'
+import { availableVariables } from '~~/composables/useAnalysisStatistics'
 import ExtremeEvents from './ExtremeEvents.vue'
 import CompoundStress from './CompoundStress.vue'
 import Trend from './Trend.vue'

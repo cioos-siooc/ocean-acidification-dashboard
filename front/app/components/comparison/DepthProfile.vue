@@ -100,10 +100,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { registerEchartsDarkTheme } from '../../../composables/useEchartsTheme'
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
 import { useMainStore } from '../../stores/main'
-import { fetchDepthProfile, type DepthProfileResponse } from '../../../composables/useDepthProfileFetch'
-import { resolveColormap } from '../../../composables/useColormapResolver'
+import { fetchDepthProfile, type DepthProfileResponse } from '~~/composables/useDepthProfileFetch'
+import { resolveColormap } from '~~/composables/useColormapResolver'
 
 const props = defineProps<{
   varName: string

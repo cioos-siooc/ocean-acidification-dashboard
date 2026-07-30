@@ -45,9 +45,9 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { registerEchartsDarkTheme } from '../../../composables/useEchartsTheme'
-import type { SeriesPoint, AnalysisLocation } from '../../../composables/useAnalysisFetch'
-import { availableVariables, filterBySeason, pearsonCorrelation, joinSeriesByDate, linearRegression } from '../../../composables/useAnalysisStatistics'
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
+import type { SeriesPoint, AnalysisLocation } from '~~/composables/useAnalysisFetch'
+import { availableVariables, filterBySeason, pearsonCorrelation, joinSeriesByDate, linearRegression } from '~~/composables/useAnalysisStatistics'
 
 const props = defineProps<{
   primarySeries: SeriesPoint[]

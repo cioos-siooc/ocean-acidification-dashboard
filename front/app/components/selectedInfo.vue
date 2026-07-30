@@ -38,8 +38,8 @@ import moment from 'moment';
 import { useMainStore } from '../stores/main'
 const mainStore = useMainStore();
 
-import { var2name } from '../../composables/useVar2Name'
-import { utc2pst } from '../../composables/useUTC2PST'
+import { var2name } from '~~/composables/useVar2Name'
+import { utc2pst } from '~~/composables/useUTC2PST'
 
 ////////////////////////////////////// COMPUTED //////////////////////////////////////
 

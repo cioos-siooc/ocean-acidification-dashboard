@@ -15,7 +15,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useMainStore } from '../stores/main';
-import { resolveColormap } from '../../composables/useColormapResolver';
+import { resolveColormap } from '~~/composables/useColormapResolver';
 
 const mainStore = useMainStore();
 

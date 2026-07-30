@@ -170,12 +170,12 @@ import TimeControls from '../components/TimeControls.vue'
 import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties, Feature, Polygon } from 'geojson';
-import { var2name } from '../../composables/useVar2Name'
-import { resolveColormap } from '../../composables/useColormapResolver'
-import { utc2pst } from '../../composables/useUTC2PST'
-import useStationsInteraction from '../../composables/useStationsInteraction';
-import { addBuoyLayer, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '../../composables/useBuoyLayer';
-import getSensorTimeseries from '../../composables/useSensorTimeseries';
+import { var2name } from '~~/composables/useVar2Name'
+import { resolveColormap } from '~~/composables/useColormapResolver'
+import { utc2pst } from '~~/composables/useUTC2PST'
+import useStationsInteraction from '~~/composables/useStationsInteraction';
+import { addBuoyLayer, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '~~/composables/useBuoyLayer';
+import getSensorTimeseries from '~~/composables/useSensorTimeseries';
 import TimeseriesChart from '../components/TimeseriesChart.vue';
 import Analytics from '../components/analytics.vue'
 import SensorComparison from '../components/sensorComparison.vue'
@@ -184,7 +184,7 @@ import SensorAnalytics from '../components/sensorAnalytics.vue'
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
-import { trackEvent } from '../../composables/useAnalytics'
+import { trackEvent } from '~~/composables/useAnalytics'
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();

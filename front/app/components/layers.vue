@@ -21,7 +21,7 @@
 import { ref, computed } from 'vue'
 import { useMainStore } from '../stores/main'
 
-import { var2name } from '../../composables/useVar2Name'
+import { var2name } from '~~/composables/useVar2Name'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 

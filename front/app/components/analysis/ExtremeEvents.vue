@@ -69,12 +69,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { registerEchartsDarkTheme } from '../../../composables/useEchartsTheme'
-import type { SeriesPoint } from '../../../composables/useAnalysisFetch'
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
+import type { SeriesPoint } from '~~/composables/useAnalysisFetch'
 import {
   filterBySeason, maskBySeason, breakDataGaps, computeClimatologyBaseline, detectExtremeEvents, summarizeEventsByYear,
   distinctYearSpan, climatologyThresholdLookup, fixedThresholdLookup, type ThresholdLookup,
-} from '../../../composables/useAnalysisStatistics'
+} from '~~/composables/useAnalysisStatistics'
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable: string }>()
 

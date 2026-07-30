@@ -21,8 +21,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import * as echarts from 'echarts';
-import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
-import { computeNightRanges } from '../../composables/useSunCalc';
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme';
+import { computeNightRanges } from '~~/composables/useSunCalc';
 import moment from 'moment-timezone';
 import colors from 'vuetify/util/colors';
 import timeseriesChartHelpImg from '../../public/timeseriesChartHelp.png';

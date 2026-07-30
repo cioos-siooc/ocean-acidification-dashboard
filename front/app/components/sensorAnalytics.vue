@@ -120,14 +120,14 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
-import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
-import { trackEvent } from '../../composables/useAnalytics'
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
+import { trackEvent } from '~~/composables/useAnalytics'
 import { useMainStore } from '../stores/main'
-import type { SeriesPoint, AnalysisLocation } from '../../composables/useAnalysisFetch'
-import { fetchSensorAnalysisSeries } from '../../composables/useSensorAnalysisFetch'
+import type { SeriesPoint, AnalysisLocation } from '~~/composables/useAnalysisFetch'
+import { fetchSensorAnalysisSeries } from '~~/composables/useSensorAnalysisFetch'
 import {
   availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor, computeYearBandStats,
-} from '../../composables/useAnalysisStatistics'
+} from '~~/composables/useAnalysisStatistics'
 import AdvancedAnalysisDialog from './analysis/AdvancedAnalysisDialog.vue'
 
 const mainStore = useMainStore()

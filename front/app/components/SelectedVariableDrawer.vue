@@ -24,11 +24,11 @@ import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRuntimeConfig } from '#app';
 import axios from 'axios';
 import * as echarts from 'echarts';
-import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme';
 import type { PropType } from 'vue';
 import moment, { type MomentInput } from 'moment-timezone';
-import { var2name } from '../../composables/useVar2Name';
-import { utc2pst } from '../../composables/useUTC2PST';
+import { var2name } from '~~/composables/useVar2Name';
+import { utc2pst } from '~~/composables/useUTC2PST';
 import { useMainStore } from '../stores/main';
 
 type SelectedPoint = {

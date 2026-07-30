@@ -28,7 +28,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useMainStore } from '../stores/main'
-import { baseColormapName, colormapVariant, resolveColormap, resolveColormapName } from '../../composables/useColormapResolver'
+import { baseColormapName, colormapVariant, resolveColormap, resolveColormapName } from '~~/composables/useColormapResolver'
 
 const props = defineProps<{ modelValue: string | null }>()
 const emit = defineEmits<{ 'update:modelValue': [string] }>()

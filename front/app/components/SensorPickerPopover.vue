@@ -21,7 +21,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { MultiSensorCandidate } from '../../../composables/useBuoyLayer';
+import type { MultiSensorCandidate } from '~~/composables/useBuoyLayer';
 
 const props = defineProps<{
   visible: boolean;

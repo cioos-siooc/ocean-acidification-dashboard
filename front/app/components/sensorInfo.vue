@@ -139,8 +139,8 @@ import { useMainStore } from '@/stores/main';
 import { storeToRefs } from 'pinia';
 import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import colors from 'vuetify/util/colors';
-import { sensorStatusColor } from '../../composables/useSensorStatus';
-import { trackEvent } from '../../composables/useAnalytics';
+import { sensorStatusColor } from '~~/composables/useSensorStatus';
+import { trackEvent } from '~~/composables/useAnalytics';
 
 const mainStore = useMainStore();
 

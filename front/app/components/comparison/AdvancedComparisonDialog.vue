@@ -90,7 +90,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
-import { registerEchartsDarkTheme } from '../../../composables/useEchartsTheme'
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
 import DepthProfile from './DepthProfile.vue'
 import {
   filterBySeason,
@@ -101,7 +101,7 @@ import {
   computeSeasonalCycleStats,
   type ComparisonPoint,
   type Season,
-} from '../../../composables/useComparisonFetch'
+} from '~~/composables/useComparisonFetch'
 
 type Tab = 'scatter' | 'residuals' | 'seasonal' | 'depth'
 

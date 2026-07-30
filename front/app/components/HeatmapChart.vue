@@ -58,12 +58,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import * as echarts from 'echarts';
-import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme';
 import axios from 'axios';
 import moment from 'moment';
 
 import { useMainStore } from '../stores/main';
-import { resolveColormap } from '../../composables/useColormapResolver';
+import { resolveColormap } from '~~/composables/useColormapResolver';
 const mainStore = useMainStore();
 
 import colors from 'vuetify/util/colors';
