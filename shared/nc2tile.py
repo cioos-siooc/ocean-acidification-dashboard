@@ -620,30 +620,6 @@ def write_png_packed(float_arr: np.ndarray, alpha_mask: np.ndarray, outpath: str
     img.save(outpath, 'WEBP', lossless=True)
 
 
-
-
-def compute_global_minmax_exclude_zero(ds_data: xr.Dataset, varname: str) -> Tuple[float, float]:
-    arr = ds_data[varname].values
-    # Flatten and consider finite values only
-    fin = np.isfinite(arr)
-    if fin.sum() == 0:
-        return 0.0, 1.0
-
-    # Prefer min over non-zero values (exclude exact zeros)
-    nonzero = fin & (arr != 0)
-    if nonzero.sum() > 0:
-        mn = float(np.min(arr[nonzero]))
-    else:
-        mn = float(np.min(arr[fin]))
-
-    mx = float(np.max(arr[fin]))
-    return mn, mx
-
-# Backwards-compatible alias if other modules call compute_global_minmax
-def compute_global_minmax(ds_data: xr.Dataset, varname: str) -> Tuple[float, float]:
-    return compute_global_minmax_exclude_zero(ds_data, varname)
-
-
 def process_variable(
     ds_data_path: str,
     depth_indices: list[int],

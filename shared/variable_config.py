@@ -24,7 +24,8 @@ def load_variable_config() -> Dict[str, Any]:
     """Return the parsed contents of variable_config.yml.
 
     Shape: {"source": str, "bounds": [float, float, float, float],
-    "depths": [float, ...] (-1 is the bottom-layer sentinel),
+    "depths": [float, ...] (native sigma levels; the bottom layer is
+    currently dropped, so no -1 sentinel),
     "variables": {var_name: {"unit", "colormap", "colormapMin",
     "colormapMax", "precision"}}}.
     """

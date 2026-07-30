@@ -30,9 +30,13 @@ _PROCESS_DIR = os.path.join(os.path.dirname(__file__), '..')
 
 
 def _get_nc2tile():
+    # /app is on sys.path here (WORKDIR / `python -m SSC.cli` cwd), so the
+    # `shared` package resolves directly — no need for the old process/nc2tile.py
+    # re-export shim. _PROCESS_DIR is kept on the path defensively for callers
+    # that run from an unusual cwd.
     if _PROCESS_DIR not in sys.path:
         sys.path.insert(0, _PROCESS_DIR)
-    import nc2tile  # noqa: PLC0415
+    import shared.nc2tile as nc2tile  # noqa: PLC0415
     return nc2tile
 
 
