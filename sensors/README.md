@@ -222,6 +222,27 @@ uv run python manage_sensors.py update --id <uuid> \
 
 ---
 
+## Maintenance utilities
+
+### Backfill ONC source metadata: `backfill_onc_source.py`
+
+A re-runnable maintenance script (separate from data ingestion) that populates
+`source.description` and `source.link` on existing **ONC** sensors in the CH
+`sensors` table. It looks up each sensor's `device_config.locationCode` against
+the ONC `/locations` API. ONC's `description` is often blank for generic
+platforms/buoys, so the location's `dataSearchURL` is always used as the link.
+
+```bash
+docker compose -f docker-compose.prod.api.yml run --rm sensors \
+  uv run python backfill_onc_source.py             # apply
+docker compose -f docker-compose.prod.api.yml run --rm sensors \
+  uv run python backfill_onc_source.py --dry-run   # preview only
+docker compose -f docker-compose.prod.api.yml run --rm sensors \
+  uv run python backfill_onc_source.py --force     # overwrite existing description/link too
+```
+
+---
+
 ## Variable format
 
 | Field | Description |
