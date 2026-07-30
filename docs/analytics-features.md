@@ -2,31 +2,26 @@
 
 ## Simple Mode (Main Panel)
 
-### 1. All Years Overlaid (default chart view)
+### 1. All Years Overlaid (the chart view)
 - Plots each year (2007–2026) as its own line on a shared calendar x-axis, color-coded old→new
 - Lets you see if a recent year stands out against the full historical spread
 - **Audience**: researchers wanting a quick visual anomaly check — "was 2024 unusual for this location?"
 
-### 2. Annual Summary (default chart view - to be removed, maybe)
-- Per-year boxplot (min/Q1/median/Q3/max) + mean scatter + linear trend line
-- Shows both inter-annual variability and the long-run direction
-- **Audience**: anyone communicating trends — educators, policy briefings, public-facing reports
-
-### 3. Season Filter (All / MAM / JJA / SON / DJF)
+### 2. Season Filter (All / MAM / JJA / SON / DJF)
 - Client-side filter applied to already-fetched data, so switching is instant
 - Isolates seasonal signals (e.g., "is aragonite saturation declining in summer specifically?")
 - **Audience**: researchers who care about season-specific dynamics
 
-### 4. Statistic Selector (Min / Mean / Max)
+### 3. Statistic Selector (Min / Mean / Max)
 - Controls which daily aggregate is plotted; intentionally requires a manual "Run Analysis" button press (unlike point/variable/depth which auto-fetch)
 - **Audience**: researchers asking worst-case (Min) vs. average vs. peak-stress (Max) questions
 
-### 5. Threshold / Per-Year Stats Panel
+### 4. Threshold / Per-Year Stats Panel
 - User sets a threshold value + direction (above/below); table shows count of days and longest consecutive streak per year that exceed it
 - Heat-mapped coloring and row hover highlights that year's line in the overlay chart
 - **Audience**: marine biologists and managers tracking how often conditions cross biologically meaningful thresholds (e.g., aragonite < 1.0 for shell-forming species)
 
-### 6. All-time Records
+### 5. All-time Records
 - Shows the single highest and lowest observed values with their dates
 - **Audience**: quick reference for anyone — educators, journalists, public
 
