@@ -119,7 +119,7 @@ Nuxt 3 + Vuetify + Pinia. Key structure:
 - `app/pages/index.vue` — single main page with MapboxGL map
 - `app/components/` — map overlays, chart dialogs, time controls, variable/sensor pickers
 - `app/stores/` — Pinia stores for app-wide state
-- `composables/` — MapboxGL layer logic (`useRasterLayer`, `useVectorTileLayer`, `useBuoyLayer`, `useMapAnimator`, etc.) and data fetching (`useSensorTimeseries`)
+- `composables/` — buoy/station map-layer logic (`useBuoyLayer`, `useStationsInteraction`) and data fetching (`useSensorTimeseries`, `useAnalysisFetch`, etc.). The raster/vector-tile and time-animation layer logic lives **inline in `index.vue`** (the earlier `useRasterLayer`/`useVectorTileLayer`/`useMapAnimator` composables were abandoned and removed).
 
 Config via `nuxt.config.ts`. Runtime env vars: `NUXT_PUBLIC_API_BASE_URL`, `NUXT_PUBLIC_MAPBOX_TOKEN`, `NUXT_PUBLIC_POSTHOG_KEY`, `NUXT_PUBLIC_POSTHOG_HOST` (see Usage Analytics below).
 
