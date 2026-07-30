@@ -18,7 +18,6 @@ import numpy as np
 
 from modules.extractTimeseries import extract_timeseries
 from modules.extract_profile import extract_profile
-from modules.eval_extractor import extract_eval_data
 from modules.extract_climate_timeseries import extract_climate_timeseries
 from modules.extractMinMax import extract_minmax
 from modules.extractSensorTimeseries import extract_sensor_timeseries
@@ -653,49 +652,6 @@ async def fn_get_profile(request: profileRequest, http_request: Request):
         except Exception as exc:
             logger.exception("extract_profile failed")
             raise HTTPException(status_code=500, detail=str(exc))
-
-#######################################
-
-class evalRequest(BaseModel):
-    sensor: str
-    variable: str
-    model: str
-
-@app.post("/getEval")
-async def fn_get_eval(request: evalRequest, http_request: Request):
-    logger.info(f"START getEval: sensor={request.sensor}, variable={request.variable}, model={request.model}")
-    
-    eval_data_dir = os.getenv("EVAL_DATA_DIR", "/opt/data/eval")
-    eval_nc_path = os.path.join(eval_data_dir, f"{request.sensor}.nc")
-    
-    # Validate model parameter
-    valid_models = ["SSC"]
-    model = request.model.strip()  # Remove leading/trailing whitespace
-    if model not in valid_models:
-        raise HTTPException(status_code=400, detail=f"Invalid model: {model}. Must be one of {valid_models}")
-    
-    try:
-        result = await run_in_threadpool(
-            extract_eval_data,
-            nc_path=eval_nc_path,
-            variable=request.variable,
-            model=model
-        )
-        
-        logger.info(f"FINISH getEval: {request.variable} - returned {len(result['time'])} timesteps for model={model}")
-        capture_event(http_request, "get_eval", {
-            "sensor": request.sensor, "variable": request.variable, "model": model,
-        })
-        return result
-    except FileNotFoundError as e:
-        logger.error(f"Evaluation file not found: {e}")
-        raise HTTPException(status_code=404, detail=str(e))
-    except (KeyError, ValueError) as e:
-        logger.error(f"Invalid request for getEval: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as exc:
-        logger.exception("extract_eval_data failed")
-        raise HTTPException(status_code=500, detail=str(exc))
 
 #######################################
 

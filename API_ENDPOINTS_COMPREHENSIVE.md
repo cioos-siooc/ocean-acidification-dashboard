@@ -4,7 +4,7 @@ FastAPI app defined in [`api/SERVER.py`](api/SERVER.py). This document is a hand
 overview; the **authoritative, always-current schema is the auto-generated OpenAPI docs at
 `/docs`** (Swagger UI) or `/openapi.json`. When in doubt, trust those over this file.
 
-**Total routes: 18** (7 GET, 11 POST). One route (`/metadata/{var}`) is currently commented out
+**Total routes: 17** (7 GET, 10 POST). One route (`/metadata/{var}`) is currently commented out
 in `SERVER.py` and is *not* served — it is omitted here.
 
 ## Cross-cutting behavior
@@ -143,17 +143,6 @@ Vertical profile (all depths) at a coordinate + datetime.
 ```
 Module: `modules/extract_profile.py` (via `ProcessPoolExecutor`).
 
-### `POST /getEval`
-Sensor-vs-model comparison series from an evaluation NetCDF file.
-```json
-// Request
-{ "sensor": "Baynes_5m", "variable": "temperature", "model": "SSC" }
-// Response
-{ "time": ["ISO", …], "sensor": [… | null], "model": [… | null] }
-```
-`model` must be `"SSC"` (else 400); file `{EVAL_DATA_DIR}/{sensor}.nc` (default `/opt/data/eval`),
-404 if missing. Module: `modules/eval_extractor.py`.
-
 ### `POST /analysis/timeseries`
 Flat daily series for the "Model Analysis" tab + Advanced Analysis dialog. Point or polygon; the
 frontend derives climatology/trend/threshold/extreme stats client-side from this series.
@@ -207,7 +196,6 @@ sync log. Same request shape, same bearer-token auth, same server-derived stagin
 | `modules/extract_climate_timeseries.py` | Day-of-year climatology |
 | `modules/extractMinMax.py` | Min/max (optionally bbox-scoped) |
 | `modules/extractSensorTimeseries.py` | Sensor telemetry from ClickHouse |
-| `modules/eval_extractor.py` | Sensor-vs-model evaluation series |
 | `modules/ocean_analysis.py` | Analysis Builder daily series (point/polygon) |
 | `modules/variables.py` | Variable metadata |
 | `modules/sync_hourly.py` | `/admin/sync{Hourly,Daily}` importers |

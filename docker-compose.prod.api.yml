@@ -21,7 +21,6 @@ services:
       - SSC_CLIM_DIR=${SSC_CLIM_DIR:-/opt/data/SSC/climatology}
       - LO_NC_DIR=${LO_NC_DIR:-/opt/data/LO/nc}
       - LO_IMAGE_DIR=${LO_IMAGE_DIR:-/opt/data/LO/images}
-      - EVAL_DATA_DIR=${EVAL_DATA_DIR:-/opt/data/eval}
       # Bathymetry contour vector tiles (GET /vector/{z}/{x}/{y}.pbf), built by
       # scripts/bathymetry.sh. Default points at the old NONNA output; set
       # VECTOR_ROOT to override for a different source (e.g. west coast DEM).

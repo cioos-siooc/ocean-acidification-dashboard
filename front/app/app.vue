@@ -28,10 +28,6 @@
         Feedback
       </v-btn>
 
-      <!-- <NuxtLink to="/modeleval" target="_blank">
-        <v-btn text>Model Evaluation</v-btn>
-      </NuxtLink> -->
-      
       <NuxtLink to="/about" target="_blank">
         <v-btn text>About</v-btn>
       </NuxtLink>
