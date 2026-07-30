@@ -1,4 +1,5 @@
 import vuetify, { transformAssetUrls } from 'vite-plugin-vuetify'
+import { fileURLToPath } from 'node:url'
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -6,13 +7,6 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   app: {
     head: {
-      script: [
-        {
-          async: true,
-          src: 'https://analytics.oa.cioospacificlabs.ca/script.js',
-          'data-website-id': 'cc6fb6f2-ce6e-4d01-9a4a-96a1efc0d801' // Replace with the ID from Umami
-        }
-      ],
       link: [
         { rel: 'icon', type: 'image/png', href: '/OA_logo.png' },
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
@@ -35,7 +29,12 @@ export default defineNuxtConfig({
     (_options, nuxt) => {
       nuxt.hooks.hook('vite:extendConfig', (config) => {
         // @ts-expect-error
-        config.plugins.push(vuetify({ autoImport: { labs: true } }))
+        config.plugins.push(vuetify({
+          autoImport: { labs: true },
+          styles: {
+            configFile: fileURLToPath(new URL('./app/assets/vuetify-settings.scss', import.meta.url)),
+          },
+        }))
       })
     },
   ],
@@ -51,6 +50,8 @@ export default defineNuxtConfig({
       mapboxToken: process.env.NUXT_PUBLIC_MAPBOX_TOKEN || '',
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || '',
       version: process.env.NUXT_PUBLIC_VERSION || '',
+      posthogKey: process.env.NUXT_PUBLIC_POSTHOG_KEY || '',
+      posthogHost: process.env.NUXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
     },
   },
 })

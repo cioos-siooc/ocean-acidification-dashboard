@@ -1,160 +1,184 @@
 """extractSensorTimeseries.py
 
-Read a sensor timeseries from a compressed netCDF4 file.
+Read a sensor time series from ClickHouse sensor_timeseries.
 
-Files are stored at:
-    {SENSORS_ROOT}/{sensor_id}/{variable}.nc
+The canonical variable name is stored directly as the `variable` column, so
+no code-resolution step is needed — just query by (sensor_id, variable, time
+range).  Depth selection (nearest) is handled in CH to avoid pulling all
+depths over the wire.
 
-The variable inside may be:
-  - 1D: (time,)
-  - 2D: (time, depth)
+Fixed-depth sensors (sensors.depth != -1) have one depth value recorded
+across their whole history, so "nearest stored depth, then exact match"
+degenerates to "the one depth". Variable-depth ("profiler") sensors
+(sensors.depth == -1, e.g. a Wirewalker) cast continuously through the water
+column — there is no single stored depth to match exactly, so a requested
+depth is instead snapped to the nearest *model* depth level (via `source`)
+and matched against a window around that level. See extract_depth_profile.py
+for the sibling endpoint that bins a profiler's full water column at once;
+this module only ever resolves to one target depth.
 
-Returns a dict ready to serialize as a JSON response.
+Returns a dict ready to serialize as a JSON response:
+  {"time": [...], "value": [...]}
+  {"time": [...], "depth": [...], "value": [...]}   — when depth data exists
 """
 
-import os
-import sys
-import numpy as np
-import netCDF4
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from __future__ import annotations
+
+import math
+from datetime import datetime, timezone
 from typing import Optional
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Import get_file_lock from nc_reader to ensure per-file locking for all HDF5 operations.
-# This allows concurrent access to different sensor NC files.
-from nc_reader import get_file_lock
-
-SENSORS_ROOT = os.getenv("SENSORS_ROOT", "/opt/data/sensors")
-
-_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+from modules.clickhouse_helpers import get_ch_client
+from modules.extractTimeseries import DATA_TABLE_BY_SOURCE, _get_depth_levels, _nearest_level_index
 
 
-def _epoch_to_iso(seconds: float) -> str:
-    return (_EPOCH + timedelta(seconds=float(seconds))).strftime("%Y-%m-%dT%H:%M:%S")
+def _fmt(dt_str: str) -> str:
+    """Normalise an ISO-8601 string to the format ClickHouse DateTime accepts."""
+    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _is_profiler_sensor(client, sensor_id: str) -> bool:
+    safe_id = str(sensor_id).replace("'", "")
+    rows = client.query(
+        f"SELECT depth FROM sensors FINAL WHERE id = '{safe_id}' LIMIT 1"
+    ).result_rows
+    return bool(rows) and float(rows[0][0]) == -1.0
+
+
+def _voronoi_window(idx: int, levels: list[float]) -> tuple[float, float]:
+    """[lo, hi] band around levels[idx], bounded by midpoints to its neighbours."""
+    lo = -float("inf") if idx == 0 else (levels[idx - 1] + levels[idx]) / 2
+    hi = float("inf") if idx == len(levels) - 1 else (levels[idx] + levels[idx + 1]) / 2
+    return lo, hi
 
 
 def extract_sensor_timeseries(
-    sensor_id: int,
+    sensor_id: str,
     variable: str,
     from_date: str,
     to_date: str,
     depth: Optional[float] = None,
+    source: Optional[str] = None,
 ) -> dict:
     """
-    Read sensor timeseries from an NC file.
+    Read sensor time series from ClickHouse.
 
     Parameters
     ----------
     sensor_id : integer sensor ID
-    variable  : sensorCategoryCode — also the filename stem and the variable
-                name stored inside the NC file (e.g. "DOXY", "PSAL")
-    from_date : ISO-8601 string (start of range, inclusive)
-    to_date   : ISO-8601 string (end of range, inclusive)
-    depth     : optional depth (m); if None and a depth dimension exists,
-                data for all depths is returned
+    variable  : canonical variable name (e.g. "dissolved_oxygen")
+    from_date : ISO-8601 string (start, inclusive)
+    to_date   : ISO-8601 string (end, inclusive)
+    depth     : optional depth in metres; if None, returns all depth levels
+    source    : model source (e.g. "SalishSeaCast"); only used to resolve
+                the model's depth levels for a variable-depth sensor's
+                depth-window query — ignored for fixed-depth sensors
 
     Returns
     -------
     dict with keys:
       "time"  — list of ISO-8601 strings
       "value" — list of float | None
-      "depth" — list of float  (present only when the NC file has a depth dim)
+      "depth" — list of float  (present only when the data has a depth dimension)
 
     Raises
     ------
-    FileNotFoundError  — NC file not found for this sensor / variable
-    KeyError           — required variable not found inside the NC file
-    ValueError         — unparseable date strings
+    FileNotFoundError — no data found for this sensor / variable
+    ValueError — depth requested for a variable-depth sensor without a
+                 recognized `source`
     """
-    nc_path = Path(SENSORS_ROOT) / str(sensor_id) / f"{variable}.nc"
-    if not nc_path.exists():
-        raise FileNotFoundError(
-            f"No NC file for sensor {sensor_id}, variable '{variable}' "
-            f"(expected path: {nc_path})"
+    client = get_ch_client()
+
+    from_str = _fmt(from_date)
+    to_str   = _fmt(to_date)
+
+    # Escape variable name for use in query string (it comes from the API
+    # request but is already validated by the caller against the sensors table).
+    safe_var = variable.replace("'", "''")
+    safe_id  = str(sensor_id).replace("'", "")
+
+    if depth is not None and _is_profiler_sensor(client, sensor_id):
+        if source not in DATA_TABLE_BY_SOURCE:
+            raise ValueError(f"A recognized 'source' is required to query a variable-depth sensor by depth (got {source!r}).")
+        levels = _get_depth_levels(client, DATA_TABLE_BY_SOURCE[source])
+        if not levels:
+            raise FileNotFoundError(f"No model depth levels found for source '{source}'.")
+        level_idx = _nearest_level_index(float(depth), levels)
+        target_level = levels[level_idx]
+        lo, hi = _voronoi_window(level_idx, levels)
+
+        result = client.query(
+            f"SELECT time, value FROM sensor_timeseries FINAL "
+            f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
+            f"  AND depth >= {lo} AND depth < {hi} "
+            f"  AND time >= toDateTime('{from_str}') "
+            f"  AND time <= toDateTime('{to_str}') "
+            f"ORDER BY time"
         )
+        rows = result.result_rows
+        if not rows:
+            return {"time": [], "value": [], "depth": target_level}
 
-    def _parse(s: str) -> datetime:
-        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
-
-    from_dt = _parse(from_date)
-    to_dt = _parse(to_date)
-    from_epoch = (from_dt - _EPOCH).total_seconds()
-    to_epoch = (to_dt - _EPOCH).total_seconds()
-
-    # Hold the per-file lock for raw HDF5 reads; release before numpy/Python processing.
-    # Per-file locking allows concurrent access to DIFFERENT sensor files.
-    with get_file_lock(str(nc_path)):
-        with netCDF4.Dataset(nc_path, "r") as ds:
-            if "time" not in ds.variables:
-                raise KeyError(f"NC file '{nc_path}' has no 'time' variable")
-            if variable not in ds.variables:
-                raise KeyError(
-                    f"Variable '{variable}' not found in NC file '{nc_path}'. "
-                    f"Available variables: {list(ds.variables.keys())}"
-                )
-
-            dims = ds.variables[variable].dimensions
-            has_depth_dim = (
-                len(dims) == 2
-                and "depth" in dims
-                and "depth" in ds.variables
-            )
-
-            # Read all needed data into plain numpy arrays, then release the lock.
-            times_epoch_raw = np.array(ds.variables["time"][:], dtype=np.float64)
-            depths_raw = np.array(ds.variables["depth"][:], dtype=np.float64) if has_depth_dim else None
-            time_mask = (times_epoch_raw >= from_epoch) & (times_epoch_raw <= to_epoch)
-
-            if not has_depth_dim:
-                values_raw = np.array(ds.variables[variable][time_mask], dtype=np.float64)
-                data_2d_raw = None
-            elif depth is not None:
-                depths_list = depths_raw.tolist()
-                depth_idx = int(np.argmin(np.abs(depths_raw - depth)))
-                values_raw = np.array(ds.variables[variable][time_mask, depth_idx], dtype=np.float64)
-                data_2d_raw = None
-            else:
-                values_raw = None
-                data_2d_raw = np.array(ds.variables[variable][time_mask, :], dtype=np.float64)
-                depths_list = depths_raw.tolist()
-
-    # Lock is released — all processing below is pure numpy/Python.
-    filtered_epochs = times_epoch_raw[time_mask]
-    time_iso = [_epoch_to_iso(t) for t in filtered_epochs.tolist()]
-
-    if not has_depth_dim:
-        return {
-            "time": time_iso,
-            "value": [
-                None if np.isnan(v) else float(v)
-                for v in values_raw.tolist()
-            ],
-        }
+        times_out = [r[0].strftime("%Y-%m-%dT%H:%M:%S") for r in rows]
+        values_out = [None if math.isnan(r[1]) else float(r[1]) for r in rows]
+        return {"time": times_out, "depth": target_level, "value": values_out}
 
     if depth is not None:
-        return {
-            "time": time_iso,
-            "depth": float(depths_list[depth_idx]),
-            "value": [
-                None if np.isnan(v) else float(v)
-                for v in values_raw.tolist()
-            ],
-        }
+        # Find the single stored depth closest to the requested value, then
+        # fetch only rows at that depth.  Two queries, both tiny.
+        nearest_rows = client.query(
+            f"SELECT depth FROM sensor_timeseries "
+            f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
+            f"ORDER BY abs(depth - {float(depth)}) LIMIT 1"
+        ).result_rows
+        if not nearest_rows:
+            raise FileNotFoundError(
+                f"No data found for sensor {sensor_id}, variable '{variable}'"
+            )
+        target_depth = float(nearest_rows[0][0])
 
-    # All depths — flatten to parallel arrays
-    times_out: list = []
-    depths_out: list = []
-    values_out: list = []
-    for ti, t_iso in enumerate(time_iso):
-        for di, d in enumerate(depths_list):
-            v = data_2d_raw[ti, di]
-            times_out.append(t_iso)
-            depths_out.append(float(d))
-            values_out.append(None if np.isnan(v) else float(v))
+        result = client.query(
+            f"SELECT time, value FROM sensor_timeseries FINAL "
+            f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
+            f"  AND depth = {target_depth} "
+            f"  AND time >= toDateTime('{from_str}') "
+            f"  AND time <= toDateTime('{to_str}') "
+            f"ORDER BY time"
+        )
+        rows = result.result_rows
+        if not rows:
+            return {"time": [], "value": [], "depth": target_depth}
 
-    return {"time": times_out, "depth": depths_out, "value": values_out}
+        times_out = [r[0].strftime("%Y-%m-%dT%H:%M:%S") for r in rows]
+        values_out = [None if math.isnan(r[1]) else float(r[1]) for r in rows]
+        return {"time": times_out, "depth": target_depth, "value": values_out}
+
+    # No depth filter — return all depth levels.
+    result = client.query(
+        f"SELECT time, depth, value FROM sensor_timeseries FINAL "
+        f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
+        f"  AND time >= toDateTime('{from_str}') "
+        f"  AND time <= toDateTime('{to_str}') "
+        f"ORDER BY time, depth"
+    )
+    rows = result.result_rows
+    if not rows:
+        raise FileNotFoundError(
+            f"No data found for sensor {sensor_id}, variable '{variable}'"
+        )
+
+    # Check whether all rows share the same depth (fixed-depth sensor) or not.
+    depths = [float(r[1]) for r in rows]
+    all_same_depth = len(set(depths)) == 1
+
+    times_out  = [r[0].strftime("%Y-%m-%dT%H:%M:%S") for r in rows]
+    values_out = [None if math.isnan(float(r[2])) else float(r[2]) for r in rows]
+
+    if all_same_depth:
+        # Fixed-depth sensor — omit depth from response to match old NC behaviour.
+        return {"time": times_out, "value": values_out}
+
+    return {"time": times_out, "depth": depths, "value": values_out}

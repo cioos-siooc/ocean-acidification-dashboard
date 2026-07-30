@@ -14,7 +14,7 @@ This module provides:
 * ``open_nc_uncached(path)`` – thread-safe open **without** caching.
 * ``get_file_lock(path)``  – exported per-file RLock for other modules
                               that open NC files with raw netCDF4 (e.g.,
-                              extractSensorTimeseries, pngGenerator).
+                              extractSensorTimeseries).
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def get_file_lock(path: str) -> threading.RLock:
 
     Uses the canonical (realpath) form so that symlinks to the same file share
     a single lock. Exported for use by modules that open NC files directly
-    with netCDF4 (e.g. extractSensorTimeseries, pngGenerator).
+    with netCDF4 (e.g. extractSensorTimeseries).
     """
     canonical = os.path.realpath(path)
     with _file_locks_meta:

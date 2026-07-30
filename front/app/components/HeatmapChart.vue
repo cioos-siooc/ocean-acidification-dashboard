@@ -2,19 +2,19 @@
     <v-card class="pa-4" style="width: 100%; height: 100%;">
         <v-row>
             <v-col v-if="showDateWarning" cols="12">
-                <v-alert type="warning" density="compact">
+                <v-alert type="warning">
                     {{ dateWarning }}
                 </v-alert>
             </v-col>
 
             <v-col cols="auto" style="align-content: center;">
                 <v-select v-model="plotVariable" :items="sensorVariables" label="Variable" item-title="label"
-                    item-value="var" density="compact" hide-details variant="outlined" class="my-4">
+                    item-value="var" hide-details class="my-4">
                 </v-select>
             </v-col>
 
             <v-col cols="auto" style="align-content: center;">
-                <v-btn-group density="compact" variant="outlined" class="ml-2">
+                <v-btn-group variant="outlined" class="ml-2">
                     <v-btn size="small" @click="setPresetDateRange(7)">1W</v-btn>
                     <v-btn size="small" @click="setPresetDateRange(30)">1M</v-btn>
                     <v-btn size="small" @click="setPresetDateRange(90)">3M</v-btn>
@@ -63,6 +63,7 @@ import axios from 'axios';
 import moment from 'moment';
 
 import { useMainStore } from '../stores/main';
+import { resolveColormap } from '../../composables/useColormapResolver';
 const mainStore = useMainStore();
 
 import colors from 'vuetify/util/colors';
@@ -73,7 +74,7 @@ const apiBaseUrl = config.public.apiBaseUrl
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 const props = defineProps<{
-    sensorId: number;
+    sensorId: string;
     modelVariable: string;
 }>();
 
@@ -132,7 +133,7 @@ const colormapColors = computed(() => {
     const mainVar = mainStore.variables?.find((v: any) => v.var === plotVariable.value);
     if (!mainVar || !mainVar.colormap) return getDefaultColormap();
     
-    const colormap = mainStore.colormaps[mainVar.colormap];
+    const colormap = resolveColormap(mainStore.colormaps, mainVar.colormap);
     if (!colormap || !colormap.stops) return getDefaultColormap();
     
     // If stops is an array of [value, color] pairs, extract just the colors
@@ -211,7 +212,7 @@ function dataMinMax(): [number, number] {
  * @returns Promise resolving to {times, depths, data} or null on error
  */
 async function fetchSensorGriddedData(
-    sensorId: number,
+    sensorId: string,
     modelVariable: string,
     fromDate: string,
     toDate: string
@@ -358,7 +359,7 @@ function updateChart() {
  * Handles data fetching, clearing, and error handling in one place.
  */
 async function loadChartData(
-    sensorId: number,
+    sensorId: string,
     variable: string,
     start: string,
     end: string

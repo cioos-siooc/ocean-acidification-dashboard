@@ -42,7 +42,7 @@ Get list of all available variables with metadata and available datetimes
   ]
   ```
 - **Description**: Returns metadata about all variables, including min/max for colormaps
-- **Database Query**: Joins `fields`, `datasets`, and `nc_jobs` tables
+- **Data Source**: `shared/variable_config.yml` + ClickHouse's own `SalishSeaCast_sync_log` (available datetimes) — no Postgres involved
 
 ---
 
@@ -214,57 +214,12 @@ Extract 10-day climatology window (±5 days) with statistical breakdown
 
 ---
 
-### 12. **POST** `/getMonthlyClimatologyAtCoord` ⭐ STATISTICS ENDPOINT
-Get monthly climatology statistics AND annual timeseries for a coordinate/depth
-- **Request Body**: 
-  ```json
-  {
-    "variable": "string (variable name)",
-    "lat": float (latitude),
-    "lon": float (longitude),
-    "depth": float (depth value)
-  }
-  ```
-- **Response**: 
-  ```json
-  {
-    "timeseries": {
-      "by_year": {
-        "2007": {
-          "time": ["2007-01-01T12:00:00", ...],
-          "value": [11.5, 12.3, null, ...]
-        },
-        "2008": {...},
-        ...
-      },
-      "years": [2007, 2008, 2009, ...]
-    },
-    "climatology": {
-      "month": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-      "virtual_time": ["2020-01-15T00:00:00", "2020-02-15T00:00:00", ...],
-      "mean": [11.2, 10.8, 12.5, 14.3, 15.2, 16.1, 17.2, 17.5, 16.3, 13.2, 11.5, 10.3],
-      "q1": [10.5, 10.1, 11.8, 13.6, 14.5, 15.4, 16.5, 16.8, 15.6, 12.5, 10.8, 9.6],
-      "q3": [11.9, 11.5, 13.2, 15.0, 15.9, 16.8, 17.9, 18.2, 17.0, 14.0, 12.2, 11.0],
-      "min": [9.2, 8.9, 10.5, 12.1, 13.0, 13.8, 14.9, 15.2, 14.8, 11.2, 9.5, 8.1],
-      "max": [13.5, 13.1, 14.8, 16.8, 17.5, 18.5, 19.8, 20.1, 18.5, 15.2, 13.8, 12.5]
-    },
-    "nearest_grid_point": {
-      "row": 120,
-      "col": 45,
-      "lat": 49.2134,
-      "lon": -123.5678
-    }
-  }
-  ```
-- **Description**: 
-  - Returns **monthly climatology statistics** (12 months of min/max/mean/q1/q3)
-  - Also returns **full annual timeseries by year** extracted from monthly files
-  - Merges data from multiple years to calculate monthly statistics
-  - Best for understanding typical monthly patterns and historical ranges
-- **Data Source**: 
-  - Monthly timeseries: `/opt/data/nc/SalishSeaCast/erddap_monthly/{variable}/*.nc`
-  - Climatology stats: `/opt/data/nc/SalishSeaCast/monthly_stats/{variable}_monthly_climatology.nc`
-- **Concurrency**: Limited to 4 simultaneous requests
+### 12. **POST** `/getMonthlyClimatologyAtCoord` — **REMOVED**
+This endpoint depended on Postgres helpers (`connect_db`, `query_nearest_rowcol`, etc.) that no
+longer exist now that `extractTimeseries.py` is ClickHouse-only, and its only frontend caller
+(`EchartsLineDialog.vue`) was unreachable (nothing ever opened the dialog). Both the route and
+the dialog were deleted. For daily climatology (mean/min/max per calendar day), use
+**`/extract_climateTimeseries`** instead — see below.
 
 ---
 
@@ -299,7 +254,7 @@ Get evaluation data comparing sensor measurements vs model predictions
   {
     "sensor": "string (e.g., 'Baynes_5m')",
     "variable": "string (e.g., 'temperature')",
-    "model": "string ('SSC' or 'LiveOcean')"
+    "model": "string (e.g. 'SSC')"
   }
   ```
 - **Response**: 
@@ -310,8 +265,10 @@ Get evaluation data comparing sensor measurements vs model predictions
     "model": [12.6, 12.2, 12.1, 12.3, ...]
   }
   ```
-- **Description**: Compares sensor observations with model outputs
-- **Valid Models**: "SSC" (SalishSeaCast) or "LiveOcean"
+- **Description**: Compares sensor observations with model outputs. The extractor itself is
+  generic (reads `{variable}_{model}` columns from the NC file), but the frontend's model picker
+  (`/modeleval`) only offers "SSC" — LiveOcean support was removed.
+- **Valid Models**: "SSC" (SalishSeaCast)
 - **Data Source**: `/opt/data/eval/{sensor}.nc`
 - **Concurrency**: Limited to 4 simultaneous requests
 
@@ -328,13 +285,6 @@ Get evaluation data comparing sensor measurements vs model predictions
    - **Geographic specificity**: Single lat/lon point
    - **Use case**: Short-term variability, 10-day forecasting bounds
 
-2. **`/getMonthlyClimatologyAtCoord` (POST)**
-   - **Statistics available**: min, max, mean, q1, q3
-   - **Time resolution**: Monthly
-   - **Time coverage**: 12 months (climatology) + multi-year timeseries
-   - **Geographic specificity**: Single lat/lon point
-   - **Use case**: Long-term patterns, seasonal analysis, typical ranges by month
-
 ### ❌ No Standalone Stats Endpoints:
 - No dedicated `/stats`, `/range`, `/bounds`, `/min`, or `/max` endpoints
 - No aggregation by geographic region (e.g., "all points in bounding box")
@@ -346,11 +296,10 @@ Get evaluation data comparing sensor measurements vs model predictions
 ### By Variable Type:
 
 **1. Model Output Variables** (Temperature, Salinity, pH, etc.)
-- **Sources**: SalishSeaCast, LiveOcean
+- **Sources**: SalishSeaCast (only source currently implemented — LiveOcean support was removed)
 - **Available endpoints**: 
   - `/extractTimeseries` - full timeseries
-  - `/extract_climateTimeseries` - 10-day climatology window
-  - `/getMonthlyClimatologyAtCoord` - monthly climatology
+  - `/extract_climateTimeseries` - daily climatology (mean/min/max per calendar day)
   - `/getProfile` - vertical profiles
 - **Spatial coverage**: Full grid
 - **Temporal coverage**: Varies by variable (check `/variables` endpoint)
@@ -366,7 +315,7 @@ Get evaluation data comparing sensor measurements vs model predictions
 - **Available endpoints**:
   - `/getEval` - compare sensor vs model at sensor location
 - **Variables**: temperature, salinity, pH, etc. (depends on evaluation file)
-- **Models supported**: SalishSeaCast (SSC), LiveOcean
+- **Models supported**: SalishSeaCast (SSC)
 
 ---
 
@@ -396,20 +345,20 @@ Get evaluation data comparing sensor measurements vs model predictions
 
 ## Database Connection
 
-All database-backed endpoints connect to a PostGIS database with the following tables:
-- `grid` - Grid cell indexing (required for lat/lon → grid lookup)
-- `sensors` - Sensor metadata and data
-- `fields` - Variable metadata
-- `datasets` - Dataset information
-- `nc_jobs` - Job tracking for PNG generation
-- `colormaps` - Colormap definitions
+PostgreSQL/PostGIS has been fully removed. All database-backed endpoints connect to **ClickHouse**
+instead:
+- `grid_SSC` - Grid cell indexing (`gridX`/`gridY`/`longitude`/`latitude`, required for lat/lon →
+  grid lookup)
+- `sensors` / `sensor_timeseries` - Sensor metadata and observations
+- `SalishSeaCast_hourly` / `SalishSeaCast_daily` - Raw and pre-aggregated model timeseries
+- `SalishSeaCast_status` - Process pipeline state tracking (replaces the old `nc_jobs` table)
 
-**Connection string**: Configured via environment variables:
-- `DB_HOST` (default: "db")
-- `DB_PORT` (default: 5432)
-- `DB_USER` (default: "postgres")
-- `DB_PASSWORD` (default: "postgres")
-- `DB_NAME` (default: "oa")
+Variable metadata and colormaps are static files (`shared/variable_config.yml`,
+`shared/colormaps.json`), not database tables.
+
+**Connection**: Configured via environment variables (see `api/modules/clickhouse_helpers.py`):
+- `CH_HOST` / `CH_PORT` / `CH_USER` / `CH_PASSWORD` — local instance
+- `CH_USE_REMOTE=true` + `CH_REMOTE_URL` (+ `CH_REMOTE_USER`/`CH_REMOTE_PASSWORD`) — remote instance
 
 ---
 
@@ -433,8 +382,7 @@ All database-backed endpoints connect to a PostGIS database with the following t
 |--------|---------|
 | `extractTimeseries.py` | Core timeseries extraction logic |
 | `extractProfile.py` | Vertical profile extraction |
-| `extract_climate_timeseries.py` | 10-day climatology extraction |
-| `modules/monthly_climatology.py` | Monthly climatology statistics |
+| `extract_climate_timeseries.py` | Daily climatology extraction |
 | `modules/variables.py` | Variable metadata query |
 | `modules/eval_extractor.py` | Evaluation data extraction |
 | `nc_reader.py` | Thread-safe NetCDF reader with LRU cache |
@@ -449,10 +397,11 @@ All database-backed endpoints connect to a PostGIS database with the following t
 - Use to show typical range for day-ahead/week-ahead forecasting
 
 ### For Long-term Patterns (Seasonal/Annual):
-→ Use **`/getMonthlyClimatologyAtCoord`**
-- Get monthly min/max statistics across all historical years
-- Also get full multi-year timeseries for custom analysis
-- Use to show typical ranges for each calendar month
+The monthly-climatology-with-quartiles endpoint (`/getMonthlyClimatologyAtCoord`) was removed
+(broken and unused — see endpoint 12 above). For historical daily min/max/mean across all years,
+use **`/extract_climateTimeseries`**; for full multi-year point/area analysis (min/mean/max
+records, threshold-crossing stats, trend/climatology tooling), use **`/analysis/timeseries`**
+(the frontend's "Model Analysis" tab and its Advanced Analysis dialog).
 
 ### For Comparative Analysis (Sensor vs Model):
 → Use **`/getEval`**

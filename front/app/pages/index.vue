@@ -7,7 +7,7 @@
 
         <v-divider></v-divider>
 
-        <v-list density="compact" nav>
+        <v-list nav>
             <v-list-item prepend-icon="mdi-folder" title="My Files" value="myfiles"></v-list-item>
             <v-list-item prepend-icon="mdi-account-multiple" title="Shared with me" value="shared"></v-list-item>
             <v-list-item prepend-icon="mdi-star" title="Starred" value="starred"></v-list-item>
@@ -44,66 +44,110 @@
 
             <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
 
-            <!-- Multi-sensor location picker -->
+            <!-- Query mode toggle -->
+            <div style="position:absolute; top:10px; right:10px; z-index:10;">
+                <v-btn-toggle :model-value="mainStore.queryMode" mandatory variant="tonal"
+                    @update:model-value="(v) => mainStore.setQueryMode(v)">
+                    <v-btn value="point" size="small" title="Point query">
+                        <v-icon size="16">mdi-map-marker</v-icon>
+                        <span class="ml-1" style="font-size:0.7rem;">Point</span>
+                    </v-btn>
+                    <v-btn value="area" size="small" title="Area query">
+                        <v-icon size="16">mdi-vector-square</v-icon>
+                        <span class="ml-1" style="font-size:0.7rem;">Area</span>
+                    </v-btn>
+                </v-btn-toggle>
+            </div>
+
+            <!-- Multi-sensor location picker (exact same coordinate) -->
             <SensorPickerPopover :visible="sensorPicker.visible" :x="sensorPicker.x" :y="sensorPicker.y"
                 :sensors="sensorPicker.sensors" @pick="(s) => clickSensor(s.id, s.depth)"
                 @close="sensorPicker.visible = false" />
+
+            <!-- Spiderfy overlay (nearby sensors at different coordinates) -->
+            <div v-if="spiderfy.visible"
+                style="position: absolute; inset: 0; z-index: 5000; pointer-events: all;"
+                @click.self="spiderfy.visible = false">
+                <svg style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;">
+                    <line v-for="(spoke, i) in spiderfy.spokes" :key="`sl-${i}`"
+                        :x1="spiderfy.centerX" :y1="spiderfy.centerY"
+                        :x2="spoke.x" :y2="spoke.y"
+                        :stroke="spoke.sensor.isRealtime ? 'rgba(102,187,106,0.75)' : 'rgba(255,167,38,0.75)'"
+                        stroke-width="1.5" />
+                    <circle :cx="spiderfy.centerX" :cy="spiderfy.centerY" r="5"
+                        fill="#aaaaaa" stroke="#333" stroke-width="1.5" />
+                </svg>
+                <div v-for="(spoke, i) in spiderfy.spokes" :key="`sn-${i}`"
+                    class="spiderfy-node"
+                    :style="{ left: spoke.x + 'px', top: spoke.y + 'px' }"
+                    @click.stop="clickSensorFromSpiderfy(spoke.sensor)">
+                    <div class="spiderfy-dot"
+                        :style="{ background: spoke.sensor.isRealtime ? '#66BB6A' : '#FFA726' }" />
+                    <div class="spiderfy-label">{{ spoke.sensor.name }}</div>
+                </div>
+            </div>
 
             <v-snackbar-queue ref="snackbarQueue" v-model="snackMessages" :total-visible="3" closable
                 contained></v-snackbar-queue>
 
             <div class="px-2 pt-2"
                 style="width:250px; position: absolute; bottom:0; z-index: 999; background-color: #11111199; border-top-left-radius: 20px; border-top-right-radius: 20px; margin:auto; right:0; "
-                :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap + 50 : overlayGap + 50) + 'px', transition: 'left 0.3s ease'  }">
+                :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap + 50 : overlayGap + 50) + 'px', transition: 'left 0.3s ease' }">
                 <ColormapBar class="ma-2" />
             </div>
 
+            <!-- Cursor coordinate readout, follows the mouse over the map -->
+            <v-card v-if="mainStore.showCursorCoords && mouseCoords.visible" class="cursor-coord-label"
+                :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }">
+                {{ mouseCoords.lat?.toFixed(5) }}, {{ mouseCoords.lng?.toFixed(5) }}
+            </v-card>
 
         </div>
 
         <!-- Bottom: Global Chart Footer -->
-        <v-footer class="ma-0 pa-0" :style="{ maxHeight: footerHeight }">
-            <!-- <div ref="globalChartContainer" class="w-100" :style="{ height: `calc(${footerHeight} - 20px)` }"></div> -->
-            <v-container minWidth="100%" class="ma-0 pa-0">
-                <v-row class="ma-0 pa-0" :style="{ height: `calc(${footerHeight} - 20px)`, position: 'relative' }"
-                    gap="0">
-                    <TimeControls 
-                        :timestamps="mainStore.variables.find(v => v.var === mainStore.selected_variable.var)?.dts || []" 
-                        :currentDt="mainStore.selected_variable.dt" 
-                        @update:dt="(newDt) => mainStore.updateSelectedVariable({dt: newDt})" 
-                    />
+        <v-footer class="ma-0 pa-0" :style="{ height: footerHeight, maxHeight: footerHeight }">
+            <div class="d-flex" :style="{ width: '100%', height: footerHeight }">
 
-                    <TimeseriesChart ref="timeseriesChart" style="width: 100%; height: calc(100% - 32px);" />
-                    <!-- <HeatmapChart style="width: 100%; height: calc(100% - 32px);" /> -->
-
-                    <!-- <div class="py-3"
-                        style="position: absolute; width:40px; height: 100%; bottom: 0px; right: 0px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:6px; padding-top:6px;">
-                        <v-btn title="Long-term climatology" flat size="20px" :disabled="!lastClicked" icon
-                            color="primary" @click="dialogOpen = true">
-                            <v-icon size="14px">mdi-chart-line</v-icon>
+                <!-- Vertical tab rail -->
+                <v-sheet class="footer-rail d-flex flex-column flex-shrink-0">
+                    <v-btn-toggle v-model="activeTab" mandatory direction="vertical" variant="text"
+                        class="footer-rail-track">
+                        <div class="footer-rail-pill" :style="{ transform: `translateY(${railIndex * 100}%)` }"></div>
+                        <v-btn v-for="t in footerTabs" :key="t.value" :value="t.value" :prepend-icon="t.icon" block
+                            class="footer-rail-item">
+                            {{ t.label }}
                         </v-btn>
-                    </div> -->
-                </v-row>
+                    </v-btn-toggle>
+                </v-sheet>
 
-                <!-- VERY BOTTOM BAR -->
-                <v-row class="my-0 mx-2 pa-0" style="height:20px; ">
-                    <!-- <v-col cols="auto" class="my-0 mx-1 pa-0 text-label-small" style="height:20px">
-                        Server Status
-                        <v-icon size="10px" color="green">mdi-circle</v-icon>
-                    </v-col> -->
-                    <v-spacer></v-spacer>
-                    <v-col cols="auto" class="my-0 mx-1 pa-0 text-label-small" style="height:20px">
-                        <v-icon size="12px" class="mx-2">mdi-cursor-default-outline</v-icon>
-                        <span>{{ mouseCoords.lat?.toFixed(5) }} , {{ mouseCoords.lng?.toFixed(5)
-                            }}</span>
-                    </v-col>
-                </v-row>
+                <!-- Content area -->
+                <div class="flex-grow-1" style="min-width:0; height:100%; overflow:hidden;">
+                    <!-- Timeseries tab -->
+                    <div v-show="activeTab === 'timeseries'" style="height:100%; position:relative;">
+                        <TimeControls
+                            :timestamps="mainStore.variables.find(v => v.var === mainStore.selected_variable.var)?.dts || []"
+                            :currentDt="mainStore.selected_variable.dt"
+                            @update:dt="(newDt) => mainStore.updateSelectedVariable({ dt: newDt })" />
+                        <TimeseriesChart ref="timeseriesChart" style="width:100%; height:calc(100% - 32px);" />
+                    </div>
 
-            </v-container>
+                    <!-- Model Analysis tab -->
+                    <div v-show="activeTab === 'analysis'" style="height:100%;">
+                        <Analytics :active="activeTab === 'analysis'" />
+                    </div>
 
-            <!-- Dialog component for monthly chart -->
-            <!-- <EchartsLineDialog v-model="dialogOpen" :coord="lastClicked" :variable="selectedVariable.var"
-                :depth="selectedVariable.depth" /> -->
+                    <!-- Comparison tab (visible only when a sensor is selected) -->
+                    <div v-show="activeTab === 'comparison'" style="height:100%;">
+                        <SensorComparison :active="activeTab === 'comparison'" />
+                    </div>
+
+                    <!-- Sensor Analysis tab (visible only when a sensor is selected) -->
+                    <div v-show="activeTab === 'sensorAnalysis'" style="height:100%;">
+                        <SensorAnalytics :active="activeTab === 'sensorAnalysis'" />
+                    </div>
+                </div>
+
+            </div>
 
         </v-footer>
         <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
@@ -125,19 +169,22 @@ import moment from 'moment-timezone'
 import TimeControls from '../components/TimeControls.vue'
 import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
-import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
+import type { FeatureCollection, Geometry, GeoJsonProperties, Feature, Polygon } from 'geojson';
 import { var2name } from '../../composables/useVar2Name'
+import { resolveColormap } from '../../composables/useColormapResolver'
 import { utc2pst } from '../../composables/useUTC2PST'
-import { formatDepth } from '../../composables/useFormatDepth'
 import useStationsInteraction from '../../composables/useStationsInteraction';
-import { addBuoyLayer, type MultiSensorCandidate } from '../../composables/useBuoyLayer';
+import { addBuoyLayer, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '../../composables/useBuoyLayer';
 import getSensorTimeseries from '../../composables/useSensorTimeseries';
-import EchartsLineDialog from '../components/EchartsLineDialog.vue'
 import TimeseriesChart from '../components/TimeseriesChart.vue';
+import Analytics from '../components/analytics.vue'
+import SensorComparison from '../components/sensorComparison.vue'
+import SensorAnalytics from '../components/sensorAnalytics.vue'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
+import { trackEvent } from '../../composables/useAnalytics'
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
@@ -153,7 +200,32 @@ const timeseriesChart = ref<InstanceType<typeof TimeseriesChart> | null>(null);
 let map: mapboxgl.Map | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
-const footerHeight = ref<string>('300px');
+const activeTab = computed({
+    get: () => mainStore.activeBottomTab,
+    set: (v: 'timeseries' | 'analysis' | 'comparison' | 'sensorAnalysis') => mainStore.setActiveBottomTab(v),
+});
+const footerTabs = computed(() => [
+    { value: 'timeseries' as const, icon: 'mdi-chart-line', label: 'Timeseries' },
+    { value: 'analysis' as const, icon: 'mdi-poll', label: 'Model Analysis' },
+    ...(mainStore.selectedSensor?.id
+        ? [
+            { value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison' },
+            { value: 'sensorAnalysis' as const, icon: 'mdi-chart-bell-curve-cumulative', label: 'Sensor Analysis' },
+        ]
+        : []),
+]);
+const railIndex = computed(() => footerTabs.value.findIndex(t => t.value === activeTab.value));
+
+// Drop back to timeseries when the active sensor is cleared
+watch(() => mainStore.selectedSensor, (sensor) => {
+    if (!sensor?.id && (activeTab.value === 'comparison' || activeTab.value === 'sensorAnalysis')) {
+        activeTab.value = 'timeseries';
+    }
+});
+
+const isRectangleDrawing = ref(false);
+const drawnRectangle = ref<Feature<Polygon> | null>(null);
+const footerHeight = ref<string>('440px');
 
 const sensorPicker = ref<{ visible: boolean; x: number; y: number; sensors: MultiSensorCandidate[] }>({
     visible: false,
@@ -162,10 +234,17 @@ const sensorPicker = ref<{ visible: boolean; x: number; y: number; sensors: Mult
     sensors: [],
 });
 
+const spiderfy = ref<{
+    visible: boolean;
+    centerX: number;
+    centerY: number;
+    spokes: Array<{ sensor: MultiSensorCandidate; x: number; y: number }>;
+}>({ visible: false, centerX: 0, centerY: 0, spokes: [] });
+
 // [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
 const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, number]];
 
-const mouseCoords = ref<{ lng: number | null, lat: number | null }>({ lng: null, lat: null });
+const mouseCoords = ref<{ lng: number | null, lat: number | null, x: number, y: number, visible: boolean }>({ lng: null, lat: null, x: 0, y: 0, visible: false });
 
 const sensorData = ref<{ time: string, value: number }[]>([])
 
@@ -205,7 +284,7 @@ const lastClicked = computed(() => mainStore.lastClickedMapPoint);
 
 const selectedColormap = computed(() => {
     const name = mainStore.selected_variable.colormap;
-    if (name) return mainStore.colormaps[name] ?? null;
+    if (name) return resolveColormap(mainStore.colormaps, name);
     // Fallback to a default colormap (DB doesn't store colormap field)
     return null;
 });
@@ -218,37 +297,6 @@ const mapCenter = computed(() => mainStore.mapCenter);
 
 const showColorbarSettings = computed(() => mainStore.showColorbarSettings);
 
-
-///////////////////////////////////  WATCHERS  ///////////////////////////////////
-
-// When colormap, min, or max change in store, update overlay
-watch([
-    () => mainStore.selected_variable.colormap,
-    () => mainStore.selected_variable.colormapMin,
-    () => mainStore.selected_variable.colormapMax
-], async () => {
-    if (!map || !mapLoaded.value) return;
-    if (mainStore.selected_variable.var === 'bathymetry') {
-        updateBathymetryTilesLayerColorization();
-    } else {
-        try {
-            await updatePngOverlay();
-        } catch (e) {
-            console.warn('Failed to update overlay after colormap/min/max change', e);
-        }
-    }
-}, { immediate: false });
-
-// Handler for time controls component
-// function onTimeControlDt(dt: any) {
-//     // dt is a moment object (UTC)
-//     mainStore.updateSelectedVariable({ dt });
-// }
-
-watch(() => mapCenter.value, (newCenter) => {
-    if (!map || !newCenter) return;
-    map.easeTo({ center: [newCenter.lng, newCenter.lat] });
-}, { immediate: true })
 
 ///////////////////////////////////  HOOKS  ///////////////////////////////////
 onMounted(async () => {
@@ -264,7 +312,7 @@ onMounted(async () => {
         bounds,
         // zoom: 9.5,
         // pitch: 45,
-        minZoom: 7,
+        minZoom: 5,
         maxZoom: 14,
         antialias: true,
         preserveDrawingBuffer: true, // needed for exporting canvas
@@ -276,6 +324,12 @@ onMounted(async () => {
         map?.on('mousemove', (e) => {
             mouseCoords.value.lng = e.lngLat.lng;
             mouseCoords.value.lat = e.lngLat.lat;
+            mouseCoords.value.x = e.point.x;
+            mouseCoords.value.y = e.point.y;
+            mouseCoords.value.visible = true;
+        });
+        map?.getContainer().addEventListener('mouseleave', () => {
+            mouseCoords.value.visible = false;
         });
         // Fetch colormaps and variables in parallel
         Promise.all([init()]).catch((e) => console.warn('init failed:', e));
@@ -285,6 +339,7 @@ onMounted(async () => {
             if (map) zoom.value = map.getZoom().toFixed(2);
         });
 
+        updateAnalysisBox();
     });
 
 
@@ -329,6 +384,11 @@ onBeforeUnmount(() => {
             }
         }
 
+        // remove analysis region box
+        try { if (map.getLayer(ABOX_FILL)) map.removeLayer(ABOX_FILL); } catch (e) { }
+        try { if (map.getLayer(ABOX_LINE)) map.removeLayer(ABOX_LINE); } catch (e) { }
+        try { if (map.getSource(ABOX_SOURCE)) map.removeSource(ABOX_SOURCE); } catch (e) { }
+
         // remove stations layers + source if present
         try { if (map.getLayer && map.getLayer('stations-badge')) map.removeLayer('stations-badge'); } catch (e) { }
         try { if (map.getLayer && map.getLayer('stations-circles')) map.removeLayer('stations-circles'); } catch (e) { }
@@ -343,7 +403,7 @@ onBeforeUnmount(() => {
 ///////////////////////////////////  WATCH  ///////////////////////////////////
 
 // Watcher: add/update/remove overlay when selected variable or depth changes
-watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth, mainStore.midDate], async ([v, depth]) => {
+watch(() => [mainStore.selected_variable.source, mainStore.selected_variable.var, mainStore.selected_variable.depth, mainStore.midDate], async ([v, depth]) => {
     if (!map) return;
 
     if (!v) {
@@ -365,32 +425,35 @@ watch(() => [mainStore.selected_variable.var, mainStore.selected_variable.depth,
         mapLoaded.value = true;
 
         // If the user previously clicked a point, refresh the timeseries chart for the new var/depth
+        // (only while the Timeseries tab is the one being viewed — Analysis Builder has its own fetch)
         if (lastClicked.value && v !== 'bathymetry') {  // Skip API call for bathymetry
-            try {
-                // debounce rapid var/depth changes to avoid hammering the API
-                if (tsRefreshTimer) clearTimeout(tsRefreshTimer);
-                // Skip if a sensor click is already handling the fetch via lastClickedMapPoint watcher
-                if (_sensorClickPending) return;
-                tsRefreshTimer = setTimeout(async () => {
-                    try {
-                        const lat = lastClicked.value!.lat;
-                        const lon = lastClicked.value!.lng;
-                        const varId = mainStore.selected_variable.var;
+            if (activeTab.value === 'timeseries') {
+                try {
+                    // debounce rapid var/depth changes to avoid hammering the API
+                    if (tsRefreshTimer) clearTimeout(tsRefreshTimer);
+                    // Skip if a sensor click is already handling the fetch via lastClickedMapPoint watcher
+                    if (_sensorClickPending) return;
+                    tsRefreshTimer = setTimeout(async () => {
+                        try {
+                            const lat = lastClicked.value!.lat;
+                            const lon = lastClicked.value!.lng;
+                            const varName = mainStore.selected_variable.var;
 
-                        // abort previous request if any
-                        try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-                        tsRequestController = new AbortController();
+                            // abort previous request if any
+                            try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
+                            tsRequestController = new AbortController();
 
-                        getTimeseriesPromises(lat, lon);
-                    } catch (e) {
-                        if (e && e.code === 'ERR_CANCELED') return; // aborted
-                        console.warn('Failed to refresh timeseries after var/depth change', e);
-                    } finally {
-                        tsRequestController = null;
-                    }
-                }, 300);
-            } catch (e) {
-                console.warn('Failed to schedule timeseries refresh after var/depth change', e);
+                            getTimeseriesPromises(lat, lon);
+                        } catch (e) {
+                            if (e && e.code === 'ERR_CANCELED') return; // aborted
+                            console.warn('Failed to refresh timeseries after var/depth change', e);
+                        } finally {
+                            tsRequestController = null;
+                        }
+                    }, 300);
+                } catch (e) {
+                    console.warn('Failed to schedule timeseries refresh after var/depth change', e);
+                }
             }
         } else
             maybeInitClick();
@@ -528,11 +591,40 @@ watch(() => mainStore.lastClickedMapPoint, (point) => {
     trigger_mapClick(point.lat, point.lng);
 }, { immediate: true });
 
+// When colormap, min, or max change in store, update overlay
+watch([
+    () => mainStore.selected_variable.colormap,
+    () => mainStore.selected_variable.colormapMin,
+    () => mainStore.selected_variable.colormapMax
+], async () => {
+    if (!map || !mapLoaded.value) return;
+    if (mainStore.selected_variable.var === 'bathymetry') {
+        updateBathymetryTilesLayerColorization();
+    } else {
+        try {
+            await updatePngOverlay();
+        } catch (e) {
+            console.warn('Failed to update overlay after colormap/min/max change', e);
+        }
+    }
+}, { immediate: false });
+
+// Handler for time controls component
+// function onTimeControlDt(dt: any) {
+//     // dt is a moment object (UTC)
+//     mainStore.updateSelectedVariable({ dt });
+// }
+
+watch(() => mapCenter.value, (newCenter) => {
+    if (!map || !newCenter) return;
+    map.easeTo({ center: [newCenter.lng, newCenter.lat] });
+}, { immediate: true })
+
 ///////////////////////////////////  MEDTHODS  ///////////////////////////////////
 async function getMetadata() {
     try {
-        const varId = mainStore.selected_variable.var;
-        const metaPath = `${apiBaseUrl}/metadata/${varId}`;
+        const varName = mainStore.selected_variable.var;
+        const metaPath = `${apiBaseUrl}/metadata/${varName}`;
 
         const r = await axios.get(metaPath);
         meta.value = JSON.parse(r.data);
@@ -554,6 +646,7 @@ async function init() {
     // Chart is initialized by the TimeseriesChart component itself
 }
 
+
 function maybeInitClick() {
     // Call initClick only once both the map has finished loading and the selected variable has been initialized
     if (mapLoaded.value && selectedReady.value && !didInitClick) {
@@ -565,6 +658,12 @@ function maybeInitClick() {
 function initClick(lat: number, lng: number) {
     if (!map) return;
 
+    trackEvent('model_point_queried', {
+        lat, lon: lng,
+        source: mainStore.selected_variable.source,
+        variable: mainStore.selected_variable.var,
+        query_mode: mainStore.queryMode,
+    });
     mainStore.setLastClickedMapPoint({ lat, lng });
 
     // Abort any in-flight timeseries requests and create a new controller
@@ -587,14 +686,29 @@ async function getTimeseriesPromises(lat: number, lon: number) {
         lat, lon,
         () => getTimeseriesFromApi(lat, lon, fromDate, toDate),
         () => getClimateTimeseries(lat, lon, fromDate, toDate),
-        () => mainStore.selectedSensor && mainStore.selectedSensor.id
-            ? getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selectedSensor.depth)
-            : Promise.resolve(null)
+        // selectedSensor.depth === -1 means the sensor profiles the water column (see
+        // sensorComparison.vue's isVariableDepth). There's no fixed depth to snap to on
+        // the sensor's own record, so use the shared global depth (the same one driving
+        // the map layer) instead — this is what makes changing the map's depth control
+        // refetch the profiler's overlay too, no Depth Profile round-trip needed.
+        () => {
+            if (!mainStore.selectedSensor || !mainStore.selectedSensor.id) return Promise.resolve(null);
+            if (mainStore.selectedSensor.depth === -1) {
+                if (mainStore.selected_variable.depth_nc == null) return Promise.resolve(null);
+                return getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selected_variable.depth_nc, mainStore.selected_variable.source);
+            }
+            return getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selectedSensor.depth);
+        }
     );
 }
 
 async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {
-    return axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth, fromDate, toDate }, { signal: tsRequestController.signal });
+    const base = { source: mainStore.selected_variable.source, var: mainStore.selected_variable.var, depth: mainStore.selected_variable.depth_nc, fromDate, toDate }
+    const h = 0.05
+    const payload = mainStore.queryMode === 'area'
+        ? { ...base, polygon: [[lon-h,lat-h],[lon+h,lat-h],[lon+h,lat+h],[lon-h,lat+h],[lon-h,lat-h]] }
+        : { ...base, lat, lon }
+    return axios.post(`${apiBaseUrl}/extractTimeseries`, payload, { signal: tsRequestController.signal });
     // const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
     // const json = r.data;
     // if (json && Array.isArray(json.time) && Array.isArray(json.value)) {
@@ -607,76 +721,173 @@ async function getClimateTimeseries(lat: number, lon: number, fromDate: string, 
         var: mainStore.selected_variable.var,
         lat,
         lon,
-        depth: formatDepth(mainStore.selected_variable.depth),
+        depth: mainStore.selected_variable.depth_nc,
         fromDate,
         toDate
     });
 };
 
-async function addSensors() {
-    const sensors = await getSensors();
+const REALTIME_THRESHOLD_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const PROXIMITY_M = 100; // sensors within 100 m share one map marker
 
-    // Group sensors by coordinate key so co-located sensors share one marker
-    const locationMap = new Map<string, any[]>();
-    for (const s of sensors) {
-        const key = `${s.longitude},${s.latitude}`;
-        if (!locationMap.has(key)) locationMap.set(key, []);
-        locationMap.get(key)!.push(s);
-    }
+function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371000;
+    const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
-    const features = Array.from(locationMap.entries()).map(([, group]) => {
+let _sensorGroups: any[][] = [];
+let _sensorIsRealtime: (s: any) => boolean = () => false;
+let _visibleSensorGroups: any[][] = []; // _sensorGroups filtered to mainStore.filteredSensors
+
+function coordKey(lat: number, lon: number): string {
+    return `${lat.toFixed(6)},${lon.toFixed(6)}`;
+}
+
+function buildSensorGeoJSON(groups: any[][], sensorIsRealtime: (s: any) => boolean): FeatureCollection<Geometry, GeoJsonProperties> {
+    const features = groups.map(group => {
         const first = group[0];
         const anyActive = group.some((s: any) => s.active);
+        const isRealtime = group.some(sensorIsRealtime);
+        const allRealtime = group.every(sensorIsRealtime);
+        const hasMixed = group.length > 1 && isRealtime && !allRealtime;
         return {
             type: 'Feature',
-            geometry: {
-                type: 'Point',
-                coordinates: [first.longitude, first.latitude]
-            },
+            geometry: { type: 'Point', coordinates: [first.longitude, first.latitude] },
             properties: {
+                coordKey: coordKey(first.latitude, first.longitude),
                 sensorCount: group.length,
                 active: anyActive,
-                // Embed all sensors as JSON string (Mapbox flattens properties to primitives)
+                isRealtime,
+                hasMixed,
+                isVariableDepth: group.some((s: any) => s.depth < 0),
                 sensorsJson: JSON.stringify(
-                    group
-                        // .sort((a: any, b: any) => a.depth - b.depth)
-                        .map((s: any) => ({ id: s.id, name: s.name, depth: s.depth }))
+                    group.map((s: any) => ({
+                        id: s.id,
+                        name: s.name,
+                        depth: s.depth,
+                        depth_min: s.depth_min ?? null,
+                        depth_max: s.depth_max ?? null,
+                        isRealtime: sensorIsRealtime(s),
+                        lat: s.latitude,
+                        lon: s.longitude,
+                    }))
                 ),
             }
         };
     });
+    return { type: 'FeatureCollection', features };
+}
 
-    const geojson: FeatureCollection<Geometry, GeoJsonProperties> = {
-        type: 'FeatureCollection',
-        features: features
-    };
+function updateBuoyVarOpacity(selectedVar: string | null) {
+    if (!map || !_visibleSensorGroups.length) return;
+    const keysWithVar = _visibleSensorGroups
+        .filter(g => !selectedVar || g.some((s: any) => selectedVar in (s.variables ?? {})))
+        .map(g => coordKey(g[0].latitude, g[0].longitude));
+    const expr: any = (!selectedVar || keysWithVar.length === _visibleSensorGroups.length)
+        ? 0.95
+        : ['case', ['in', ['get', 'coordKey'], ['literal', keysWithVar]], 0.95, 0.2];
+    try { (map as any).setPaintProperty(STATIONS_LAYER_ID, 'icon-opacity', expr); } catch (_) {}
+}
+
+// Recomputes which station groups are visible on the map from mainStore.filteredSensors
+// (the same filter criteria — search/organization/variable — driving the sensorInfo.vue list),
+// and pushes the resulting geometry into the existing source via setData.
+// Each group is trimmed down to only its filter-matching members, so clusters that survive
+// the filter don't still expose non-matching sensors when spiderfied.
+function applyBuoyFilters() {
+    if (!map || !_sensorGroups.length) return;
+    const filteredIds = new Set(mainStore.filteredSensors.map((s: any) => s.id));
+    _visibleSensorGroups = _sensorGroups
+        .map(g => g.filter((s: any) => filteredIds.has(s.id)))
+        .filter(g => g.length > 0);
+    const geojson = buildSensorGeoJSON(_visibleSensorGroups, _sensorIsRealtime);
+    const source = map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
+    if (source) source.setData(geojson);
+    updateBuoyVarOpacity(mainStore.selected_variable?.var ?? null);
+}
+
+watch(() => mainStore.filteredSensors, applyBuoyFilters);
+
+async function addSensors() {
+    const sensors = await getSensors();
+    const now = Date.now();
+
+    const groups: any[][] = [];
+    for (const s of sensors) {
+        const existing = groups.find(g =>
+            haversineM(g[0].latitude, g[0].longitude, s.latitude, s.longitude) < PROXIMITY_M
+        );
+        if (existing) existing.push(s);
+        else groups.push([s]);
+    }
+
+    const sensorIsRealtime = (s: any) =>
+        s.latest_data_at && (now - new Date(s.latest_data_at).getTime()) < REALTIME_THRESHOLD_MS;
+
+    _sensorGroups = groups;
+    _sensorIsRealtime = sensorIsRealtime;
+
+    const filteredIds = new Set(mainStore.filteredSensors.map((s: any) => s.id));
+    _visibleSensorGroups = groups
+        .map(g => g.filter((s: any) => filteredIds.has(s.id)))
+        .filter(g => g.length > 0);
+
+    const geojson = buildSensorGeoJSON(_visibleSensorGroups, sensorIsRealtime);
 
     try {
-        const detach = await addBuoyLayer(map, geojson, clickSensor, openSensorPicker);
+        const detach = await addBuoyLayer(map, geojson, clickSensor, openSensorPicker, openSpiderfy);
         (map as any).__stationsDetach = detach;
     } catch (e) {
         console.warn('Failed to add buoy layer:', e);
     }
+
+    updateBuoyVarOpacity(mainStore.selected_variable?.var ?? null);
 }
+
+watch(() => mainStore.selected_variable.var, (newVar) => {
+    updateBuoyVarOpacity(newVar ?? null);
+});
 
 function openSensorPicker(sensors: MultiSensorCandidate[], screenX: number, screenY: number) {
-    sensorPicker.value = { visible: true, x: screenX, y: screenY, sensors };
+    openSpiderfy(sensors, screenX, screenY);
 }
 
-function clickSensor(sensor_id: number, depth: number[]) {
+function openSpiderfy(sensors: MultiSensorCandidate[], screenX: number, screenY: number) {
+    sensorPicker.value.visible = false;
+    const radius = 70;
+    const startAngle = -Math.PI / 2;
+    const spokes = sensors.map((sensor, i) => {
+        const angle = startAngle + (2 * Math.PI / sensors.length) * i;
+        return { sensor, x: screenX + radius * Math.cos(angle), y: screenY + radius * Math.sin(angle) };
+    });
+    spiderfy.value = { visible: true, centerX: screenX, centerY: screenY, spokes };
+    map.once('movestart', () => { spiderfy.value.visible = false; });
+}
+
+function clickSensorFromSpiderfy(sensor: MultiSensorCandidate) {
+    spiderfy.value.visible = false;
+    clickSensor(sensor.id, sensor.depth);
+}
+
+function clickSensor(sensor_id: string, depth: number) {
+    trackEvent('sensor_selected', { sensor_id, source: 'map' });
     sensorPicker.value.visible = false;
     // Set flag BEFORE selectSensor so the var/depth watcher skips its own fetch.
     // The lastClickedMapPoint watcher (via setLastClickedMapPoint below) will
     // trigger the single authoritative fetch.
     _sensorClickPending = true;
-    mainStore.selectSensor(sensor_id, depth[0]);
+    mainStore.selectSensor(sensor_id, depth);
     const sensor = mainStore.sensors.find((s: any) => s.id === sensor_id);
     if (sensor) {
         mainStore.setLastClickedMapPoint({ lat: sensor.latitude, lng: sensor.longitude });
     } else {
         // Sensor not in store — fall back to current point
         const pt = lastClicked.value;
-        if (pt) getTimeseriesPromises(pt.lat, pt.lng);
+        if (pt && activeTab.value === 'timeseries') getTimeseriesPromises(pt.lat, pt.lng);
     }
     // Clear after this tick — the var/depth watcher has already seen the flag.
     nextTick(() => { _sensorClickPending = false; });
@@ -700,13 +911,15 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     if (!map) throw new Error('map not initialized');
     // if (!meta.value || !meta.value.bounds) throw new Error('metadata not loaded');
 
-    const varId = mainStore.selected_variable.var;
+    const source = mainStore.selected_variable.source.replace(/\s+/g, ''); // Remove spaces from source name for URL
+    const varName = mainStore.selected_variable.var;
     const dt = mainStore.selected_variable.dt?.format('YYYY-MM-DDTHHmmss') || '';
-    const depth = formatDepth(mainStore.selected_variable.depth);
-    const pngPath = `${apiBaseUrl}/png/${varId}/${dt}/${depth}`;
+    const depth = mainStore.selected_variable.depth
+    const pngPath = `${apiBaseUrl}/png/${source}/${varName}/${dt}/${depth}`;
 
-    const varMeta = mainStore.variables.find(v => v.var === varId);
-    const [lonmin, latmin, lonmax, latmax] = varMeta.bounds;
+    const bounds = mainStore.variables.find(v => v.source === mainStore.selected_variable.source && v.var === varName)?.bounds;
+    if (!bounds) throw new Error('bounds not found');
+    const [lonmin, latmin, lonmax, latmax] = bounds;
     const coords = [
         [lonmin, latmax], // top-left
         [lonmax, latmax], // top-right
@@ -733,7 +946,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
     // Get packing params from metadata, default to 0.1 precision and 0 base if missing
     // Note: base might be equal to colormapMin if it was dynamic
-    const precision = mainStore.variables.find(v => v.var === varId)?.precision ?? 0.1;
+    const precision = mainStore.variables.find(v => v.var === varName)?.precision ?? 0.1;
     const base = 0
 
     // Use colormap if available, otherwise fall back to default ramp
@@ -771,7 +984,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
         map.getSource(sourceId)?.updateImage({
             type: 'image',
             url: pngPath,
-            // coordinates: coords
+            coordinates: coords
         })
         map.setPaintProperty(layerId, 'raster-color', [
             'interpolate',
@@ -804,7 +1017,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     }
 
     // save active overlay metadata on the map instance for access by click handler
-    const overlayObj: any = { bounds: [lonmin, latmin, lonmax, latmax], coords, varId, depth: depth, pngPath, meta, clickHandler: null };
+    const overlayObj: any = { bounds: [lonmin, latmin, lonmax, latmax], coords, varName, depth: depth, pngPath, meta, clickHandler: null };
     // remove previous click handler if present
     const prev = (map as any).__activePngOverlay;
     if (prev && prev.clickHandler) {
@@ -843,10 +1056,15 @@ async function trigger_mapClick(lat: number, lng: number) {
     if (!overlay) return;
     // show a marker at clicked position
     try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
-    const el = document.createElement('div');
-    el.className = 'map-click-marker';
-    const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map);
-    (map as any).__clickMarker = marker;
+    if (mainStore.queryMode === 'point') {
+        const el = document.createElement('div');
+        el.className = 'map-click-marker';
+        const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map);
+        (map as any).__clickMarker = marker;
+    }
+
+    // Only the Timeseries tab needs hourly data fetched on point/area change.
+    if (activeTab.value !== 'timeseries') return;
 
     // Abort any in-flight timeseries requests and create a new controller
     try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
@@ -1045,9 +1263,10 @@ async function autorange() {
     }
 
     try {
+        const selectedSource = mainStore.selected_variable.source;
         const selectedVar = mainStore.selected_variable.var;
         const selectedDt = mainStore.selected_variable.dt;
-        const selectedDepth = mainStore.selected_variable.depth;
+        const selectedDepth = mainStore.selected_variable.depth_nc;
 
         if (!selectedVar || !selectedDt) {
             console.warn('No variable or datetime selected');
@@ -1066,6 +1285,7 @@ async function autorange() {
 
         // Call the new getMinMax endpoint to extract min/max directly from the NC file
         const response = await axios.post(`${apiBaseUrl}/getMinMax`, {
+            source: selectedSource,
             var: selectedVar,
             dt: dtStr,
             depth: selectedDepth,
@@ -1074,6 +1294,8 @@ async function autorange() {
             east: east,
             west: west
         });
+
+        console.log(response.data);
 
         if (response.data && response.data.min !== null && response.data.max !== null) {
             let minVal = response.data.min;
@@ -1100,6 +1322,55 @@ async function autorange() {
     }
 }
 
+// --- ANALYSIS REGION BOX ---
+const ABOX_SOURCE = 'analysis-region'
+const ABOX_FILL   = 'analysis-region-fill'
+const ABOX_LINE   = 'analysis-region-line'
+
+function updateAnalysisBox() {
+  if (!map || !map.isStyleLoaded()) return
+  const pt  = lastClicked.value
+  const show = mainStore.queryMode === 'area' && !!pt
+
+  const data: GeoJSON.Feature<GeoJSON.Polygon> = show
+    ? { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[
+          [pt!.lng - 0.05, pt!.lat - 0.05],
+          [pt!.lng + 0.05, pt!.lat - 0.05],
+          [pt!.lng + 0.05, pt!.lat + 0.05],
+          [pt!.lng - 0.05, pt!.lat + 0.05],
+          [pt!.lng - 0.05, pt!.lat - 0.05],
+        ]] } }
+    : { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[]] } }
+
+  if (map.getSource(ABOX_SOURCE)) {
+    (map.getSource(ABOX_SOURCE) as mapboxgl.GeoJSONSource).setData(data)
+    map.setLayoutProperty(ABOX_FILL, 'visibility', show ? 'visible' : 'none')
+    map.setLayoutProperty(ABOX_LINE, 'visibility', show ? 'visible' : 'none')
+  } else {
+    map.addSource(ABOX_SOURCE, { type: 'geojson', data })
+    map.addLayer({ id: ABOX_FILL, type: 'fill', source: ABOX_SOURCE,
+      paint: { 'fill-color': 'rgba(255,193,7,0.08)' },
+      layout: { visibility: show ? 'visible' : 'none' } })
+    map.addLayer({ id: ABOX_LINE, type: 'line', source: ABOX_SOURCE,
+      paint: { 'line-color': '#ff5722', 'line-width': 1.5, 'line-dasharray': [4, 2] },
+      layout: { visibility: show ? 'visible' : 'none' } })
+  }
+}
+
+watch([lastClicked, activeTab], updateAnalysisBox)
+watch(() => mainStore.queryMode, () => {
+    updateAnalysisBox()
+    if (lastClicked.value) trigger_mapClick(lastClicked.value.lat, lastClicked.value.lng)
+})
+
+// Switching into the Timeseries tab fetches fresh data for the current point/var/depth,
+// since updates while that tab was hidden are never fetched (see activeTab gating above).
+watch(activeTab, (tab) => {
+    if (tab === 'timeseries' && lastClicked.value) {
+        trigger_mapClick(lastClicked.value.lat, lastClicked.value.lng)
+    }
+})
+
 // Abort controller for ongoing timeseries requests and debounce timer
 let tsRequestController: AbortController | null = null;
 let tsRefreshTimer: any = null;
@@ -1115,9 +1386,77 @@ let _sensorClickPending = false;
     position: absolute;
     top: 12px;
     z-index: 2;
-    /* background: rgba(255, 255, 255, 0.85); */
     border-radius: 8px;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.footer-rail {
+    width: 136px;
+    background: rgba(255, 255, 255, 0.03);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.footer-rail-track {
+    position: relative;
+    width: 100%;
+    gap: 2px;
+    padding: 6px;
+}
+
+.footer-rail-pill {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    top: 6px;
+    height: 32px;
+    border-radius: 8px;
+    background: rgba(var(--v-theme-primary), 0.16);
+    transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 0;
+}
+
+.footer-rail-item {
+    position: relative;
+    z-index: 1;
+    height: 32px;
+    padding: 0 10px;
+    /* v-btn-group forces border-radius:0 on grouped buttons (fused segmented-control look) — we want independent rounded rows instead */
+    border-radius: 8px !important;
+    font-size: 0.75rem;
+    letter-spacing: 0;
+    opacity: 0.65;
+    transition: opacity 150ms ease, color 150ms ease;
+    /* v-btn centers its prepend-icon + content as a group by default; override so all rows share a left edge regardless of label length */
+    justify-content: flex-start;
+}
+
+.footer-rail-item :deep(.v-btn__content) {
+    justify-content: flex-start;
+}
+
+.footer-rail-item:hover {
+    opacity: 0.9;
+}
+
+.footer-rail-item.active {
+    opacity: 1;
+    font-weight: 600;
+    color: rgb(var(--v-theme-primary));
+}
+
+.cursor-coord-label {
+    position: absolute;
+    z-index: 998;
+    pointer-events: none;
+    transform: translate(-14px, 14px);
+    width: fit-content;
+    padding: 3px 6px;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    font-family: monospace;
+    font-size: 11px;
+    color: #ccc;
+    white-space: nowrap;
 }
 </style>
 
@@ -1173,5 +1512,38 @@ let _sensorClickPending = false;
 .overlay {
     position: absolute;
     z-index: 998;
+}
+
+.spiderfy-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+.spiderfy-dot {
+    width: 13px;
+    height: 13px;
+    border: 2px solid #333;
+    border-radius: 50%;
+    transition: transform 0.12s ease;
+}
+
+.spiderfy-node:hover .spiderfy-dot {
+    transform: scale(1.35);
+}
+
+.spiderfy-label {
+    color: #fff;
+    font-size: 10px;
+    white-space: nowrap;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 3px #000, 0 0 5px #000;
+    pointer-events: none;
 }
 </style>

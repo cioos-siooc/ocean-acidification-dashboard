@@ -1,5 +1,14 @@
 # Database Schema Analysis - OA Project
 
+> **HISTORICAL / OBSOLETE**: PostgreSQL/PostGIS has been fully removed from this project. The
+> `nc_jobs`, `fields`, `datasets`, `grid`, `lo_grid`, and Postgres `sensors`/`colormaps` tables
+> documented below no longer exist. The pipeline's state machine now lives in ClickHouse's
+> `SalishSeaCast_status` table (see `process/SSC/db.py`); the curvilinear grid lives in
+> ClickHouse's `grid_SSC`; sensor metadata lives in ClickHouse's `sensors`/`sensor_timeseries`;
+> variable/colormap metadata lives in static files (`shared/variable_config.yml`,
+> `shared/colormaps.json`). This document is kept only as historical reference for understanding
+> the pre-migration schema — do not use it to write new code.
+
 ## 1. NC_JOBS TABLE - FULL SCHEMA
 
 ### Column Definitions

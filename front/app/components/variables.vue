@@ -1,12 +1,14 @@
 <template>
   <v-card v-if="selectedVariableName" class="colorbar">
     <div class="label">
+      <!-- VARIABLES -->
       <v-select v-model="selectedVarName" label="Field" :items="variableItems" :disabled="variableItems.length === 0"
-        item-title="label" item-value="var" density="compact" hide-details variant="outlined" class="my-4"
+        item-title="label" item-value="var" hide-details class="my-4"
         :menu-props="{ location: 'end', offset: 35, zIndex: 9999 }" style="width: 100%"></v-select>
 
-      <v-select v-model="selectedSource" :items="sourceItems" label="Source" item-title="label" item-value="source"
-        :disabled="sourceItems.length === 0" density="compact" hide-details variant="outlined" class="my-4"
+      <!-- SOURCES -->
+      <v-select v-model="selectedSource" :items="sourceItems" label="Model Source" item-title="label" item-value="source"
+        :disabled="sourceItems.length === 0" hide-details class="my-4"
         :menu-props="{ location: 'end', offset: 35, zIndex: 9999 }" style="width: 100%">
         <template #prepend-inner>
           <v-btn icon size="12px" @click="showSourceInfo = !showSourceInfo" title="About this data source">
@@ -15,17 +17,15 @@
         </template>
       </v-select>
 
+      <!-- DEPTHS -->
       <v-select v-if="depths && depths.length > 0" v-model="selectedDepth" :items="depths" label="Depth"
-        item-title="label" item-value="depth" :disabled="!depths || depths.length === 0" density="compact" hide-details
-        variant="outlined" class="my-4" :menu-props="{ location: 'end', offset: 75, zIndex: 9999 }" style="width: 100%">
+        item-title="title" item-value="value" :disabled="!depths || depths.length === 0" hide-details
+        class="my-4" :menu-props="{ location: 'end', offset: 75, zIndex: 9999 }" style="width: 100%">
         <template #item="{ props, item }">
-          <v-list-item v-bind="props" :title="item.title"
-            :style="{ color: item.hasImage ? colors.green.lighten2 : colors.orange.lighten2 }">
-          </v-list-item>
+          <v-list-item v-bind="props" :title="item.title"></v-list-item>
         </template>
         <template #selection="{ item }">
-          <div class="colormap-selection">{{ item !== -1 ? item.toFixed(1) + ' m' : 'bottom' }}
-          </div>
+          <div class="colormap-selection">{{ item.title }}</div>
         </template>
         <template #append>
           <v-btn icon size="12px" @click="deeper" title="Deeper depth selection">
@@ -63,7 +63,6 @@
   <v-dialog v-model="showSourceInfo" max-width="50%">
     <v-card class="pa-5">
       <about-ssc v-if="selectedSource === 'SalishSeaCast'"></about-ssc>
-      <about-liveocean v-else-if="selectedSource === 'LiveOcean'"></about-liveocean>
       <about-nonna v-else-if="selectedSource === 'NONNA'"></about-nonna>
     </v-card>
   </v-dialog>
@@ -71,10 +70,12 @@
 
 <script setup lang="ts">
 import { computed, toRef, ref, watch } from 'vue';
+import moment from 'moment-timezone';
 import { var2name } from '../../composables/useVar2Name';
+import { trackEvent } from '../../composables/useAnalytics';
 import colors from 'vuetify/util/colors'
 
-import { useMainStore } from '../stores/main'
+import { useMainStore, formatDepthLabel } from '../stores/main'
 const mainStore = useMainStore();
 
 const emit = defineEmits<{
@@ -116,7 +117,7 @@ const showSourceInfo = ref(false);
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 
 const variables = computed(() => mainStore.variables);
-const variableItems = computed(() => variables.value.map((v) => ({ var: v.var, label: var2name(v.var), colormapMin: v.colormapMin, colormapMax: v.colormapMax })));
+const variableItems = computed(() => variables.value.filter(v => v.source === selectedSource.value).map((v) => ({ var: v.var, label: var2name(v.var), colormapMin: v.colormapMin, colormapMax: v.colormapMax })));
 const selectedVariable = computed(() => mainStore.selected_variable);
 const sourceItems = computed(() => {
   const sources = variables.value.filter(v => v.var == selectedVariable.value.var).map(v => ({ source: v.source, label: v.source }));
@@ -129,13 +130,53 @@ const sourceItems = computed(() => {
 });
 const selectedSource = computed({
   get() { return selectedVariable.value.source },
-  set(v: string) { mainStore.updateSelectedVariable({ source: v }) }
+  set(v: string) {
+    // Find depths for the new source/variable combination and update selected variable with new source and reset depth
+    const variable = variables.value.find(variable => variable.source === v && variable.var === selectedVariable.value.var);
+    const depths = variable?.depths ?? [];
+    
+    // Find closest available depth in the new source
+    let newDepthNc: number | null = depths.length > 0 ? depths[0] : null;
+
+    if (depths.length > 0 && selectedVariable.value.depth_nc !== null) {
+      // Find depth closest to the currently selected depth value
+      const currentDepthNc = selectedVariable.value.depth_nc;
+      newDepthNc = depths.reduce((closest, current) =>
+        Math.abs(current - currentDepthNc) < Math.abs(closest - currentDepthNc)
+          ? current
+          : closest
+      );
+    }
+    const newDepth = newDepthNc !== null ? formatDepthLabel(newDepthNc) : null;
+    
+    // Find closest available datetime in the new source
+    let newDt = selectedVariable.value.dt;
+    const dts = variable?.dts ?? [];
+    console.log(dts, newDt);
+    if (dts.length > 0 && selectedVariable.value.dt) {
+      // dts are Unix timestamps in seconds; find the closest one
+      const currentTimeMs = selectedVariable.value.dt.valueOf();
+      const closestDtUnix = dts.reduce((closest, current) =>
+        Math.abs(current * 1 - currentTimeMs) < Math.abs(closest * 1 - currentTimeMs)
+          ? current
+          : closest
+      );
+      newDt = moment.unix(closestDtUnix/1000).tz('UTC');
+      console.log(`currentTimeMs: ${currentTimeMs}, closestDtUnix: ${closestDtUnix}, newDt: ${newDt}`);
+    } else if (dts.length > 0) {
+      // If no datetime selected yet, use the most recent available
+      newDt = moment.unix(Math.max(...dts)/1000).tz('UTC');
+    }
+    
+    mainStore.updateSelectedVariable({ source: v, depth: newDepth, depth_nc: newDepthNc, dt: newDt });
+  }
 });
 
 const selectedVarName = computed({
   get() { return selectedVariable.value.var },
   set(v: string) {
-    const matchingVar = variables.value.find(variable => variable.var === v);
+    trackEvent('variable_changed', { variable: v, source: selectedVariable.value.source });
+    const matchingVar = variables.value.find(variable => variable.source === selectedVariable.value.source && variable.var === v);
     const colormap = matchingVar?.colormap ?? null;
     const colormapMin = matchingVar?.colormapMin ?? null;
     const colormapMax = matchingVar?.colormapMax ?? null;
@@ -145,19 +186,33 @@ const selectedVarName = computed({
 });
 
 const depths = computed(() =>
-  mainStore.variables.
-    find(v => v.var === selectedVariable.value.var)?.depths?.
-    map(v => ({ title: v.depth !== -1 ? v.depth.toFixed(1) + ' m' : 'bottom', value: v.depth, hasImage: v.hasImage })) ?? [].
-      sort((a, b) => {
-        if (a.value === -1) return 1;
-        if (b.value === -1) return -1;
-        return a.title.localeCompare(b.title);
-      })
+  (mainStore.variables.
+    find(v => v.source === selectedVariable.value.source && v.var === selectedVariable.value.var)?.depths ?? []).
+    slice().sort((a, b) => {
+      // surface first, bottom (-1) last
+      const aIsBottom = a === -1;
+      const bIsBottom = b === -1;
+      if (aIsBottom && !bIsBottom) return 1;
+      if (!aIsBottom && bIsBottom) return -1;
+      return a - b;
+    }).
+    map(v => {
+      const label = formatDepthLabel(v);
+      return {
+        title: isNaN(Number(label)) ? label : label + ' m',
+        value: label,
+      };
+    })
 );
 
 const selectedDepth = computed({
   get() { return selectedVariable.value.depth },
-  set(v: number | null) { mainStore.updateSelectedVariable({ depth: v.value }) }
+  set(v: string | null) {
+    const raw = mainStore.variables
+      .find(variable => variable.source === selectedVariable.value.source && variable.var === selectedVariable.value.var)
+      ?.depths.find(d => formatDepthLabel(d) === v);
+    mainStore.updateSelectedVariable({ depth: v, depth_nc: raw ?? null });
+  }
 })
 
 const selectedVariableName = computed(() => mainStore.selected_variable.var);
@@ -174,7 +229,7 @@ function deeper() {
   if (selectedDepth.value === null) return;
   const currentIndex = depths.value.findIndex(d => d.value === selectedDepth.value);
   if (currentIndex < depths.value.length - 1) {
-    selectedDepth.value = depths.value[currentIndex + 1];
+    selectedDepth.value = depths.value[currentIndex + 1]?.value ?? null;
   }
 }
 
@@ -182,7 +237,7 @@ function shallower() {
   if (selectedDepth.value === null) return;
   const currentIndex = depths.value.findIndex(d => d.value === selectedDepth.value);
   if (currentIndex > 0) {
-    selectedDepth.value = depths.value[currentIndex - 1];
+    selectedDepth.value = depths.value[currentIndex - 1]?.value ?? null;
   }
 }
 

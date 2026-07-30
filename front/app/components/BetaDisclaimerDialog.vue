@@ -8,7 +8,7 @@
 
             <v-card-text class="pa-6">
                 <div class="mb-4">
-                    <p class="text-title-large mb-2">Welcome to the OAH app</p>
+                    <p class="text-title-large mb-2">Welcome to the OceanECO app</p>
                     <p>
                         This application is currently in <strong>beta</strong> and actively under development.
                         Features, data, and functionality may change as we continue to improve the platform.
@@ -40,8 +40,7 @@
                 <v-divider class="my-4"></v-divider>
 
                 <div class="d-flex align-center gap-2">
-                    <v-checkbox v-model="dontShowAgain" label="Don't show this again" hide-details
-                        density="compact"></v-checkbox>
+                    <v-checkbox v-model="dontShowAgain" label="Don't show this again" hide-details></v-checkbox>
                 </div>
             </v-card-text>
 

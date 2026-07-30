@@ -4,6 +4,17 @@
         <div v-if="loading" class="global-chart-overlay">
             <v-progress-circular indeterminate color="warning" :size="64" :width="12" class="progress" />
         </div>
+
+        <!-- <v-btn icon variant="text" flat size="18px" class="chart-info" @click="showChartInfo = true">
+            <v-icon color="yellow" size="14px">mdi-information-variant</v-icon>
+        </v-btn> -->
+
+        <!-- CHART USAGE AND PLOTS HELP DIALOG -->
+        <v-dialog v-model="showChartInfo" max-width="75%">
+            <v-card class="pa-5">
+                <v-img :src="timeseriesChartHelpImg" alt="Timeseries Chart Help" ></v-img>
+            </v-card>
+        </v-dialog>
     </div>
 </template>
 
@@ -14,8 +25,9 @@ import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
 import { computeNightRanges } from '../../composables/useSunCalc';
 import moment from 'moment-timezone';
 import colors from 'vuetify/util/colors';
-import { useMainStore } from '../stores/main';
+import timeseriesChartHelpImg from '../../public/timeseriesChartHelp.png';
 
+import { useMainStore } from '../stores/main';
 const mainStore = useMainStore();
 
 const chartContainer = ref<HTMLDivElement | null>(null);
@@ -28,6 +40,8 @@ const loading = ref(false);
 
 const DFN = computed(() => mainStore.dfnDays);
 const midDate = computed(() => mainStore.midDate ?? moment.utc());
+
+const showChartInfo = ref(false);
 
 ///////////////////////////////////  LIFECYCLE  ///////////////////////////////////
 
@@ -87,6 +101,7 @@ function initChart() {
 
             const px = evt.event.zrX;
             const py = evt.event.zrY;
+            if (!chart.containPixel('grid', [px, py])) return;
             const converted = chart.convertFromPixel('grid', [px, py]);
             if (!converted || converted[0] === undefined) return;
 
@@ -214,10 +229,16 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         const values: number[] = [];
         const push = (arr: any[] | undefined) => { if (Array.isArray(arr)) arr.forEach(v => { const n = Number(v); if (Number.isFinite(n)) values.push(n); }); };
         push(modelData?.value);
-        if (Array.isArray(climateData)) climateData.forEach(row => push([row?.mean, row?.q1, row?.q3, row?.min, row?.max]));
+        if (Array.isArray(climateData)) climateData.forEach(row => push([row?.mean, row?.min, row?.max]));
         if (sensorData?.value) push(sensorData.value);
         if (!values.length) return 0;
-        const range = Math.max(...values) - Math.min(...values);
+        // Reduce rather than Math.max(...values)/Math.min(...values): a variable-depth
+        // ("profiler") sensor can return well over 100k points for a single depth band in
+        // a normal date range, and spreading that many arguments into Math.max/min throws
+        // "Maximum call stack size exceeded" (V8's argument-count limit, ~65k-125k).
+        let vMin = Infinity, vMax = -Infinity;
+        for (const v of values) { if (v < vMin) vMin = v; if (v > vMax) vMax = v; }
+        const range = vMax - vMin;
         if (!Number.isFinite(range)) return 0;
         if (range < 1) return 3;
         if (range < 5) return 2;
@@ -227,6 +248,13 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
 
     const hasClimate = Array.isArray(climateData) && climateData.length > 0;
     const hasSensorData = sensorData && Array.isArray(sensorData.time) && sensorData.time.length > 0;
+
+    // A variable-depth ("profiler") sensor queried fine but had no cast near the
+    // currently selected depth in this window — distinct from "no sensor selected",
+    // which just leaves sensorData null. See extractSensorTimeseries.py's profiler
+    // branch, which returns this well-formed empty shape rather than a 404.
+    const isProfilerNoCast = mainStore.selectedSensor?.depth === -1 && sensorData
+        && Array.isArray(sensorData.time) && sensorData.time.length === 0;
 
     if (!hasModelData && !hasClimate && !hasSensorData) {
         chart.setOption({
@@ -238,9 +266,15 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         return;
     }
 
-    chart.setOption({ graphic: [{ type: 'text', style: { text: '' } }] }, false);
-
     const option: any = {
+        graphic: [{
+            type: 'text',
+            right: 10,
+            top: 6,
+            style: isProfilerNoCast
+                ? { text: `No sensor cast near ${sensorData.depth != null ? sensorData.depth.toFixed(1) + 'm' : 'this depth'} in this window`, fill: 'rgba(255,255,255,0.4)', fontSize: 11 }
+                : { text: '' }
+        }],
         legend: { show: true, orient: 'vertical', left: 'left', top: 'center', itemWidth: 15, itemHeight: 10, textStyle: { fontSize: 10 }, icon: 'rect' },
         tooltip: {
             trigger: 'none',
@@ -302,12 +336,12 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
                 {
                     xAxis: moment.tz(moment(), tz).format(),
                     lineStyle: { color: colors.green.lighten2, width: 1, type: 'dashed' },
-                    label: { show: true, position: 'end', formatter: 'Now', color: colors.green.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.green.lighten2 }
+                    label: { show: true, position: 'insideStartBottom', formatter: 'NOW', color: colors.green.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.green.lighten2 }
                 },
                 {
                     xAxis: selectedXLocal,
                     lineStyle: { color: colors.orange.lighten2, width: 1, type: 'dashed' },
-                    label: { show: true, position: 'end', formatter: 'Map', color: colors.orange.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.orange.lighten2 }
+                    label: { show: true, position: 'insideEndBottom', formatter: 'MAP', color: colors.orange.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.orange.lighten2 }
                 }
             ]
         },
@@ -322,19 +356,22 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     if (hasClimate) {
         const climate_ts = climateData.map((row: any) => moment.utc(row.requested_date).valueOf());
         const mean = climateData.map((row: any) => row.mean);
-        const q1 = climateData.map((row: any) => row.q1);
-        const q3 = climateData.map((row: any) => row.q3);
         const min = climateData.map((row: any) => row.min);
-        const q3Diff = q3.map((v: any, i: number) => v - q1[i]);
-        const maxDiff = climateData.map((row: any, i: number) => row.max - min[i]);
+        const maxDiff = climateData.map((row: any) => row.max - row.min);
+
+        // endLabel renders at each series' own last (for _stats_mean) or stacked-cumulative
+        // (for the stack:'minmax' pair, where the rendered height is min, then min+range=max)
+        // pixel position, so labelling "Min"/"Max"/"Mean" here lines up with the band's
+        // actual top/bottom edges and the dashed mean line without any extra computation.
+        const statsEndLabel = (formatter: string) => ({
+            show: true, formatter, color: mainStore.colors.stats, fontSize: 14, distance: -28,
+        });
 
         const fmt = (ts: number[], vals: any[]) => ts.map((t, i) => [moment.utc(t).tz(tz).format(), vals[i]]);
-        seriesArr.push({ name: '_stats_min_base', type: 'line', data: fmt(climate_ts, min), lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none' });
-        seriesArr.push({ name: '_stats_max_range', type: 'line', data: fmt(climate_ts, maxDiff), lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, stack: 'minmax', symbol: 'none' });
-        seriesArr.push({ name: '_stats_q1_base', type: 'line', data: fmt(climate_ts, q1), stack: 'range', lineStyle: { opacity: 0 }, symbol: 'none' });
-        seriesArr.push({ name: '_stats_iqr', type: 'line', data: fmt(climate_ts, q3Diff), stack: 'range', lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, symbol: 'none' });
-        seriesArr.push({ name: '_stats_mean', type: 'line', data: fmt(climate_ts, mean), smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 2, type: 'dashed' }, symbol: 'none' });
-        seriesArr.push({ name: 'Model Stats', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
+        seriesArr.push({ name: '_stats_min_base', type: 'line', data: fmt(climate_ts, min), lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none', endLabel: statsEndLabel('Min') });
+        seriesArr.push({ name: '_stats_max_range', type: 'line', data: fmt(climate_ts, maxDiff), lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, stack: 'minmax', symbol: 'none', endLabel: statsEndLabel('Max') });
+        seriesArr.push({ name: '_stats_mean', type: 'line', data: fmt(climate_ts, mean), smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 2, type: 'dashed' }, symbol: 'none', endLabel: statsEndLabel('Mean') });
+        seriesArr.push({ name: 'Climatology', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
     }
 
     if (hasModelData) {
@@ -365,16 +402,25 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     option.legend.data = seriesArr.filter((s: any) => s.name && !s.name.startsWith('_')).map((s: any) => s.name);
 
     chart.setOption(option, true);
+    console.log(option);
     chart.resize();
 
-    // Stats legend toggle — clicking 'Stats' shows/hides internal series
-    const STATS_INTERNAL = ['_stats_min_base', '_stats_max_range', '_stats_q1_base', '_stats_iqr', '_stats_mean'];
+    // Stats legend toggle — clicking 'Climatology' shows/hides internal series.
+    // Use setOption rather than legendSelect/legendUnSelect: those dispatch actions
+    // only work reliably for series registered in legend.data; the _stats_* series
+    // are intentionally excluded, so legendSelect would be a no-op on re-show.
     if (_statsLegendHandler) chart.off('legendselectchanged', _statsLegendHandler);
     if (hasClimate) {
         _statsLegendHandler = (params: any) => {
-            if (params.name !== 'Model Stats') return;
-            const action = params.selected['Model Stats'] ? 'legendSelect' : 'legendUnSelect';
-            for (const name of STATS_INTERNAL) chart!.dispatchAction({ type: action, name });
+            if (params.name !== 'Climatology') return;
+            const visible = params.selected['Climatology'];
+            chart!.setOption({
+                series: [
+                    { name: '_stats_min_base', endLabel: { show: visible } },
+                    { name: '_stats_max_range', areaStyle: { color: mainStore.colors.stats, opacity: visible ? 0.2 : 0 }, endLabel: { show: visible } },
+                    { name: '_stats_mean', lineStyle: { color: mainStore.colors.stats, opacity: visible ? 0.8 : 0, width: 2, type: 'dashed' }, endLabel: { show: visible } },
+                ]
+            });
         };
         chart.on('legendselectchanged', _statsLegendHandler);
     } else {
@@ -397,12 +443,12 @@ watch(() => mainStore.selected_variable.dt, (newDt) => {
                         {
                             xAxis: moment.tz(moment(), tz).format(),
                             lineStyle: { color: colors.green.lighten2, width: 1, type: 'dashed' },
-                            label: { show: true, position: 'end', formatter: 'Now', backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.green.lighten2 }
+                            label: { show: true, position: 'insideStartBottom', formatter: 'NOW', backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.green.lighten2 }
                         },
                         {
                             xAxis: sel,
                             lineStyle: { color: colors.orange.lighten2, width: 1, type: 'dashed' },
-                            label: { show: true, position: 'end', formatter: 'Map', backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.orange.lighten2 }
+                            label: { show: true, position: 'insideEndBottom', formatter: 'MAP', backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.orange.lighten2 }
                         }
                     ]
                 }
@@ -427,7 +473,6 @@ defineExpose({ plot, fetchAndPlot, resize, loading });
 .global-chart-overlay {
     position: absolute;
     inset: 0;
-    background: #33333366;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -441,5 +486,27 @@ defineExpose({ plot, fetchAndPlot, resize, loading });
     justify-content: center;
     align-items: center;
     place-self: center;
+}
+
+.chart-info {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    z-index: 10;
+    color: #e0e0e0;
+    border-radius: 4px;
+    padding: 4px;
+    animation: glow 2s ease-in-out infinite;
+}
+
+@keyframes glow {
+    0%, 100% {
+        text-shadow: 0 0 5px #ffff00, 0 0 15px rgba(255, 255, 0, 0.5);
+        filter: brightness(1.2);
+    }
+    50% {
+        text-shadow: 0 0 15px #ffff00, 0 0 25px rgba(255, 255, 0, 0.7);
+        filter: brightness(1.4);
+    }
 }
 </style>

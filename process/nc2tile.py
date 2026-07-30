@@ -13,7 +13,6 @@ from shared.nc2tile import (
     GRID_CACHE_PATH,
     INTERP_CACHE,
     logger,
-    get_db_conn,
     _load_grid_cache,
     _write_grid_cache,
     get_grid_from_db,

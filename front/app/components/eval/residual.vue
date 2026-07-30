@@ -11,7 +11,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
-import moment from 'moment'
+import moment from 'moment-timezone'
 
 import { useMainStore } from '~/stores/main'
 const mainStore = useMainStore();
@@ -100,6 +100,7 @@ function plotResidual() {
 
     // Calculate residuals
     const residuals = calculateResiduals(displayData)
+    console.log(displayData);
 
     const threshold = 1000 // Threshold for downsampling
 

@@ -1,27 +1,41 @@
 <template>
   <v-app theme="dark">
-    <v-app-bar density="compact" class="px-5" app>
-      <!-- HAMBURGER MENU ICON -->
-      <template v-slot:prepend>
-        <v-app-bar-nav-icon @click="mainStore.toggleIsControlPanelOpen"></v-app-bar-nav-icon>
-      </template>
+    <v-app-bar class="px-5" app>
+      <div class="d-flex align-center" style="flex-shrink:0;">
+        <iconsOceanECOLogo :size="40" :loop="false" style="display:block;" />
+      </div>
 
       <v-app-bar-title>
-        <span class="">OAH</span>
+        <span class="">OceanECO</span>
         <span class="text-label-medium mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
+        <v-tooltip location="bottom" max-width="280">
+          <template #activator="{ props }">
+            <v-chip v-bind="props" size="small" color="warning" variant="flat" label>BETA</v-chip>
+          </template>
+          <span>This dashboard is in active development. Data, features, and layout may change without
+            notice.</span>
+        </v-tooltip>
       </v-app-bar-title>
 
-      <a href="https://cioospacific.ca/" target="_blank" rel="noopener noreferrer" class="logo-link" style="position: absolute; left: 50%; transform: translateX(-50%);">
+      <a href="https://cioospacific.ca/" target="_blank" rel="noopener noreferrer" class="logo-link"
+        style="position: absolute; left: 50%; transform: translateX(-50%);">
         <img src="/cioos_pacific.png" alt="OA Logo" class="logo-icon" />
       </a>
 
       <!-- Optional: Add menu items here -->
-      <NuxtLink to="/modeleval" target="_blank">
-        <v-btn density="compact" text>Model Evaluation</v-btn>
-      </NuxtLink>
+      <!-- FEEDBACK FORM -->
+      <v-btn text href="https://docs.google.com/forms/d/e/1FAIpQLSdGiIclM5wvIbPReZydsXKiRBXbZsQVEdoQPlA0EruKIoNJkg/viewform?usp=dialog" target="_blank" rel="noopener noreferrer">
+        Feedback
+      </v-btn>
+
+      <!-- <NuxtLink to="/modeleval" target="_blank">
+        <v-btn text>Model Evaluation</v-btn>
+      </NuxtLink> -->
+      
       <NuxtLink to="/about" target="_blank">
-        <v-btn density="compact" text>About</v-btn>
+        <v-btn text>About</v-btn>
       </NuxtLink>
+
     </v-app-bar>
 
     <NuxtRouteAnnouncer />
@@ -35,7 +49,7 @@ import moment from 'moment'
 import axios from 'axios'
 
 import { useRuntimeConfig } from '#app'
-import { useMainStore } from './stores/main'
+import { useMainStore, formatDepthLabel } from './stores/main'
 const mainStore = useMainStore();
 const config = useRuntimeConfig();
 const apiBaseUrl = config.public.apiBaseUrl;
@@ -49,6 +63,7 @@ async function getVariables() {
   try {
     const r = await axios.get(`${apiBaseUrl}/variables`);
     const data = r.data;
+    console.log('data: ', data);
 
     // Convert datetimes to epoch ms numbers (plain numbers avoid deep Vue proxy overhead)
     data.forEach((v: any) => {
@@ -63,7 +78,8 @@ async function getVariables() {
       const source = varMeta?.source ?? '';
       const dts = varMeta?.dts ?? [];
       const precision = varMeta?.precision || 0.1;
-      const depth = (varMeta?.depths && varMeta.depths.length > 0) ? varMeta.depths[0].depth : 0.5;
+      const depthNc = (varMeta?.depths && varMeta.depths.length > 0) ? varMeta.depths[0] : 0.5;
+      const depth = formatDepthLabel(depthNc);
       const colormap = varMeta?.colormap ?? null;
       const colormapMin = varMeta?.colormapMin ?? null;
       const colormapMax = varMeta?.colormapMax ?? null;
@@ -73,6 +89,7 @@ async function getVariables() {
           source: source,
           dt: moment.utc(dts[dts.length - 1]),
           depth: depth,
+          depth_nc: depthNc,
           precision: precision,
           colormap: colormap,
           colormapMin: colormapMin,
@@ -107,12 +124,31 @@ async function getColormaps() {
 
 <style>
 /* Global font application for Vuetify and general elements */
-html, body, .v-application, .v-application .text-body-1, .v-application .text-body-2, .v-application .text-h1, .v-application .text-h2, .v-application .text-h3, .v-application .text-h4, .v-application .text-h5, .v-application .text-h6, .v-application .text-subtitle-1, .v-application .text-subtitle-2, .v-application .text-button, .v-application .text-caption, .v-application .text-overline {
+html,
+body,
+.v-application,
+.v-application .text-body-1,
+.v-application .text-body-2,
+.v-application .text-h1,
+.v-application .text-h2,
+.v-application .text-h3,
+.v-application .text-h4,
+.v-application .text-h5,
+.v-application .text-h6,
+.v-application .text-subtitle-1,
+.v-application .text-subtitle-2,
+.v-application .text-button,
+.v-application .text-caption,
+.v-application .text-overline {
   font-family: 'Inter', sans-serif !important;
 }
 
 /* Preserve monospace for code and specific monospace classes */
-code, pre, kbd, samp, .text-monospace {
+code,
+pre,
+kbd,
+samp,
+.text-monospace {
   font-family: monospace !important;
 }
 </style>

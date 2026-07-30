@@ -6,50 +6,72 @@
             </div>
             <div v-else>
                 <!-- FILTERS -->
-                <v-row class="ma-1 pa-0">
-                    <v-col class="ma-0 pa-0">
-                        <v-btn size="16px" icon flat disabled title="Filter by visible area">
-                            <iconsMap />
-                        </v-btn>
+                <v-row class="ma-0 pa-0" dense>
+                    <v-col cols="12" class="pa-1">
+                        <v-text-field v-model="searchQuery" label="Search sensors"
+                            hide-details clearable prepend-inner-icon="mdi-magnify"
+                            rounded></v-text-field>
+                    </v-col>
+                    <v-col cols="12" class="pa-1">
+                        <v-select v-model="organizationFilter" :items="organizationOptions" label="Organization"
+                            hide-details clearable multiple chips
+                            closable-chips></v-select>
+                    </v-col>
+                    <v-col cols="12" class="pa-1">
+                        <v-select v-model="variableFilter" :items="variableOptions" item-title="label"
+                            item-value="value" label="Variable" hide-details
+                            clearable multiple chips closable-chips></v-select>
                     </v-col>
                 </v-row>
 
-                <!-- SEARCH BAR -->
-                <v-text-field v-model="searchQuery" disabled label="Search Sensors" variant="outlined" density="compact"
-                    hide-details clearable rounded=""></v-text-field>
+                <div v-if="filteredSensors.length === 0" class="text-center text-medium-emphasis pa-4">
+                    No sensors match your filters.
+                </div>
 
                 <!-- SENSOR LIST -->
-                <v-list-item v-for="(sensor, i) in sensors" :key="sensor.id" :active="sensor.id === selectedSensor?.id"
+                <v-list-item v-for="(sensor, i) in filteredSensors" :key="sensor.id" :ref="setSensorRef(sensor.id)"
+                    :active="sensor.id === selectedSensor?.id"
                     @click="selectSensor(sensor.id)" variant="text" class="rounded my-3" color="yellow"
                     :style="{ backgroundColor: '#33333399' }">
                     <v-list-item-content>
                         <v-list-item-title class="text-body-medium">
-                            <v-icon size="12px" :color="sensor.active ? 'green' : 'grey'">mdi-circle</v-icon>
+                            <v-icon size="12px" :color="sensorStatusColor(sensor)">mdi-circle</v-icon>
                             {{ sensor.name }}
                         </v-list-item-title>
 
                         <div class="ml-4">
                             <v-list-item-subtitle class="text-label-small">
-                                <!-- ({{ sensor.latitude.toFixed(2) }}, {{ sensor.longitude.toFixed(2) }}) | -->
-                                {{ depth2txt(sensor.depth) }}
+                                <span v-if="sensor.organization" class="sensor-org">{{ sensor.organization }} </span>
+                                {{ depth2txt(sensor) }}
                             </v-list-item-subtitle>
-                            <!-- <v-label v-else-if="sensor.depth.length > 1" class="text-label-small" style="cursor:pointer" @click.stop="depthDialogSensor = sensor">
-                                {{ depth2txt(sensor.depth) }}
-                                <v-icon size="10px">mdi-chevron-down</v-icon>
-                            </v-label> -->
 
-                            <v-list-item-subtitle class="text-label-small">Last Updated: 4 hours
-                                ago</v-list-item-subtitle>
-                            <v-row class="ma-0 pa-0">
-                                <v-spacer></v-spacer>
-                                <v-col v-if="sensor.depth.length > 1" cols="auto" class="ma-0 pa-0">
-                                    <v-btn flat icon size="12px" title="Model Evaluation" @click.stop="openHeatmapDialog(sensor.id)">
-                                        <icons-heatmap :color="colors.orange.lighten3" />
+                            <v-list-item-subtitle class="text-label-small">
+                                {{ coordTxt(sensor.latitude, sensor.longitude) }}
+                            </v-list-item-subtitle>
+
+                            <v-list-item-subtitle class="text-label-small">{{ formatDataRange(sensor)
+                                }}</v-list-item-subtitle>
+
+                            <div class="mt-1 d-flex flex-wrap gap-1">
+                                <v-chip v-for="varKey in Object.keys(sensor.variables)" :key="varKey" size="x-small"
+                                    variant="tonal" color="grey">
+                                    {{ varShortName(varKey) }}
+                                </v-chip>
+                            </div>
+
+                            <v-row class="mt-2 d-flex gap-1">
+                                <v-spacer />
+                                <v-col cols="1">
+                                    <v-btn icon size="x-small" variant="tonal" color="yellow"
+                                        @click.stop="openInfoDialog(sensor)">
+                                        <v-icon size="12px">mdi-information-variant</v-icon>
                                     </v-btn>
                                 </v-col>
-                                <v-col cols="auto" class="ma-0 pa-0" disabled>
-                                    <v-btn flat icon size="12px" title="Model Evaluation">
-                                        <icons-compare :color="colors.blue.lighten3" />
+                                <v-col cols="1">
+                                    <v-btn v-if="sensor.id === selectedSensor?.id" icon size="x-small" variant="tonal"
+                                        color="red-lighten-2"
+                                        @click.stop="mainStore.setActiveBottomTab('comparison')">
+                                        <v-icon size="12px">mdi-chart-bar</v-icon>
                                     </v-btn>
                                 </v-col>
                             </v-row>
@@ -63,36 +85,93 @@
 
 
     <!-- DIALOGS -->
-    <!-- DEPTH PICKER -->
-    <v-dialog v-model="depthDialogOpen" max-width="280" max-height="300">
-        <v-card v-if="depthDialogSensor">
-            <v-card-title class="text-body-1">{{ depthDialogSensor.name }}</v-card-title>
-            <v-card-subtitle>Select a depth</v-card-subtitle>
-            <v-list density="compact">
-                <v-list-item v-for="d in depthDialogSensor.depth" :key="d" :title="d + ' m'"
-                    @click="pickDepth(depthDialogSensor.id, d)" />
-            </v-list>
-        </v-card>
-    </v-dialog>
+    <!-- DEPTH PICKER (reserved for future variable-depth/profiler sensors) -->
 
     <!-- HEATMATP -->
     <v-dialog v-model="showHeatmapDialog" width="85%" height="85%" transition="dialog-transition">
-        <HeatmapChart :sensor-id="heatmap_sensorId" :model-variable="heatmap_variable"/>
+        <HeatmapChart :sensor-id="heatmap_sensorId" :model-variable="heatmap_variable" />
+    </v-dialog>
+
+    <!-- SENSOR INFO -->
+    <v-dialog v-model="showInfoDialog" width="480" transition="dialog-transition">
+        <v-card v-if="infoDialogSensor">
+            <v-card-title class="d-flex align-center">
+                <v-icon size="14px" :color="sensorStatusColor(infoDialogSensor)" class="mr-2">mdi-circle</v-icon>
+                {{ infoDialogSensor.name }}
+            </v-card-title>
+            <v-card-subtitle v-if="infoDialogSensor.organization">{{ infoDialogSensor.organization }}</v-card-subtitle>
+            <v-card-text>
+                <v-list>
+                    <v-list-item>
+                        <v-list-item-title class="text-caption text-medium-emphasis">Location</v-list-item-title>
+                        <v-list-item-subtitle>{{ coordTxt(infoDialogSensor.latitude, infoDialogSensor.longitude)
+                        }}</v-list-item-subtitle>
+                    </v-list-item>
+                    <v-list-item>
+                        <v-list-item-title class="text-caption text-medium-emphasis">Depth</v-list-item-title>
+                        <v-list-item-subtitle>{{ depth2txt(infoDialogSensor) }}</v-list-item-subtitle>
+                    </v-list-item>
+                    <v-list-item>
+                        <v-list-item-title class="text-caption text-medium-emphasis">Data range</v-list-item-title>
+                        <v-list-item-subtitle>{{ formatDataRange(infoDialogSensor) }}</v-list-item-subtitle>
+                    </v-list-item>
+                    <v-list-item>
+                        <v-list-item-title class="text-caption text-medium-emphasis">Variables</v-list-item-title>
+                        <v-list-item-subtitle>
+                            <span v-for="(varKey, idx) in Object.keys(infoDialogSensor.variables)" :key="varKey">
+                                {{ varShortName(varKey) }}<span
+                                    v-if="idx < Object.keys(infoDialogSensor.variables).length - 1">, </span>
+                            </span>
+                        </v-list-item-subtitle>
+                    </v-list-item>
+                </v-list>
+            </v-card-text>
+            <v-card-actions>
+                <v-spacer />
+                <v-btn size="small" variant="text" @click="showInfoDialog = false">Close</v-btn>
+            </v-card-actions>
+        </v-card>
     </v-dialog>
 </template>
 
 <script setup lang="ts">
 import { useMainStore } from '@/stores/main';
-import { ref, computed } from 'vue';
+import { storeToRefs } from 'pinia';
+import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import colors from 'vuetify/util/colors';
+import { sensorStatusColor } from '../../composables/useSensorStatus';
+import { trackEvent } from '../../composables/useAnalytics';
 
 const mainStore = useMainStore();
+
+type Sensor = typeof mainStore.sensors[number];
 
 ///////////////////////////////////  PROPS & STATE  ///////////////////////////////////
 
 const sensors = computed(() => mainStore.sensors.sort((a, b) => a.active === b.active ? 0 : a.active ? -1 : 1)); // active sensors first
 const selectedSensor = computed(() => mainStore.selectedSensor);
-const searchQuery = ref('');
+// Filter state lives in the store so the map layer can apply the same filters to its markers.
+const {
+    sensorSearchQuery: searchQuery,
+    sensorOrganizationFilter: organizationFilter,
+    sensorVariableFilter: variableFilter,
+} = storeToRefs(mainStore);
+
+const organizationOptions = computed(() => {
+    const orgs = new Set(mainStore.sensors.map((s: Sensor) => s.organization).filter(Boolean));
+    return Array.from(orgs).sort();
+});
+
+const variableOptions = computed(() => {
+    const vars = new Set<string>();
+    mainStore.sensors.forEach((s: Sensor) => Object.keys(s.variables ?? {}).forEach(v => vars.add(v)));
+    return Array.from(vars).sort().map(v => ({ label: varShortName(v), value: v }));
+});
+
+// Filtering itself lives in mainStore.filteredSensors so the map layer applies the same criteria.
+const filteredSensors = computed(() =>
+    [...mainStore.filteredSensors].sort((a, b) => a.active === b.active ? 0 : a.active ? -1 : 1)
+);
 const depthDialogSensor = ref<typeof mainStore.sensors[number] | null>(null);
 const depthDialogOpen = computed({
     get: () => depthDialogSensor.value !== null,
@@ -100,59 +179,110 @@ const depthDialogOpen = computed({
 });
 
 const showHeatmapDialog = ref(false);
-const heatmap_sensorId = ref<number | null>(null);
+const heatmap_sensorId = ref<string | null>(null);
 const heatmap_variable = computed(() => mainStore.selected_variable?.var ?? null);
 const heatmap_minDate = ref<string | null>(null);
 const heatmap_maxDate = ref<string | null>(null);
 
-///////////////////////////////// METHODS  ///////////////////////////////////
+const showInfoDialog = ref(false);
+const infoDialogSensor = ref<typeof mainStore.sensors[number] | null>(null);
 
-function selectSensor(sensorID: number) {
-    const sensor = sensors.value.find(s => s.id === sensorID);
-    if (sensor) {
-        if (sensor.depth.length === 1) {
-            mainStore.selectSensor(sensorID, sensor.depth[0]);
-            mainStore.setLastClickedMapPoint({ lat: sensor.latitude, lng: sensor.longitude });
-            mainStore.setMapCenter({ lat: sensor.latitude, lng: sensor.longitude });
-        }
-        else {
-            depthDialogSensor.value = sensor;
-            return; // wait for depth selection
-        }
-    }
+const sensorRefs = new Map<string, Element | ComponentPublicInstance>();
+function setSensorRef(id: string) {
+    return (el: Element | ComponentPublicInstance | null) => {
+        if (el) sensorRefs.set(id, el);
+        else sensorRefs.delete(id);
+    };
 }
 
-function pickDepth(sensorID: number, depth: number) {
-    depthDialogSensor.value = null;
+watch(() => selectedSensor.value?.id, async (id: string | undefined) => {
+    if (!id) return;
+    await nextTick();
+    const el = sensorRefs.get(id);
+    const target = (el as any)?.$el ?? el;
+    if (target instanceof HTMLElement) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+});
+
+///////////////////////////////// METHODS  ///////////////////////////////////
+
+function selectSensor(sensorID: string) {
     const sensor = sensors.value.find(s => s.id === sensorID);
     if (sensor) {
-        mainStore.selectSensor(sensorID, depth);
+        trackEvent('sensor_selected', { sensor_id: sensorID, source: 'list' });
+        mainStore.selectSensor(sensorID, sensor.depth);
         mainStore.setLastClickedMapPoint({ lat: sensor.latitude, lng: sensor.longitude });
         mainStore.setMapCenter({ lat: sensor.latitude, lng: sensor.longitude });
     }
 }
 
-function depth2txt(depth: number[]): string {
-    if (depth === null || depth.length === 0) return '';
+function coordTxt(lat: number, lng: number): string {
+    const latStr = `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? 'N' : 'S'}`;
+    const lngStr = `${Math.abs(lng).toFixed(2)}°${lng >= 0 ? 'E' : 'W'}`;
+    return `${latStr}, ${lngStr}`;
+}
 
-    if (depth.length === 1) {
-        if (depth[0] === 0) return 'Surface';
-        else return depth[0].toFixed(0) + ' m';
-    } else {
-        return 'Profile'
+const VAR_SHORT: Record<string, string> = {
+    dissolved_oxygen: 'DO',
+    temperature: 'Temp',
+    salinity: 'Sal',
+    ph: 'pH',
+    ph_total: 'pH',
+    chlorophyll: 'Chl',
+    aragonite: 'Arag',
+    nitrate: 'NO₃',
+    pressure: 'Pres',
+    turbidity: 'Turb',
+    fluorescence: 'Fluor',
+};
+
+function varShortName(varKey: string): string {
+    return VAR_SHORT[varKey] ?? varKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function depth2txt(sensor: { depth: number, depth_min?: number | null, depth_max?: number | null }): string {
+    const { depth, depth_min, depth_max } = sensor;
+    if (depth == null || depth < 0) {
+        if (depth_min != null && depth_max != null) {
+            return `Variable depth (${depth_min.toFixed(0)}–${depth_max.toFixed(0)} m)`;
+        }
+        return 'Variable depth';
     }
+    if (depth === 0) return 'Surface';
+    return depth.toFixed(0) + ' m';
 }
 
-function sensorDepths(depth: number[]): Array<{ label: string, value: number }> {
-    if (depth === null || depth.length === 0) return [];
-
-    return depth.map(d => ({ label: d === 0 ? 'Surface' : d.toFixed(0) + ' m', value: d }));
+function formatDataRange(sensor: any): string {
+    const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { year: 'numeric', month: 'short' });
+    const { first_data_at, latest_data_at } = sensor;
+    if (!first_data_at && !latest_data_at) return 'No data';
+    if (!first_data_at) return `Up to ${fmt(latest_data_at)}`;
+    if (!latest_data_at) return `From ${fmt(first_data_at)}`;
+    const isRecent = Date.now() - new Date(latest_data_at).getTime() < 14 * 86400_000;
+    return `${fmt(first_data_at)} – ${isRecent ? 'present' : fmt(latest_data_at)}`;
 }
 
-function openHeatmapDialog(sensorId: number) {
+function openHeatmapDialog(sensorId: string) {
     const sensor = sensors.value.find(s => s.id === sensorId);
     heatmap_sensorId.value = sensorId;
     showHeatmapDialog.value = true;
 }
 
+function openInfoDialog(sensor: typeof mainStore.sensors[number]) {
+    infoDialogSensor.value = sensor;
+    showInfoDialog.value = true;
+}
+
 </script>
+
+<style scoped>
+.sensor-org {
+    opacity: 0.6;
+    font-size: 0.75em;
+}
+
+.gap-1 {
+    gap: 4px;
+}
+</style>

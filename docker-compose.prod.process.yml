@@ -1,0 +1,60 @@
+services:
+  # Local ClickHouse for the SSC pipeline's own status tracking
+  # (SalishSeaCast_status) on this machine — only the finished hourly data +
+  # images get pushed home via the `sync` stage ("process locally, network
+  # only at the end").
+  db-ch:
+    image: clickhouse/clickhouse-server:latest
+    profiles: ["tools"]
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ./clickhouse/data:/var/lib/clickhouse
+      - ./clickhouse/logs:/var/log/clickhouse-server
+    environment:
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
+    restart: unless-stopped
+
+  process:
+    build:
+      context: .
+      dockerfile: process/Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
+    profiles: ["tools"]
+    environment:
+      # Python/uv
+      - UV_CACHE_DIR=/tmp/uv-cache
+      - UV_NO_SYNC=1
+      # SSH to the API machine via `cloudflared access ssh` as a ProxyCommand
+      # (see process/SSC/sync.py) — service-token auth, no tunnel container.
+      - API_SSH_HOST=${API_SSH_HOST:-ssh.cioospacificlabs.ca}
+      - API_SSH_USER=${API_SSH_USER:-cioos}
+      - API_SSH_KEY_PATH=${API_SSH_KEY_PATH:-/run/secrets/ONC_OA_rsync}
+      - API_SSH_KNOWN_HOSTS=${API_SSH_KNOWN_HOSTS:-/run/secrets/known_hosts}
+      - CF_TOKEN_ID=${CF_TOKEN_ID:-}
+      - CF_TOKEN_SECRET=${CF_TOKEN_SECRET:-}
+      # SSC pipeline: local ClickHouse (db-ch above) for status tracking
+      - CH_HOST=${CH_HOST:-localhost}
+      - CH_PORT=${CH_PORT:-8123}
+      - CH_USER=${CH_USER:-default}
+      - CH_PASSWORD=${CH_PASSWORD:-}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+      # SSC pipeline: local processing output dirs on this machine
+      - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
+      - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
+      - SSC_SYNC_STAGING_DIR=${SSC_SYNC_STAGING_DIR:-/opt/data/SalishSeaCast/sync_staging}
+      # SSC sync stage: push finished dates' hourly rows + images to the API machine
+      - SYNC_API_DATA_DIR=${SYNC_API_DATA_DIR:-}
+      - SYNC_API_BASE_URL=${SYNC_API_BASE_URL:-}
+      - SYNC_API_TOKEN=${SYNC_API_TOKEN:-}
+    volumes:
+      - ./shared:/app/shared
+      - ./data:/opt/data
+      - ./secrets:/run/secrets:ro
+    depends_on:
+      db-ch:
+        condition: service_started
+    network_mode: "host"
+    restart: unless-stopped
+

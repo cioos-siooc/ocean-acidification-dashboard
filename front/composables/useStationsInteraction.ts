@@ -1,4 +1,3 @@
-import type { Ref } from 'vue';
 import type { MultiSensorCandidate } from './useBuoyLayer';
 
 export type CircleLayer = {
@@ -7,8 +6,10 @@ export type CircleLayer = {
 
 export function useStationsInteraction(
   getMap: () => any,
-  onFetchTimeseries: (sensor_id: number, depth: number) => void,
+  layerId: string,
+  onFetchTimeseries: (sensor_id: string, depth: number) => void,
   onMultiSensorClick: (sensors: MultiSensorCandidate[], screenX: number, screenY: number) => void,
+  onSpiderfyClick: (sensors: MultiSensorCandidate[], screenX: number, screenY: number) => void,
 ) {
   let _detach: (() => void) | null = null;
 
@@ -16,37 +17,47 @@ export function useStationsInteraction(
     return raw === true || raw === 'true' || raw === 't' || raw === '1' || raw === 1;
   }
 
+  function _parseSensors(feature: any): MultiSensorCandidate[] {
+    try {
+      return JSON.parse(feature.properties?.sensorsJson || '[]');
+    } catch {
+      return [];
+    }
+  }
+
   function attach(circle: CircleLayer) {
     const map = getMap();
     if (!map) throw new Error('Map not available');
 
-    // click handler
     const offClick = circle.on('click', (evt: any) => {
       try {
-        const feature = (evt.features && evt.features[0]) || null;
-        if (!feature) return;
+        const { x, y } = evt.point;
+        // Query all buoy features within a 20 px radius of the click
+        const bbox: [[number, number], [number, number]] = [[x - 20, y - 20], [x + 20, y + 20]];
+        const nearby: any[] = map.queryRenderedFeatures(bbox, { layers: [layerId] });
 
-        const rawActive = feature.properties?.active;
-        if (!_isActive(rawActive)) return;
+        const activeFeatures = nearby.filter(f => _isActive(f.properties?.active));
+        if (!activeFeatures.length) return;
 
-        // Multi-sensor location: parse embedded sensors list
-        const sensorsJson = feature.properties?.sensorsJson;
-        if (sensorsJson) {
-          const sensors: MultiSensorCandidate[] = JSON.parse(sensorsJson);
-          if (sensors.length > 1) {
-            const point = map.project(evt.lngLat);
-            onMultiSensorClick(sensors, point.x, point.y);
-            return;
-          }
-          // Single sensor embedded in sensorsJson
-          onFetchTimeseries(sensors[0].id, sensors[0].depth);
+        // Deduplicate by feature id so a symbol rendered twice doesn't double-count
+        const seen = new Set<string>();
+        const uniqueFeatures = activeFeatures.filter(f => {
+          const key = f.properties?.sensorsJson ?? JSON.stringify(f.geometry);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+        const allSensors: MultiSensorCandidate[] = uniqueFeatures.flatMap(_parseSensors);
+        if (allSensors.length === 0) return;
+
+        if (allSensors.length === 1) {
+          onFetchTimeseries(allSensors[0].id, allSensors[0].depth);
           return;
         }
 
-        // Fallback: flat properties (legacy)
-        const sensor_id = feature?.properties?.id;
-        const depth = feature?.properties?.depth;
-        if (sensor_id !== undefined) onFetchTimeseries(sensor_id, depth);
+        // Always use spiderfy — consistent for both same-position (depth variants) and nearby sensors
+        onSpiderfyClick(allSensors, x, y);
       } catch (e) {
         // swallow
       }

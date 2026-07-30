@@ -1,0 +1,129 @@
+# Static SalishSeaCast variable/display metadata.
+#
+# Single source of truth for both the `api` and `process` containers (this
+# file lives in shared/, mounted into both — see docker-compose.dev.yml).
+# Previously this lived in Postgres (fields/datasets tables); as of the
+# ClickHouse migration nothing should read that database for this anymore.
+#
+# precision: quantization step used by nc2tile's WebP RGB packing (see
+# shared/nc2tile.py write_png_packed / process/SSC/imaging.py). This value
+# is baked into every already-rendered tile — changing it without
+# re-imaging makes existing tiles decode at the wrong scale client-side.
+# process/SSC/config.py.VARIABLE_PRECISION is generated from this file so
+# the pipeline and the API can never drift apart on it again (see the
+# 2026-06 incident where a hardcoded copy in config.py fell out of sync
+# with Postgres fields.precision).
+#
+# colormapMin / colormapMax: display range used to normalize a value onto
+# the colormap (see colormaps.json) before coloring a tile — independent of
+# `precision`, which only controls storage/transport quantization.
+#
+# LiveOcean is intentionally not covered here — support for it was removed
+# entirely (not yet being implemented), so there's nothing to migrate.
+
+source: SalishSeaCast
+
+# Model domain bounding box: [min_lon, min_lat, max_lon, max_lat]. Identical
+# across all 8 variables (it's a property of the grid, not the variable).
+bounds: [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
+
+# Native sigma depth levels (meters), shared by every variable — process/SSC/
+# ingest.py already assumes a single depth axis across variables when it
+# builds its meshgrid from one variable's file and reuses it for all 8, so
+# this list isn't a new assumption, just making an existing one explicit.
+# Each value is also the WebP filename stem (e.g. 18.0 -> "18.0.webp") — no
+# separate label needed since nc2tile.py writes them out verbatim, decimal
+# point and all. -1 is a synthetic sentinel for the bottom layer, a separate
+# companion level read from each variable's own `_bottom.nc` file (filename
+# "bottom.webp"), not part of the native depth axis.
+depths:
+  - 0.5
+  - 1.5
+  - 2.5
+  - 3.5
+  - 4.5
+  - 5.5
+  - 6.5
+  - 7.5
+  - 8.5
+  - 9.5
+  - 10.5
+  - 11.5
+  - 12.5
+  - 13.5
+  - 14.6
+  - 15.6
+  - 16.8
+  - 18.0
+  - 19.5
+  - 21.4
+  - 24.1
+  - 28.2
+  - 34.7
+  - 44.5
+  - 58.5
+  - 76.6
+  - 98.1
+  - 121.9
+  - 147.1
+  - 173.1
+  - 199.6
+  - 226.3
+  - 253.1
+  - 279.9
+  - 306.8
+  - 333.8
+  - 360.7
+  - 387.6
+  - 414.5
+  - 441.5
+
+variables:
+  temperature:
+    unit: "°C"
+    colormap: thermal
+    colormapMin: 0.01
+    colormapMax: 25
+    precision: 0.01
+  salinity:
+    unit: "g/kg"
+    colormap: haline
+    colormapMin: 0.01
+    colormapMax: 35
+    precision: 0.01
+  total_alkalinity:
+    unit: "mmol/m³"
+    colormap: thermal
+    colormapMin: 500
+    colormapMax: 2500
+    precision: 0.1
+  dissolved_oxygen:
+    unit: "mmol/m³"
+    colormap: oxy
+    colormapMin: 0.1
+    colormapMax: 450
+    precision: 0.1
+  dissolved_inorganic_carbon:
+    unit: "mmol/m³"
+    colormap: thermal
+    colormapMin: 500
+    colormapMax: 2500
+    precision: 0.1
+  ph_total:
+    unit: ""
+    colormap: matter
+    colormapMin: 7
+    colormapMax: 8.6
+    precision: 0.001
+  omega_arag:
+    unit: ""
+    colormap: thermal
+    colormapMin: 0.0001
+    colormapMax: 4
+    precision: 0.0001
+  omega_cal:
+    unit: ""
+    colormap: thermal
+    colormapMin: 0.0001
+    colormapMax: 6.5
+    precision: 0.0001

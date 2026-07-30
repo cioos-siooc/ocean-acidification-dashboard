@@ -14,7 +14,7 @@
         <span>{{ utc2pst(moment(selectedVariable.dt)) }}</span>
       </v-col>
       <v-col cols="12" class="ma-0 pa-0" style="height:20px">
-        <span>Depth {{ formatDepth(selectedVariable.depth) }} m</span>
+        <span>Depth {{ selectedVariable.depth }}{{ selectedVariable.depth && !isNaN(Number(selectedVariable.depth)) ? ' m' : '' }}</span>
       </v-col>
       <v-col v-if="lastClicked" cols="12" class="ma-0 pa-0" style="height:20px">
         <span>{{ lastClicked?.lat.toFixed(5) }} , {{ lastClicked?.lng.toFixed(5)
@@ -40,7 +40,6 @@ const mainStore = useMainStore();
 
 import { var2name } from '../../composables/useVar2Name'
 import { utc2pst } from '../../composables/useUTC2PST'
-import { formatDepth } from '../../composables/useFormatDepth'
 
 ////////////////////////////////////// COMPUTED //////////////////////////////////////
 

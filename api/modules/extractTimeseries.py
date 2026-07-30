@@ -1,497 +1,321 @@
 #!/usr/bin/env python3
 """extractTimeseries.py
 
-Extract a time series for a NetCDF variable at a coordinate stored in PostGIS.
+Extract a time series for an ocean variable at a coordinate from ClickHouse.
 
-This script is DB-only: it requires a PostGIS table containing the grid coordinates
-`row_idx`, `col_idx`, `lat`, `lon`, and `geom` (SRID=4326). Use `--lat/--lon` to
-find the nearest grid cell or provide `--row/--col` to select a specific cell.
+For each supported `source`, the nearest grid cell to (lat, lon) is looked up
+in that source's grid table (e.g. `grid_SSC`), then the requested variable is
+read from the source's 4D data table (e.g. `SalishSeaCast_hourly`) for that
+grid cell over the requested time range.
+
+When `depth` is given, the available depth level nearest to it is selected
+(use `depth=-1` to select the deepest/bottom level) and a single (time,
+value) series is returned. When `depth` is omitted, every depth level is
+returned as a DataFrame with `time`, `depth`, `value` columns.
+
+Each row in the hourly table already holds one raw value per hour, so no
+mean/min/max aggregation is involved.
 
 Examples:
-  python process/extractTimeseries.py --data-dir ./data/nc --var temp \
-      --from 2023-01-01T00:00:00 --to 2023-01-31T23:59:59 --lat 49.2 --lon -123.5 --db-host db
-  python process/extractTimeseries.py --data-dir ./data/nc --var temp \
-      --from 2023-01-01T00:00:00 --to 2023-01-01T23:59:59 --lat 49.2 --lon -123.5 --db-dsn "dbname=oa user=postgres"
-
-Options:
-  --from : inclusive start datetime (ISO-8601)
-  --to   : inclusive end datetime (ISO-8601)
-  --depth-index : optional integer to pick a vertical level when var has depth dim
-  --output : CSV file path (time,value)
-
+  python modules/extractTimeseries.py --source SalishSeaCast --var temperature \
+      --lat 49.2 --lon -123.5 --depth 5 \
+      --from-date 2023-01-01T00:00:00 --to-date 2023-01-31T23:59:59
 """
 from __future__ import annotations
+
 import argparse
-import os
-from glob import glob
-from typing import Optional, Sequence, Tuple, List, Union
-from modules.nc_finder import list_nc_files
+from typing import List, Optional, Tuple, Union
 
-import re
 import numpy as np
-import xarray as xr
 import pandas as pd
-from nc_reader import open_nc_uncached, close_nc
-from modules.postgis_helpers import connect_db, query_nearest_rowcol, get_grid_shape_from_db
 
-# Reuse same DB helper patterns as extractProfile
-try:
-    import psycopg2
-    import psycopg2.extras
-    psycopg2_import_error = False
-except Exception:
-    psycopg2 = None
-    psycopg2_import_error = True
+from modules.clickhouse_helpers import get_ch_client
 
-TIME_CANDIDATES = ("time",)
-DEPTH_CANDIDATES = ("depth", "lev", "level", "z", "deptht", "depthu", "depths")
+# ClickHouse table holding the 4D (time, depth, gridX, gridY, <variables>) data per source
+DATA_TABLE_BY_SOURCE = {
+    "SalishSeaCast": "SalishSeaCast_hourly",
+}
 
+# ClickHouse table mapping gridX/gridY to longitude/latitude per source
+GRID_TABLE_BY_SOURCE = {
+    "SalishSeaCast": "grid_SSC",
+}
 
-def find_variable(ds: xr.Dataset, name: str) -> xr.DataArray:
-    if name in ds:
-        return ds[name]
-    low = name.lower()
-    for k in ds.data_vars:
-        if k.lower() == low:
-            return ds[k]
-    raise KeyError(f"Variable '{name}' not found in dataset")
+# Columns in the data table that hold variable values; also the allowed `var` values
+ALLOWED_VARIABLES = {
+    "temperature",
+    "salinity",
+    "total_alkalinity",
+    "omega_arag",
+    "omega_cal",
+    "ph_total",
+    "dissolved_oxygen",
+    "dissolved_inorganic_carbon",
+}
 
+MAX_GRID_DIST_KM = 25.0
 
-def find_horiz_dims_by_shape(var: xr.DataArray, nrows: int, ncols: int) -> Tuple[str, str]:
-    y_dim = None
-    x_dim = None
-    for d in var.dims:
-        if var.sizes[d] == nrows and y_dim is None:
-            y_dim = d
-        elif var.sizes[d] == ncols and x_dim is None:
-            x_dim = d
-    if y_dim is None or x_dim is None:
-        for d in var.dims:
-            if d.lower() in ("y", "j", "ygrid", "eta") and y_dim is None:
-                y_dim = d
-            if d.lower() in ("x", "i", "xgrid", "xi") and x_dim is None:
-                x_dim = d
-    if y_dim is None or x_dim is None:
-        if len(var.dims) >= 2:
-            return var.dims[-2], var.dims[-1]
-        raise RuntimeError("Could not determine horizontal dims of variable")
-    return y_dim, x_dim
+# Maximum allowed gap (meters) between a requested depth and the nearest
+# depth actually present at a grid cell. Native sigma levels are discrete and
+# bathymetry-truncated per cell, so without this a request for e.g. 400m at a
+# shallow coastal cell would silently return that cell's shallowest level
+# instead of signalling "no data here".
+DEPTH_MATCH_TOLERANCE_M = 0.1
+
+# Depth levels are uniform across the entire SSC sigma-coordinate grid — every
+# cell has the same discrete set. Cached per table per process to avoid a
+# per-request full-table scan.
+_CACHED_DEPTHS: dict[str, list[float]] = {}
 
 
-def find_depth_dim(var: xr.DataArray, forced: Optional[str] = None) -> Optional[str]:
-    if forced:
-        return forced
-    for d in var.dims:
-        if d.lower() in DEPTH_CANDIDATES:
-            return d
-    for d in var.dims:
-        if d.lower() not in TIME_CANDIDATES and var[d].ndim == 1 and var.sizes[d] > 1:
-            return d
-    return None
+def _get_depth_levels(client, table: str) -> list[float]:
+    if table not in _CACHED_DEPTHS:
+        result = client.query(f"SELECT DISTINCT depth FROM {table} ORDER BY depth")
+        _CACHED_DEPTHS[table] = [float(r[0]) for r in result.result_rows]
+    return _CACHED_DEPTHS[table]
 
 
-def pick_time_slice(ds: xr.Dataset, time_dim: str, from_arg: Optional[str], to_arg: Optional[str]):
-    times = ds[time_dim].values
-    times_pd = pd.to_datetime(times)
-    if from_arg is None:
-        start = times_pd.min()
-    else:
-        start = pd.to_datetime(from_arg)
-    if to_arg is None:
-        end = times_pd.max()
-    else:
-        end = pd.to_datetime(to_arg)
-    mask = (times_pd >= start) & (times_pd <= end)
-    if not mask.any():
-        raise RuntimeError(f"No timestamps found in [{start} - {end}]")
-    idxs = np.nonzero(mask)[0]
-    return idxs, times_pd[idxs]
+def _find_nearest_grid_point(client, grid_table: str, lat: float, lon: float, max_dist_km: float = MAX_GRID_DIST_KM) -> Tuple[int, int, float, float]:
+    """Find the (gridX, gridY) cell nearest to (lat, lon) in `grid_table`.
+
+    Raises RuntimeError if the grid table is empty or the nearest cell is
+    farther than `max_dist_km` away.
+    """
+    # 0.5-degree bounding box (~55 km at Salish Sea latitudes) pre-filters the
+    # full-table scan before the geoDistance sort. Safe: max_dist_km (25 km) is
+    # well inside 55 km, so the true nearest cell is always inside the box.
+    query = f"""
+        SELECT gridX, gridY, longitude, latitude,
+               geoDistance(longitude, latitude, %(lon)s, %(lat)s) AS dist_m
+        FROM {grid_table}
+        WHERE latitude BETWEEN %(lat_min)s AND %(lat_max)s
+          AND longitude BETWEEN %(lon_min)s AND %(lon_max)s
+        ORDER BY dist_m ASC
+        LIMIT 1
+    """
+    result = client.query(query, parameters={
+        "lon": lon, "lat": lat,
+        "lat_min": lat - 0.5, "lat_max": lat + 0.5,
+        "lon_min": lon - 0.5, "lon_max": lon + 0.5,
+    })
+    if not result.result_rows:
+        raise RuntimeError(f"Grid table '{grid_table}' is empty or not found")
+
+    grid_x, grid_y, grid_lon, grid_lat, dist_m = result.result_rows[0]
+    dist_km = dist_m / 1000.0
+    if dist_km > max_dist_km:
+        raise RuntimeError(
+            f"Requested coordinate ({lat}, {lon}) is {dist_km:.1f} km from the nearest grid point. "
+            f"Maximum allowed distance is {max_dist_km} km. "
+            f"Please verify your coordinates are within the model domain (Salish Sea / BC coast region)."
+        )
+    return int(grid_x), int(grid_y), float(grid_lat), float(grid_lon)
+
+
+def _find_grid_points_in_polygon(client, grid_table: str, polygon: List[Tuple[float, float]]) -> List[Tuple[int, int]]:
+    """Find all (gridX, gridY) cells inside `polygon` (a [(lon, lat), ...] ring) in `grid_table`.
+
+    Mirrors modules/ocean_analysis.py's lookup_grid_cells_for_polygon. Coordinates are cast to
+    float before being interpolated into the query since ClickHouse doesn't support a parameter
+    type for arrays of tuples — Pydantic has already validated them as floats by this point.
+    """
+    lons = [float(p[0]) for p in polygon]
+    lats = [float(p[1]) for p in polygon]
+    min_lon, max_lon = min(lons), max(lons)
+    min_lat, max_lat = min(lats), max(lats)
+    polygon_sql = "[" + ", ".join(f"({lon}, {lat})" for lon, lat in zip(lons, lats)) + "]"
+
+    query = f"""
+        SELECT gridX, gridY
+        FROM {grid_table}
+        WHERE longitude BETWEEN {min_lon} AND {max_lon}
+          AND latitude BETWEEN {min_lat} AND {max_lat}
+          AND pointInPolygon((longitude, latitude), {polygon_sql})
+    """
+    result = client.query(query)
+    return [(int(r[0]), int(r[1])) for r in result.result_rows]
+
+
+def _resolve_depth(client, table: str, grid_x: int, grid_y: int, depth: float) -> Optional[float]:
+    """Return the available depth level nearest to `depth`.
+
+    `depth == -1` selects the deepest (bottom) level, whatever it is.
+    Otherwise, the nearest available level must be within
+    `DEPTH_MATCH_TOLERANCE_M` of `depth` or this returns None — a depth
+    deeper than the local water column should mean "no data", not silently
+    fall back to the cell's shallowest/deepest level.
+    """
+    depths = _get_depth_levels(client, table)
+    if not depths:
+        return None
+    if float(depth) == -1.0:
+        return max(depths)
+    closest = min(depths, key=lambda d: abs(d - depth))
+    if abs(closest - depth) > DEPTH_MATCH_TOLERANCE_M:
+        return None
+    return closest
+
+
+def _nearest_level_index(depth: float, levels: list[float]) -> int:
+    """Index into `levels` (ascending) of the level nearest `depth`."""
+    best_i, best_dist = 0, float("inf")
+    for i, lvl in enumerate(levels):
+        dist = abs(lvl - depth)
+        if dist < best_dist:
+            best_dist, best_i = dist, i
+    return best_i
 
 
 def extract_timeseries(
     *,
+    source: str,
     var: str,
-    lat: float,
-    lon: float,
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+    polygon: Optional[List[Tuple[float, float]]] = None,
     depth: Optional[float] = None,
-    data_dir: str = "/opt/data/nc",
-    db_dsn: Optional[str] = None,
-    db_host: Optional[str] = "db",
-    db_port: int = 5432,
-    db_user: str = "postgres",
-    db_password: str = "postgres",
-    db_name: str = "oa",
-    db_table: str = "grid",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
     verbose: bool = False,
-    from_date: str,
-    to_date: str,
-    allowed_dates: Optional[Sequence] = None,
 ) -> Union[Tuple[pd.Series, pd.Series], pd.DataFrame]:
-    """Extract a time series across available files.
+    """Extract the hourly time series for `var` from ClickHouse.
 
-    When *depth* is provided, returns ``(times, values)`` as a tuple of pd.Series.
-    When *depth* is ``None``, returns a ``pd.DataFrame`` with columns
-    ``time``, ``depth``, ``value`` covering every depth level in each file.
+    Accepts either:
+      - lat + lon (point mode): the single nearest grid cell, or
+      - polygon (area mode): a [(lon, lat), ...] ring; every grid cell inside it
+        is averaged together per timestamp.
 
-    Files are filtered by date range extracted from their filenames (YYYYMMDD format).
-    Only files with dates between from_date and to_date (inclusive) are considered.
-    from_date and to_date must be ISO-8601 date strings (YYYY-MM-DD) or datetime strings.
+    When `depth` is provided, returns `(times, values)` as a tuple of
+    pd.Series. When `depth` is None, returns a `pd.DataFrame` with columns
+    `time`, `depth`, `value` covering every available depth level.
 
     Exceptions are raised on errors; caller should catch and handle them.
     """
-    
-    if db_dsn is None and not db_host:
-        raise RuntimeError("No database host or DSN provided. Specify db_dsn or db_host")
+    has_polygon = polygon is not None and len(polygon) >= 3
+    if not has_polygon and (lat is None or lon is None):
+        raise ValueError("Provide either a polygon (area mode) or lat + lon (point mode)")
 
-    try:
-        conn = connect_db(db_dsn, db_host, db_port, db_user, db_password, db_name)
-    except Exception as exc:
-        raise RuntimeError(f"Could not connect to PostGIS DB: {exc}")
-
-    # determine row/col by nearest grid point in DB (lat/lon are required)
-    yi, xi, lat_pt, lon_pt = query_nearest_rowcol(conn, db_table, lat, lon)
-    print(f"Nearest grid point in DB: row={yi} col={xi} lat={lat_pt} lon={lon_pt}")
-
-    # Get grid shape and then close the DB connection promptly so heavy file work
-    # that follows doesn't hold DB resources or transactions open while clients
-    # may disconnect.
-    try:
-        nrows, ncols = get_grid_shape_from_db(conn, db_table)
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-        conn = None
-
-    # find candidate files
-    # For depth=-1 (bottom layer), use the pre-extracted bottom NC files exclusively.
-    # Those files are named {var}_bottom_{YYYYMMDD}.nc and have a single depth level at -1.0.
-    use_bottom = (depth is not None and float(depth) == -1.0)
-    files = list_nc_files(data_dir, var)
-    if use_bottom:
-        files = [f for f in files if os.path.basename(f).startswith(f"{var}_") and os.path.basename(f).endswith("_bottom.nc")]
-    else:
-        files = [f for f in files if not os.path.basename(f).endswith("_bottom.nc")]
     if verbose:
-        print(f"DEBUG: Found {len(files)} candidate files for variable '{var}'" + (" (bottom)" if use_bottom else ""))
-        if files:
-            print("DEBUG: Sample files:", files[:5])
+        print("########### Extracting timeseries with parameters: ###########", flush=True)
+        print(f"Source: {source}", flush=True)
+        print(f"Variable: {var}", flush=True)
+        if has_polygon:
+            print(f"Polygon: {polygon}", flush=True)
+        else:
+            print(f"Latitude: {lat}", flush=True)
+            print(f"Longitude: {lon}", flush=True)
+        print(f"Depth: {depth}", flush=True)
+        print(f"From date: {from_date}", flush=True)
+        print(f"To date: {to_date}", flush=True)
 
-    # Filter files by date range. Extract dates from filenames.
-    # Handles daily files:  {var}_{YYYYMMDD}.nc, {var}_{YYYYMMDD}T{HHMM}.nc, {var}_{YYYYMMDD}_bottom.nc
-    # Handles yearly files: {var}_{YYYY}.nc  (4-digit year — always included if year overlaps range)
-    date_pattern = re.compile(r"(\d{8})(?:T\d{4,6})?(?:_\w+)?\.nc$")
-    year_pattern = re.compile(r"_(\d{4})\.nc$")
-
-    # Parse from_date and to_date (mandatory parameters)
-    try:
-        start_date = pd.to_datetime(from_date).date()
-    except Exception as e:
-        raise ValueError(f"Invalid from_date format: {from_date}. Use ISO-8601 date format (YYYY-MM-DD)") from e
-    try:
-        end_date = pd.to_datetime(to_date).date()
-    except Exception as e:
-        raise ValueError(f"Invalid to_date format: {to_date}. Use ISO-8601 date format (YYYY-MM-DD)") from e
-
-    if start_date > end_date:
-        raise ValueError(f"from_date ({start_date}) cannot be after to_date ({end_date})")
-
-    # Normalise allowed_dates to a set of date objects for O(1) lookup
-    allowed_date_set = None
-    if allowed_dates is not None:
-        allowed_date_set = set()
-        for d in allowed_dates:
-            try:
-                allowed_date_set.add(pd.to_datetime(d).date())
-            except Exception:
-                pass
-
-    filtered_files = []
-    for fp in files:
-        # Try daily filename first (YYYYMMDD)
-        m = date_pattern.search(fp)
-        if m:
-            datestr = m.group(1)
-            try:
-                file_dt = pd.to_datetime(datestr, format="%Y%m%d").date()
-            except Exception:
-                if verbose:
-                    print(f"Skipping file with invalid date in name: {fp}")
-                continue
-            if file_dt < start_date or file_dt > end_date:
-                continue
-            # allowed_dates whitelist applies only to daily files
-            if allowed_date_set is not None and file_dt not in allowed_date_set:
-                if verbose:
-                    print(f"Skipping file {fp}: date {file_dt} not in allowed_dates")
-                continue
-            filtered_files.append(fp)
-            continue
-
-        # Try yearly filename (YYYY) — include if the year overlaps the requested range
-        ym = year_pattern.search(fp)
-        if ym:
-            year = int(ym.group(1))
-            file_year_start = pd.Timestamp(year=year, month=1, day=1).date()
-            file_year_end   = pd.Timestamp(year=year, month=12, day=31).date()
-            if file_year_end < start_date or file_year_start > end_date:
-                continue
-            filtered_files.append(fp)
-            continue
-
-        if verbose:
-            print(f"Skipping file with unrecognized name format: {fp}")
-        continue
-
-    files = filtered_files
-    if verbose:
-        print(f"Found {len(files)} files for variable '{var}' in data directory '{data_dir}' between {start_date} and {end_date}")
-
-
-    # iterate files and extract
-    times_list:  List[pd.DatetimeIndex] = []
-    values_list: List[np.ndarray] = []
-    depths_list: List[np.ndarray] = []  # populated only in all-depths mode
-
-    # Find a sample dataset that can be opened to inspect variable and depth axis
-    sample_ds = None
-    var_sample = None
-    depth_dim = None
-    depths: Optional[np.ndarray] = None
-    for fp in files:
-        try:
-            sample_ds = open_nc_uncached(fp)
-            if sample_ds is None:
-                raise RuntimeError(f"open_nc_uncached returned None for {fp}")
-            var_sample = find_variable(sample_ds, var)
-            depth_dim = find_depth_dim(var_sample)
-            # Extract values and close immediately after inspection
-            if depth_dim is not None:
-                depths_values = sample_ds[depth_dim].values
-            else:
-                depths_values = None
-            # Use extracted values outside the lock
-            depths = depths_values
-            # Close the sample file after we're done inspecting it
-            close_nc(sample_ds)
-            break
-        except Exception as e:
-            if verbose:
-                print(f"Skipping sample file {fp} due to open/inspection error: {e}")
-            close_nc(sample_ds)
-            sample_ds = None
-            var_sample = None
-            depth_dim = None
-            depths = None
-            continue
-
-    if var_sample is None:
-        # Ensure DB connection is closed if still open
-        try:
-            if conn is not None:
-                conn.close()
-        except Exception:
-            pass
-        conn = None
-        # Provide more diagnostics in error so logs show what was attempted
-        sample_paths = files[:5] if files else []
-        if use_bottom:
-            raise RuntimeError(
-                f"No bottom-layer NC files found for variable '{var}' between {from_date} and {to_date}. "
-                f"Bottom files (named {{var}}_YYYYMMDD_bottom.nc) are produced by the bottom_layer pipeline step. "
-                f"Ensure the pipeline has run the bottom_layer stage for this variable and date range."
-            )
+    if source not in DATA_TABLE_BY_SOURCE:
         raise RuntimeError(
-            f"Could not open any NetCDF files to inspect variable and depth dimension; "
-            f"files_found={len(files)}, sample_paths={sample_paths}"
+            f"Source '{source}' is not yet available via ClickHouse. "
+            f"Supported sources: {sorted(DATA_TABLE_BY_SOURCE)}"
         )
+    if var not in ALLOWED_VARIABLES:
+        raise ValueError(f"Unknown variable '{var}'. Supported variables: {sorted(ALLOWED_VARIABLES)}")
 
-    # Determine which depth index to select based on the requested depth value
-    if depth is None:
-        # All-depths mode — do not slice the depth axis
-        depth_sel = None
-        if verbose:
-            n_d = len(depths) if (depths is not None) else "unknown"  # type: ignore[arg-type]
-            print(f"No depth specified — extracting all {n_d} depth levels")
-    elif depth_dim is not None:
-        try:
-            # support depth arrays that may be increasing or decreasing
-            assert depths is not None
-            depth_sel = int(np.argmin(np.abs(depths - depth)))
-            if verbose:
-                print(f"Selecting depth index {depth_sel} nearest to requested depth {depth}")
-        except Exception:
-            depth_sel = 0
-            if verbose:
-                print("Failed to map requested depth to an index; defaulting to 0")
-    else:
-        depth_sel = None
+    table = DATA_TABLE_BY_SOURCE[source]
+    grid_table = GRID_TABLE_BY_SOURCE[source]
 
-    y_dim, x_dim = find_horiz_dims_by_shape(var_sample, nrows, ncols)
-
-    # Keep iteration robust: ensure file resources are closed on error and skip files that fail
-    # to open or select. This prevents a single corrupted .nc from bringing down the whole
-    # API and avoids leaving backend resources in an inconsistent/locked state.
-
-    for fp in files:
-        dsf = None
-        try:
-            dsf = open_nc_uncached(fp)
-            if dsf is None:
-                if verbose:
-                    print(f"Skipping {fp}: could not open")
-                continue
-
-            try:
-                varf = find_variable(dsf, var)
-            except KeyError:
-                if verbose:
-                    print(f"Skipping {fp}: variable {var} not present")
-                continue
-
-            tdim = None
-            for d in varf.dims:
-                if d.lower() in TIME_CANDIDATES:
-                    tdim = d
-                    break
-            if tdim is None:
-                if verbose:
-                    print(f"Skipping {fp}: no time dimension found")
-                continue
-
-            try:
-                idxs_local, times_local = pick_time_slice(dsf, tdim, from_date, to_date)
-            except Exception as exc:
-                if verbose:
-                    print(f"Skipping {fp}: pick_time_slice failed: {exc}")
-                continue
-
-            if len(idxs_local) == 0:
-                if verbose:
-                    print(f"Skipping {fp}: no timestamps in requested range")
-                continue
-
-            sel = {tdim: idxs_local, y_dim: yi, x_dim: xi}
-            if depth_dim is not None and depth_sel is not None:
-                sel[depth_dim] = depth_sel
-
-            try:
-                sub = varf.isel(sel)
-            except Exception as exc:
-                if verbose:
-                    print(f"Skipping {fp}: failed to index variable with selection {sel}: {exc}")
-                continue
-
-            if tdim not in sub.dims and sub.ndim != 1:
-                if verbose:
-                    print(f"Skipping {fp}: unexpected selection result; expected 1D time series")
-                continue
-
-            from nc_reader import get_file_lock
-            with get_file_lock(fp):
-                vals = np.asarray(sub.values, dtype=float)
-
-            if depth_sel is None and depth_dim is not None and depth_dim in sub.dims:
-                # All-depths: vals is 2-D (time, depth) — flatten to parallel flat arrays
-                dims = list(sub.dims)
-                t_ax = dims.index(tdim) if tdim in dims else 0
-                d_ax = dims.index(depth_dim)
-                if t_ax != 0:
-                    vals = np.moveaxis(vals, t_ax, 0)  # ensure (n_times, n_depths)
-                n_t, n_d = vals.shape
-                times_list.append(pd.DatetimeIndex(np.repeat(times_local, n_d)))
-                values_list.append(vals.flatten())
-                assert depths is not None
-                depths_list.append(np.tile(depths, n_t))
-            else:
-                times_list.append(pd.to_datetime(times_local).copy())
-                values_list.append(vals)
-        except Exception as e:
-            if verbose:
-                print(f"Skipping {fp}: failed to open/process file: {e}")
-        finally:
-            close_nc(dsf)
-
-    if not times_list:
-        # Ensure DB connection is closed if still open
-        try:
-            if conn is not None:
-                conn.close()
-        except Exception:
-            pass
-        conn = None
-        raise RuntimeError("No data found in files for the requested time range")
-
-    times_concat  = pd.DatetimeIndex([]).append(times_list)
-    values_concat = np.concatenate(values_list)
-
-    # Ensure DB connection is closed if still open
+    client = get_ch_client()
     try:
-        if conn is not None:
-            conn.close()
-    except Exception:
-        pass
-    conn = None
+        if has_polygon:
+            assert polygon is not None
+            grid_points = _find_grid_points_in_polygon(client, grid_table, polygon)
+            if not grid_points:
+                raise RuntimeError("The selected polygon area does not cover any active marine grid cells.")
+            if verbose:
+                print(f"Grid points in polygon: {len(grid_points)}", flush=True)
+        else:
+            assert lat is not None and lon is not None
+            grid_x, grid_y, grid_lat, grid_lon = _find_nearest_grid_point(client, grid_table, lat, lon)
+            if verbose:
+                print(f"Nearest grid point in ClickHouse: gridX={grid_x} gridY={grid_y} lat={grid_lat} lon={grid_lon}", flush=True)
+            grid_points = [(grid_x, grid_y)]
 
-    if depths_list:
-        # All-depths mode: return a DataFrame with time, depth, value columns
-        depths_concat = np.concatenate(depths_list)
-        df = pd.DataFrame({"time": times_concat, "depth": depths_concat, "value": values_concat})
-        df = (
-            df.drop_duplicates(subset=["time", "depth"])
-            .sort_values(by=["time", "depth"])
-            .reset_index(drop=True)
-        )
-        return df
+        where = ["(gridX, gridY) IN %(grid_points)s"]
+        params: dict = {"grid_points": grid_points}
+        if from_date is not None:
+            where.append("time >= %(from_time)s")
+            params["from_time"] = pd.to_datetime(from_date)
+        if to_date is not None:
+            where.append("time <= %(to_time)s")
+            params["to_time"] = pd.to_datetime(to_date)
 
-    df = pd.DataFrame({"time": times_concat, "value": values_concat})
-    df = df.drop_duplicates(subset="time").sort_values(by="time").reset_index(drop=True)
-    return df.time, df.value
+        if depth is None:
+            # avg() is a no-op for point mode (one grid cell per group) and averages
+            # across cells for area mode — one query path covers both.
+            query = (
+                f"SELECT time, depth, avg({var}) AS value FROM {table} "
+                f"WHERE {' AND '.join(where)} GROUP BY time, depth ORDER BY time, depth"
+            )
+            result = client.query(query, parameters=params)
+            if not result.result_rows:
+                raise RuntimeError("No data found in ClickHouse for the requested time range")
+
+            df = pd.DataFrame(result.result_rows, columns=["time", "depth", "value"])
+            df["time"] = pd.to_datetime(df["time"])
+            df["depth"] = df["depth"].astype(float)
+            df["value"] = df["value"].astype(float)
+            df = (
+                df.drop_duplicates(subset=["time", "depth"])
+                .sort_values(by=["time", "depth"])
+                .reset_index(drop=True)
+            )
+            return df
+
+        # Depth levels are uniform across the SSC grid, so any grid point in the
+        # selection can resolve the nearest available level (same assumption used
+        # by ocean_analysis.py's query_region_timeseries for polygon aggregation).
+        gx0, gy0 = grid_points[0]
+        depth_sel = _resolve_depth(client, table, gx0, gy0, depth)
+        if depth_sel is None:
+            raise RuntimeError(
+                f"No data available at depth {depth}m for grid point (gridX={gx0}, gridY={gy0}). "
+                f"The water column at this location may not extend to that depth."
+            )
+        if verbose:
+            print(f"Selecting depth {depth_sel} nearest to requested depth {depth}", flush=True)
+
+        where.append("depth = %(depth)s")
+        params["depth"] = depth_sel
+        query = f"SELECT time, avg({var}) AS value FROM {table} WHERE {' AND '.join(where)} GROUP BY time ORDER BY time"
+        result = client.query(query, parameters=params)
+        if not result.result_rows:
+            raise RuntimeError("No data found in ClickHouse for the requested time range")
+
+        df = pd.DataFrame(result.result_rows, columns=["time", "value"])
+        df["time"] = pd.to_datetime(df["time"])
+        df["value"] = df["value"].astype(float)
+        df = df.drop_duplicates(subset="time").sort_values(by="time").reset_index(drop=True)
+        return df.time, df.value
+    finally:
+        client.close()
 
 
-
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    p = argparse.ArgumentParser(description="Extract a time series from a NetCDF variable at a grid point stored in PostGIS")
-    p.add_argument("--var", "-v", required=True, help="Variable name to extract")
-    # start/end selection removed — function now returns all available times
-    # p.add_argument("--from", dest="from_dt", required=True, help="Start datetime (inclusive), ISO-8601")
-    # p.add_argument("--to", dest="to_dt", required=True, help="End datetime (inclusive), ISO-8601")
-    p.add_argument("--data-dir", default=os.environ.get("DATA_DIR", "/opt/data/nc"), help="Directory containing daily NetCDF files (default: /opt/data/nc)")
+def main(argv: Optional[list] = None) -> int:
+    p = argparse.ArgumentParser(description="Extract a time series for an ocean variable at a coordinate from ClickHouse")
+    p.add_argument("--source", default="SalishSeaCast", choices=sorted(DATA_TABLE_BY_SOURCE), help="Data source")
+    p.add_argument("--var", "-v", required=True, choices=sorted(ALLOWED_VARIABLES), help="Variable name to extract")
     p.add_argument("--lat", "-a", type=float, required=True, help="Latitude (required)")
     p.add_argument("--lon", "-o", type=float, required=True, help="Longitude (required)")
     p.add_argument("--depth", type=float, default=None,
-                   help="Depth value to select; omit to extract all depth levels")
-    p.add_argument("--from-date", required=True, help="Start date (ISO-8601 format, e.g., 2023-01-01)")
-    p.add_argument("--to-date", required=True, help="End date (ISO-8601 format, e.g., 2023-12-31)")
-    p.add_argument("--output", "-O", default=None, help="CSV output file (time,value)")
+                   help="Depth value to select (-1 for the deepest/bottom level); omit to extract all depth levels")
+    p.add_argument("--from-date", required=False, default=None, help="Start datetime (ISO-8601); omit to extract all times")
+    p.add_argument("--to-date", required=False, default=None, help="End datetime (ISO-8601); omit to extract all times")
+    p.add_argument("--output", "-O", default=None, help="CSV output file")
     p.add_argument("--verbose", "-V", action="store_true", help="Verbose output")
-
-    # DB options (required)
-    p.add_argument("--db-dsn", default=None, help="Optional libpq DSN to PostGIS (overrides host/user/password/dbname)")
-    p.add_argument("--db-host", default="db", help="PostGIS host")
-    p.add_argument("--db-port", type=int, default=int(os.environ.get("DB_PORT", 5432)), help="PostGIS port")
-    p.add_argument("--db-user", default=os.environ.get("DB_USER", "postgres"), help="PostGIS user")
-    p.add_argument("--db-password", default=os.environ.get("DB_PASSWORD", "postgres"), help="PostGIS password")
-    p.add_argument("--db-name", default=os.environ.get("DB_NAME", "oa"), help="PostGIS database name")
-    p.add_argument("--db-table", default="grid", help="PostGIS table that contains row_idx,col_idx,lat,lon,geom")
 
     args = p.parse_args(argv)
 
-    # Use the high-level callable to perform extraction
     result = extract_timeseries(
+        source=args.source,
         var=args.var,
         lat=args.lat,
         lon=args.lon,
         depth=args.depth,
-        data_dir=args.data_dir,
-        db_dsn=args.db_dsn,
-        db_host=args.db_host,
-        db_port=args.db_port,
-        db_user=args.db_user,
-        db_password=args.db_password,
-        db_name=args.db_name,
-        db_table=args.db_table,
         from_date=args.from_date,
         to_date=args.to_date,
         verbose=args.verbose,
@@ -521,6 +345,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 print(f"{t.isoformat()},{'' if np.isnan(v) else v}")
 
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

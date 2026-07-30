@@ -37,12 +37,12 @@ The API acts as the bridge between the database/NetCDF files and the frontend, p
 The "engine" that transforms raw external data into precisely-tiled, color-corrected images and derived values.
 
 ### ERDDAP Ingestion & Management
-*   **Intelligent Fetching**: Logic in `modules/downloader.py` for ERDDAP downloads with automatic backfilling and compression.
-*   **State Tracking**: Database integration to track download status and manage re-queuing.
+*   **Intelligent Fetching**: Logic in `SSC/downloader.py` for ERDDAP downloads with automatic backfilling and compression.
+*   **State Tracking**: ClickHouse integration to track download status and manage re-queuing.
 
 ### Imaging & Tiling
 *   **Tiling**: Developed `nc2tile.py` to convert NetCDF grids into Mapbox-compatible tiles.
-*   **PNG Pipeline**: Created `png_worker.py` for "Imaging" plots with PST/UTC timezone handling and consistent color scaling.
+*   **WebP Pipeline**: `SSC/imaging.py` renders tiles with PST/UTC timezone handling and consistent color scaling.
 
 ### Derived Calculations
 *   **Biogeochemical Models**: Specialized calculators (`calc_carbon.py`, `calc_carbon_grid_shm`) to derive pH, Aragonite Saturation (Omega), and Inorganic Carbon.
@@ -54,12 +54,12 @@ The "engine" that transforms raw external data into precisely-tiled, color-corre
 
 ---
 
-## 4. Database (PostgreSQL / PostGIS)
+## 4. Database (ClickHouse)
 
 ### Technology & Foundation
-*   **Spatial Support**: Uses PostGIS to handle coordinates for the grid and sensor locations.
-*   **State Machine Logic**: Manages the Processing Queue, allowing workers to coordinate downloading and tiling tasks.
+*   **Spatial Support**: The curvilinear model grid (`grid_SSC`) and sensor locations are stored as ClickHouse tables, queried with `geoDistance()` for nearest-neighbor lookups.
+*   **State Machine Logic**: `SalishSeaCast_status` tracks the processing queue, letting workers coordinate downloading, computing, and tiling tasks.
 
 ### Pipeline Orchestration
-*   **Enum Evolution**: Managed processing statuses (e.g., `downloading`, `computeing`, `imaging`).
-*   **Self-Healing Queue**: Schema support for automatic re-queuing of failed or interrupted tasks.
+*   **Status Evolution**: Managed processing statuses (e.g., `downloading`, `computing`, `imaging`).
+*   **Self-Healing Queue**: Failed or interrupted tasks are automatically re-queued.

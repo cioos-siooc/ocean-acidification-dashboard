@@ -10,45 +10,17 @@ services:
       - "${FRONT_PORT:-3000}:3000"
     volumes:
       - ./front:/app
+      - /app/node_modules
     environment:
       - NUXT_PUBLIC_API_BASE_URL=${NUXT_PUBLIC_API_BASE_URL:-http://localhost:9011}
       - NUXT_PUBLIC_VERSION=${NUXT_PUBLIC_VERSION:-unknown}
     depends_on:
       - api
-      # - umami
     env_file:
       - .env.dev
     command: npm run dev
     restart: unless-stopped
 
-  # umami:
-  #   image: ghcr.io/umami-software/umami:postgresql-latest
-  #   restart: always
-  #   environment:
-  #     DATABASE_URL: postgresql://umami:umami_pass@umami-db:5432/umami
-  #     APP_SECRET: $(openssl rand -hex 32) # You should replace this with a static random string
-  #   ports:
-  #     - "9013:3000" # Maps Umami dashboard to port 9013
-  #   depends_on:
-  #     umami-db:
-  #       condition: service_healthy
-
-  # # Add Umami Database
-  # umami-db:
-  #   image: postgres:15-alpine
-  #   restart: always
-  #   environment:
-  #     POSTGRES_DB: umami
-  #     POSTGRES_USER: umami
-  #     POSTGRES_PASSWORD: umami_pass
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U umami"]
-  #     interval: 5s
-  #     timeout: 5s
-  #     retries: 5
-  #   volumes:
-  #     - umami-db-data:/var/lib/postgresql/data
-  
   api:
     build:
       context: .
@@ -59,55 +31,83 @@ services:
       - ./data:/opt/data
     ports:
       - "${API_PORT:-4000}:4000"
+    env_file:
+      - .env.dev
     environment:
-      - DB_HOST=db
-      - DB_NAME=oa
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
       - HDF5_USE_FILE_LOCKING=FALSE
+      - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
+      - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
+      - EVAL_DATA_DIR=${EVAL_DATA_DIR:-/opt/data/eval}
+      # ClickHouse: local docker-compose instance (db-ch service) by default
+      - CH_HOST=${CH_HOST:-db-ch}
+      - CH_PORT=${CH_PORT:-8123}
+      - CH_USER=${CH_USER:-default}
+      - CH_PASSWORD=${CH_PASSWORD:-${CLICKHOUSE_PASSWORD:-}}
+      # Set CH_USE_REMOTE=true and CH_REMOTE_URL to query a remote ClickHouse instead
+      - CH_USE_REMOTE=${CH_USE_REMOTE:-false}
+      - CH_REMOTE_URL=${CH_REMOTE_URL:-}
+      - CH_REMOTE_USER=${CH_REMOTE_USER:-}
+      - CH_REMOTE_PASSWORD=${CH_REMOTE_PASSWORD:-}
+      # PostHog Cloud (usage analytics); no-ops when POSTHOG_API_KEY is unset
+      - POSTHOG_API_KEY=${POSTHOG_API_KEY:-}
+      - POSTHOG_HOST=${POSTHOG_HOST:-https://us.i.posthog.com}
     depends_on:
-      - db
+      - db-ch
     command: uvicorn SERVER:app --reload --host 0.0.0.0 --port 4000
     restart: unless-stopped
 
-  db:
-    image: postgis/postgis:16-master
-    environment:
-      - POSTGRES_DB=oa
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-    volumes:
-      - oa_db:/var/lib/postgresql/data
-      # - ./DB:/var/lib/postgresql/data
+  db-ch:
+    image: clickhouse/clickhouse-server:latest
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "9013:8123"
+      - "9014:9000"
+    volumes:
+      - ./clickhouse/data:/var/lib/clickhouse
+      - ./clickhouse/logs:/var/log/clickhouse-server
+      - ./clickhouse/users.d:/etc/clickhouse-server/users.d
+    environment:
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8123/ping || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
     restart: unless-stopped
+
+  sensors:
+    build:
+      context: .
+      dockerfile: sensors/Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
+    env_file:
+      - .env.dev
+    environment:
+      # Override the host-IP values in .env.dev with the Docker service name/port,
+      # and clear CH_PASSWORD (local dev db-ch has no password)
+      - CH_HOST=db-ch
+      - CH_PORT=8123
+      - CH_PASSWORD=
+    # volumes:
+    #   - ./sensors:/app
+    #   - ./shared:/app/shared
+    depends_on:
+      db-ch:
+        condition: service_healthy
 
   process:
     build:
       context: .
       dockerfile: process/Dockerfile
     # profiles: ["tools"]
+    env_file:
+      - .env.dev
     environment:
-      - PGHOST=db
-      - PGPORT=5432  # default Postgres port inside the Docker network
-      - PGDATABASE=oa
-      - PGUSER=postgres
-      - PGPASSWORD=postgres
+      - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
+      - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
     volumes:
       - ./process:/app
       - ./shared:/app/shared
       - ./data/.:/opt/data
     depends_on:
-      db:
+      db-ch:
         condition: service_healthy
-
-volumes:
-  oa_db:
-  umami-db-data:
-  # oa_data:
