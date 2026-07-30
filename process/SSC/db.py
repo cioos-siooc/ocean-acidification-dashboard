@@ -264,16 +264,6 @@ def _promote_all_variables(client, date_val: date, new_status: str) -> None:
     logger.info('Promoted all variables for %s to %s', date_val, new_status)
 
 
-def promote_all_to_pending_ingest(client, date_val: date) -> None:
-    """Move all 8 variables from success_image to pending_ingest (called when images_complete)."""
-    _promote_all_variables(client, date_val, STATUS_PENDING_INGEST)
-
-
-def promote_all_to_pending_sync(client, date_val: date) -> None:
-    """Move all 8 variables from success_ingest to pending_sync (called when ingest_complete)."""
-    _promote_all_variables(client, date_val, STATUS_PENDING_SYNC)
-
-
 def check_image_ready_for_date(client, date_val: date) -> bool:
     """Single-date variant of check_image_ready: promote date_val to pending_image
     if all 8 variables have reached their stage's success state. Returns True if
