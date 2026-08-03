@@ -572,7 +572,7 @@ const sensors: Sensor[] = [
         orgClass: 'org-onc'
     },
     {
-        id: 'ORCA2-Hoodsport',
+        id: 'ORCA - Hoodsport',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.4218, -122.6126',
         variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
@@ -581,7 +581,7 @@ const sensors: Sensor[] = [
         orgClass: 'org-onc'
     },
     {
-        id: 'ORCA4-DabobBay',
+        id: 'ORCA - Dabob Bay',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.8034, -122.8029',
         variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
@@ -590,7 +590,7 @@ const sensors: Sensor[] = [
         orgClass: 'org-onc'
     },
     {
-        id: 'NPBY1-Pt Wells',
+        id: 'ORCA - Point Wells',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.7612, -122.3972',
         variables: 'Chlorophyll (ug/L), Salinity (PSU), Temp (degC)',
@@ -600,7 +600,7 @@ const sensors: Sensor[] = [
     },
     {
         id: 'PISCES1-South (Surface Hydrological Station)',
-        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        organization: 'University of Washington, Applied Physics Laboratory',
         coordinates: '47.6651, -122.8733',
         variables: 'Chlorophyll (ug/L), pH, Salinity (PSU), Temp (degC), Dissolved O2 (mg/L)',
         depth: 'Surface',
@@ -609,7 +609,7 @@ const sensors: Sensor[] = [
     },
     {
         id: 'PISCES2-North (Depth-Gridded Profile)',
-        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        organization: 'University of Washington, Applied Physics Laboratory',
         coordinates: '47.6923, -122.8651',
         variables: 'Chlorophyll (ug/L), Salinity (PSU), Temp (degC), Dissolved O2 (mg/L)',
         depth: 'Profile',
@@ -618,7 +618,7 @@ const sensors: Sensor[] = [
     },
     {
         id: 'PISCES2-North (Surface Hydrological Station)',
-        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        organization: 'University of Washington, Applied Physics Laboratory',
         coordinates: '47.6923, -122.8651',
         variables: 'Chlorophyll (ug/L), pH, Salinity (PSU), Temp (degC), Dissolved O2 (mg/L)',
         depth: 'Surface',
@@ -626,7 +626,7 @@ const sensors: Sensor[] = [
         orgClass: 'org-onc'
     },
     {
-        id: 'ORCA3-Hansville',
+        id: 'ORCA - Hansville',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.9075, -122.6274',
         variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
@@ -635,7 +635,7 @@ const sensors: Sensor[] = [
         orgClass: 'org-onc'
     },
     {
-        id: 'NPBY2-Carr Inlet',
+        id: 'ORCA - Carr Inlet',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.2800, -122.7300',
         variables: 'Chlorophyll (ug/L), Salinity (PSU), Temp (degC)',
@@ -645,7 +645,7 @@ const sensors: Sensor[] = [
     },
     {
         id: 'PISCES1-South (Depth-Gridded Profile)',
-        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        organization: 'University of Washington, Applied Physics Laboratory',
         coordinates: '47.6651, -122.8733',
         variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
         depth: 'Profile',
@@ -653,7 +653,7 @@ const sensors: Sensor[] = [
         orgClass: 'org-onc'
     },
     {
-        id: 'ORCA1-Twanoh',
+        id: 'ORCA - Twanoh',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.3750, -123.0083',
         variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',
