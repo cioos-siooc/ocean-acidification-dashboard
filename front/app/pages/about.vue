@@ -575,7 +575,7 @@ const sensors: Sensor[] = [
         id: 'ORCA - Hoodsport',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.4218, -122.6126',
-        variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',
         depth: 'Profile',
         dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/orca2_L3_depthgridded_025',
         orgClass: 'org-onc'
@@ -584,7 +584,7 @@ const sensors: Sensor[] = [
         id: 'ORCA - Dabob Bay',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.8034, -122.8029',
-        variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',
         depth: 'Profile',
         dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/orca4_L3_depthgridded_025',
         orgClass: 'org-onc'
@@ -593,7 +593,7 @@ const sensors: Sensor[] = [
         id: 'ORCA - Point Wells',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.7612, -122.3972',
-        variables: 'Chlorophyll (ug/L), Salinity (PSU), Temp (degC)',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',
         depth: 'Profile',
         dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/npby1_L3_depthgridded_025',
         orgClass: 'org-onc'
@@ -629,7 +629,7 @@ const sensors: Sensor[] = [
         id: 'ORCA - Hansville',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.9075, -122.6274',
-        variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',
         depth: 'Profile',
         dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/orca3_L3_depthgridded_025',
         orgClass: 'org-onc'
@@ -638,7 +638,7 @@ const sensors: Sensor[] = [
         id: 'ORCA - Carr Inlet',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.2800, -122.7300',
-        variables: 'Chlorophyll (ug/L), Salinity (PSU), Temp (degC)',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',
         depth: 'Profile',
         dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/npby2_L3_depthgridded_025',
         orgClass: 'org-onc'
