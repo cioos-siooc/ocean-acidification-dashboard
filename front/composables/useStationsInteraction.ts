@@ -48,16 +48,30 @@ export function useStationsInteraction(
           return true;
         });
 
-        const allSensors: MultiSensorCandidate[] = uniqueFeatures.flatMap(_parseSensors);
-        if (allSensors.length === 0) return;
+        // Resolve to a SINGLE station: the query box is only a fat-finger tolerance,
+        // so picking the feature whose icon is closest to the click point keeps a click
+        // on one buoy from pulling in an adjacent buoy's sensors (which produced a
+        // confusing spiderfy mixing two physically distinct stations).
+        const nearest = uniqueFeatures.reduce((best, f) => {
+          const coords = f.geometry?.coordinates;
+          if (!Array.isArray(coords)) return best;
+          const p = map.project(coords as [number, number]);
+          const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+          return best && best.d <= d ? best : { f, d };
+        }, null as { f: any; d: number } | null);
+        if (!nearest) return;
 
-        if (allSensors.length === 1) {
-          onFetchTimeseries(allSensors[0].id, allSensors[0].depth);
+        const sensors: MultiSensorCandidate[] = _parseSensors(nearest.f);
+        if (sensors.length === 0) return;
+
+        if (sensors.length === 1) {
+          onFetchTimeseries(sensors[0].id, sensors[0].depth);
           return;
         }
 
-        // Always use spiderfy — consistent for both same-position (depth variants) and nearby sensors
-        onSpiderfyClick(allSensors, x, y);
+        // Spiderfy this station's own sensors (same-position depth variants and its
+        // sub-100 m grouped members) — consistently, whatever the count.
+        onSpiderfyClick(sensors, x, y);
       } catch (e) {
         // swallow
       }
