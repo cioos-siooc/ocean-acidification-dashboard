@@ -46,7 +46,7 @@
 
             <v-card-actions class="pa-4">
                 <v-spacer></v-spacer>
-                <v-btn color="error" variant="tonal" @click="closeDialog">
+                <v-btn color="error" variant="tonal" class="pa-3" @click="closeDialog">
                     Close
                 </v-btn>
             </v-card-actions>
