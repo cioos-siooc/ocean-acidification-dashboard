@@ -35,12 +35,14 @@
     </v-app-bar>
 
     <NuxtRouteAnnouncer />
-    <NuxtPage />
+    <NuxtPage v-if="!isMobile" />
+
+    <MobileBlocker />
   </v-app>
 </template>
 
 <script setup lang="ts">
-import { onBeforeMount, ref } from 'vue'
+import { onBeforeMount, onMounted, onBeforeUnmount, ref } from 'vue'
 import moment from 'moment'
 import axios from 'axios'
 
@@ -53,6 +55,27 @@ const apiBaseUrl = config.public.apiBaseUrl;
 onBeforeMount(() => {
   getVariables();
   getColormaps();
+});
+
+// Block phones / small tablets: this map- and chart-heavy dashboard needs a large
+// screen. Keep the initial value `false` so SSR/first client render match (avoids a
+// hydration mismatch); the real decision happens on the client after mount. The
+// MobileBlocker overlay hides everything via CSS, and unmounting NuxtPage below stops
+// the heavy MapboxGL page from initializing on unsupported devices.
+const isMobile = ref(false);
+// Must stay in sync with MobileBlocker.vue's media query.
+const MOBILE_QUERY = '(max-width: 900px), (pointer: coarse) and (max-width: 1024px)';
+let mql: MediaQueryList | null = null;
+const updateIsMobile = () => { if (mql) isMobile.value = mql.matches; };
+
+onMounted(() => {
+  mql = window.matchMedia(MOBILE_QUERY);
+  updateIsMobile();
+  mql.addEventListener('change', updateIsMobile);
+});
+
+onBeforeUnmount(() => {
+  mql?.removeEventListener('change', updateIsMobile);
 });
 
 async function getVariables() {
