@@ -25,11 +25,11 @@
 
                 <div class="mb-6">
                     <div class="d-flex gap-2 flex-wrap">
-                        <v-btn color="primary" variant="outlined" size="small" prepend-icon="mdi-open-in-new" class="mx-2"
+                        <v-btn color="primary" variant="outlined" class="mx-2 pa-3"
                             :to="{ name: 'about' }" @click="showDialog = false">
                             Learn More
                         </v-btn>
-                        <v-btn color="info" variant="outlined" size="small" prepend-icon="mdi-form-textarea" class="mx-2"
+                        <v-btn color="info" variant="outlined" class="mx-2 pa-3"
                             href="https://docs.google.com/forms/d/e/1FAIpQLSdtkCjo2RVH0uVbHo7sWuRZHrvenxM2hMsZgW9Ou61WDYBFxg/viewform?usp=dialog"
                             target="_blank" rel="noopener noreferrer">
                             Feedback Survey
