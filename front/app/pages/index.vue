@@ -105,8 +105,13 @@
         </div>
 
         <!-- Bottom: Global Chart Footer -->
-        <v-footer class="ma-0 pa-0" :style="{ height: footerHeight, maxHeight: footerHeight }">
-            <div class="d-flex" :style="{ width: '100%', height: footerHeight }">
+        <v-footer class="ma-0 pa-0 footer-resizable" :style="{ height: footerHeight, maxHeight: footerHeight }">
+            <!-- Drag handle: resize the bottom sheet by dragging this top edge up/down -->
+            <div class="footer-resize-handle" :class="{ 'is-resizing': isResizingFooter }" title="Drag to resize"
+                @pointerdown="startFooterResize">
+                <div class="footer-resize-grip"></div>
+            </div>
+            <div class="d-flex footer-content" style="width: 100%;">
 
                 <!-- Vertical tab rail -->
                 <v-sheet class="footer-rail d-flex flex-column flex-shrink-0">
@@ -225,7 +230,49 @@ watch(() => mainStore.selectedSensor, (sensor) => {
 
 const isRectangleDrawing = ref(false);
 const drawnRectangle = ref<Feature<Polygon> | null>(null);
-const footerHeight = ref<string>('440px');
+// Bottom-sheet height is user-resizable via the drag handle on the footer's top edge.
+const MIN_FOOTER_PX = 160;
+const footerHeightPx = ref<number>(440);
+const footerHeight = computed<string>(() => `${footerHeightPx.value}px`);
+const isResizingFooter = ref<boolean>(false);
+
+/** Largest the footer may grow to, always leaving room for the map above it. */
+function maxFooterPx(): number {
+    return Math.max(MIN_FOOTER_PX, window.innerHeight - 160);
+}
+
+/** Drag handle on the footer's top edge: dragging up grows the sheet, down shrinks it. */
+function startFooterResize(e: PointerEvent) {
+    e.preventDefault();
+    isResizingFooter.value = true;
+    const startY = e.clientY;
+    const startH = footerHeightPx.value;
+    let rafId = 0;
+
+    const onMove = (ev: PointerEvent) => {
+        // Dragging upward (smaller clientY) increases the footer height.
+        const next = startH + (startY - ev.clientY);
+        footerHeightPx.value = Math.min(maxFooterPx(), Math.max(MIN_FOOTER_PX, next));
+        if (!rafId) {
+            rafId = requestAnimationFrame(() => {
+                rafId = 0;
+                map?.resize();
+                (timeseriesChart.value as any)?.resize?.();
+            });
+        }
+    };
+    const onUp = () => {
+        isResizingFooter.value = false;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        if (rafId) cancelAnimationFrame(rafId);
+        // Final sync so map/charts settle exactly on the released size.
+        map?.resize();
+        (timeseriesChart.value as any)?.resize?.();
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+}
 
 const sensorPicker = ref<{ visible: boolean; x: number; y: number; sensors: MultiSensorCandidate[] }>({
     visible: false,
@@ -1382,6 +1429,49 @@ let _sensorClickPending = false;
 </script>
 
 <style scoped>
+.footer-resizable {
+    position: relative;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+/* Handle sits in the layout flow as a reserved band above the content,
+   so it never overlaps the tab controls (playback buttons, etc.). */
+.footer-resize-handle {
+    flex: 0 0 12px;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: ns-resize;
+    touch-action: none;
+    background: transparent;
+    transition: background 0.15s ease;
+}
+
+.footer-content {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.footer-resize-handle:hover,
+.footer-resize-handle.is-resizing {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.footer-resize-grip {
+    width: 44px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.25);
+    transition: background 0.15s ease;
+}
+
+.footer-resize-handle:hover .footer-resize-grip,
+.footer-resize-handle.is-resizing .footer-resize-grip {
+    background: rgba(255, 255, 255, 0.55);
+}
+
 .map-drawer-toggle {
     position: absolute;
     top: 12px;
