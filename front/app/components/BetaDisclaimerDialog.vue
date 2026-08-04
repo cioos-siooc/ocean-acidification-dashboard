@@ -30,7 +30,7 @@
                             Learn More
                         </v-btn>
                         <v-btn color="info" variant="outlined" class="mx-2 pa-3"
-                            href="https://docs.google.com/forms/d/e/1FAIpQLSdtkCjo2RVH0uVbHo7sWuRZHrvenxM2hMsZgW9Ou61WDYBFxg/viewform?usp=dialog"
+                            href="https://docs.google.com/forms/d/e/1FAIpQLSdGiIclM5wvIbPReZydsXKiRBXbZsQVEdoQPlA0EruKIoNJkg/viewform?usp=dialog"
                             target="_blank" rel="noopener noreferrer">
                             Feedback Survey
                         </v-btn>
