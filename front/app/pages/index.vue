@@ -175,7 +175,6 @@ import TimeControls from '../components/TimeControls.vue'
 import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties, Feature, Polygon } from 'geojson';
-import { var2name } from '~~/composables/useVar2Name'
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { utc2pst } from '~~/composables/useUTC2PST'
 import useStationsInteraction from '~~/composables/useStationsInteraction';

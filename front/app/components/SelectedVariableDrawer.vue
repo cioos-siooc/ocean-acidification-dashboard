@@ -27,7 +27,7 @@ import * as echarts from 'echarts';
 import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme';
 import type { PropType } from 'vue';
 import moment, { type MomentInput } from 'moment-timezone';
-import { var2name } from '~~/composables/useVar2Name';
+import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 import { utc2pst } from '~~/composables/useUTC2PST';
 import { useMainStore } from '../stores/main';
 
@@ -73,10 +73,12 @@ const isOpen = computed({
 
 const mainStore = useMainStore();
 
+const { variableLabel } = useVariableRegistry();
+
 const title = computed(() => {
     const varId = mainStore.selected_variable?.var;
     if (!varId) return 'No variable selected';
-    return `${var2name(varId)} Profile`;
+    return `${variableLabel(varId)} Profile`;
 });
 
 const timestamp = computed(() => {
@@ -98,7 +100,7 @@ const profilePoints = ref<ProfilePoint[]>([]);
 let currentController: AbortController | null = null;
 let requestSequence = 0;
 
-const variableLabel = computed(() => var2name(mainStore.selected_variable.var ?? 'Value'));
+const selectedVariableLabel = computed(() => variableLabel(mainStore.selected_variable.var ?? 'Value'));
 
 const requestParams = computed<ProfileRequest | null>(() => {
     const lat = props.selectedPoint?.lat;
@@ -175,7 +177,7 @@ function renderChart(points: ProfilePoint[]) {
                 const entry = params?.[0];
                 if (!entry) return '';
                 const [value, depth] = entry.value ?? [];
-                return `${variableLabel.value}<br/>Value: ${value ?? '–'}<br/>Depth: ${depth ?? '–'} m`;
+                return `${selectedVariableLabel.value}<br/>Value: ${value ?? '–'}<br/>Depth: ${depth ?? '–'} m`;
             }
         },
         grid: { left: 32, right: 20, top: 12, bottom: 12 },
@@ -186,7 +188,7 @@ function renderChart(points: ProfilePoint[]) {
         },
         xAxis: {
             type: 'value',
-            name: variableLabel.value,
+            name: selectedVariableLabel.value,
             nameLocation: 'middle',
             nameGap: 24,
             axisLine: { show: true },
@@ -204,7 +206,7 @@ function renderChart(points: ProfilePoint[]) {
         },
         series: [
             {
-                name: variableLabel.value,
+                name: selectedVariableLabel.value,
                 type: 'line',
                 // type: "scatter",
                 // showSymbol: false,

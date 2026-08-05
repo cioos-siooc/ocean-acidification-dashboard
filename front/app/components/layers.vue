@@ -10,7 +10,7 @@
             <div class="pa-2 d-flex flex-column menu-content">
                 <v-btn v-for="variable in variables" :key="variable.var" size="small" @click="clickIcon(variable.var)"
                     class="mb-1 noCap" aria-label="Toggle layer 1">
-                    {{ var2name(variable.var) }}
+                    {{ variableLabel(variable.var) }}
                 </v-btn>
             </div>
         </v-menu>
@@ -21,11 +21,12 @@
 import { ref, computed } from 'vue'
 import { useMainStore } from '../stores/main'
 
-import { var2name } from '~~/composables/useVar2Name'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 const mainStore = useMainStore()
+const { variableLabel } = useVariableRegistry()
 
 const menu = ref(false)
 const emit = defineEmits(['toggleLayer'])

@@ -26,7 +26,7 @@ export const useMainStore = defineStore('main', {
         },
 
         dfnDays: 14, // days from now for climate timeseries
-        variables: [] as Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number] }>,
+        variables: [] as Array<{ var: string, name: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number] }>,
         selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as string | null, depth_nc: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null, colormapStops: [null, null, null] as (number | null)[] },
         showBathymetryContours: false,
         colormaps: {} as Record<string, any>,
@@ -37,7 +37,7 @@ export const useMainStore = defineStore('main', {
          */
         midDate: null as moment.Moment | null,
 
-        sensors: [] as Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, depth_min: number | null, depth_max: number | null, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null, source: { api?: string }, organization: string }>,
+        sensors: [] as Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, depth_min: number | null, depth_max: number | null, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null, source: { api?: string, link?: string, description?: string }, organization: string }>,
         selectedSensor: {} as { id: string, depth: number } | null,
 
         // Sensor panel filters — shared with the map so markers stay in sync with the sensor list.
@@ -83,7 +83,7 @@ export const useMainStore = defineStore('main', {
     },
 
     actions: {
-        setVariables(vars: Array<{ var: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number] }>) {
+        setVariables(vars: Array<{ var: string, name: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number] }>) {
             this.variables = vars;
         },
 
@@ -114,7 +114,7 @@ export const useMainStore = defineStore('main', {
             this.midDate = date;
         },
 
-        setSensors(sensors: Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, depth_min: number | null, depth_max: number | null, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null, source: { api?: string }, organization: string }>) {
+        setSensors(sensors: Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, depth_min: number | null, depth_max: number | null, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null, source: { api?: string, link?: string, description?: string }, organization: string }>) {
             this.sensors = sensors;
         },
         setSelectedSensor(sensor: { id: string, depth: number } | null) {

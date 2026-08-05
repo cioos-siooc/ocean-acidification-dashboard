@@ -2,7 +2,7 @@
   <v-card class="colorbar" max-width="200px" width="fit-content">
     <v-row gap="0" class="my-0 mx-2 pa-0">
       <v-col cols="12" class="ma-0 pa-0" style="height:20px">
-        <span>{{ var2name(selectedVariable.var) }}</span>
+        <span>{{ variableLabel(selectedVariable.var) }}</span>
       </v-col>
 
       <!-- <v-divider class="mx-0"></v-divider> -->
@@ -38,7 +38,8 @@ import moment from 'moment';
 import { useMainStore } from '../stores/main'
 const mainStore = useMainStore();
 
-import { var2name } from '~~/composables/useVar2Name'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
+const { variableLabel } = useVariableRegistry()
 import { utc2pst } from '~~/composables/useUTC2PST'
 
 ////////////////////////////////////// COMPUTED //////////////////////////////////////

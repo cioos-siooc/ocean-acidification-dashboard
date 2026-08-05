@@ -71,12 +71,13 @@
 <script setup lang="ts">
 import { computed, toRef, ref, watch } from 'vue';
 import moment from 'moment-timezone';
-import { var2name } from '~~/composables/useVar2Name';
+import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 import { trackEvent } from '~~/composables/useAnalytics';
 import colors from 'vuetify/util/colors'
 
 import { useMainStore, formatDepthLabel } from '../stores/main'
 const mainStore = useMainStore();
+const { variableLabel } = useVariableRegistry();
 
 const emit = defineEmits<{
   (e: 'autorange'): void;
@@ -117,7 +118,7 @@ const showSourceInfo = ref(false);
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
 
 const variables = computed(() => mainStore.variables);
-const variableItems = computed(() => variables.value.filter(v => v.source === selectedSource.value).map((v) => ({ var: v.var, label: var2name(v.var), colormapMin: v.colormapMin, colormapMax: v.colormapMax })));
+const variableItems = computed(() => variables.value.filter(v => v.source === selectedSource.value).map((v) => ({ var: v.var, label: variableLabel(v.var), colormapMin: v.colormapMin, colormapMax: v.colormapMax })));
 const selectedVariable = computed(() => mainStore.selected_variable);
 const sourceItems = computed(() => {
   const sources = variables.value.filter(v => v.var == selectedVariable.value.var).map(v => ({ source: v.source, label: v.source }));

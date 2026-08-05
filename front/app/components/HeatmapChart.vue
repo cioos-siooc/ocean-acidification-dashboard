@@ -64,7 +64,9 @@ import moment from 'moment';
 
 import { useMainStore } from '../stores/main';
 import { resolveColormap } from '~~/composables/useColormapResolver';
+import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 const mainStore = useMainStore();
+const { variableLabel, modelVariablesOf } = useVariableRegistry();
 
 import colors from 'vuetify/util/colors';
 
@@ -96,9 +98,11 @@ const depths = ref<number[]>([]);
 const data = ref<number[][]>([]);
 
 const plotVariable = ref<string>(props.modelVariable);
+// `{var, label}` to match the v-select's item-value/item-title. Restricted to
+// variables the app shows, which also drops the `time`/`depth` axis entries.
 const sensorVariables = computed(() => {
     const sensor = mainStore.sensors.find(s => s.id === props.sensorId);
-    return sensor ? Object.keys(sensor.variables).filter(v=>v!=='time') : [];
+    return modelVariablesOf(sensor?.variables).map(v => ({ var: v, label: variableLabel(v) }));
 });
 
 const minDate = computed(() => {

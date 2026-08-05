@@ -8,19 +8,17 @@
                 <!-- FILTERS -->
                 <v-row class="ma-0 pa-0" dense>
                     <v-col cols="12" class="pa-1">
-                        <v-text-field v-model="searchQuery" label="Search sensors"
-                            hide-details clearable prepend-inner-icon="mdi-magnify"
-                            rounded></v-text-field>
+                        <v-text-field v-model="searchQuery" label="Search sensors" hide-details clearable
+                            prepend-inner-icon="mdi-magnify" rounded></v-text-field>
                     </v-col>
                     <v-col cols="12" class="pa-1">
                         <v-select v-model="organizationFilter" :items="organizationOptions" label="Organization"
-                            hide-details clearable multiple chips
-                            closable-chips></v-select>
+                            hide-details clearable multiple chips closable-chips></v-select>
                     </v-col>
                     <v-col cols="12" class="pa-1">
                         <v-select v-model="variableFilter" :items="variableOptions" item-title="label"
-                            item-value="value" label="Variable" hide-details
-                            clearable multiple chips closable-chips></v-select>
+                            item-value="value" label="Variable" hide-details clearable multiple chips
+                            closable-chips></v-select>
                     </v-col>
                 </v-row>
 
@@ -30,9 +28,8 @@
 
                 <!-- SENSOR LIST -->
                 <v-list-item v-for="(sensor, i) in filteredSensors" :key="sensor.id" :ref="setSensorRef(sensor.id)"
-                    :active="sensor.id === selectedSensor?.id"
-                    @click="selectSensor(sensor.id)" variant="text" class="rounded my-3" color="yellow"
-                    :style="{ backgroundColor: '#33333399' }">
+                    :active="sensor.id === selectedSensor?.id" @click="selectSensor(sensor.id)" variant="text"
+                    class="rounded my-3" color="yellow" :style="{ backgroundColor: '#33333399' }">
                     <v-list-item-content>
                         <v-list-item-title class="text-body-medium">
                             <v-icon size="12px" :color="sensorStatusColor(sensor)">mdi-circle</v-icon>
@@ -50,12 +47,12 @@
                             </v-list-item-subtitle>
 
                             <v-list-item-subtitle class="text-label-small">{{ formatDataRange(sensor)
-                                }}</v-list-item-subtitle>
+                            }}</v-list-item-subtitle>
 
                             <div class="mt-1 d-flex flex-wrap gap-1">
-                                <v-chip v-for="varKey in Object.keys(sensor.variables)" :key="varKey" size="x-small"
-                                    variant="tonal" color="grey">
-                                    {{ varShortName(varKey) }}
+                                <v-chip v-for="varKey in modelVariablesOf(sensor.variables)" :key="varKey"
+                                    size="x-small" variant="tonal" color="grey">
+                                    {{ variableLabel(varKey) }}
                                 </v-chip>
                             </div>
 
@@ -69,8 +66,7 @@
                                 </v-col>
                                 <v-col cols="1">
                                     <v-btn v-if="sensor.id === selectedSensor?.id" icon size="x-small" variant="tonal"
-                                        color="red-lighten-2"
-                                        @click.stop="mainStore.setActiveBottomTab('comparison')">
+                                        color="red-lighten-2" @click.stop="mainStore.setActiveBottomTab('comparison')">
                                         <v-icon size="12px">mdi-chart-bar</v-icon>
                                     </v-btn>
                                 </v-col>
@@ -105,7 +101,7 @@
                     <v-list-item>
                         <v-list-item-title class="text-caption text-medium-emphasis">Location</v-list-item-title>
                         <v-list-item-subtitle>{{ coordTxt(infoDialogSensor.latitude, infoDialogSensor.longitude)
-                        }}</v-list-item-subtitle>
+                            }}</v-list-item-subtitle>
                     </v-list-item>
                     <v-list-item>
                         <v-list-item-title class="text-caption text-medium-emphasis">Depth</v-list-item-title>
@@ -117,16 +113,45 @@
                     </v-list-item>
                     <v-list-item>
                         <v-list-item-title class="text-caption text-medium-emphasis">Variables</v-list-item-title>
-                        <v-list-item-subtitle>
-                            <span v-for="(varKey, idx) in Object.keys(infoDialogSensor.variables)" :key="varKey">
-                                {{ varShortName(varKey) }}<span
-                                    v-if="idx < Object.keys(infoDialogSensor.variables).length - 1">, </span>
-                            </span>
+                        <!-- Sensors with nothing to download (ONC, or an ERDDAP link of an
+                             unrecognized layout) fall back to a plain list. -->
+                        <v-list-item-subtitle v-if="!infoDownloads?.variables.length">
+                            {{ infoDialogVariables.map(variableLabel).join(', ') }}
                         </v-list-item-subtitle>
+                        <div v-else>
+                            <div v-for="v in infoDownloads.variables" :key="v.canonical"
+                                class="d-flex align-center gap-1 mt-2">
+                                <span class="var-name">{{ variableLabel(v.canonical) }}</span>
+                                <v-btn v-if="v.nc" size="x-small" variant="tonal" color="yellow"
+                                    prepend-icon="mdi-download" :href="v.nc" target="_blank" rel="noopener">
+                                    NetCDF
+                                </v-btn>
+                                <v-btn v-if="v.csv" size="x-small" variant="tonal" color="yellow"
+                                    prepend-icon="mdi-download" :href="v.csv" target="_blank" rel="noopener">
+                                    CSV
+                                </v-btn>
+                                <v-btn v-if="v.page" size="x-small" variant="tonal" color="yellow"
+                                    prepend-icon="mdi-open-in-new" :href="v.page" target="_blank" rel="noopener">
+                                    Oceans 3.0
+                                </v-btn>
+                            </div>
+                            <!-- ONC has no direct-download URL: Oceans 3.0 is a cart/order
+                                 flow, so say so rather than let the buttons imply a file. -->
+                            <div v-if="infoDownloads.api === 'ONC'" class="mt-3 var-note">
+                                ONC data is ordered through Oceans 3.0 (account required). Each link opens Data
+                                Search with that instrument selected.
+                            </div>
+                        </div>
                     </v-list-item>
+
                 </v-list>
             </v-card-text>
+            <v-divider v-if="infoDownloads"></v-divider>
             <v-card-actions>
+                <v-btn v-if="infoDownloads?.dataset" size="x-small" variant="tonal" prepend-icon="mdi-open-in-new"
+                    :href="infoDownloads.dataset" target="_blank" rel="noopener">
+                    Go to {{ infoDownloads.api }}
+                </v-btn>
                 <v-spacer />
                 <v-btn size="small" variant="text" @click="showInfoDialog = false">Close</v-btn>
             </v-card-actions>
@@ -140,9 +165,14 @@ import { storeToRefs } from 'pinia';
 import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import colors from 'vuetify/util/colors';
 import { sensorStatusColor } from '~~/composables/useSensorStatus';
+import { sensorDownloads } from '~~/composables/useSensorDownloadLinks';
+import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 import { trackEvent } from '~~/composables/useAnalytics';
 
 const mainStore = useMainStore();
+// Labels and the "is this a variable we show?" test both come from
+// variable_config.yml — see useVariableRegistry for why they share a source.
+const { variableLabel, isModelVariable, modelVariablesOf } = useVariableRegistry();
 
 type Sensor = typeof mainStore.sensors[number];
 
@@ -164,8 +194,8 @@ const organizationOptions = computed(() => {
 
 const variableOptions = computed(() => {
     const vars = new Set<string>();
-    mainStore.sensors.forEach((s: Sensor) => Object.keys(s.variables ?? {}).forEach(v => vars.add(v)));
-    return Array.from(vars).sort().map(v => ({ label: varShortName(v), value: v }));
+    mainStore.sensors.forEach((s: Sensor) => modelVariablesOf(s.variables).forEach(v => vars.add(v)));
+    return Array.from(vars).map(v => ({ label: variableLabel(v), value: v }));
 });
 
 // Filtering itself lives in mainStore.filteredSensors so the map layer applies the same criteria.
@@ -186,6 +216,11 @@ const heatmap_maxDate = ref<string | null>(null);
 
 const showInfoDialog = ref(false);
 const infoDialogSensor = ref<typeof mainStore.sensors[number] | null>(null);
+const infoDialogVariables = computed(() => modelVariablesOf(infoDialogSensor.value?.variables));
+// null for non-ERDDAP sensors (e.g. ONC), which have no direct download URLs to offer.
+// Restricted to the same variables the dialog lists, so a sensor never offers a
+// download for something the app doesn't otherwise acknowledge.
+const infoDownloads = computed(() => sensorDownloads(infoDialogSensor.value, infoDialogVariables.value));
 
 const sensorRefs = new Map<string, Element | ComponentPublicInstance>();
 function setSensorRef(id: string) {
@@ -221,24 +256,6 @@ function coordTxt(lat: number, lng: number): string {
     const latStr = `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? 'N' : 'S'}`;
     const lngStr = `${Math.abs(lng).toFixed(2)}°${lng >= 0 ? 'E' : 'W'}`;
     return `${latStr}, ${lngStr}`;
-}
-
-const VAR_SHORT: Record<string, string> = {
-    dissolved_oxygen: 'DO',
-    temperature: 'Temp',
-    salinity: 'Sal',
-    ph: 'pH',
-    ph_total: 'pH',
-    chlorophyll: 'Chl',
-    aragonite: 'Arag',
-    nitrate: 'NO₃',
-    pressure: 'Pres',
-    turbidity: 'Turb',
-    fluorescence: 'Fluor',
-};
-
-function varShortName(varKey: string): string {
-    return VAR_SHORT[varKey] ?? varKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function depth2txt(sensor: { depth: number, depth_min?: number | null, depth_max?: number | null }): string {
@@ -284,5 +301,20 @@ function openInfoDialog(sensor: typeof mainStore.sensors[number]) {
 
 .gap-1 {
     gap: 4px;
+}
+
+/* Keeps the per-variable download buttons aligned in a column. */
+.var-name {
+    /* Wide enough for the longest label a sensor actually carries ("Dissolved
+       Oxygen") so the download buttons line up in a column across rows. */
+    min-width: 9rem;
+    font-size: 0.75rem;
+    opacity: var(--v-medium-emphasis-opacity);
+}
+
+.var-note {
+    font-size: 0.75rem;
+    line-height: 1.1rem;
+    opacity: var(--v-medium-emphasis-opacity);
 }
 </style>
