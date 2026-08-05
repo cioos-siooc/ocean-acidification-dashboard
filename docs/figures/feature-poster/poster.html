@@ -1,0 +1,179 @@
+<meta charset="utf-8">
+<title>OceanECO — Feature Overview</title>
+<style>
+  :root { --ink:#12161c; --ink2:#3d4654; --ink3:#6b7688; --rule:#d3d9e2; --accent:#0b6fa4; --panel:#1b1f26; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body { background:#fff; }
+  body { font-family:"Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif; color:var(--ink); -webkit-font-smoothing:antialiased; }
+
+  .page  { width:420mm; height:297mm; overflow:hidden; }
+  .sheet { width:420mm; padding:10mm 11mm 7mm; display:flex; flex-direction:column; }
+
+  /* ---------- header ---------- */
+  header { display:flex; align-items:flex-end; gap:6mm; border-bottom:0.7mm solid var(--ink); padding-bottom:2.2mm; }
+  .brand { display:flex; align-items:baseline; gap:2.2mm; }
+  h1 { font-size:8.2mm; letter-spacing:-0.04em; font-weight:700; line-height:0.95; }
+  .ver { font-size:3mm; font-weight:700; color:var(--ink3); }
+  .beta { font-size:2.4mm; font-weight:700; color:#fff; background:#e07a1a; padding:0.5mm 1.3mm; border-radius:0.7mm; letter-spacing:0.06em; position:relative; top:-0.6mm; }
+  .tag { font-size:3.4mm; color:var(--ink2); line-height:1.26; max-width:168mm; margin-top:1.5mm; }
+  .tag b { color:var(--ink); font-weight:600; }
+  .facts { margin-left:auto; display:flex; gap:6mm; text-align:right; }
+  .fact .n { font-size:5.2mm; font-weight:700; line-height:1; letter-spacing:-0.02em; white-space:nowrap; }
+  .fact .l { font-size:2.3mm; color:var(--ink3); text-transform:uppercase; letter-spacing:0.085em; margin-top:0.8mm; }
+
+  /* ---------- grid ---------- */
+  /* Column widths solved so all three columns finish at the same height,
+     given each panel's measured aspect ratio. */
+  .grid { margin-top:3.4mm; display:grid; grid-template-columns:180.6mm 140.1mm 65.3mm; gap:6mm; align-items:start; }
+  .col  { display:flex; flex-direction:column; gap:3.5mm; }
+
+  .cap { display:flex; gap:1.7mm; align-items:baseline; margin-bottom:1.1mm; }
+  .lbl { flex:none; width:4.5mm; height:4.5mm; border-radius:0.8mm; background:var(--ink); color:#fff; font-size:2.85mm; font-weight:700; display:flex; align-items:center; justify-content:center; line-height:1; }
+  .cap h2 { font-size:3.4mm; font-weight:700; letter-spacing:-0.01em; line-height:1.1; }
+  .cap .sub { font-size:2.75mm; color:var(--ink3); font-weight:500; }
+  figure img { display:block; width:100%; height:auto; border-radius:1mm; border:0.25mm solid #262c35; background:var(--panel); }
+  figcaption { font-size:2.65mm; line-height:1.33; color:var(--ink2); margin-top:1.1mm; }
+  figcaption b { color:var(--ink); font-weight:600; }
+  .num { font-variant-numeric:tabular-nums; color:var(--accent); font-weight:700; }
+
+  /* narrow third column */
+  .col-3 .cap h2 { font-size:3.1mm; }
+  .col-3 figcaption { font-size:2.5mm; }
+
+  /* ---------- footer ---------- */
+  footer { margin-top:3.2mm; padding-top:1.8mm; border-top:0.25mm solid var(--rule); display:flex; gap:8mm; font-size:2.5mm; color:var(--ink3); line-height:1.32; }
+  footer b { color:var(--ink2); font-weight:600; }
+  footer div:last-child { margin-left:auto; text-align:right; }
+</style>
+
+<div class="page"><div class="sheet" id="sheet">
+  <header>
+    <div>
+      <div class="brand"><h1>OceanECO</h1><span class="ver">v0.3.1</span><span class="beta">BETA</span></div>
+      <p class="tag">
+        Ocean acidification &amp; carbonate-chemistry explorer for the <b>Salish Sea</b> — pairing the
+        <b>SalishSeaCast</b> model with moored and profiling observations, and evaluating one against the other.
+      </p>
+    </div>
+    <div class="facts">
+      <div class="fact"><div class="n">8</div><div class="l">Model variables</div></div>
+      <div class="fact"><div class="n">51</div><div class="l">Observing platforms</div></div>
+      <div class="fact"><div class="n">0–442 m</div><div class="l">Depth range</div></div>
+      <div class="fact"><div class="n">Hourly</div><div class="l">Model cadence</div></div>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- ============ column 1 — exploring the model ============ -->
+    <div class="col">
+      <figure>
+        <div class="cap"><span class="lbl">A</span><h2>Interactive model map</h2><span class="sub">MapboxGL + pre-rendered tiles</span></div>
+        <img src="fig/map.png" alt="Map of the Salish Sea showing the modelled temperature field with observing platforms overlaid">
+        <figcaption>
+          The chosen variable, depth and timestep are served as pre-rendered <b>WebP tiles</b>, reprojected from the
+          model's curvilinear grid. Observing platforms sit on a GL symbol layer, a colorbar keys the field, and
+          hovering reports the value under the cursor. <b>Point</b> and <b>area</b> query modes feed every chart here.
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="cap"><span class="lbl">B</span><h2>Point timeseries vs. climatology</h2><span class="sub">Timeseries tab</span></div>
+        <img src="fig/timeseries.png" alt="Modelled temperature timeseries against a climatological envelope">
+        <figcaption>
+          Modelled temperature at a clicked point and depth (pink) against the <b>day-of-year climatological
+          envelope</b> — min, mean and max (blue) — with day/night shading, a <b>NOW</b> marker, and playback controls
+          that animate the map through the series.
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="cap"><span class="lbl">C</span><h2>Historical range &amp; records</h2><span class="sub">Model Analysis tab</span></div>
+        <img src="fig/analysis.png" alt="Every year of modelled temperature overlaid on a percentile envelope">
+        <figcaption>
+          The whole historical record for one location: every year overlaid on the <b>P10–P90</b> envelope and long-term
+          mean, filterable by season and statistic. All-time extremes are surfaced — here
+          <span class="num">24.542&nbsp;°C</span> (2021-07-30) and <span class="num">2.823&nbsp;°C</span> (2017-01-13).
+        </figcaption>
+      </figure>
+    </div>
+
+    <!-- ============ column 2 — evaluating against observations ============ -->
+    <div class="col">
+      <figure>
+        <div class="cap"><span class="lbl">D</span><h2>Depth profile — model vs. profiler</h2><span class="sub">ORCA&nbsp;Point&nbsp;Wells</span></div>
+        <img src="fig/depthprofile.png" alt="Stacked depth-time heatmaps of the model, binned sensor casts, and their difference">
+        <figcaption>
+          Three stacked depth–time fields: the <b>model</b>, the profiler's <b>casts binned onto the model's own depth
+          levels</b>, and their <b>difference</b>. Here <span class="num">80</span> casts give a bias of
+          <span class="num">+3.159</span>, <span class="num">r&nbsp;=&nbsp;0.655</span>, RMSE <span class="num">3.377</span>.
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="cap"><span class="lbl">E</span><h2>Model–sensor agreement</h2><span class="sub">Campbell River, 8.5&nbsp;m</span></div>
+        <img src="fig/comparison.png" alt="Modelled and observed temperature overlaid with skill statistics">
+        <figcaption>
+          Daily model (orange, with its min–max spread) against the moored sensor (green) at the station's own depth.
+          Skill scores track the visible window: bias <span class="num">−0.411</span>, RMSE <span class="num">0.509</span>,
+          Pearson <span class="num">R&nbsp;=&nbsp;0.979</span> over <span class="num">168</span> matched days.
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="cap"><span class="lbl">F</span><h2>Matched-pair regression</h2><span class="sub">Comparison → Scatter</span></div>
+        <img src="fig/scatter.png" alt="Scatter of modelled against observed temperature with 1:1 and best-fit lines">
+        <figcaption>
+          Every matched model–observation pair against the <b>1:1 reference</b> (dashed) and the linear best fit (orange):
+          <span class="num">R²&nbsp;=&nbsp;0.958</span>, slope <span class="num">0.927</span>, intercept
+          <span class="num">+0.347</span>. Residual and seasonal-cycle views sit on adjacent tabs.
+        </figcaption>
+      </figure>
+    </div>
+
+    <!-- ============ column 3 — finding data ============ -->
+    <div class="col col-3">
+      <figure>
+        <div class="cap"><span class="lbl">G</span><h2>Field &amp; sensor picker</h2></div>
+        <img src="fig/controlpanel.png" alt="Left control panel with variable, model source and depth pickers above a searchable sensor list">
+        <figcaption>
+          Variable, model source and depth sit above a <b>searchable sensor list</b> filterable by organisation and
+          variable. Each card carries depth, position, record span and the variables that station measures.
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="cap"><span class="lbl">H</span><h2>Station metadata</h2></div>
+        <img src="fig/sensormeta.png" alt="Per-sensor metadata dialog listing location, depth, record span and per-variable data links">
+        <figcaption>
+          Per-station detail with <b>direct links out to the source archive</b> — ONC Oceans 3.0, ERDDAP, or NetCDF/CSV
+          downloads per variable — so any figure here can be traced back to raw data.
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <footer>
+    <div>
+      <b>Model</b> — SalishSeaCast (UBC), hourly on a curvilinear sigma-coordinate grid; carbonate chemistry
+      (pH, Ω<sub>aragonite</sub>, Ω<sub>calcite</sub>) derived with PyCO2SYS.<br>
+      <b>Observations</b> — Ocean Networks Canada · Hakai Institute · UW NANOOS/IOOS · UW APL.
+    </div>
+    <div>
+      <b>Variables</b> — temperature, salinity, dissolved oxygen, total alkalinity,<br>
+      dissolved inorganic carbon, pH (total), Ω aragonite, Ω calcite.
+    </div>
+  </footer>
+</div></div>
+
+<script>
+  // Shrink-to-fit the whole sheet (header + grid + footer) so the poster is
+  // always exactly one page instead of silently clipping the footer.
+  window.addEventListener('load', () => {
+    const sheet = document.getElementById('sheet');
+    const pageH = document.querySelector('.page').getBoundingClientRect().height;
+    const h = sheet.getBoundingClientRect().height;
+    const s = Math.min(1, pageH / h);
+    if (s < 1) { sheet.style.transformOrigin = 'top left'; sheet.style.transform = 'scale(' + s + ')'; }
+    document.body.setAttribute('data-fit', h.toFixed(1) + '/' + pageH.toFixed(1) + ' scale=' + s.toFixed(4));
+  });
+</script>
