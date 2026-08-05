@@ -98,7 +98,7 @@ ORDER BY (date, variable)
 
 # Daily mean/min/max per variable, derived from SalishSeaCast_hourly during
 # ingest (see ingest.py) — same column layout as the historical bulk-load
-# table this feeds (clickhouse_test/scripts/SSC.py), so both the PROCESS
+# table this feeds, so both the PROCESS
 # machine's local table and the API machine's table stay schema-compatible.
 _DAILY_VARIABLE_COLS = '\n    '.join(
     f'{var}_{stat} Float32 CODEC(Gorilla, ZSTD(4)),'

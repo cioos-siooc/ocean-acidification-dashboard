@@ -162,4 +162,4 @@ PostHog is now the **only** usage-analytics tool — a pre-existing self-hosted 
 
 ## Python Environment
 
-`process/`, `scripts/`, and `clickhouse_test/` use **uv** (see `pyproject.toml` + `uv.lock` in each). `api/` uses pip with `requirements.txt`. Each subproject has its own `.venv`.
+`process/` and `scripts/` use **uv** (see `pyproject.toml` + `uv.lock` in each). `api/` uses pip with `requirements.txt`. Each subproject has its own `.venv`.

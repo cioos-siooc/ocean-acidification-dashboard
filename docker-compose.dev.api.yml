@@ -51,9 +51,7 @@ services:
   # extractTimeseries/analysis queries. Not the same as the PROCESS
   # machine's own db-ch, which only tracks that machine's pipeline status.
   db-ch:
-    build:
-      context: .
-      dockerfile: clickhouse_test/Dockerfile
+    image: clickhouse/clickhouse-server:latest
     ports:
       - "8123:8123"
       - "9000:9000"

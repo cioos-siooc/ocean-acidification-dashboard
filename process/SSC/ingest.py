@@ -145,7 +145,7 @@ def _insert_daily_aggregate(
 
     A cell is included only if at least one hour had valid (non-land,
     non-seafloor-padding) data for it — same inclusion rule as the historical
-    bulk-load table this feeds (clickhouse_test/scripts/SSC.py).
+    bulk-load table this feeds.
     """
     day_valid = day_count > 0
     n_day_valid = int(day_valid.sum())
