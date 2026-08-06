@@ -44,11 +44,14 @@ const props = withDefaults(defineProps<{
   /** Depth in metres to mark with a horizontal rule, or null for none. */
   markDepth?: number | null
   markLabel?: string
+  /** Last-clicked cell to outline, or null for none. */
+  markCell?: { binIdx: number, depthIdx: number } | null
   /** Caption drawn over the panel's top-left corner. */
   label?: string
 }>(), {
   showXAxis: false,
   markDepth: null,
+  markCell: null,
 })
 
 const emit = defineEmits<{
@@ -103,12 +106,14 @@ function renderItem(_params: unknown, api: any) {
   const top = api.value(2) as number
   const bottom = api.value(3) as number
   const v = api.value(4) as number | null
+  const depthIdx = api.value(5) as number
   const p0 = api.coord([h, top])
   const p1 = api.coord([h + 1, bottom])
   const x = Math.min(p0[0], p1[0])
   const y = Math.min(p0[1], p1[1])
   const width = Math.abs(p1[0] - p0[0]) + 0.6
   const height = Math.abs(p1[1] - p0[1]) + 0.6
+  const isMarked = props.markCell != null && h === props.markCell.binIdx && depthIdx === props.markCell.depthIdx
   // Empty cells are stored as null, but ECharts' api.value() surfaces a null
   // numeric-dimension entry as NaN (not null) — so guard on both, else a NaN
   // would fall through to colorFn() and paint the top of the ramp (highest
@@ -118,9 +123,21 @@ function renderItem(_params: unknown, api: any) {
   // decal object dirty on every renderItem call, so
   // createOrUpdatePatternFromDecal regenerates the whole offscreen canvas
   // pattern from scratch for every single empty cell — thousands of them per
-  // panel when data is sparse, which freezes the tab for many seconds.
-  if (v == null || Number.isNaN(v)) return undefined
-  return { type: 'rect', shape: { x, y, width, height }, style: { fill: props.colorFn(v) } }
+  // panel when data is sparse, which freezes the tab for many seconds. The
+  // marked cell is the one exception worth paying for: at most one per panel,
+  // so a plain stroke (no decal) outline is cheap regardless of whether it
+  // lands on a data cell or an empty one.
+  if (v == null || Number.isNaN(v)) {
+    if (!isMarked) return undefined
+    return { type: 'rect', shape: { x, y, width, height }, style: { fill: 'transparent', stroke: '#ffffff', lineWidth: 2 } }
+  }
+  return {
+    type: 'rect',
+    shape: { x, y, width, height },
+    style: isMarked
+      ? { fill: props.colorFn(v), stroke: '#ffffff', lineWidth: 2 }
+      : { fill: props.colorFn(v) },
+  }
 }
 
 function markLineData() {
@@ -237,6 +254,11 @@ function resize() { chart?.resize() }
 
 watch([() => props.values, () => props.colorFn, () => props.binCount, () => props.gridlineBins], updateData)
 watch(() => props.markDepth, updateMarkLine)
+// markCell isn't part of the series' own data — renderItem only re-runs on a
+// setOption call against this series, so re-pass a fresh `data` array (a new
+// reference forces every cell to be reconsidered) rather than something
+// markCell-shaped that ECharts has no dedicated slot for.
+watch(() => props.markCell, updateData)
 
 // The depth zoom is only meaningful for the current variable's depth domain —
 // reset it to full whenever the level set changes (e.g. switching to a variable

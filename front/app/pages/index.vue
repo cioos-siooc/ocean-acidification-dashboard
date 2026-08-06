@@ -227,6 +227,16 @@ const mapContainer = ref<HTMLDivElement | null>(null);
 let map: mapboxgl.Map | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
+
+// Auto-open the vertical profile drawer on switching into either depth
+// section — the section is a time-depth slice at one instant per column, the
+// drawer is that same coordinate's full water column at one instant, so the
+// two naturally belong side by side. One-directional on purpose: leaving a
+// depth view never force-closes a drawer the user opened deliberately.
+watch(() => mainStore.exploreView, (view) => {
+    if (view === 'model-depth' || view === 'sensor-depth') drawerOpen.value = true;
+});
+
 const activeTab = computed({
     get: () => mainStore.activeBottomTab,
     set: (v: 'explore' | 'analysis' | 'comparison') => mainStore.setActiveBottomTab(v),

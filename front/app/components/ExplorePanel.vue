@@ -58,7 +58,7 @@
         <div v-if="showSection" class="hm-slot" :style="{ height: sectionH + 'px' }" @mouseleave="hoverCell = null">
           <TimeDepthHeatmap ref="modelPanel" :label="panelLabel" :depths="depths" :values="activeGrid"
             :bin-count="binCount" :color-fn="seqColorFn" :gridline-bins="gridlineBins"
-            :mark-depth="markDepth" :mark-label="depthLabel"
+            :mark-cell="clickedCell"
             show-x-axis :x-label="xLabel"
             @cell-click="onCellClick" @hover="hoverCell = $event" />
         </div>
@@ -156,7 +156,13 @@ const depths = computed<number[]>(() => {
 // Monthly is offered here (unlike the Comparison view) because the daily table
 // reaches back ~two decades at any grid cell — see the coverage note below.
 const AVAILABLE_MODES: BinMode[] = ['hourly', 'daily', 'monthly']
-const binMode = ref<BinMode>('hourly')
+// Lives in the store, not a local ref: the vertical profile drawer (a sibling
+// under index.vue, not a child of this panel) reads it to aggregate its own
+// profile the same way this panel's depth section is currently binned.
+const binMode = computed<BinMode>({
+  get: () => mainStore.exploreBinMode,
+  set: (m) => mainStore.setExploreBinMode(m),
+})
 
 // Coverage differs per bin mode (hourly and daily are different tables, nearly
 // two decades apart), and is per grid cell, so it can only come from the
@@ -189,7 +195,23 @@ const {
 // wrapped page()/confirmDatePick() below, and re-set if paging happens to
 // land back on the live edge.
 const pinnedToLatest = ref(true)
-watch([binMode, point, source, varId], () => { pinnedToLatest.value = true })
+watch([binMode, point, source, varId], () => {
+  pinnedToLatest.value = true
+  // A new coordinate/mode's default profile instant is "whatever the map's
+  // clock currently is" (selected_variable.dt) — any override from a click
+  // against the *previous* point/mode's bins no longer means anything here.
+  mainStore.setExploreProfileDt(null)
+})
+
+// The section's own highlighted cell — replaces the old horizontal depth
+// line now that there's no companion line chart below the section for a
+// line to mean "this is the depth it's plotted at". Bin/depth indices are
+// only meaningful against the window they were clicked in, so this also
+// resets on every window move (paging, jump-to-date) — deliberately its own
+// watcher rather than folded into the one above, which `pageWindow`'s own
+// `pinnedToLatest` bookkeeping depends on *not* re-firing on a windowEnd change.
+const clickedCell = ref<{ binIdx: number, depthIdx: number } | null>(null)
+watch([binMode, point, source, varId, windowEnd], () => { clickedCell.value = null })
 
 function pageWindow(dir: number) {
   page(dir)
@@ -491,7 +513,6 @@ const hoverInfo = computed(() => {
 // ── DEPTH SELECTION — two-way with the map's own depth control, so picking a
 // level here re-renders the raster layer at that depth and vice versa. ────────
 const selectedDepthIdx = ref(0)
-const markDepth = computed(() => depths.value[selectedDepthIdx.value] ?? null)
 const depthLabel = computed(() => {
   const d = depths.value[selectedDepthIdx.value]
   return d != null ? `${d.toFixed(d < 10 ? 1 : 0)} m` : '—'
@@ -541,15 +562,17 @@ watch(
 
 function onCellClick({ binIdx, depthIdx }: { binIdx: number, depthIdx: number }) {
   selectedDepthIdx.value = depthIdx
+  clickedCell.value = { binIdx, depthIdx }
   const d = depths.value[depthIdx]
   const partial: Partial<typeof mainStore.selected_variable> = {}
   if (d != null) { partial.depth = formatDepthLabel(d); partial.depth_nc = d }
-  // Daily/monthly bins are too coarse for a click to mean "this instant" —
-  // only hourly re-centres the map's clock.
-  if (binMode.value === 'hourly') {
-    const start = binStarts.value[binIdx]
-    if (start) partial.dt = moment.utc(start)
-  }
+  const start = binStarts.value[binIdx]
+  // Always drives the vertical profile drawer, at whatever resolution it's
+  // clicked at. Daily/monthly bins are still too coarse for a click to mean
+  // "this instant" for the map's own clock, though — only hourly re-centres
+  // that.
+  if (start) mainStore.setExploreProfileDt(start)
+  if (binMode.value === 'hourly' && start) partial.dt = moment.utc(start)
   if (Object.keys(partial).length) mainStore.updateSelectedVariable(partial)
 }
 

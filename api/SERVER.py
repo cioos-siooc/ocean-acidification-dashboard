@@ -620,10 +620,11 @@ class profileRequest(BaseModel):
     dt: str
     lat: float
     lng: float
+    bin_mode: str = "hourly"
 
 @app.post("/getProfile")
 async def fn_get_profile(request: profileRequest, http_request: Request):
-    logger.info(f"START getProfile: source={request.source}, var={request.var}, lat={request.lat}, lng={request.lng}, dt={request.dt}")
+    logger.info(f"START getProfile: source={request.source}, var={request.var}, lat={request.lat}, lng={request.lng}, dt={request.dt}, bin_mode={request.bin_mode}")
     async with extract_slot("getProfile"):
         try:
             source = request.source
@@ -631,6 +632,7 @@ async def fn_get_profile(request: profileRequest, http_request: Request):
             lat = request.lat
             lng = request.lng
             dt = request.dt
+            bin_mode = request.bin_mode
 
             _require_ssc(source)
 
@@ -642,12 +644,13 @@ async def fn_get_profile(request: profileRequest, http_request: Request):
                     lat=lat,
                     lon=lng,
                     dt=dt,
+                    bin_mode=bin_mode,
                 ),
                 timeout=THREADPOOL_TIMEOUT,
             )
-            logger.info(f"FINISH getProfile: source={source}, var={var}, lat={lat}, lng={lng}, dt={dt} - returned {len(profile)} points")
+            logger.info(f"FINISH getProfile: source={source}, var={var}, lat={lat}, lng={lng}, dt={dt}, bin_mode={bin_mode} - returned {len(profile)} points")
             capture_event(http_request, "get_profile", {
-                "source": source, "var": var, "lat": lat, "lng": lng, "dt": dt,
+                "source": source, "var": var, "lat": lat, "lng": lng, "dt": dt, "bin_mode": bin_mode,
             })
             return profile
         except HTTPException:

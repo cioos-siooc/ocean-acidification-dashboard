@@ -1,7 +1,11 @@
 <template>
     <v-navigation-drawer v-model="isOpen" location="right" width="300" class="pa-2" absolute persistent mobile
         :scrim="false" style="height:100%; z-index:9999; top:0;">
-        <v-row class="ma-0 pa-0" style="height: 20px;">
+        <v-row class="ma-0 pa-0 align-center" style="height: 38px;">
+            <div class="drawer-header flex-grow-1" style="min-width:0;">
+                <div class="title-text text-truncate">{{ title }}</div>
+                <div class="subtitle-text text-truncate">{{ timestamp }}</div>
+            </div>
             <v-btn icon size="20px" color="error" flat @click="isOpen = false">
                 <v-icon size="16px">mdi-close</v-icon>
             </v-btn>
@@ -42,6 +46,7 @@ interface ProfileRequest {
     lat: number;
     lng: number;
     dt: string;
+    binMode: 'hourly' | 'daily' | 'monthly';
 }
 
 interface ProfilePoint {
@@ -81,11 +86,23 @@ const title = computed(() => {
     return `${variableLabel(varId)} Profile`;
 });
 
+// The instant this profile represents: an explicit override from a depth
+// section cell click when one is set (`exploreProfileDt`), else the map's own
+// clock — see `exploreProfileDt`'s definition in the store for why the two
+// can diverge (daily/monthly cell clicks don't move the map's clock).
+const profileDt = computed<MomentInput>(() => mainStore.exploreProfileDt ?? mainStore.selected_variable?.dt);
+
+// The same chart looks identical whether it's an instantaneous reading or a
+// daily/monthly mean — this is the only visible cue for which one it is, so
+// it has to say the aggregation, not just the moment.
 const timestamp = computed(() => {
-    const dt = mainStore.selected_variable?.dt;
+    const dt = profileDt.value;
     if (!dt) return 'Data timestamp: –';
-    const parsed = moment(dt);
+    const parsed = moment.utc(dt);
     if (!parsed.isValid()) return 'Data timestamp: –';
+    const mode = mainStore.exploreBinMode;
+    if (mode === 'monthly') return `Monthly mean · ${parsed.format('MMMM YYYY')}`;
+    if (mode === 'daily') return `Daily mean · ${parsed.format('MMM D, YYYY')}`;
     return `Data timestamp: ${utc2pst(parsed)}`;
 });
 
@@ -105,7 +122,7 @@ const selectedVariableLabel = computed(() => variableLabel(mainStore.selected_va
 const requestParams = computed<ProfileRequest | null>(() => {
     const lat = props.selectedPoint?.lat;
     const lng = props.selectedPoint?.lng;
-    const dt = mainStore.selected_variable?.dt;
+    const dt = profileDt.value;
     const variable = mainStore.selected_variable?.var;
     const source = mainStore.selected_variable?.source;
     if (typeof lat !== 'number' || typeof lng !== 'number' || !dt || !variable || !source) {
@@ -118,7 +135,12 @@ const requestParams = computed<ProfileRequest | null>(() => {
         var: variable,
         lat,
         lng,
-        dt: parsed.utc().format('YYYY-MM-DDTHHmmss')
+        dt: parsed.utc().format('YYYY-MM-DDTHHmmss'),
+        // The Depth tab's own bin-mode toggle, mirrored via the store — daily/
+        // monthly resolve to that calendar day/month's mean at the backend
+        // regardless of the exact hour in `dt`, so this only needs to be part
+        // of the request, not folded into `dt` itself.
+        binMode: mainStore.exploreBinMode,
     };
 });
 
@@ -297,7 +319,7 @@ async function fetchProfile(params: ProfileRequest) {
     const currentRequest = ++requestSequence;
 
     try {
-        const payload: Record<string, any> = { source: params.source, var: params.var, lat: params.lat, lng: params.lng, dt: params.dt };
+        const payload: Record<string, any> = { source: params.source, var: params.var, lat: params.lat, lng: params.lng, dt: params.dt, bin_mode: params.binMode };
         const response = await axios.post(`${apiBaseUrl}/getProfile`, payload, { signal: currentController.signal });
 
         if (currentRequest !== requestSequence) return;
@@ -339,25 +361,25 @@ function cancelRequest() {
 
 <style scoped>
 .drawer-header {
-    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-    padding-bottom: 8px;
+    line-height: 1.25;
 }
 
 .title-text {
     font-weight: 600;
-    font-size: 0.95rem;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.9);
 }
 
 .subtitle-text {
-    font-size: 0.8rem;
-    color: rgba(0, 0, 0, 0.6);
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.55);
 }
 
 .profile-chart-wrapper {
     flex: 1;
     position: relative;
     /* min-height: 200px; */
-    height: calc(100% - 20px);
+    height: calc(100% - 38px);
     /* margin-top: 6px; */
     /* background:red; */
 }

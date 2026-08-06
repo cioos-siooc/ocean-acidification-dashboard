@@ -75,6 +75,21 @@ export const useMainStore = defineStore('main', {
         // Lives in the store (not a local ExplorePanel ref) because the footer's
         // nav rail in index.vue is what drives it now, one level up from the panel.
         exploreView: 'series' as 'series' | 'model-depth' | 'sensor-depth',
+
+        // ExplorePanel's own bin-mode toggle (1H/1D/1M), mirrored here so the
+        // vertical profile drawer — a sibling of ExplorePanel under index.vue,
+        // not a child of it — can request a profile aggregated the same way
+        // the depth section currently on screen is.
+        exploreBinMode: 'hourly' as 'hourly' | 'daily' | 'monthly',
+
+        // Which instant the vertical profile drawer should show, when it
+        // differs from the map's own clock (`selected_variable.dt`). A depth
+        // section cell click in daily/monthly bin mode deliberately leaves the
+        // map's clock alone (a day/month bin isn't "an instant" for the raster
+        // layer) but the profile drawer still needs to jump to that day/month —
+        // null defers to `selected_variable.dt`, as it always did before this
+        // field existed.
+        exploreProfileDt: null as Date | null,
     }),
 
     getters: {
@@ -233,6 +248,18 @@ export const useMainStore = defineStore('main', {
                 trackEvent('explore_view_changed', { view });
             }
             this.exploreView = view;
+        },
+
+        // No analytics event here, unlike the setters above — this fires on
+        // every bin-mode toggle click, a display-density choice rather than a
+        // discrete user action worth counting (same reasoning PostHog's own
+        // exclusions use for high-frequency, non-navigational state changes).
+        setExploreBinMode(mode: 'hourly' | 'daily' | 'monthly') {
+            this.exploreBinMode = mode;
+        },
+
+        setExploreProfileDt(dt: Date | null) {
+            this.exploreProfileDt = dt;
         },
     }
 })
