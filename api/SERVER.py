@@ -25,6 +25,7 @@ from modules.extract_depth_profile import extract_depth_profile
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
 from modules.sync_hourly import import_native_file, import_daily_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
 from modules.posthog_helpers import capture_event
+from modules import response_cache
 
 async def run_in_process(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
@@ -252,6 +253,14 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: 
     Response: { time: [iso...], value: [float|null,...] }
               or with depth axis: { time: [...], depth: [...], value: [...] }
     """
+    key = response_cache.make_key("sensorTimeseries", request)
+    cached = response_cache.get_sensor(key)
+    if cached is not None:
+        capture_event(http_request, "sensor_timeseries", {
+            "sensorId": request.sensorId, "modelVariable": request.modelVariable,
+            "fromDate": request.fromDate, "toDate": request.toDate, "depth": request.depth,
+        })
+        return cached
     async with extract_slot("sensorTimeseries"):
         try:
             result = await asyncio.wait_for(
@@ -266,6 +275,7 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: 
                 ),
                 timeout=THREADPOOL_TIMEOUT,
             )
+            response_cache.set_sensor(key, result)
             capture_event(http_request, "sensor_timeseries", {
                 "sensorId": request.sensorId, "modelVariable": request.modelVariable,
                 "fromDate": request.fromDate, "toDate": request.toDate, "depth": request.depth,
@@ -312,6 +322,16 @@ async def get_depth_profile(request: depthProfileRequest, http_request: Request)
     """
     resolution = request.binMode or f"{request.binHours}h"
     logger.info(f"START depthProfile: {request.source}, {request.var}, sensor={request.sensorId}, lat={request.lat}, lon={request.lon}, from={request.fromDate}, to={request.toDate}, resolution={resolution}")
+    is_sensor = request.sensorId is not None
+    key = response_cache.make_key("depthProfile", request)
+    cached = response_cache.get_sensor(key) if is_sensor else response_cache.get_model(key)
+    if cached is not None:
+        capture_event(http_request, "depth_profile", {
+            "mode": "sensor" if request.sensorId else "model",
+            "sensorId": request.sensorId, "source": request.source, "var": request.var,
+            "fromDate": request.fromDate, "toDate": request.toDate, "resolution": resolution,
+        })
+        return cached
     async with extract_slot("depthProfile"):
         try:
             result = await asyncio.wait_for(
@@ -329,6 +349,10 @@ async def get_depth_profile(request: depthProfileRequest, http_request: Request)
                 ),
                 timeout=THREADPOOL_TIMEOUT,
             )
+            if is_sensor:
+                response_cache.set_sensor(key, result)
+            else:
+                response_cache.set_model(key, result)
             logger.info(f"FINISH depthProfile: {request.var}, sensor={request.sensorId} - returned {len(result.get('depths', []))} depths x {len(result.get('time', []))} bins")
             capture_event(http_request, "depth_profile", {
                 "mode": "sensor" if request.sensorId else "model",
@@ -471,6 +495,16 @@ async def fn_extract_timeseries(request: timeseriesRequest, http_request: Reques
 
     # Reject requests if we are already at concurrency limit
     logger.info(f"START extractTimeseries: {request.source}, {request.var}, {location_desc}, depth={request.depth}, from={request.fromDate}, to={request.toDate}")
+    key = response_cache.make_key("extractTimeseries", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
+        capture_event(http_request, "extract_timeseries", {
+            "source": request.source, "var": request.var,
+            "lat": request.lat, "lon": request.lon,
+            "polygon": has_polygon, "depth": request.depth,
+            "fromDate": request.fromDate, "toDate": request.toDate,
+        })
+        return cached
     async with extract_slot("extractTimeseries"):
         try:
             # use provided depth exactly (float value passed from frontend); None means all depths
@@ -491,6 +525,7 @@ async def fn_extract_timeseries(request: timeseriesRequest, http_request: Reques
                 timeout=THREADPOOL_TIMEOUT,
             )
             payload = _format_timeseries_result(result)
+            response_cache.set_model(key, payload)
             logger.info(
                 "FINISH extractTimeseries: %s, %s, depth=%s, from=%s, to=%s - returned %s points",
                 request.var,
@@ -534,6 +569,14 @@ class climate_timeseriesRequest(BaseModel):
 @app.post("/extract_climateTimeseries")
 async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_request: Request):
     logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
+    key = response_cache.make_key("extract_climateTimeseries", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
+        capture_event(http_request, "extract_climate_timeseries", {
+            "var": request.var, "lat": request.lat, "lon": request.lon,
+            "depth": request.depth, "fromDate": request.fromDate, "toDate": request.toDate,
+        })
+        return cached
     try:
         result = await run_in_threadpool(
             extract_climate_timeseries,
@@ -544,6 +587,7 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_
             logger.error("extract_climate_timeseries returned None")
             raise HTTPException(status_code=500, detail="Climatology extraction failed")
 
+        response_cache.set_model(key, result)
         logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
         capture_event(http_request, "extract_climate_timeseries", {
             "var": request.var, "lat": request.lat, "lon": request.lon,
@@ -572,6 +616,14 @@ class minmaxRequest(BaseModel):
 async def fn_get_minmax(request: minmaxRequest, http_request: Request):
     """Extract min and max values for a variable at a specific datetime and depth."""
     logger.info(f"START getMinMax: source={request.source}, var={request.var}, dt={request.dt}, depth={request.depth}")
+    key = response_cache.make_key("getMinMax", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
+        capture_event(http_request, "get_minmax", {
+            "source": request.source, "var": request.var,
+            "dt": request.dt, "depth": request.depth,
+        })
+        return cached
     async with extract_slot("getMinMax"):
         try:
             source = request.source
@@ -595,12 +647,14 @@ async def fn_get_minmax(request: minmaxRequest, http_request: Request):
                 timeout=THREADPOOL_TIMEOUT,
             )
 
+            result = {"min": min_val, "max": max_val}
+            response_cache.set_model(key, result)
             logger.info(f"FINISH getMinMax: source={request.source}, var={request.var}, range=[{min_val}, {max_val}]")
             capture_event(http_request, "get_minmax", {
                 "source": request.source, "var": request.var,
                 "dt": request.dt, "depth": request.depth,
             })
-            return {"min": min_val, "max": max_val}
+            return result
         except HTTPException:
             raise
         except RuntimeError as exc:
@@ -626,6 +680,14 @@ class profileRequest(BaseModel):
 @app.post("/getProfile")
 async def fn_get_profile(request: profileRequest, http_request: Request):
     logger.info(f"START getProfile: source={request.source}, var={request.var}, lat={request.lat}, lng={request.lng}, dt={request.dt}, bin_mode={request.bin_mode}")
+    key = response_cache.make_key("getProfile", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
+        capture_event(http_request, "get_profile", {
+            "source": request.source, "var": request.var or "temperature", "lat": request.lat,
+            "lng": request.lng, "dt": request.dt, "bin_mode": request.bin_mode,
+        })
+        return cached
     async with extract_slot("getProfile"):
         try:
             source = request.source
@@ -649,6 +711,7 @@ async def fn_get_profile(request: profileRequest, http_request: Request):
                 ),
                 timeout=THREADPOOL_TIMEOUT,
             )
+            response_cache.set_model(key, profile)
             logger.info(f"FINISH getProfile: source={source}, var={var}, lat={lat}, lng={lng}, dt={dt}, bin_mode={bin_mode} - returned {len(profile)} points")
             capture_event(http_request, "get_profile", {
                 "source": source, "var": var, "lat": lat, "lng": lng, "dt": dt, "bin_mode": bin_mode,
@@ -702,6 +765,15 @@ async def analysis_timeseries(request: AnalysisRequest, http_request: Request):
 
     Returns a flat daily {time, value} series.
     """
+    key = response_cache.make_key("analysis_timeseries", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
+        capture_event(http_request, "analysis_timeseries", {
+            "variable": request.primaryMetric.variable, "stat": request.primaryMetric.stat,
+            "depth": request.depth, "mode": "polygon" if (request.polygon and len(request.polygon) >= 3) else "point",
+            "yearRange": request.temporal.get("yearRange"),
+        })
+        return cached
     try:
         has_polygon = request.polygon and len(request.polygon) >= 3
         has_point = request.lat is not None and request.lon is not None
@@ -742,6 +814,7 @@ async def analysis_timeseries(request: AnalysisRequest, http_request: Request):
             stat=request.primaryMetric.stat,
             year_range=request.temporal["yearRange"],
         )
+        response_cache.set_model(key, result)
         capture_event(http_request, "analysis_timeseries", {
             "variable": request.primaryMetric.variable, "stat": request.primaryMetric.stat,
             "depth": request.depth, "mode": "polygon" if has_polygon else "point",
@@ -779,7 +852,9 @@ async def sync_hourly(request: SyncHourlyRequest, authorization: Optional[str] =
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        return await run_in_threadpool(import_native_file, request.date, request.expected_rows)
+        result = await run_in_threadpool(import_native_file, request.date, request.expected_rows)
+        response_cache.invalidate_all()
+        return result
     except SyncConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except SyncError as exc:
@@ -802,7 +877,9 @@ async def sync_daily(request: SyncHourlyRequest, authorization: Optional[str] = 
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        return await run_in_threadpool(import_daily_native_file, request.date, request.expected_rows)
+        result = await run_in_threadpool(import_daily_native_file, request.date, request.expected_rows)
+        response_cache.invalidate_all()
+        return result
     except SyncConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except SyncError as exc:
