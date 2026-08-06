@@ -81,7 +81,9 @@ FastAPI app in `SERVER.py`. All blocking work runs in a `ProcessPoolExecutor` vi
 | Endpoint | Module |
 |---|---|
 | `POST /extractTimeseries` | `modules/extractTimeseries.py` |
-| `POST /getProfile` | `modules/extract_profile.py` |
+| `POST /getProfile` | `modules/extract_profile.py` — single-depth-column vertical profile at a point/time; accepts `bin_mode` (hourly/daily/monthly), daily/monthly read the calendar-day/month mean from `SalishSeaCast_daily` instead of the instantaneous hourly reading |
+| `POST /depthProfile` | `modules/extract_depth_profile.py` — the time-depth (Hovmöller) grid behind `depth/TimeDepthHeatmap.vue`, optionally alongside a variable-depth sensor's casts binned onto the same grid |
+| `POST /getMinMax` | `modules/extractMinMax.py` |
 | `POST /sensorTimeseries` | `modules/extractSensorTimeseries.py` |
 | `POST /extract_climateTimeseries` | `modules/extract_climate_timeseries.py` |
 | `POST /analysis/timeseries` | `modules/ocean_analysis.py` |
@@ -125,27 +127,19 @@ Config via `nuxt.config.ts`. Runtime env vars: `NUXT_PUBLIC_API_BASE_URL`, `NUXT
 
 **UI conventions**: Prefer Vuetify components (`v-btn`, `v-card`, `v-sheet`, etc.) over raw `div`/`button` elements, even when heavily restyled — apply custom look via scoped CSS classes on top of the component (e.g. `selectedInfo.vue`'s `.colorbar` class on a `v-card`) rather than dropping to plain HTML. Use `:deep()` to reach into a component's internal classes (e.g. `.v-btn__content`) when the override needs to target inner markup.
 
-**Charts/plots**: Always use ECharts for any chart or plot — never hand-roll rendering on a raw `<canvas>` (custom heatmaps, hit-testing, tooltips, zoom, etc. reimplement things ECharts already does correctly, e.g. its `dataZoom` component for zoom/pan). Even non-standard visualizations (variable-height heatmap cells, custom hatching) are buildable as an ECharts `custom` series with `renderItem` — see `app/components/comparison/DepthProfile.vue`'s Model/Sensor/Diff panels. One gotcha: ECharts enables progressive rendering by default for `custom` series above a low item-count threshold, which silently paints only the first chunk of data for larger grids (thousands of cells) — set `progressive: false` on the series when the full render is cheap enough to do in one pass. Register the dark theme via `composables/useEchartsTheme.ts`.
+**Charts/plots**: Always use ECharts for any chart or plot — never hand-roll rendering on a raw `<canvas>` (custom heatmaps, hit-testing, tooltips, zoom, etc. reimplement things ECharts already does correctly, e.g. its `dataZoom` component for zoom/pan). Even non-standard visualizations (variable-height heatmap cells, custom hatching) are buildable as an ECharts `custom` series with `renderItem` — see `app/components/depth/TimeDepthHeatmap.vue`. One gotcha: ECharts enables progressive rendering by default for `custom` series above a low item-count threshold, which silently paints only the first chunk of data for larger grids (thousands of cells) — set `progressive: false` on the series when the full render is cheap enough to do in one pass. Register the dark theme via `composables/useEchartsTheme.ts`.
 
 #### Frontend Feature Map
 
-`app/pages/index.vue` hosts a bottom `v-footer` tab rail (`activeTab`, bound to `mainStore.activeBottomTab`) with four tabs:
+`app/pages/index.vue` hosts a bottom `v-footer` rail (`activeTab`, bound to `mainStore.activeBottomTab`) with **one map-synced pane plus two fullscreen workspaces**. The organizing principle: the map is context (coordinate/depth/clock), so only a view that actually reads that context stays beside it — Analysis and Comparison take a coordinate as input and have nothing further to say to the map, so they open as `v-dialog fullscreen` instead of footer tabs. An earlier 5-tab layout (Timeseries / Depth / Model Analysis / Comparison / Sensor Analysis) was collapsed into this shape after Model/Sensor Analysis turned out to be the same builder pointed at two sources and the Timeseries tab's sensor overlay duplicated Comparison.
 
-| Tab | Component | Purpose | Data fetching |
+| Pane | Component | Purpose | Data fetching |
 |---|---|---|---|
-| Timeseries | `app/components/TimeseriesChart.vue` | Chart of a single point/sensor's raw timeseries over a date range | `composables/useSensorTimeseries.ts` → `POST /extractTimeseries` or `/sensorTimeseries` |
-| Model Analysis | `app/components/analytics.vue` ("Analysis Builder") | Analyzes the full historical timeseries for a selected coordinate/depth/variable — view mode (All Years Overlaid / Annual Summary), season filter, statistic (min/mean/max), all-time min/max records, threshold-crossing stats per year | `composables/useAnalysisFetch.ts` → `POST /analysis/timeseries` |
-| Comparison | `app/components/sensorComparison.vue` (shown only when a sensor is selected) | Compares sensor vs. model data | — |
-| Sensor Analysis | `app/components/sensorAnalytics.vue` (shown only when a sensor is selected) | Same "Analysis Builder" pattern as Model Analysis (view mode / season / statistic), but run against a sensor's own observed timeseries instead of the model | `composables/useSensorAnalysisFetch.ts` (`fetchSensorAnalysisSeries`) |
+| Explore (footer) | `app/components/ExplorePanel.vue` | Flat selector — Timeseries \| Model depth \| Sensor depth (the last only for profilers). Timeseries always overlays model + sensor; the depth section is a lens above it, not a replacement — the chart stays the read-out. Depth sections render as `app/components/depth/TimeDepthHeatmap.vue` (Hovmöller heatmap, ECharts `custom` series), with a companion vertical-profile drawer (`SelectedVariableDrawer.vue`) that follows the panel's bin-mode toggle and updates on heatmap cell clicks | `composables/useSensorTimeseries.ts` → `/extractTimeseries`/`/sensorTimeseries`; `useTimeDepthWindow.ts` + `useModelTimeseries.ts`/`useDepthProfileFetch.ts` → `/depthProfile`; `useClimateTimeseries.ts` → `/extract_climateTimeseries` |
+| Analysis (fullscreen) | `app/components/AnalysisWorkspace.vue` | Tabs: Overview (`analysis/AnalysisBuilder.vue`, `source: 'model' \| 'sensor'` prop), Extreme Events, Compound Stress, Trend, Climatology Anomaly, Correlation | `composables/useAnalysisFetch.ts`/`useSensorAnalysisFetch.ts` → `POST /analysis/timeseries`; sub-tabs share one fetched "primary series" per point/variable/depth via `AnalysisWorkspace.vue`'s `fetchSeriesFor`, plus a memoized `cachedFetch` for secondary-variable series (Compound Stress, Correlation) |
+| Comparison (fullscreen) | `app/components/ComparisonWorkspace.vue` | Tabs: Timeseries (`sensorComparison.vue`), Depth sections (`comparison/ComparisonSections.vue`, only for variable-depth sensors), Scatter, Residuals, Seasonal Cycle — shown only when a sensor is selected | — |
 
-**Model Analysis advanced mode**: `analytics.vue`'s fullscreen icon opens `app/components/analysis/AdvancedAnalysisDialog.vue`, a fullscreen dialog with 5 sub-tabs under `app/components/analysis/`:
-- `ExtremeEvents.vue` — baseline window, min duration, direction
-- `CompoundStress.vue` — primary + secondary variable threshold comparison
-- `Trend.vue` — Theil-Sen slope, Mann-Kendall test
-- `Climatology.vue` — deviation from day-of-year climatological mean
-- `Correlation.vue` — 2-4 selectable variables
-
-The dialog fetches one shared "primary series" per point/variable/depth (reused across sub-tabs), plus a memoized `cachedFetch` helper for secondary-variable series used by CompoundStress and Correlation. Client-side stats helpers live in `composables/useAnalysisStatistics.ts`; ECharts dark theme registration in `composables/useEchartsTheme.ts`.
+Selecting a sensor deliberately does not navigate between panes (`selectSensor` in `stores/main.ts`) — under the fullscreen design a jump would throw a dialog over the map on every buoy click, so the sensor instead appears overlaid on Explore's timeseries. Client-side stats helpers live in `composables/useAnalysisStatistics.ts`; ECharts dark theme registration in `composables/useEchartsTheme.ts`.
 
 Other chart-related components: `app/components/sensorInfo.vue` — despite the name, this is the left-panel searchable/filterable sensor list (mounted in `controlPanel.vue`'s "Sensors" expansion panel); it also bundles the per-sensor metadata dialog (info icon) and a heatmap dialog. Selecting a sensor here or on the map both call `mainStore.selectSensor(id, depth)`, and the list auto-scrolls the selected `v-list-item` into view via a `watch` on `mainStore.selectedSensor`.
 
