@@ -38,8 +38,62 @@ let zrClickHandler: ((evt: any) => void) | null = null;
 
 const loading = ref(false);
 
+/**
+ * Time domain. By default the chart spans `midDate ± dfnDays` — the map clock's
+ * neighbourhood, which is what this chart showed when it was the Timeseries
+ * tab's whole reason to exist. Hosts that own their own window (the Depth tab
+ * pages through 14-day / 1-year / 20-year spans) pass it explicitly instead, so
+ * the line chart lines up with the section above it.
+ *
+ * `dayNight` is a tri-state string, not a boolean, on purpose: Vue coerces an
+ * absent Boolean-typed prop to `false` rather than leaving it undefined, so a
+ * `props.flag ?? autoRule` default silently never reaches the auto rule and the
+ * bands vanish for every host that doesn't pass the prop. 'auto' follows window
+ * length — dusk/dawn bands read well across a fortnight and turn into an
+ * unreadable moiré across a year.
+ */
+const props = defineProps<{
+    windowStart?: Date | null
+    windowEnd?: Date | null
+    dayNight?: 'auto' | 'on' | 'off'
+    /**
+     * Plot-area gutters. The default 160px left gutter makes room for the
+     * vertical legend. A host stacking this chart beneath a time-depth section
+     * overrides both to the section's own fixed margins, since two panels
+     * sharing an x-axis have to share a plot area or the eye can't read across
+     * them — and pairs it with `legendLayout: 'top'` so nothing needs the space.
+     */
+    gridLeft?: number
+    gridRight?: number
+    legendLayout?: 'left' | 'top'
+}>();
+
+const gridConfig = computed(() => ({
+    left: props.gridLeft ?? 160,
+    right: props.gridRight ?? 30,
+    top: props.legendLayout === 'top' ? 34 : 30,
+    bottom: 30,
+}));
+
+const legendConfig = computed(() => props.legendLayout === 'top'
+    ? { show: true, orient: 'horizontal' as const, left: 'center', top: 0, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 9 } }
+    : { show: true, orient: 'vertical' as const, left: 'left', top: 'center', itemWidth: 15, itemHeight: 10, textStyle: { fontSize: 10 } });
+
 const DFN = computed(() => mainStore.dfnDays);
 const midDate = computed(() => mainStore.midDate ?? moment.utc());
+
+const TZ = 'America/Vancouver';
+const windowStartLocal = computed(() => props.windowStart
+    ? moment(props.windowStart).tz(TZ)
+    : midDate.value.clone().tz(TZ).subtract(DFN.value, 'days'));
+const windowEndLocal = computed(() => props.windowEnd
+    ? moment(props.windowEnd).tz(TZ)
+    : midDate.value.clone().tz(TZ).add(DFN.value, 'days'));
+const dayNightVisible = computed(() => {
+    const mode = props.dayNight ?? 'auto';
+    if (mode !== 'auto') return mode === 'on';
+    return windowEndLocal.value.diff(windowStartLocal.value, 'days') <= 40;
+});
 
 const showChartInfo = ref(false);
 
@@ -77,18 +131,10 @@ function initChart() {
                 saveAsImage: {}
             }
         },
-        legend: {
-            show: true,
-            orient: 'vertical',
-            left: 'left',
-            top: 'center',
-            itemWidth: 15,
-            itemHeight: 10,
-            textStyle: { fontSize: 10 }
-        },
+        legend: legendConfig.value,
         xAxis: { type: 'time', axisLabel: { color: '#e0e0e0' } },
         yAxis: { type: 'value', min: 'dataMin', max: 'dataMax', axisLabel: { color: '#e0e0e0' } },
-        grid: { left: 160, right: 30, top: 30, bottom: 30 },
+        grid: gridConfig.value,
         series: []
     });
     chart.resize();
@@ -184,12 +230,14 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         ]);
     }
 
-    const startLocal = midDate.value.clone().tz(tz).subtract(DFN.value, 'days');
-    const endLocal = midDate.value.clone().tz(tz).add(DFN.value, 'days');
+    const startLocal = windowStartLocal.value.clone();
+    const endLocal = windowEndLocal.value.clone();
 
     // Night mark areas
     let markAreaData: any[] = [];
-    if (typeof lat === 'number' && typeof lng === 'number') {
+    if (!dayNightVisible.value) {
+        // Left empty: across a multi-year window the bands collapse into noise.
+    } else if (typeof lat === 'number' && typeof lng === 'number') {
         const nights = computeNightRanges({ lat, lng, tz, startLocalIso: startLocal.format(), endLocalIso: endLocal.format() });
         for (let i = 0; i < nights.length - 1; i++) {
             const nightEnd = nights[i]?.[1];
@@ -275,7 +323,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
                 ? { text: `No sensor cast near ${sensorData.depth != null ? sensorData.depth.toFixed(1) + 'm' : 'this depth'} in this window`, fill: 'rgba(255,255,255,0.4)', fontSize: 11 }
                 : { text: '' }
         }],
-        legend: { show: true, orient: 'vertical', left: 'left', top: 'center', itemWidth: 15, itemHeight: 10, textStyle: { fontSize: 10 }, icon: 'rect' },
+        legend: { ...legendConfig.value, icon: 'rect' },
         tooltip: {
             trigger: 'none',
             axisPointer: {
@@ -303,7 +351,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
             // }
         },
         toolbox: { feature: { saveAsImage: {} } },
-        grid: { left: 160, right: 30, top: 30, bottom: 30 },
+        grid: gridConfig.value,
         xAxis: {
             type: 'time',
             min: startLocal.format(),

@@ -286,23 +286,32 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: 
 class depthProfileRequest(BaseModel):
     source: str
     var: str
-    sensorId: str  # UUID
     lat: float
     lon: float
     fromDate: str
     toDate: str
+    # Omit for a model-only grid (Depth tab); pass a sensor UUID to also get
+    # that profiler's casts binned onto the same grid (Comparison tab).
+    sensorId: Optional[str] = None
+    # binHours is the legacy form, still accepted so an already-deployed
+    # frontend keeps working against a newer API — the two deploy separately.
+    # binMode supersedes it and is the only way to ask for monthly.
     binHours: Literal[1, 24] = 1
+    binMode: Optional[Literal["hourly", "daily", "monthly"]] = None
 
 @app.post("/depthProfile")
 async def get_depth_profile(request: depthProfileRequest, http_request: Request):
-    """Bin a variable-depth sensor's raw casts onto the model's depth levels
-    and time buckets at the requested resolution, alongside the model's own
-    values at that grid — the Comparison tab's Depth Profile (Hovmöller) view.
+    """Build the model's time-depth (Hovmöller) grid at the cell nearest
+    (lat, lon), optionally alongside a variable-depth sensor's casts binned
+    onto that same grid — the Depth tab's model view and the Comparison tab's
+    Depth Profile view respectively.
 
     Response: { time: [iso...], depths: [float...], model: [[float,...],...],
-                sensor: [[float|null,...],...] }  — both grids depths x time.
+                sensor: [[float|null,...],...] | null }  — grids are depths x time;
+                `sensor` is null when no sensorId was requested.
     """
-    logger.info(f"START depthProfile: {request.source}, {request.var}, sensor={request.sensorId}, from={request.fromDate}, to={request.toDate}, binHours={request.binHours}")
+    resolution = request.binMode or f"{request.binHours}h"
+    logger.info(f"START depthProfile: {request.source}, {request.var}, sensor={request.sensorId}, lat={request.lat}, lon={request.lon}, from={request.fromDate}, to={request.toDate}, resolution={resolution}")
     async with extract_slot("depthProfile"):
         try:
             result = await asyncio.wait_for(
@@ -316,13 +325,15 @@ async def get_depth_profile(request: depthProfileRequest, http_request: Request)
                     from_date=request.fromDate,
                     to_date=request.toDate,
                     bin_hours=request.binHours,
+                    bin_mode=request.binMode,
                 ),
                 timeout=THREADPOOL_TIMEOUT,
             )
             logger.info(f"FINISH depthProfile: {request.var}, sensor={request.sensorId} - returned {len(result.get('depths', []))} depths x {len(result.get('time', []))} bins")
             capture_event(http_request, "depth_profile", {
+                "mode": "sensor" if request.sensorId else "model",
                 "sensorId": request.sensorId, "source": request.source, "var": request.var,
-                "fromDate": request.fromDate, "toDate": request.toDate, "binHours": request.binHours,
+                "fromDate": request.fromDate, "toDate": request.toDate, "resolution": resolution,
             })
             return result
         except HTTPException:

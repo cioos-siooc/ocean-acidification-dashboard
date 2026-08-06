@@ -113,48 +113,74 @@
             </div>
             <div class="d-flex footer-content" style="width: 100%;">
 
-                <!-- Vertical tab rail -->
+                <!-- Vertical tab rail. Plain buttons with explicit active classes
+                     rather than v-btn-toggle: Explore's sub-list is nested directly
+                     beneath it and only shown while Explore is active, which makes
+                     the rail's item heights variable — incompatible with the sliding
+                     "pill" a uniform-height toggle group can animate. -->
                 <v-sheet class="footer-rail d-flex flex-column flex-shrink-0">
-                    <v-btn-toggle v-model="activeTab" mandatory direction="vertical" variant="text"
-                        class="footer-rail-track">
-                        <div class="footer-rail-pill" :style="{ transform: `translateY(${railIndex * 100}%)` }"></div>
-                        <v-btn v-for="t in footerTabs" :key="t.value" :value="t.value" :prepend-icon="t.icon" block
-                            class="footer-rail-item">
+                    <div class="footer-rail-track">
+                        <v-btn prepend-icon="mdi-chart-line" variant="text" block class="footer-rail-item"
+                            :class="{ 'footer-rail-item--active': activeTab === 'explore' }"
+                            @click="activeTab = 'explore'">
+                            Explore
+                        </v-btn>
+                        <div v-if="activeTab === 'explore'" class="footer-rail-sublist">
+                            <v-btn v-for="sv in exploreSubViews" :key="sv.value" variant="text" block
+                                class="footer-rail-subitem"
+                                :class="{ 'footer-rail-subitem--active': mainStore.exploreView === sv.value }"
+                                @click="mainStore.setExploreView(sv.value)">
+                                {{ sv.label }}
+                            </v-btn>
+                        </div>
+
+                        <!-- Analysis is a fullscreen dialog with no rail of its own once
+                             open, so Model/Sensor is picked here rather than inside it —
+                             a sub-item both sets the source and opens the workspace. The
+                             top-level row only expands the sub-list (rather than opening
+                             straight away, as Explore's does) since opening immediately
+                             would cover the rail before the sub-list was ever clickable. -->
+                        <v-btn prepend-icon="mdi-poll" variant="text" block class="footer-rail-item"
+                            :class="{ 'footer-rail-item--active': activeTab === 'analysis' }"
+                            @click="analysisExpanded = !analysisExpanded">
+                            Analysis
+                        </v-btn>
+                        <div v-if="analysisExpanded" class="footer-rail-sublist">
+                            <v-btn v-for="sv in analysisSubViews" :key="sv.value" variant="text" block
+                                class="footer-rail-subitem"
+                                :class="{ 'footer-rail-subitem--active': mainStore.analysisSource === sv.value }"
+                                :disabled="sv.disabled" :title="sv.title"
+                                @click="mainStore.setAnalysisSource(sv.value); activeTab = 'analysis'">
+                                {{ sv.label }}
+                            </v-btn>
+                        </div>
+
+                        <v-btn v-for="t in remainingFooterTabs" :key="t.value" :prepend-icon="t.icon" variant="text" block
+                            class="footer-rail-item" :class="{ 'footer-rail-item--active': activeTab === t.value }"
+                            @click="activeTab = t.value">
                             {{ t.label }}
                         </v-btn>
-                    </v-btn-toggle>
+                    </div>
                 </v-sheet>
 
                 <!-- Content area -->
                 <div class="flex-grow-1" style="min-width:0; height:100%; overflow:hidden;">
                     <!-- Timeseries tab -->
-                    <div v-show="activeTab === 'timeseries'" style="height:100%; position:relative;">
-                        <TimeControls
-                            :timestamps="mainStore.variables.find(v => v.var === mainStore.selected_variable.var)?.dts || []"
-                            :currentDt="mainStore.selected_variable.dt"
-                            @update:dt="(newDt) => mainStore.updateSelectedVariable({ dt: newDt })" />
-                        <TimeseriesChart ref="timeseriesChart" style="width:100%; height:calc(100% - 32px);" />
-                    </div>
-
-                    <!-- Model Analysis tab -->
-                    <div v-show="activeTab === 'analysis'" style="height:100%;">
-                        <Analytics :active="activeTab === 'analysis'" />
-                    </div>
-
-                    <!-- Comparison tab (visible only when a sensor is selected) -->
-                    <div v-show="activeTab === 'comparison'" style="height:100%;">
-                        <SensorComparison :active="activeTab === 'comparison'" />
-                    </div>
-
-                    <!-- Sensor Analysis tab (visible only when a sensor is selected) -->
-                    <div v-show="activeTab === 'sensorAnalysis'" style="height:100%;">
-                        <SensorAnalytics :active="activeTab === 'sensorAnalysis'" />
+                    <!-- The one map-synced pane: the clicked point's data at the
+                         map's depth, over a paged window. -->
+                    <div style="height:100%;">
+                        <ExplorePanel :active="activeTab === 'explore'" />
                     </div>
                 </div>
 
             </div>
 
         </v-footer>
+
+        <!-- Fullscreen workspaces. Kept mounted so closing and reopening one
+             doesn't refetch everything it had already loaded. -->
+        <AnalysisWorkspace v-model="analysisOpen" />
+        <ComparisonWorkspace v-model="comparisonOpen" />
         <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
             <div ref="globalChartContainer" class="w-100 h-100"></div>
         </div> -->
@@ -171,7 +197,6 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import axios from 'axios'
 import moment from 'moment-timezone'
-import TimeControls from '../components/TimeControls.vue'
 import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties, Feature, Polygon } from 'geojson';
@@ -180,10 +205,9 @@ import { utc2pst } from '~~/composables/useUTC2PST'
 import useStationsInteraction from '~~/composables/useStationsInteraction';
 import { addBuoyLayer, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '~~/composables/useBuoyLayer';
 import getSensorTimeseries from '~~/composables/useSensorTimeseries';
-import TimeseriesChart from '../components/TimeseriesChart.vue';
-import Analytics from '../components/analytics.vue'
-import SensorComparison from '../components/sensorComparison.vue'
-import SensorAnalytics from '../components/sensorAnalytics.vue'
+import AnalysisWorkspace from '../components/AnalysisWorkspace.vue'
+import ExplorePanel from '../components/ExplorePanel.vue'
+import ComparisonWorkspace from '../components/ComparisonWorkspace.vue'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
@@ -200,30 +224,77 @@ const apiBaseUrl = config.public.apiBaseUrl
 
 
 const mapContainer = ref<HTMLDivElement | null>(null);
-const timeseriesChart = ref<InstanceType<typeof TimeseriesChart> | null>(null);
 let map: mapboxgl.Map | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
 const activeTab = computed({
     get: () => mainStore.activeBottomTab,
-    set: (v: 'timeseries' | 'analysis' | 'comparison' | 'sensorAnalysis') => mainStore.setActiveBottomTab(v),
+    set: (v: 'explore' | 'analysis' | 'comparison') => mainStore.setActiveBottomTab(v),
 });
 const footerTabs = computed(() => [
-    { value: 'timeseries' as const, icon: 'mdi-chart-line', label: 'Timeseries' },
-    { value: 'analysis' as const, icon: 'mdi-poll', label: 'Model Analysis' },
+    { value: 'explore' as const, icon: 'mdi-chart-line', label: 'Explore' },
+    { value: 'analysis' as const, icon: 'mdi-poll', label: 'Analysis' },
     ...(mainStore.selectedSensor?.id
-        ? [
-            { value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison' },
-            { value: 'sensorAnalysis' as const, icon: 'mdi-chart-bell-curve-cumulative', label: 'Sensor Analysis' },
-        ]
+        ? [{ value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison' }]
         : []),
 ]);
-const railIndex = computed(() => footerTabs.value.findIndex(t => t.value === activeTab.value));
+// Explore and Analysis are rendered separately (each has its own sub-list
+// nested directly beneath it), so the rail's trailing loop only needs the rest
+// — just Comparison, when a sensor is selected.
+const remainingFooterTabs = computed(() => footerTabs.value.filter(t => t.value !== 'explore' && t.value !== 'analysis'));
 
-// Drop back to timeseries when the active sensor is cleared
+// Explore's own sub-views. Sensor depth only exists once a profiler sensor is
+// selected — `selectedProfilerSensorId` is the same store getter ExplorePanel
+// itself uses to decide whether there's a section to fetch, so the rail and
+// the panel never disagree about whether the option should be offered.
+const exploreSubViews = computed(() => [
+    { value: 'series' as const, label: 'Timeseries' },
+    { value: 'model-depth' as const, label: 'Model depth' },
+    ...(mainStore.selectedProfilerSensorId
+        ? [{ value: 'sensor-depth' as const, label: 'Sensor depth' }]
+        : []),
+]);
+
+// Analysis's own sub-views. Sensor stays visible but disabled with no sensor
+// selected (rather than disappearing like Explore's Sensor depth) — Model vs
+// Sensor is a binary choice worth always showing, not a capability that only
+// exists once something else happens to be selected.
+const analysisSubViews = computed(() => {
+    const hasSensor = !!mainStore.selectedSensor?.id;
+    return [
+        { value: 'model' as const, label: 'Model', disabled: false, title: '' },
+        {
+            value: 'sensor' as const, label: 'Sensor', disabled: !hasSensor,
+            title: hasSensor ? "Analyse the sensor's own record" : 'Select a sensor first',
+        },
+    ];
+});
+
+// Rail-only expand/collapse for Analysis's sub-list — separate from `activeTab`
+// because opening the fullscreen workspace immediately (as Explore's plain tab
+// switch does) would cover the rail before the sub-list was ever clickable.
+// Re-expands whenever the workspace opens (including via the sub-items
+// themselves) so it's still showing, one click from re-selecting the other
+// source, after the dialog is closed again.
+const analysisExpanded = ref(false);
+watch(activeTab, (v) => { if (v === 'analysis') analysisExpanded.value = true; });
+
+// Analysis and Comparison are fullscreen workspaces rather than footer panes.
+// Picking them in the rail opens the workspace; closing it drops back to Explore,
+// the only tab whose content is tied to the map behind it.
+const analysisOpen = computed({
+    get: () => activeTab.value === 'analysis',
+    set: (open: boolean) => { if (!open) activeTab.value = 'explore'; },
+});
+const comparisonOpen = computed({
+    get: () => activeTab.value === 'comparison',
+    set: (open: boolean) => { if (!open) activeTab.value = 'explore'; },
+});
+
+// Comparison has nothing to show without a sensor — close it if one is cleared.
 watch(() => mainStore.selectedSensor, (sensor) => {
-    if (!sensor?.id && (activeTab.value === 'comparison' || activeTab.value === 'sensorAnalysis')) {
-        activeTab.value = 'timeseries';
+    if (!sensor?.id && activeTab.value === 'comparison') {
+        activeTab.value = 'explore';
     }
 });
 
@@ -256,7 +327,6 @@ function startFooterResize(e: PointerEvent) {
             rafId = requestAnimationFrame(() => {
                 rafId = 0;
                 map?.resize();
-                (timeseriesChart.value as any)?.resize?.();
             });
         }
     };
@@ -266,8 +336,9 @@ function startFooterResize(e: PointerEvent) {
         window.removeEventListener('pointerup', onUp);
         if (rafId) cancelAnimationFrame(rafId);
         // Final sync so map/charts settle exactly on the released size.
+        // The footer panes carry their own ResizeObservers, so only the map
+        // needs telling explicitly.
         map?.resize();
-        (timeseriesChart.value as any)?.resize?.();
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -470,39 +541,10 @@ watch(() => [mainStore.selected_variable.source, mainStore.selected_variable.var
 
         mapLoaded.value = true;
 
-        // If the user previously clicked a point, refresh the timeseries chart for the new var/depth
-        // (only while the Timeseries tab is the one being viewed — Analysis Builder has its own fetch)
-        if (lastClicked.value && v !== 'bathymetry') {  // Skip API call for bathymetry
-            if (activeTab.value === 'timeseries') {
-                try {
-                    // debounce rapid var/depth changes to avoid hammering the API
-                    if (tsRefreshTimer) clearTimeout(tsRefreshTimer);
-                    // Skip if a sensor click is already handling the fetch via lastClickedMapPoint watcher
-                    if (_sensorClickPending) return;
-                    tsRefreshTimer = setTimeout(async () => {
-                        try {
-                            const lat = lastClicked.value!.lat;
-                            const lon = lastClicked.value!.lng;
-                            const varName = mainStore.selected_variable.var;
-
-                            // abort previous request if any
-                            try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-                            tsRequestController = new AbortController();
-
-                            getTimeseriesPromises(lat, lon);
-                        } catch (e) {
-                            if (e && e.code === 'ERR_CANCELED') return; // aborted
-                            console.warn('Failed to refresh timeseries after var/depth change', e);
-                        } finally {
-                            tsRequestController = null;
-                        }
-                    }, 300);
-                } catch (e) {
-                    console.warn('Failed to schedule timeseries refresh after var/depth change', e);
-                }
-            }
-        } else
-            maybeInitClick();
+        // Nothing to refetch here on a var/depth change any more: the footer
+        // panes watch `selected_variable` themselves. Only the "no point picked
+        // yet" bootstrap still belongs to the page.
+        if (!lastClicked.value || v === 'bathymetry') maybeInitClick();
     } catch (e) {
         console.error('Failed to load PNG for variable', v, e);
         removePngOverlay();
@@ -711,67 +753,15 @@ function initClick(lat: number, lng: number) {
         query_mode: mainStore.queryMode,
     });
     mainStore.setLastClickedMapPoint({ lat, lng });
-
-    // Abort any in-flight timeseries requests and create a new controller
-    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-    tsRequestController = new AbortController();
-
-    // trigger map click to load initial timeseries
     map.fire('click', { lngLat: { lat, lng } });
-
-    // getTimeseriesFromApi(lat, lon);
 }
 
 
-async function getTimeseriesPromises(lat: number, lon: number) {
-    if (!timeseriesChart.value) return;
-    const fromDate = midDate.value.clone().subtract(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
-    const toDate = midDate.value.clone().add(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
-
-    await timeseriesChart.value.fetchAndPlot(
-        lat, lon,
-        () => getTimeseriesFromApi(lat, lon, fromDate, toDate),
-        () => getClimateTimeseries(lat, lon, fromDate, toDate),
-        // selectedSensor.depth === -1 means the sensor profiles the water column (see
-        // sensorComparison.vue's isVariableDepth). There's no fixed depth to snap to on
-        // the sensor's own record, so use the shared global depth (the same one driving
-        // the map layer) instead — this is what makes changing the map's depth control
-        // refetch the profiler's overlay too, no Depth Profile round-trip needed.
-        () => {
-            if (!mainStore.selectedSensor || !mainStore.selectedSensor.id) return Promise.resolve(null);
-            if (mainStore.selectedSensor.depth === -1) {
-                if (mainStore.selected_variable.depth_nc == null) return Promise.resolve(null);
-                return getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selected_variable.depth_nc, mainStore.selected_variable.source);
-            }
-            return getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selectedSensor.depth);
-        }
-    );
-}
-
-async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {
-    const base = { source: mainStore.selected_variable.source, var: mainStore.selected_variable.var, depth: mainStore.selected_variable.depth_nc, fromDate, toDate }
-    const h = 0.05
-    const payload = mainStore.queryMode === 'area'
-        ? { ...base, polygon: [[lon-h,lat-h],[lon+h,lat-h],[lon+h,lat+h],[lon-h,lat+h],[lon-h,lat-h]] }
-        : { ...base, lat, lon }
-    return axios.post(`${apiBaseUrl}/extractTimeseries`, payload, { signal: tsRequestController.signal });
-    // const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
-    // const json = r.data;
-    // if (json && Array.isArray(json.time) && Array.isArray(json.value)) {
-    //     plotTimeseriesFromApi(json.time, json.value, lat, lon);
-    // }
-}
-
-async function getClimateTimeseries(lat: number, lon: number, fromDate: string, toDate: string) {
-    return axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
-        var: mainStore.selected_variable.var,
-        lat,
-        lon,
-        depth: mainStore.selected_variable.depth_nc,
-        fromDate,
-        toDate
-    });
-};
+// The page no longer fetches timeseries itself. Each footer pane owns its own
+// data: the Depth tab pulls the model section (and slices the single-depth line
+// out of it) plus the climatology envelope, and the Comparison pane fetches its
+// own model/sensor pair. This page's remaining job around a click is to place
+// the marker and publish the coordinate on the store.
 
 const REALTIME_THRESHOLD_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 const PROXIMITY_M = 100; // sensors within 100 m share one map marker
@@ -922,21 +912,14 @@ function clickSensorFromSpiderfy(sensor: MultiSensorCandidate) {
 function clickSensor(sensor_id: string, depth: number) {
     trackEvent('sensor_selected', { sensor_id, source: 'map' });
     sensorPicker.value.visible = false;
-    // Set flag BEFORE selectSensor so the var/depth watcher skips its own fetch.
-    // The lastClickedMapPoint watcher (via setLastClickedMapPoint below) will
-    // trigger the single authoritative fetch.
-    _sensorClickPending = true;
     mainStore.selectSensor(sensor_id, depth);
+    // Publishing the coordinate is the whole job — the panes fetch off the store.
+    // (No fetch to de-duplicate here any more, so the old _sensorClickPending
+    // guard against a double request from the var/depth watcher is gone too.)
     const sensor = mainStore.sensors.find((s: any) => s.id === sensor_id);
     if (sensor) {
         mainStore.setLastClickedMapPoint({ lat: sensor.latitude, lng: sensor.longitude });
-    } else {
-        // Sensor not in store — fall back to current point
-        const pt = lastClicked.value;
-        if (pt && activeTab.value === 'timeseries') getTimeseriesPromises(pt.lat, pt.lng);
     }
-    // Clear after this tick — the var/depth watcher has already seen the flag.
-    nextTick(() => { _sensorClickPending = false; });
 }
 
 
@@ -1097,36 +1080,16 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     map.on('click', onMapClick);
 }
 
-async function trigger_mapClick(lat: number, lng: number) {
+/** Drops the click marker at a coordinate. Data fetching is the panes' job. */
+function trigger_mapClick(lat: number, lng: number) {
     const overlay = (map as any).__activePngOverlay;
     if (!overlay) return;
-    // show a marker at clicked position
     try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
     if (mainStore.queryMode === 'point') {
         const el = document.createElement('div');
         el.className = 'map-click-marker';
         const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map);
         (map as any).__clickMarker = marker;
-    }
-
-    // Only the Timeseries tab needs hourly data fetched on point/area change.
-    if (activeTab.value !== 'timeseries') return;
-
-    // Abort any in-flight timeseries requests and create a new controller
-    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-    tsRequestController = new AbortController();
-
-    // POST to the API and expect {time: [...], value: [...]} in response
-    try {
-        await getTimeseriesPromises(lat, lng);
-    } catch (err) {
-        if (err && err.code === 'ERR_CANCELED') {
-            // request was aborted; ignore
-        } else {
-            console.error('Failed to fetch timeseries:', err);
-        }
-    } finally {
-        tsRequestController = null;
     }
 }
 
@@ -1409,20 +1372,9 @@ watch(() => mainStore.queryMode, () => {
     if (lastClicked.value) trigger_mapClick(lastClicked.value.lat, lastClicked.value.lng)
 })
 
-// Switching into the Timeseries tab fetches fresh data for the current point/var/depth,
-// since updates while that tab was hidden are never fetched (see activeTab gating above).
-watch(activeTab, (tab) => {
-    if (tab === 'timeseries' && lastClicked.value) {
-        trigger_mapClick(lastClicked.value.lat, lastClicked.value.lng)
-    }
-})
-
-// Abort controller for ongoing timeseries requests and debounce timer
-let tsRequestController: AbortController | null = null;
-let tsRefreshTimer: any = null;
-// Prevents the var/depth watcher from scheduling a duplicate fetch when a sensor
-// click already triggers one via the lastClickedMapPoint watcher path.
-let _sensorClickPending = false;
+// No activeTab watcher any more: panes that were hidden used to miss updates
+// because this page fetched on their behalf and gated on which tab was showing.
+// Each pane now watches the store itself and re-measures when it becomes active.
 
 
 </script>
@@ -1486,35 +1438,21 @@ let _sensorClickPending = false;
 }
 
 .footer-rail-track {
-    position: relative;
+    display: flex;
+    flex-direction: column;
     width: 100%;
     gap: 2px;
     padding: 6px;
 }
 
-.footer-rail-pill {
-    position: absolute;
-    left: 6px;
-    right: 6px;
-    top: 6px;
-    height: 32px;
-    border-radius: 8px;
-    background: rgba(var(--v-theme-primary), 0.16);
-    transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 0;
-}
-
 .footer-rail-item {
-    position: relative;
-    z-index: 1;
     height: 32px;
     padding: 0 10px;
-    /* v-btn-group forces border-radius:0 on grouped buttons (fused segmented-control look) — we want independent rounded rows instead */
     border-radius: 8px !important;
     font-size: 0.75rem;
     letter-spacing: 0;
     opacity: 0.65;
-    transition: opacity 150ms ease, color 150ms ease;
+    transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
     /* v-btn centers its prepend-icon + content as a group by default; override so all rows share a left edge regardless of label length */
     justify-content: flex-start;
 }
@@ -1527,10 +1465,47 @@ let _sensorClickPending = false;
     opacity: 0.9;
 }
 
-.footer-rail-item.active {
+.footer-rail-item--active {
     opacity: 1;
     font-weight: 600;
     color: rgb(var(--v-theme-primary));
+    background: rgba(var(--v-theme-primary), 0.16);
+}
+
+/* Explore's sub-views, nested directly beneath the Explore row while it's active. */
+.footer-rail-sublist {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding-left: 14px;
+    margin: 1px 0 3px;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.footer-rail-subitem {
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 6px !important;
+    font-size: 0.7rem;
+    letter-spacing: 0;
+    opacity: 0.55;
+    transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
+    justify-content: flex-start;
+}
+
+.footer-rail-subitem :deep(.v-btn__content) {
+    justify-content: flex-start;
+}
+
+.footer-rail-subitem:hover {
+    opacity: 0.85;
+}
+
+.footer-rail-subitem--active {
+    opacity: 1;
+    font-weight: 600;
+    color: rgb(var(--v-theme-primary));
+    background: rgba(var(--v-theme-primary), 0.12);
 }
 
 .cursor-coord-label {

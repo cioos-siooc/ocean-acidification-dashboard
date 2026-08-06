@@ -60,10 +60,35 @@ export const useMainStore = defineStore('main', {
 
         showCursorCoords: false,
 
-        activeBottomTab: 'timeseries' as 'timeseries' | 'analysis' | 'comparison' | 'sensorAnalysis',
+        // 'explore' is the only footer pane — the one view that reads the map's
+        // coordinate, depth and clock. 'analysis'/'comparison' are fullscreen
+        // workspaces: they take a coordinate as input and then have nothing more
+        // to say to the map, so showing the map behind them is wasted space.
+        activeBottomTab: 'explore' as 'explore' | 'analysis' | 'comparison',
+
+        // Which record the Analysis tab runs against. Was a whole separate tab
+        // ("Sensor Analysis") until the two were merged behind one surface.
+        analysisSource: 'model' as 'model' | 'sensor',
+
+        // Which of Explore's sub-views is showing: the single-depth timeseries,
+        // or a full-water-column section for the model or a profiler sensor.
+        // Lives in the store (not a local ExplorePanel ref) because the footer's
+        // nav rail in index.vue is what drives it now, one level up from the panel.
+        exploreView: 'series' as 'series' | 'model-depth' | 'sensor-depth',
     }),
 
     getters: {
+        // A *profiler* sensor (registry depth === -1) is the only kind that casts
+        // through the whole water column, so it's the only kind with a "Sensor
+        // depth" section to show. Centralised here rather than re-derived per
+        // component (ExplorePanel's section fetch, index.vue's nav rail) so both
+        // agree on the exact same definition of "profiler selected".
+        selectedProfilerSensorId(state): string | null {
+            const sel = state.selectedSensor;
+            if (!sel?.id) return null;
+            return state.sensors.find((s) => s.id === sel.id)?.depth === -1 ? sel.id : null;
+        },
+
         filteredSensors(state) {
             const q = state.sensorSearchQuery.trim().toLowerCase();
             return state.sensors.filter((sensor) => {
@@ -155,6 +180,10 @@ export const useMainStore = defineStore('main', {
                     }
                 }
             }
+            // Deliberately does not navigate. The sensor's series appears overlaid
+            // on Explore's timeseries, which is the map-synced answer to "what did
+            // I just click"; opening a fullscreen workspace would cover the map the
+            // user is still working with.
             this.setSelectedSensor({ id: sensor_id, depth: depth });
         },
 
@@ -185,11 +214,25 @@ export const useMainStore = defineStore('main', {
             this.queryMode = mode;
         },
 
-        setActiveBottomTab(tab: 'timeseries' | 'analysis' | 'comparison' | 'sensorAnalysis') {
+        setActiveBottomTab(tab: 'explore' | 'analysis' | 'comparison') {
             if (tab !== this.activeBottomTab) {
                 trackEvent('tab_switched', { from_tab: this.activeBottomTab, to_tab: tab });
             }
             this.activeBottomTab = tab;
+        },
+
+        setAnalysisSource(source: 'model' | 'sensor') {
+            if (source !== this.analysisSource) {
+                trackEvent('analysis_source_changed', { source });
+            }
+            this.analysisSource = source;
+        },
+
+        setExploreView(view: 'series' | 'model-depth' | 'sensor-depth') {
+            if (view !== this.exploreView) {
+                trackEvent('explore_view_changed', { view });
+            }
+            this.exploreView = view;
         },
     }
 })

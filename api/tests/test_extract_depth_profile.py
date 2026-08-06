@@ -10,13 +10,18 @@ class FakeResult:
         self.result_rows = rows
 
 
+COVERAGE = (datetime(2007, 1, 1), datetime(2026, 8, 1))
+
+
 class FakeClient:
-    def __init__(self, grid_row=None, depths=None, model_rows=None, sensor_rows=None, daily_rows=None):
+    def __init__(self, grid_row=None, depths=None, model_rows=None, sensor_rows=None, daily_rows=None,
+                 coverage=COVERAGE):
         self.grid_row = grid_row
         self.depths = depths or []
         self.model_rows = model_rows or []
         self.sensor_rows = sensor_rows or []
         self.daily_rows = daily_rows or []
+        self.coverage = coverage
         self.closed = False
 
     def query(self, query, parameters=None):
@@ -25,6 +30,10 @@ class FakeClient:
             return FakeResult([self.grid_row])
         if "select distinct depth" in q:
             return FakeResult([(d,) for d in self.depths])
+        # Must precede the table-name branches below: the coverage aggregate
+        # runs against whichever table the requested mode reads.
+        if "min(time)" in q:
+            return FakeResult([self.coverage] if self.coverage else [])
         if "from sensor_timeseries" in q:
             return FakeResult(self.sensor_rows)
         if "from salishseacast_daily" in q:
@@ -211,6 +220,103 @@ def test_bin_hours_24_reads_daily_table_directly(monkeypatch):
     assert result['sensor'][0] == [9.05, 9.25]
     assert result['sensor'][1] == [None, None]
     assert result['sensor'][2] == [None, None]
+
+
+def test_model_only_omits_sensor_grid(monkeypatch):
+    # The Depth tab calls without a sensor_id. The sensor query must not run at
+    # all (a sensor_rows fixture that would otherwise populate the grid proves
+    # it), and "sensor" comes back as None rather than an all-null grid — the
+    # frontend distinguishes "no sensor requested" from "sensor had no casts".
+    sensor_rows_should_be_ignored = [(datetime(2026, 1, 1, 0, 5), 0.0, 9.4)]
+    fake = FakeClient(
+        grid_row=GRID_ROW, depths=DEPTHS, model_rows=MODEL_ROWS,
+        sensor_rows=sensor_rows_should_be_ignored,
+    )
+    _patch(monkeypatch, fake)
+
+    result = extract_depth_profile(
+        source='SalishSeaCast', var='temperature',
+        lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-01-01T01:59:59',
+    )
+
+    assert result['sensor'] is None
+    assert result['model'] == [[9.0, 9.1], [8.0, 8.1], [7.0, 7.1]]
+    assert result['time'] == ['2026-01-01T00:00:00', '2026-01-01T01:00:00']
+    # Coverage is what the frontend clamps its paging to, so it must come back
+    # on the model-only path too, not just alongside a sensor grid.
+    assert result['coverage'] == {'from': '2007-01-01T00:00:00', 'to': '2026-08-01T00:00:00'}
+    assert fake.closed
+
+
+def test_coverage_is_null_when_cell_has_no_rows(monkeypatch):
+    fake = FakeClient(grid_row=GRID_ROW, depths=DEPTHS, model_rows=MODEL_ROWS, coverage=None)
+    _patch(monkeypatch, fake)
+
+    result = extract_depth_profile(
+        source='SalishSeaCast', var='temperature',
+        lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-01-01T01:59:59',
+    )
+
+    assert result['coverage'] == {'from': None, 'to': None}
+
+
+def test_bin_mode_monthly_rolls_up_daily_table(monkeypatch):
+    # toStartOfMonth returns a `date` on the 1st, same as the daily branch's
+    # column type — two months here, so a bin boundary is actually crossed.
+    monthly_model_rows = [
+        (date(2026, 1, 1), 0.0, 9.0),
+        (date(2026, 1, 1), 5.0, 8.0),
+        (date(2026, 1, 1), 10.0, 7.0),
+        (date(2026, 2, 1), 0.0, 9.5),
+        (date(2026, 2, 1), 5.0, 8.5),
+        (date(2026, 2, 1), 10.0, 7.5),
+    ]
+    # Casts must floor to the 1st of their own month — the calendar branch in
+    # _floor_bin, which epoch-modulo cannot express.
+    sensor_rows = [
+        (datetime(2026, 1, 17, 14, 0), 0.0, 9.1),
+        (datetime(2026, 2, 28, 3, 0), 0.0, 9.6),
+    ]
+    fake = FakeClient(grid_row=GRID_ROW, depths=DEPTHS, daily_rows=monthly_model_rows, sensor_rows=sensor_rows)
+    _patch(monkeypatch, fake)
+
+    result = extract_depth_profile(
+        source='SalishSeaCast', var='temperature', sensor_id='abc',
+        lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-02-28T23:59:59',
+        bin_mode='monthly',
+    )
+
+    assert result['time'] == ['2026-01-01T00:00:00', '2026-02-01T00:00:00']
+    assert result['model'] == [[9.0, 9.5], [8.0, 8.5], [7.0, 7.5]]
+    assert result['sensor'][0] == [9.1, 9.6]
+
+
+def test_bin_mode_overrides_bin_hours(monkeypatch):
+    # An explicit bin_mode wins over the legacy int, so a caller sending both
+    # (bin_hours defaults to 1) still gets the mode it asked for.
+    daily_model_rows = [(date(2026, 1, 1), 0.0, 9.0), (date(2026, 1, 2), 0.0, 9.2)]
+    fake = FakeClient(grid_row=GRID_ROW, depths=DEPTHS, model_rows=MODEL_ROWS, daily_rows=daily_model_rows)
+    _patch(monkeypatch, fake)
+
+    result = extract_depth_profile(
+        source='SalishSeaCast', var='temperature',
+        lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-01-02T23:59:59',
+        bin_hours=1, bin_mode='daily',
+    )
+
+    assert result['time'] == ['2026-01-01T00:00:00', '2026-01-02T00:00:00']
+    assert result['model'][0] == [9.0, 9.2]
+
+
+def test_unsupported_bin_mode_raises(monkeypatch):
+    _patch(monkeypatch, FakeClient(grid_row=GRID_ROW))
+
+    with pytest.raises(ValueError, match="Unsupported bin_mode"):
+        extract_depth_profile(
+            source='SalishSeaCast', var='temperature',
+            lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-01-01T01:59:59',
+            bin_mode='weekly',
+        )
 
 
 def test_bin_hours_1_ignores_daily_table(monkeypatch):

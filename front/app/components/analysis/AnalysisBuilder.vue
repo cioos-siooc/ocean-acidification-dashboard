@@ -101,8 +101,6 @@
 
   </div>
 
-  <AdvancedAnalysisDialog v-model="advancedOpen" :variable="variable" :depth="depth" :location="advancedLocation"
-    :year-range="[minYear, maxYear]" :point-label="pointLabel" />
 </template>
 
 
@@ -111,35 +109,56 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
 import { trackEvent } from '~~/composables/useAnalytics'
-import { useMainStore } from '../stores/main'
-import { fetchAnalysisSeries, type SeriesPoint, type AnalysisLocation } from '~~/composables/useAnalysisFetch'
+import { useMainStore } from '../../stores/main'
+import { fetchAnalysisSeries, type SeriesPoint } from '~~/composables/useAnalysisFetch'
+import { fetchSensorAnalysisSeries } from '~~/composables/useSensorAnalysisFetch'
 import {
   availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor, computeYearBandStats,
 } from '~~/composables/useAnalysisStatistics'
-import AdvancedAnalysisDialog from './analysis/AdvancedAnalysisDialog.vue'
+
+const props = defineProps<{ active?: boolean; source?: 'model' | 'sensor' }>()
+const emit = defineEmits<{ 'open-advanced': [] }>()
+const analysisSource = computed(() => props.source ?? 'model')
+const isSensor = computed(() => analysisSource.value === 'sensor')
 
 const mainStore = useMainStore()
 
+// ── SENSOR CONTEXT (unused in model mode) ────────────────────────────────────
+const selectedSensor = computed(() => mainStore.selectedSensor)
+const sensorInfo = computed(() => {
+  if (!selectedSensor.value?.id) return null
+  return mainStore.sensors.find(s => s.id === selectedSensor.value!.id) ?? null
+})
+// A profiler has no depth of its own, so it borrows the map's selected depth —
+// the same one driving the raster layer.
+const isVariableDepth = computed(() => sensorInfo.value?.depth === -1)
+
 // Only fetch while the Analysis Builder tab is actually visible — the parent
 // page keeps this component mounted (v-show) even when another tab is shown.
-const props = defineProps<{ active?: boolean }>()
 
-const advancedOpen = ref(false)
 
 function openAdvanced() {
-  trackEvent('advanced_analysis_opened', { dialog_type: 'model_analysis' })
-  advancedOpen.value = true
+  trackEvent('advanced_analysis_opened', { dialog_type: isSensor.value ? 'sensor_analysis' : 'model_analysis' })
+  emit('open-advanced')
 }
 
 // --- STORE-DERIVED STATE ---
 const variable = computed(() => mainStore.selected_variable.var)
 const lastClicked = computed(() => mainStore.lastClickedMapPoint)
 const queryMode = computed(() => mainStore.queryMode)
-const depth = computed(() => mainStore.selected_variable.depth_nc)
+const depth = computed(() => {
+  if (!isSensor.value || isVariableDepth.value) return mainStore.selected_variable.depth_nc
+  return selectedSensor.value?.depth ?? null
+})
 
 // --- CONSTANTS ---
-const minYear = 2007
-const maxYear = 2026
+const MODEL_MIN_YEAR = 2007
+const MODEL_MAX_YEAR = 2026
+const currentYear = new Date().getFullYear()
+const minYear = computed(() => !isSensor.value ? MODEL_MIN_YEAR
+  : (sensorInfo.value?.first_data_at ? parseInt(sensorInfo.value.first_data_at.slice(0, 4), 10) : currentYear))
+const maxYear = computed(() => !isSensor.value ? MODEL_MAX_YEAR
+  : (sensorInfo.value?.latest_data_at ? parseInt(sensorInfo.value.latest_data_at.slice(0, 4), 10) : currentYear))
 
 // --- REACTIVE STATE ---
 const selectedSeason = ref('full_year')
@@ -179,16 +198,12 @@ const varName = computed(() =>
 )
 
 const pointLabel = computed(() => {
+  if (isSensor.value) return sensorInfo.value?.name ?? ''
   const pt = lastClicked.value
   if (!pt) return ''
   return queryMode.value === 'area' ? `~${pt.lat.toFixed(2)}, ${pt.lng.toFixed(2)} (area)` : `${pt.lat.toFixed(3)}, ${pt.lng.toFixed(3)}`
 })
 
-const advancedLocation = computed<AnalysisLocation | null>(() => {
-  const pt = lastClicked.value
-  if (!pt) return null
-  return queryMode.value === 'area' ? { polygon: polygonFromClick.value } : { lat: pt.lat, lon: pt.lng }
-})
 
 const seasonLabel = computed(() => {
   const labels: Record<string, string> = {
@@ -197,9 +212,11 @@ const seasonLabel = computed(() => {
   return labels[selectedSeason.value] || 'Full Year'
 })
 
-const chartTitle = computed(() =>
-  `Historical Range — ${varName.value} (${primaryStat.value.toUpperCase()})`
-)
+const chartTitle = computed(() => {
+  // A profiler's depth is not implied by the sensor, so name it.
+  const depthSuffix = isSensor.value && isVariableDepth.value && depth.value != null ? ` @ ${depth.value}m` : ''
+  return `Historical Range — ${varName.value}${depthSuffix} (${primaryStat.value.toUpperCase()})`
+})
 
 const extremeRecords = computed(() => {
   const data = rawSeasonalData.value
@@ -424,12 +441,14 @@ watch(selectedSeason, () => {
 })
 
 // Auto-fetch on point/area, variable, depth, or statistic change — but only while this tab is visible.
-watch([lastClicked, variable, depth, queryMode, primaryStat], scheduleAutoRun)
+watch([lastClicked, variable, depth, queryMode, primaryStat, analysisSource, selectedSensor], scheduleAutoRun)
 
 // Switching into this tab fetches fresh data for whatever changed while it was hidden.
+// immediate: true also covers first mount — the dialog only creates this component once
+// opened, so `active` is already true by then and a plain watch would never see it change.
 watch(() => props.active, (active: boolean | undefined) => {
   if (active) scheduleAutoRun()
-})
+}, { immediate: true })
 
 let resizeObserver: ResizeObserver | null = null
 watch(chartContainerRef, (el) => {
@@ -455,9 +474,20 @@ onBeforeUnmount(() => {
 
 // --- DATA FETCH ---
 async function fetchRegionTimeseries(): Promise<SeriesPoint[]> {
+  if (depth.value == null) throw new Error('No depth selected.')
+
+  if (isSensor.value) {
+    if (!sensorInfo.value) throw new Error('No sensor selected.')
+    const from = `${minYear.value}-01-01T000000`
+    const to = `${maxYear.value}-12-31T235959`
+    return fetchSensorAnalysisSeries(
+      sensorInfo.value.id, variable.value, primaryStat.value as 'min' | 'mean' | 'max', depth.value, from, to,
+      isVariableDepth.value ? mainStore.selected_variable.source : null,
+    )
+  }
+
   const pt = lastClicked.value
   if (!pt) throw new Error('No location selected. Click on the map first.')
-  if (depth.value == null) throw new Error('No depth selected.')
   const location = queryMode.value === 'area'
     ? { polygon: polygonFromClick.value }
     : { lat: pt.lat, lon: pt.lng }
@@ -465,7 +495,7 @@ async function fetchRegionTimeseries(): Promise<SeriesPoint[]> {
   if (analysisRequestController) analysisRequestController.abort()
   analysisRequestController = new AbortController()
   return fetchAnalysisSeries(
-    { variable: variable.value, stat: primaryStat.value as 'min' | 'mean' | 'max', depth: depth.value, location, yearRange: [minYear, maxYear] },
+    { variable: variable.value, stat: primaryStat.value as 'min' | 'mean' | 'max', depth: depth.value, location, yearRange: [minYear.value, maxYear.value] },
     analysisRequestController.signal
   )
 }
@@ -474,19 +504,23 @@ async function fetchRegionTimeseries(): Promise<SeriesPoint[]> {
 // Identifies the inputs that should trigger an automatic refetch.
 function currentSignature(): string {
   const pt = lastClicked.value
-  return JSON.stringify({ lat: pt?.lat, lng: pt?.lng, mode: queryMode.value, variable: variable.value, depth: depth.value, stat: primaryStat.value })
+  return JSON.stringify({ source: analysisSource.value, sensorId: selectedSensor.value?.id, lat: pt?.lat, lng: pt?.lng, mode: queryMode.value, variable: variable.value, depth: depth.value, stat: primaryStat.value })
 }
 
 function scheduleAutoRun() {
   if (!props.active) return
-  if (!lastClicked.value || !variable.value || depth.value == null) return
+  if (!variable.value || depth.value == null) return
+  if (isSensor.value ? !sensorInfo.value : !lastClicked.value) return
   const sig = currentSignature()
   if (sig === lastFetchSignature) return
   if (autoRunTimer) clearTimeout(autoRunTimer)
   autoRunTimer = setTimeout(runAnalysis, 300)
 }
 
-const runAnalysis = async () => {
+// A hoisted function declaration, not `const runAnalysis = async () =>`: scheduleAutoRun's
+// setTimeout(runAnalysis, ...) can now fire from the immediate:true watcher above during
+// setup, before a const this far down the file would be initialized (TDZ).
+async function runAnalysis() {
   const requestId = ++activeRequestId
   lastFetchSignature = currentSignature()
   plotErrorMessage.value = null
