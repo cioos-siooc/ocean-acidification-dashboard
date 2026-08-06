@@ -374,6 +374,7 @@ async def get_png(source: str, var: str, dt: str, depth: str):
         for ext in ['.webp', '.png']:
             filename = f"{safe_depth}{ext}"
             full_path = os.path.join(path, filename)
+            logger.debug(f"Checking for PNG/WebP file: {full_path}")
 
             exists = await run_in_threadpool(os.path.isfile, full_path)
             if exists:

@@ -572,7 +572,24 @@ function onCellClick({ binIdx, depthIdx }: { binIdx: number, depthIdx: number })
   // "this instant" for the map's own clock, though — only hourly re-centres
   // that.
   if (start) mainStore.setExploreProfileDt(start)
-  if (binMode.value === 'hourly' && start) partial.dt = moment.utc(start)
+  if (binMode.value === 'hourly' && start) {
+    // `start` is floored to the hour (the hourly table's own bin convention),
+    // but SalishSeaCast's raster tiles are keyed by the model's actual output
+    // instant — offset to :30 past the hour, not on it (see api/modules/
+    // variables.py). Snap to the nearest real timestamp instead of handing
+    // the raster layer an hour it has no tile for.
+    const dts = varMeta.value?.dts
+    if (dts?.length) {
+      const target = start.getTime()
+      let best = 0
+      for (let i = 1; i < dts.length; i++) {
+        if (Math.abs(dts[i] - target) < Math.abs(dts[best] - target)) best = i
+      }
+      partial.dt = moment.utc(dts[best])
+    } else {
+      partial.dt = moment.utc(start)
+    }
+  }
   if (Object.keys(partial).length) mainStore.updateSelectedVariable(partial)
 }
 

@@ -167,7 +167,25 @@ function initChart() {
                 else break;
             }
 
-            const finalX = model_timestamps[bestIdx] as number;
+            let finalX = model_timestamps[bestIdx] as number;
+
+            // `model_timestamps` isn't always a real model instant — ExplorePanel's
+            // depth-section line chart feeds this component hour-floored bin starts
+            // (its own aggregation grid, not SalishSeaCast's actual :30-past-the-hour
+            // output times), which would otherwise send the map's clock to an hour
+            // with no matching raster tile. Snap to the nearest timestamp the raster
+            // layer actually has, when we know what those are.
+            const rasterDts = mainStore.variables.find(
+                v => v.source === mainStore.selected_variable.source && v.var === mainStore.selected_variable.var
+            )?.dts;
+            if (rasterDts?.length) {
+                let best = 0;
+                for (let i = 1; i < rasterDts.length; i++) {
+                    if (Math.abs(rasterDts[i] - finalX) < Math.abs(rasterDts[best] - finalX)) best = i;
+                }
+                finalX = rasterDts[best];
+            }
+
             if (finalX !== lastClickedX) {
                 lastClickedX = finalX;
                 mainStore.updateSelectedVariable({ dt: moment.utc(finalX) });
