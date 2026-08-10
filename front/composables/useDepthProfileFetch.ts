@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useRuntimeConfig } from '#app';
 import type { BinMode } from './useTimeDepthWindow';
+import { createRequestCache } from './useRequestCache';
 
 export type DepthProfileResponse = {
     time: string[];               // ISO bin-start strings at the requested resolution, ascending
@@ -42,12 +43,19 @@ export type DepthProfileFetchParams = {
     sensorId?: string;
 };
 
+// Split by staleness profile, mirroring the backend's `depthProfile` handler
+// (api/modules/response_cache.py): a sensorId pulls in profiler casts that
+// can be revised outside the SSC sync path, so it gets the short sensor TTL;
+// model-only grids get the longer one.
+const modelCache = createRequestCache<DepthProfileResponse>(1_200_000);
+const sensorCache = createRequestCache<DepthProfileResponse>(60_000);
+
 /**
  * POSTs to /depthProfile — the model's time-depth grid at the cell nearest
  * (lat, lon) for one bounded window, plus (when `sensorId` is given) that
  * profiler's raw casts binned onto the same grid.
  */
-export async function fetchDepthProfile(params: DepthProfileFetchParams, signal?: AbortSignal): Promise<DepthProfileResponse> {
+export async function fetchDepthProfile(params: DepthProfileFetchParams): Promise<DepthProfileResponse> {
     const config = useRuntimeConfig();
     const apiBaseUrl = config.public.apiBaseUrl;
 
@@ -62,6 +70,10 @@ export async function fetchDepthProfile(params: DepthProfileFetchParams, signal?
     };
     if (params.sensorId) body.sensorId = params.sensorId;
 
-    const response = await axios.post(`${apiBaseUrl}/depthProfile`, body, { signal });
-    return response.data;
+    const cache = params.sensorId ? sensorCache : modelCache;
+    const key = JSON.stringify(body);
+    return cache.fetch(key, async () => {
+        const response = await axios.post(`${apiBaseUrl}/depthProfile`, body);
+        return response.data;
+    });
 }

@@ -1,5 +1,11 @@
 import axios from 'axios';
 import { useRuntimeConfig } from '#app';
+import { createRequestCache } from './useRequestCache';
+
+// ReplacingMergeTree read via FINAL, revised outside the SSC sync path by the
+// separate `sensors/` ingestion service — short TTL bounds staleness, same as
+// the backend's `_sensor_cache` (api/modules/response_cache.py).
+const cache = createRequestCache<any>(60_000);
 
 export async function getSensorTimeseries(sensorId: string|null, canonicalVariable: string, fromDate: string, toDate: string, depth: number|null = null, source: string|null = null) {
     if (sensorId === null || sensorId === undefined) {
@@ -24,8 +30,8 @@ export async function getSensorTimeseries(sensorId: string|null, canonicalVariab
         payload.source = source;
     }
     const url = `${apiBaseUrl}/sensorTimeseries`;
-    const r = await axios.post(url, payload);
-    return r;
+    const key = JSON.stringify(payload);
+    return cache.fetch(key, () => axios.post(url, payload));
 }
 
 export default getSensorTimeseries;

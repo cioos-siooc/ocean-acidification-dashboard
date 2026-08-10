@@ -57,12 +57,12 @@
             <ExtremeEvents v-if="activeTab === 'extremes'" :series="primarySeries" :season="selectedSeason" :variable="variable" />
             <CompoundStress v-else-if="activeTab === 'compound'"
               :primary-series="primarySeries" :primary-variable="variable" :season="selectedSeason"
-              :depth="depth" :location="location" :year-range="yearRange" :fetch-series="cachedFetch" />
+              :depth="depth" :location="location" :year-range="yearRange" :fetch-series="fetchSeriesFor" />
             <Trend v-else-if="activeTab === 'trend'" :series="primarySeries" :season="selectedSeason" />
             <Climatology v-else-if="activeTab === 'climatology'" :series="primarySeries" :season="selectedSeason" />
             <Correlation v-else-if="activeTab === 'correlation'"
               :primary-series="primarySeries" :primary-variable="variable" :season="selectedSeason"
-              :depth="depth" :location="location" :year-range="yearRange" :fetch-series="cachedFetch" />
+              :depth="depth" :location="location" :year-range="yearRange" :fetch-series="fetchSeriesFor" />
           </template>
         </div>
       </div>
@@ -176,18 +176,10 @@ watch([isOpen, activeTab, location, variable, depth], () => {
   if (isOpen.value && activeTab.value !== 'builder') fetchPrimary()
 })
 
-// ── SHARED CACHE for secondary variables (Compound Stress / Correlation) ──────
-const seriesCache = new Map<string, Promise<SeriesPoint[]>>()
-function cachedFetch(variableId: string, depthVal: number, loc: AnalysisLocation): Promise<SeriesPoint[]> {
-  const key = JSON.stringify({ variableId, depthVal, loc })
-  let entry = seriesCache.get(key)
-  if (!entry) {
-    entry = fetchSeriesFor(variableId, depthVal, loc)
-    seriesCache.set(key, entry)
-  }
-  return entry
-}
-watch([location, variable], () => seriesCache.clear())
+// Secondary variables (Compound Stress / Correlation) call fetchSeriesFor
+// directly — fetchAnalysisSeries/fetchSensorAnalysisSeries already dedupe and
+// cache underneath (see composables/useRequestCache.ts), so no component-local
+// cache is needed here.
 </script>
 
 <style scoped>

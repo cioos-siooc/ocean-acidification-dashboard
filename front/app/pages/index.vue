@@ -65,20 +65,17 @@
                 @close="sensorPicker.visible = false" />
 
             <!-- Spiderfy overlay (nearby sensors at different coordinates) -->
-            <div v-if="spiderfy.visible"
-                style="position: absolute; inset: 0; z-index: 5000; pointer-events: all;"
+            <div v-if="spiderfy.visible" style="position: absolute; inset: 0; z-index: 5000; pointer-events: all;"
                 @click.self="spiderfy.visible = false">
                 <svg style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;">
-                    <line v-for="(spoke, i) in spiderfy.spokes" :key="`sl-${i}`"
-                        :x1="spiderfy.centerX" :y1="spiderfy.centerY"
-                        :x2="spoke.x" :y2="spoke.y"
+                    <line v-for="(spoke, i) in spiderfy.spokes" :key="`sl-${i}`" :x1="spiderfy.centerX"
+                        :y1="spiderfy.centerY" :x2="spoke.x" :y2="spoke.y"
                         :stroke="spoke.sensor.isRealtime ? 'rgba(102,187,106,0.75)' : 'rgba(255,167,38,0.75)'"
                         stroke-width="1.5" />
-                    <circle :cx="spiderfy.centerX" :cy="spiderfy.centerY" r="5"
-                        fill="#aaaaaa" stroke="#333" stroke-width="1.5" />
+                    <circle :cx="spiderfy.centerX" :cy="spiderfy.centerY" r="5" fill="#aaaaaa" stroke="#333"
+                        stroke-width="1.5" />
                 </svg>
-                <div v-for="(spoke, i) in spiderfy.spokes" :key="`sn-${i}`"
-                    class="spiderfy-node"
+                <div v-for="(spoke, i) in spiderfy.spokes" :key="`sn-${i}`" class="spiderfy-node"
                     :style="{ left: spoke.x + 'px', top: spoke.y + 'px' }"
                     @click.stop="clickSensorFromSpiderfy(spoke.sensor)">
                     <div class="spiderfy-dot"
@@ -134,6 +131,8 @@
                             </v-btn>
                         </div>
 
+                        <v-divider />
+
                         <!-- Analysis is a fullscreen dialog with no rail of its own once
                              open, so Model/Sensor is picked here rather than inside it —
                              a sub-item both sets the source and opens the workspace. The
@@ -155,9 +154,11 @@
                             </v-btn>
                         </div>
 
-                        <v-btn v-for="t in remainingFooterTabs" :key="t.value" :prepend-icon="t.icon" variant="text" block
-                            class="footer-rail-item" :class="{ 'footer-rail-item--active': activeTab === t.value }"
-                            @click="activeTab = t.value">
+                        <v-divider v-if="remainingFooterTabs.length > 0" />
+
+                        <v-btn v-for="t in remainingFooterTabs" :key="t.value" :prepend-icon="t.icon" variant="text"
+                            block class="footer-rail-item"
+                            :class="{ 'footer-rail-item--active': activeTab === t.value }" @click="activeTab = t.value">
                             {{ t.label }}
                         </v-btn>
                     </div>
@@ -572,6 +573,17 @@ watch(() => mainStore.selected_variable.dt, async (newDt) => {
     }
 });
 
+// Watcher: Explore panel's bin-mode toggle changes which dt resolution the raster tile URL
+// requests (hourly/daily/monthly — see updatePngOverlay), so the map layer needs its own refresh.
+watch(() => mainStore.exploreBinMode, async () => {
+    if (!map) return;
+    try {
+        await updatePngOverlay();
+    } catch (e) {
+        console.error('Failed to update PNG for bin mode change', e);
+    }
+});
+
 watch(() => mainStore.showBathymetryContours, (show) => {
     if (!map) return;
     try {
@@ -836,7 +848,7 @@ function updateBuoyVarOpacity(selectedVar: string | null) {
     const expr: any = (!selectedVar || keysWithVar.length === _visibleSensorGroups.length)
         ? 0.95
         : ['case', ['in', ['get', 'coordKey'], ['literal', keysWithVar]], 0.95, 0.2];
-    try { (map as any).setPaintProperty(STATIONS_LAYER_ID, 'icon-opacity', expr); } catch (_) {}
+    try { (map as any).setPaintProperty(STATIONS_LAYER_ID, 'icon-opacity', expr); } catch (_) { }
 }
 
 // Recomputes which station groups are visible on the map from mainStore.filteredSensors
@@ -952,7 +964,13 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
     const source = mainStore.selected_variable.source.replace(/\s+/g, ''); // Remove spaces from source name for URL
     const varName = mainStore.selected_variable.var;
-    const dt = mainStore.selected_variable.dt?.format('YYYY-MM-DDTHHmmss') || '';
+    // dt's shape tells the API which bin mode to render (see extract_image.resolve_bin_mode):
+    // full timestamp -> hourly, YYYY-MM-DD -> daily, YYYY-MM -> monthly. Keeps the map layer's
+    // resolution in sync with the Explore panel's bin-mode toggle used by the timeseries/depth charts.
+    const dtFormat = mainStore.exploreBinMode === 'daily' ? 'YYYY-MM-DD'
+        : mainStore.exploreBinMode === 'monthly' ? 'YYYY-MM'
+        : 'YYYY-MM-DDTHHmmss';
+    const dt = mainStore.selected_variable.dt?.format(dtFormat) || '';
     const depth = mainStore.selected_variable.depth
     const pngPath = `${apiBaseUrl}/png/${source}/${varName}/${dt}/${depth}`;
 
@@ -1343,37 +1361,45 @@ async function autorange() {
 
 // --- ANALYSIS REGION BOX ---
 const ABOX_SOURCE = 'analysis-region'
-const ABOX_FILL   = 'analysis-region-fill'
-const ABOX_LINE   = 'analysis-region-line'
+const ABOX_FILL = 'analysis-region-fill'
+const ABOX_LINE = 'analysis-region-line'
 
 function updateAnalysisBox() {
-  if (!map || !map.isStyleLoaded()) return
-  const pt  = lastClicked.value
-  const show = mainStore.queryMode === 'area' && !!pt
+    if (!map || !map.isStyleLoaded()) return
+    const pt = lastClicked.value
+    const show = mainStore.queryMode === 'area' && !!pt
 
-  const data: GeoJSON.Feature<GeoJSON.Polygon> = show
-    ? { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[
-          [pt!.lng - 0.05, pt!.lat - 0.05],
-          [pt!.lng + 0.05, pt!.lat - 0.05],
-          [pt!.lng + 0.05, pt!.lat + 0.05],
-          [pt!.lng - 0.05, pt!.lat + 0.05],
-          [pt!.lng - 0.05, pt!.lat - 0.05],
-        ]] } }
-    : { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[]] } }
+    const data: GeoJSON.Feature<GeoJSON.Polygon> = show
+        ? {
+            type: 'Feature', properties: {}, geometry: {
+                type: 'Polygon', coordinates: [[
+                    [pt!.lng - 0.05, pt!.lat - 0.05],
+                    [pt!.lng + 0.05, pt!.lat - 0.05],
+                    [pt!.lng + 0.05, pt!.lat + 0.05],
+                    [pt!.lng - 0.05, pt!.lat + 0.05],
+                    [pt!.lng - 0.05, pt!.lat - 0.05],
+                ]]
+            }
+        }
+        : { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[]] } }
 
-  if (map.getSource(ABOX_SOURCE)) {
-    (map.getSource(ABOX_SOURCE) as mapboxgl.GeoJSONSource).setData(data)
-    map.setLayoutProperty(ABOX_FILL, 'visibility', show ? 'visible' : 'none')
-    map.setLayoutProperty(ABOX_LINE, 'visibility', show ? 'visible' : 'none')
-  } else {
-    map.addSource(ABOX_SOURCE, { type: 'geojson', data })
-    map.addLayer({ id: ABOX_FILL, type: 'fill', source: ABOX_SOURCE,
-      paint: { 'fill-color': 'rgba(255,193,7,0.08)' },
-      layout: { visibility: show ? 'visible' : 'none' } })
-    map.addLayer({ id: ABOX_LINE, type: 'line', source: ABOX_SOURCE,
-      paint: { 'line-color': '#ff5722', 'line-width': 1.5, 'line-dasharray': [4, 2] },
-      layout: { visibility: show ? 'visible' : 'none' } })
-  }
+    if (map.getSource(ABOX_SOURCE)) {
+        (map.getSource(ABOX_SOURCE) as mapboxgl.GeoJSONSource).setData(data)
+        map.setLayoutProperty(ABOX_FILL, 'visibility', show ? 'visible' : 'none')
+        map.setLayoutProperty(ABOX_LINE, 'visibility', show ? 'visible' : 'none')
+    } else {
+        map.addSource(ABOX_SOURCE, { type: 'geojson', data })
+        map.addLayer({
+            id: ABOX_FILL, type: 'fill', source: ABOX_SOURCE,
+            paint: { 'fill-color': 'rgba(255,193,7,0.08)' },
+            layout: { visibility: show ? 'visible' : 'none' }
+        })
+        map.addLayer({
+            id: ABOX_LINE, type: 'line', source: ABOX_SOURCE,
+            paint: { 'line-color': '#ff5722', 'line-width': 1.5, 'line-dasharray': [4, 2] },
+            layout: { visibility: show ? 'visible' : 'none' }
+        })
+    }
 }
 
 watch([lastClicked, activeTab], updateAnalysisBox)

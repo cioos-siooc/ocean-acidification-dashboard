@@ -175,15 +175,25 @@ function initChart() {
             // output times), which would otherwise send the map's clock to an hour
             // with no matching raster tile. Snap to the nearest timestamp the raster
             // layer actually has, when we know what those are.
-            const rasterDts = mainStore.variables.find(
-                v => v.source === mainStore.selected_variable.source && v.var === mainStore.selected_variable.var
-            )?.dts;
-            if (rasterDts?.length) {
-                let best = 0;
-                for (let i = 1; i < rasterDts.length; i++) {
-                    if (Math.abs(rasterDts[i] - finalX) < Math.abs(rasterDts[best] - finalX)) best = i;
+            //
+            // Hourly-only: `rasterDts` (mainStore.variables[].dts) is synthesized from
+            // the pipeline's own sync log, which only covers the recent hourly-tile
+            // window — SalishSeaCast_daily's archive reaches back ~two decades further
+            // (see extract_profile.py). In daily/monthly bin mode the raster layer's tile
+            // is keyed by calendar day/month, not one of these hourly instants, so
+            // snapping to `rasterDts` here would drag every pre-2026 click up to the
+            // first hourly-covered date instead of the day/month actually clicked.
+            if (mainStore.exploreBinMode === 'hourly') {
+                const rasterDts = mainStore.variables.find(
+                    v => v.source === mainStore.selected_variable.source && v.var === mainStore.selected_variable.var
+                )?.dts;
+                if (rasterDts?.length) {
+                    let best = 0;
+                    for (let i = 1; i < rasterDts.length; i++) {
+                        if (Math.abs(rasterDts[i] - finalX) < Math.abs(rasterDts[best] - finalX)) best = i;
+                    }
+                    finalX = rasterDts[best];
                 }
-                finalX = rasterDts[best];
             }
 
             if (finalX !== lastClickedX) {

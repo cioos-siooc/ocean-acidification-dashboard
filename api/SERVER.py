@@ -22,6 +22,7 @@ from modules.extract_climate_timeseries import extract_climate_timeseries
 from modules.extractMinMax import extract_minmax
 from modules.extractSensorTimeseries import extract_sensor_timeseries
 from modules.extract_depth_profile import extract_depth_profile
+from modules.extract_image import generate_image
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
 from modules.sync_hourly import import_native_file, import_daily_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
 from modules.posthog_helpers import capture_event
@@ -378,12 +379,33 @@ async def get_depth_profile(request: depthProfileRequest, http_request: Request)
 
 #######################################
 
+def _png_file_response(full_path: str) -> FileResponse:
+    ext = os.path.splitext(full_path)[1]
+    headers = {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Vary": "Origin",
+        "ETag": f'"{full_path}-v1"',
+    }
+    media_type = "image/webp" if ext == '.webp' else "image/png"
+    return FileResponse(full_path, media_type=media_type, headers=headers)
+
+
 @app.get("/png/{source}/{var}/{dt}/{depth}")
 async def get_png(source: str, var: str, dt: str, depth: str):
-    """Serve a preprocessed PNG/WebP tile for variable/datetime/depth.
+    """Serve a WebP/PNG tile for variable/datetime/depth.
 
-    All depths are preprocessed ahead of time (see process/SSC's `image` step) —
-    this route only ever serves an existing file, never generates one."""
+    Most tiles are preprocessed ahead of time (see process/SSC's `image`
+    step) and served directly below. For anything that step hasn't covered —
+    historical dates it never ran for, and daily/monthly bin modes, which it
+    never pre-renders at all (see CLAUDE.md) — this route falls back to
+    rendering the tile on demand straight from ClickHouse (modules/
+    extract_image.py) and caches it to disk at the same path, so only the
+    first request for a given source/var/dt/depth pays the generation cost.
+    `dt`'s shape alone decides hourly vs. daily vs. monthly (see
+    extract_image.resolve_bin_mode) — no separate bin_mode param."""
     # Serve the PNG file for a specific variable, datetime, and depth
     safe_source = os.path.basename(source)
     safe_var = os.path.basename(var)
@@ -393,7 +415,8 @@ async def get_png(source: str, var: str, dt: str, depth: str):
     if safe_source != "SalishSeaCast":
         raise HTTPException(status_code=400, detail=f"Unsupported source: {safe_source}")
 
-    for image_root in _get_image_roots(safe_source):
+    image_roots = _get_image_roots(safe_source)
+    for image_root in image_roots:
         path = os.path.join(image_root, safe_var, safe_dt)
         for ext in ['.webp', '.png']:
             filename = f"{safe_depth}{ext}"
@@ -402,16 +425,29 @@ async def get_png(source: str, var: str, dt: str, depth: str):
 
             exists = await run_in_threadpool(os.path.isfile, full_path)
             if exists:
-                headers = {
-                    "Cache-Control": "public, max-age=31536000, immutable",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, OPTIONS",
-                    "Access-Control-Allow-Headers": "*",
-                    "Vary": "Origin",
-                    "ETag": f'"{full_path}-v1"',
-                }
-                media_type = "image/webp" if ext == '.webp' else "image/png"
-                return FileResponse(full_path, media_type=media_type, headers=headers)
+                return _png_file_response(full_path)
+
+    # Not pre-generated — try rendering it on demand from ClickHouse. Writes
+    # into the first (primary, non-archive) image root so it's found by the
+    # fast path above on every later request.
+    generated_path = None
+    async with extract_slot("get_png"):
+        try:
+            generated_path = await asyncio.wait_for(
+                run_in_process(
+                    generate_image, safe_source, safe_var, safe_dt, safe_depth,
+                    image_roots[0] if image_roots else None,
+                ),
+                timeout=THREADPOOL_TIMEOUT,
+            )
+        except Exception:
+            logger.exception(
+                "On-demand image generation failed for %s/%s/%s/%s",
+                safe_source, safe_var, safe_dt, safe_depth,
+            )
+
+    if generated_path:
+        return _png_file_response(generated_path)
 
     raise HTTPException(status_code=404, detail=f"PNG not found for {var}/{dt}/{depth}")
 

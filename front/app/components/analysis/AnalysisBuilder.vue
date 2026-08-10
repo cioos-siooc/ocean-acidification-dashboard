@@ -171,7 +171,6 @@ const plotErrorMessage = ref<string | null>(null)
 let autoRunTimer: ReturnType<typeof setTimeout> | null = null
 let activeRequestId = 0
 let lastFetchSignature: string | null = null
-let analysisRequestController: AbortController | null = null
 
 const chartContainerRef = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
@@ -491,12 +490,11 @@ async function fetchRegionTimeseries(): Promise<SeriesPoint[]> {
   const location = queryMode.value === 'area'
     ? { polygon: polygonFromClick.value }
     : { lat: pt.lat, lon: pt.lng }
-  // Abort any in-flight request so a stale response can't clobber a newer one
-  if (analysisRequestController) analysisRequestController.abort()
-  analysisRequestController = new AbortController()
+  // Stale responses are discarded by runAnalysis's own requestId guard, not
+  // cancellation — fetchAnalysisSeries's cache can be shared across callers,
+  // so aborting it here would cancel other callers waiting on the same request.
   return fetchAnalysisSeries(
     { variable: variable.value, stat: primaryStat.value as 'min' | 'mean' | 'max', depth: depth.value, location, yearRange: [minYear.value, maxYear.value] },
-    analysisRequestController.signal
   )
 }
 
