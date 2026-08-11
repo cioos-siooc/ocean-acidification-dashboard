@@ -18,25 +18,15 @@
 
     <v-divider vertical class="mx-2" style="height: 24px"></v-divider>
 
-    <!-- <v-btn size="x-small" icon flat :title="'Move to start'"
-      @click="moveToStart"><v-icon>mdi-skip-backward</v-icon></v-btn> -->
-    <v-btn size="20px" icon flat :title="'Back 24 hours'" @click="stepBackwardDay"><v-icon
-        size="14px">mdi-rewind</v-icon></v-btn>
-    <v-btn size="20px" icon flat :title="'Step backward'" @click="stepBackward"><v-icon
+    <v-btn size="20px" icon flat :title="`Back one ${unitLabel}`" @click="stepBackward"><v-icon
         size="14px">mdi-skip-previous</v-icon></v-btn>
     <v-btn size="20px" icon flat :title="playing ? 'Pause' : 'Play'" @click="togglePlay">
       <v-icon size="14px" v-if="!playing">mdi-play</v-icon>
       <v-icon size="14px" v-else>mdi-pause </v-icon>
     </v-btn>
-    <v-btn size="20px" icon flat :title="'Step forward'" @click="stepForward"><v-icon size="14px">mdi-skip-next</v-icon></v-btn>
-    <v-btn size="20px" icon flat :title="'Forward 24 hours'" @click="stepForwardDay"><v-icon
-        size="14px">mdi-fast-forward</v-icon></v-btn>
-    <!-- <v-btn size="x-small" icon flat :title="'Move to end'" @click="moveToEnd"><v-icon>mdi-skip-forward</v-icon></v-btn> -->
+    <v-btn size="20px" icon flat :title="`Forward one ${unitLabel}`" @click="stepForward"><v-icon size="14px">mdi-skip-next</v-icon></v-btn>
 
     <v-divider vertical class="mx-2" style="height: 24px"></v-divider>
-
-    <!-- <v-btn size="x-small" icon flat :color="loop ? 'primary' : undefined" :title="'Loop: ' + (loop ? 'on' : 'off')"
-      @click="loop = !loop"><v-icon>mdi-repeat</v-icon></v-btn> -->
 
     <v-menu offset-y>
       <template #activator="{ props }">
@@ -54,21 +44,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue';
+import { ref, computed, onBeforeUnmount } from 'vue';
 import moment from 'moment';
 
 import { useMainStore } from '../stores/main'
+import { addBins, floorToBin } from '~~/composables/useTimeDepthWindow'
 const mainStore = useMainStore();
 
 ////////////////////////////////////  PROPS & STATE  ///////////////////////////////////
 
-// const props = defineProps<{
-//   currentDt: moment.Moment | null;
-// }>();
-const emit = defineEmits(['update:dt']);
-
 const playing = ref(false);
-// const loop = ref(false);
 const datePickerOpen = ref(false);
 const pickedDate = ref<Date | null>(null);
 
@@ -89,33 +74,34 @@ const selectedDatetime = computed(() => {
 const dts = computed(() => {
   return mainStore.variables.find(v =>  v.source === selectedVariable.value.source && v.var === selectedVariable.value.var)?.dts
     .map(ts => moment.utc(ts))
-  // .format('YYYY-MM-DD'))
-  // .reduce((set, key) => set.add(key), new Set<string>());
 });
 
+// Bin mode (1H/1D/1M) drives what one "step" means. Lives on the store —
+// ExplorePanel's own toggle — since these controls have no window/coverage
+// of their own to derive it from.
+const binMode = computed(() => mainStore.exploreBinMode);
+const unitLabel = computed(() => ({ hourly: 'hour', daily: 'day', monthly: 'month' }[binMode.value]));
+
+// Only hourly is bounded by a known timestamp list — daily/monthly reach back
+// far further (up to two decades) than that list covers, so the picker stays
+// unrestricted in those modes rather than falsely limiting it to the hourly
+// window.
 const minDate = computed(() => {
+  if (binMode.value !== 'hourly') return undefined;
   if (!dts.value || dts.value.length === 0) return null;
   return moment.utc(Math.min(...dts.value)).format('YYYY-MM-DD');
 });
 
 const maxDate = computed(() => {
+  if (binMode.value !== 'hourly') return undefined;
   if (!dts.value || dts.value.length === 0) return null;
   return moment.utc(Math.max(...dts.value)).format('YYYY-MM-DD');
 });
 
-const DFN = computed(() => mainStore.dfnDays);
-const midDate = computed(() => mainStore.midDate);
-
-///////////////////////////////////  WATCHERS  ///////////////////////////////////
-
-// watch(() => props.timestamps, (nv) => {
-//   // if timestamps updated and playing, ensure timer continues
-//   if (playing.value) restartTimer();
-// });
-
 ///////////////////////////////////  METHODS  ///////////////////////////////////
 
 function allowedDates(date: string) {
+  if (binMode.value !== 'hourly') return true;
   if (!dts.value) return false;
   const time = moment.utc(date).valueOf();
   return dts.value.some(dt => Math.abs(dt - time) < 12 * 3600 * 1000); // allow if within 12 hours of any timestamp
@@ -143,80 +129,41 @@ function getIndexForDt(dt: moment.Moment | null) {
   return best;
 }
 
-// function emitForIndex(i: number) {
-//   if (!props.timestamps || props.timestamps.length === 0) return;
-//   i = Math.max(0, Math.min(props.timestamps.length - 1, i));
-//   emit('update:dt', moment.utc(props.timestamps[i]));
-// }
-
-function stepForward() {
+// Hourly steps to the next/previous *real* model output instant (tiles are
+// keyed to actual ERDDAP timestamps, not a clean top-of-hour grid) — daily/
+// monthly have no such fixed list, so they just add/subtract one calendar
+// bin via the same `addBins`/`floorToBin` the depth-section window uses.
+// Deliberately unbounded by any chart window: stepping never recentres a
+// chart (only an explicit date-picker jump does), so there is nothing here
+// for a step to stay inside of.
+function stepHourly(dir: 1 | -1) {
   const idx = currentIndex();
   if (idx < 0) return false
-  if (dts.value[idx]?.valueOf() > midDate.value?.clone().add(DFN.value, 'days').valueOf()) {
-    return false
-  }
-  if (idx < dts.value.length - 1) {
-    const dt = moment.utc(dts.value[idx + 1]);
-    mainStore.updateSelectedVariable({ dt });
-    return true
-  }
-  else {
-    return false
-  }
+  const newIdx = idx + dir
+  if (newIdx < 0 || newIdx >= dts.value.length) return false
+  mainStore.updateSelectedVariable({ dt: moment.utc(dts.value[newIdx]) });
+  return true
+}
+
+function stepCoarse(dir: 1 | -1) {
+  const cur = selectedDatetime.value;
+  if (!cur) return false
+  const next = addBins(floorToBin(cur.toDate(), binMode.value), dir, binMode.value);
+  // Forward-only cap at "now" — there's nothing to play into past today.
+  // Backward is intentionally open-ended: daily/monthly reach back up to two
+  // decades and there's no cheap coverage bound available here to clamp to.
+  if (dir > 0 && next.getTime() > floorToBin(new Date(), binMode.value).getTime()) return false
+  mainStore.updateSelectedVariable({ dt: moment.utc(next) });
+  return true
+}
+
+function stepForward() {
+  return binMode.value === 'hourly' ? stepHourly(1) : stepCoarse(1);
 }
 
 function stepBackward() {
-  const idx = currentIndex();
-  if (idx < 0) return false
-  if (dts.value[idx]?.valueOf() < midDate.value?.clone().subtract(DFN.value, 'days').valueOf()) {
-    return false
-  }
-  if (idx > 0) {
-    const dt = moment.utc(dts.value[idx - 1]);
-    mainStore.updateSelectedVariable({ dt });
-    return true
-  }
-  else {
-    return false
-  }
+  return binMode.value === 'hourly' ? stepHourly(-1) : stepCoarse(-1);
 }
-
-function stepForwardDay() {
-  const idx = currentIndex();
-  if (idx < 0) return false
-  const target = dts.value[idx].clone().add(1, 'day');
-  if (target.valueOf() > midDate.value?.clone().add(DFN.value, 'days').valueOf()) {
-    return false
-  }
-  const newIdx = getIndexForDt(target);
-  if (newIdx < 0 || newIdx === idx) return false
-  const dt = moment.utc(dts.value[newIdx]);
-  mainStore.updateSelectedVariable({ dt });
-  return true
-}
-
-function stepBackwardDay() {
-  const idx = currentIndex();
-  if (idx < 0) return false
-  const target = dts.value[idx].clone().subtract(1, 'day');
-  if (target.valueOf() < midDate.value?.clone().subtract(DFN.value, 'days').valueOf()) {
-    return false
-  }
-  const newIdx = getIndexForDt(target);
-  if (newIdx < 0 || newIdx === idx) return false
-  const dt = moment.utc(dts.value[newIdx]);
-  mainStore.updateSelectedVariable({ dt });
-  return true
-}
-
-// function moveToStart() {
-//   if (!props.timestamps || props.timestamps.length === 0) return;
-//   emitForIndex(0);
-// }
-// function moveToEnd() {
-//   if (!props.timestamps || props.timestamps.length === 0) return;
-//   emitForIndex(props.timestamps.length - 1);
-// }
 
 function setSpeed(s: number) {
   speed.value = s;
@@ -243,14 +190,19 @@ function togglePlay() {
 
 function confirmDatePicker() {
   if (!pickedDate.value) return;
-  const dateStr = Array.isArray(pickedDate.value) ? pickedDate.value[0] : pickedDate.value;
-  mainStore.setMidDate(moment.utc(dateStr));
+  const picked = Array.isArray(pickedDate.value) ? pickedDate.value[0] : pickedDate.value;
 
-  // Find the closest available timestamp to the picked date and update selected variable
-  const idx = getIndexForDt(moment.utc(dateStr));
-  if (idx >= 0) {
-    const dt = moment.utc(dts.value[idx]);
-    mainStore.updateSelectedVariable({ dt });
+  if (binMode.value === 'hourly') {
+    // Find the closest available timestamp to the picked date and update selected variable
+    const idx = getIndexForDt(moment.utc(picked));
+    if (idx >= 0) mainStore.updateSelectedVariable({ dt: moment.utc(dts.value[idx]) });
+  } else {
+    // v-date-picker hands back a Date via its LOCAL Y/M/D getters — carry the
+    // calendar day across via UTC construction (not moment.utc(picked)
+    // directly, which would reinterpret the same instant at the browser's UTC
+    // offset and drift the day), matching useTimeDepthWindow's own picker.
+    const centreUTC = new Date(Date.UTC(picked.getFullYear(), picked.getMonth(), picked.getDate()));
+    mainStore.updateSelectedVariable({ dt: moment.utc(floorToBin(centreUTC, binMode.value)) });
   }
 
   datePickerOpen.value = false;

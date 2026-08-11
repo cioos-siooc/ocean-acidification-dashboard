@@ -13,10 +13,7 @@
            Shared across all three sub-views — the depth sections' "MAP" marker
            and the map's own raster layer both read `selected_variable.dt`. -->
       <div class="time-controls-row mb-2">
-        <TimeControls
-          :timestamps="mainStore.variables.find(v => v.var === mainStore.selected_variable.var)?.dts || []"
-          :currentDt="mainStore.selected_variable.dt"
-          @update:dt="(newDt) => mainStore.updateSelectedVariable({ dt: newDt })" />
+        <TimeControls />
       </div>
 
       <div class="d-flex align-center mb-2" style="gap:8px;">
@@ -58,7 +55,7 @@
         <div v-if="showSection" class="hm-slot" :style="{ height: sectionH + 'px' }" @mouseleave="hoverCell = null">
           <TimeDepthHeatmap ref="modelPanel" :label="panelLabel" :depths="depths" :values="activeGrid"
             :bin-count="binCount" :color-fn="seqColorFn" :gridline-bins="gridlineBins"
-            :mark-cell="clickedCell"
+            :mark-cell="selectedCell"
             show-x-axis :x-label="xLabel"
             @cell-click="onCellClick" @hover="hoverCell = $event" />
         </div>
@@ -104,7 +101,7 @@ import moment from 'moment'
 import { useMainStore, formatDepthLabel } from '../stores/main'
 import { fetchDepthProfile, parseCoverageBound, type DepthProfileResponse } from '~~/composables/useDepthProfileFetch'
 import { resolveColormap } from '~~/composables/useColormapResolver'
-import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, type BinMode } from '~~/composables/useTimeDepthWindow'
+import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, floorToBin, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { fetchClimateTimeseries } from '~~/composables/useClimateTimeseries'
 import { getSensorTimeseries } from '~~/composables/useSensorTimeseries'
 import TimeDepthHeatmap from './depth/TimeDepthHeatmap.vue'
@@ -195,23 +192,25 @@ const {
 // wrapped page()/confirmDatePick() below, and re-set if paging happens to
 // land back on the live edge.
 const pinnedToLatest = ref(true)
-watch([binMode, point, source, varId], () => {
-  pinnedToLatest.value = true
-  // A new coordinate/mode's default profile instant is "whatever the map's
-  // clock currently is" (selected_variable.dt) — any override from a click
-  // against the *previous* point/mode's bins no longer means anything here.
-  mainStore.setExploreProfileDt(null)
-})
+watch([binMode, point, source, varId], () => { pinnedToLatest.value = true })
 
 // The section's own highlighted cell — replaces the old horizontal depth
 // line now that there's no companion line chart below the section for a
-// line to mean "this is the depth it's plotted at". Bin/depth indices are
-// only meaningful against the window they were clicked in, so this also
-// resets on every window move (paging, jump-to-date) — deliberately its own
-// watcher rather than folded into the one above, which `pageWindow`'s own
-// `pinnedToLatest` bookkeeping depends on *not* re-firing on a windowEnd change.
-const clickedCell = ref<{ binIdx: number, depthIdx: number } | null>(null)
-watch([binMode, point, source, varId, windowEnd], () => { clickedCell.value = null })
+// line to mean "this is the depth it's plotted at". Derived straight from
+// the universal selected instant/depth (`selected_variable.dt`/
+// `selectedDepthIdx`) rather than tracked separately, so the mark stays in
+// sync no matter what moved that state — a cell click here, the time
+// controls, a click on the timeseries chart, the map's own depth picker.
+// Falls out of the visible window automatically (no match found) rather than
+// needing an explicit reset watcher — paging back into view brings it back.
+const selectedCell = computed<{ binIdx: number, depthIdx: number } | null>(() => {
+  const dt = mainStore.selected_variable.dt
+  if (!dt) return null
+  const target = floorToBin(moment.utc(dt).toDate(), binMode.value).getTime()
+  const binIdx = binStarts.value.findIndex(b => b.getTime() === target)
+  if (binIdx < 0) return null
+  return { binIdx, depthIdx: selectedDepthIdx.value }
+})
 
 function pageWindow(dir: number) {
   page(dir)
@@ -562,19 +561,15 @@ watch(
 
 function onCellClick({ binIdx, depthIdx }: { binIdx: number, depthIdx: number }) {
   selectedDepthIdx.value = depthIdx
-  clickedCell.value = { binIdx, depthIdx }
   const d = depths.value[depthIdx]
   const partial: Partial<typeof mainStore.selected_variable> = {}
   if (d != null) { partial.depth = formatDepthLabel(d); partial.depth_nc = d }
   const start = binStarts.value[binIdx]
-  // Always drives the vertical profile drawer, at whatever resolution it's
-  // clicked at.
-  if (start) mainStore.setExploreProfileDt(start)
-  // Also always drives the map's own clock (selected_variable.dt), so the
-  // raster tile tracks whichever bin was clicked in every bin mode — not
-  // just hourly. Without this, daily/monthly clicks left the map's dt frozen
-  // at its initial value and only refetched a tile when the depth row also
-  // happened to change.
+  // Drives the universal selected instant (`selected_variable.dt`) — read by
+  // the map's own clock, the vertical profile drawer, and (via `selectedCell`
+  // above) this same highlight, in every bin mode. Without this, daily/
+  // monthly clicks left dt frozen at its initial value and only refetched a
+  // tile when the depth row also happened to change.
   if (start) {
     if (binMode.value === 'hourly') {
       // `start` is floored to the hour (the hourly table's own bin convention),

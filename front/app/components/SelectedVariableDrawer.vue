@@ -86,11 +86,11 @@ const title = computed(() => {
     return `${variableLabel(varId)} Profile`;
 });
 
-// The instant this profile represents: an explicit override from a depth
-// section cell click when one is set (`exploreProfileDt`), else the map's own
-// clock — see `exploreProfileDt`'s definition in the store for why the two
-// can diverge (daily/monthly cell clicks don't move the map's clock).
-const profileDt = computed<MomentInput>(() => mainStore.exploreProfileDt ?? mainStore.selected_variable?.dt);
+// The instant this profile represents — the same universal selected instant
+// every other view reads (`selected_variable.dt`), so this drawer stays in
+// sync with the time controls, a depth-section cell click, or a timeseries
+// chart click alike.
+const profileDt = computed<MomentInput>(() => mainStore.selected_variable?.dt);
 
 // The same chart looks identical whether it's an instantaneous reading or a
 // daily/monthly mean — this is the only visible cue for which one it is, so

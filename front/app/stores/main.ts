@@ -81,15 +81,6 @@ export const useMainStore = defineStore('main', {
         // not a child of it — can request a profile aggregated the same way
         // the depth section currently on screen is.
         exploreBinMode: 'hourly' as 'hourly' | 'daily' | 'monthly',
-
-        // Which instant the vertical profile drawer should show, when it
-        // differs from the map's own clock (`selected_variable.dt`). A depth
-        // section cell click sets both, but in hourly mode the map's clock
-        // gets snapped to the nearest real model output instant while the
-        // drawer still wants the clicked bin's own floor-of-hour start — null
-        // defers to `selected_variable.dt`, as it always did before this
-        // field existed.
-        exploreProfileDt: null as Date | null,
     }),
 
     getters: {
@@ -256,10 +247,6 @@ export const useMainStore = defineStore('main', {
         // exclusions use for high-frequency, non-navigational state changes).
         setExploreBinMode(mode: 'hourly' | 'daily' | 'monthly') {
             this.exploreBinMode = mode;
-        },
-
-        setExploreProfileDt(dt: Date | null) {
-            this.exploreProfileDt = dt;
         },
     }
 })

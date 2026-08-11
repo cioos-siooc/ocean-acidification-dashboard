@@ -530,8 +530,15 @@ onBeforeUnmount(() => {
 
 ///////////////////////////////////  WATCH  ///////////////////////////////////
 
-// Watcher: add/update/remove overlay when selected variable or depth changes
-watch(() => [mainStore.selected_variable.source, mainStore.selected_variable.var, mainStore.selected_variable.depth, mainStore.midDate], async ([v, depth]) => {
+// Watcher: add/update/remove overlay when selected variable, depth or datetime
+// changes. `dt` shares this one watcher rather than getting its own — a depth
+// section cell click (or the variable picker's source switch) sets `depth`
+// and `dt` together in the same tick, and two separate watchers each calling
+// updatePngOverlay() would independently fire off the same request, doubling
+// the image fetch. One watcher covering every source that can move the
+// overlay collapses that to a single call no matter how many of them changed
+// at once.
+watch(() => [mainStore.selected_variable.source, mainStore.selected_variable.var, mainStore.selected_variable.depth, mainStore.selected_variable.dt, mainStore.midDate], async ([v, depth]: [string, string, string | null, moment.Moment | null, moment.Moment | null]) => {
     if (!map) return;
 
     if (!v) {
@@ -561,17 +568,6 @@ watch(() => [mainStore.selected_variable.source, mainStore.selected_variable.var
         removePngOverlay();
     }
 }, { immediate: true });
-
-// Watcher: when selected datetime changes (e.g. user clicks chart), update static overlay if not playing
-watch(() => mainStore.selected_variable.dt, async (newDt) => {
-    if (!map) return;
-    try {
-        // only update overlay image for the current dt
-        await updatePngOverlay();
-    } catch (e) {
-        console.error('Failed to update PNG for dt change', e);
-    }
-});
 
 // Watcher: Explore panel's bin-mode toggle changes which dt resolution the raster tile URL
 // requests (hourly/daily/monthly — see updatePngOverlay), so the map layer needs its own refresh.
