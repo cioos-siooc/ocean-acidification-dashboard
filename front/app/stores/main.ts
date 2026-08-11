@@ -84,10 +84,10 @@ export const useMainStore = defineStore('main', {
 
         // Which instant the vertical profile drawer should show, when it
         // differs from the map's own clock (`selected_variable.dt`). A depth
-        // section cell click in daily/monthly bin mode deliberately leaves the
-        // map's clock alone (a day/month bin isn't "an instant" for the raster
-        // layer) but the profile drawer still needs to jump to that day/month —
-        // null defers to `selected_variable.dt`, as it always did before this
+        // section cell click sets both, but in hourly mode the map's clock
+        // gets snapped to the nearest real model output instant while the
+        // drawer still wants the clicked bin's own floor-of-hour start — null
+        // defers to `selected_variable.dt`, as it always did before this
         // field existed.
         exploreProfileDt: null as Date | null,
     }),

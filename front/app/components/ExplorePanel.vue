@@ -71,7 +71,7 @@
               <span class="hover-dt">{{ hoverInfo.dt }} &#183; {{ hoverInfo.depth }}</span>
               <span class="hover-val"><span class="dot" style="background:#3987e5;" />{{ varName }} <b>{{ hoverInfo.value }}</b></span>
             </template>
-            <span v-else-if="showSection" class="hover-placeholder">Hover to inspect &#183; click to change the selected depth{{ binMode === 'hourly' ? ' and time' : '' }}</span>
+            <span v-else-if="showSection" class="hover-placeholder">Hover to inspect &#183; click to change the selected depth and time</span>
             <span v-else class="hover-placeholder">{{ varName }} at {{ depthLabel }} &#183; model{{ sensorName ? ` and ${sensorName}` : '' }}</span>
           </div>
           <v-spacer />
@@ -127,8 +127,8 @@ import TimeControls from './TimeControls.vue'
  * Only one of the three is ever on screen — the depth sections are pure
  * heatmaps now, not a lens sitting above the timeseries — so each gets the
  * pane's full height. Clicking a section cell always re-centres the map's
- * selected depth; in hourly mode it also re-centres the map's selected time
- * (daily/monthly bins are too coarse for a cell click to mean "this instant").
+ * selected depth and selected time, in every bin mode; hourly additionally
+ * snaps the time to the nearest real model output instant (see onCellClick).
  */
 
 const props = defineProps<{ active?: boolean }>()
@@ -568,24 +568,31 @@ function onCellClick({ binIdx, depthIdx }: { binIdx: number, depthIdx: number })
   if (d != null) { partial.depth = formatDepthLabel(d); partial.depth_nc = d }
   const start = binStarts.value[binIdx]
   // Always drives the vertical profile drawer, at whatever resolution it's
-  // clicked at. Daily/monthly bins are still too coarse for a click to mean
-  // "this instant" for the map's own clock, though — only hourly re-centres
-  // that.
+  // clicked at.
   if (start) mainStore.setExploreProfileDt(start)
-  if (binMode.value === 'hourly' && start) {
-    // `start` is floored to the hour (the hourly table's own bin convention),
-    // but SalishSeaCast's raster tiles are keyed by the model's actual output
-    // instant — offset to :30 past the hour, not on it (see api/modules/
-    // variables.py). Snap to the nearest real timestamp instead of handing
-    // the raster layer an hour it has no tile for.
-    const dts = varMeta.value?.dts
-    if (dts?.length) {
-      const target = start.getTime()
-      let best = 0
-      for (let i = 1; i < dts.length; i++) {
-        if (Math.abs(dts[i] - target) < Math.abs(dts[best] - target)) best = i
+  // Also always drives the map's own clock (selected_variable.dt), so the
+  // raster tile tracks whichever bin was clicked in every bin mode — not
+  // just hourly. Without this, daily/monthly clicks left the map's dt frozen
+  // at its initial value and only refetched a tile when the depth row also
+  // happened to change.
+  if (start) {
+    if (binMode.value === 'hourly') {
+      // `start` is floored to the hour (the hourly table's own bin convention),
+      // but SalishSeaCast's raster tiles are keyed by the model's actual output
+      // instant — offset to :30 past the hour, not on it (see api/modules/
+      // variables.py). Snap to the nearest real timestamp instead of handing
+      // the raster layer an hour it has no tile for.
+      const dts = varMeta.value?.dts
+      if (dts?.length) {
+        const target = start.getTime()
+        let best = 0
+        for (let i = 1; i < dts.length; i++) {
+          if (Math.abs(dts[i] - target) < Math.abs(dts[best] - target)) best = i
+        }
+        partial.dt = moment.utc(dts[best])
+      } else {
+        partial.dt = moment.utc(start)
       }
-      partial.dt = moment.utc(dts[best])
     } else {
       partial.dt = moment.utc(start)
     }
