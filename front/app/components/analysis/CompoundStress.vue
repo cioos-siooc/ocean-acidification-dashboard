@@ -3,18 +3,18 @@
     <div class="pa-2 d-flex flex-column flex-shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Primary variable</div>
       <div class="text-caption mb-3">{{ varName(primaryVariable) }} {{ primaryDirection === '>' ? '>' : '<' }} {{ primaryThreshold }}</div>
-      <v-btn-toggle v-model="primaryDirection" mandatory direction="vertical" variant="tonal" class="mb-1">
-        <v-btn value=">" size="x-small">Above</v-btn>
-        <v-btn value="<" size="x-small">Below</v-btn>
+      <v-btn-toggle v-model="primaryDirection" mandatory variant="tonal" class="mb-1 w-100">
+        <v-btn value=">" size="x-small" class="flex-grow-1">Above</v-btn>
+        <v-btn value="<" size="x-small" class="flex-grow-1">Below</v-btn>
       </v-btn-toggle>
       <v-text-field v-model.number="primaryThreshold" type="number" hide-details class="mb-3" />
 
       <div class="ctrl-label">Compare against</div>
       <v-select v-model="secondaryVariable" :items="otherVariables" item-title="name" item-value="id"
         hide-details class="mb-3" />
-      <v-btn-toggle v-model="secondaryDirection" mandatory direction="vertical" variant="tonal" class="mb-1">
-        <v-btn value=">" size="x-small">Above</v-btn>
-        <v-btn value="<" size="x-small">Below</v-btn>
+      <v-btn-toggle v-model="secondaryDirection" mandatory variant="tonal" class="mb-1 w-100">
+        <v-btn value=">" size="x-small" class="flex-grow-1">Above</v-btn>
+        <v-btn value="<" size="x-small" class="flex-grow-1">Below</v-btn>
       </v-btn-toggle>
       <v-text-field v-model.number="secondaryThreshold" type="number" hide-details class="mb-3" />
 

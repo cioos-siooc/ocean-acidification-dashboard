@@ -28,6 +28,10 @@
         Feedback
       </v-btn>
 
+      <NuxtLink to="/caseStudy" target="_blank">
+        <v-btn text>Case Studies</v-btn>
+      </NuxtLink>
+
       <NuxtLink to="/about" target="_blank">
         <v-btn text>About</v-btn>
       </NuxtLink>
