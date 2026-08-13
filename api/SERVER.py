@@ -22,6 +22,7 @@ from modules.extract_climate_timeseries import extract_climate_timeseries
 from modules.extractMinMax import extract_minmax
 from modules.extractSensorTimeseries import extract_sensor_timeseries
 from modules.extract_depth_profile import extract_depth_profile
+from modules.extract_cross_section import extract_cross_section
 from modules.extract_image import generate_image
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
 from modules.sync_hourly import import_native_file, import_daily_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
@@ -375,6 +376,79 @@ async def get_depth_profile(request: depthProfileRequest, http_request: Request)
             raise HTTPException(status_code=500, detail=str(exc))
         except Exception as exc:
             logger.exception("get_depth_profile failed")
+            raise HTTPException(status_code=500, detail=str(exc))
+
+#######################################
+
+class crossSectionRequest(BaseModel):
+    source: str
+    var: str
+    # Polyline vertices as [(lat, lon), ...], >= 2 points.
+    vertices: List[Tuple[float, float]]
+    # A full timestamp for "hourly", "YYYY-MM-DD" for "daily", or "YYYY-MM"
+    # for "monthly" — matching binMode.
+    dt: str
+    binMode: Literal["hourly", "daily", "monthly"]
+
+@app.post("/crossSection")
+async def get_cross_section(request: crossSectionRequest, http_request: Request):
+    """Build the model's depth-vs-distance grid along an arbitrary drawn
+    polyline, at one time snapshot — the Cross-Section tab's spatial
+    counterpart to the Depth tab's time-depth view.
+
+    Response: { distances_km: [float...], depths: [float...],
+                model: [[float,...],...], vertex_distances_km: [float...] }
+                — model is depths x distance samples.
+    """
+    logger.info(
+        f"START crossSection: {request.source}, {request.var}, vertices={len(request.vertices)}, "
+        f"dt={request.dt}, binMode={request.binMode}"
+    )
+    key = response_cache.make_key("crossSection", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
+        capture_event(http_request, "cross_section_queried", {
+            "source": request.source, "var": request.var, "dt": request.dt,
+            "binMode": request.binMode, "vertex_count": len(request.vertices),
+        })
+        return cached
+    async with extract_slot("crossSection"):
+        try:
+            result = await asyncio.wait_for(
+                run_in_threadpool(
+                    extract_cross_section,
+                    source=request.source,
+                    var=request.var,
+                    vertices=request.vertices,
+                    dt=request.dt,
+                    bin_mode=request.binMode,
+                ),
+                timeout=THREADPOOL_TIMEOUT,
+            )
+            response_cache.set_model(key, result)
+            logger.info(
+                f"FINISH crossSection: {request.var} - returned {len(result.get('depths', []))} depths "
+                f"x {len(result.get('distances_km', []))} samples"
+            )
+            capture_event(http_request, "cross_section_queried", {
+                "source": request.source, "var": request.var, "dt": request.dt,
+                "binMode": request.binMode, "vertex_count": len(request.vertices),
+                "distance_km": result["distances_km"][-1] if result.get("distances_km") else None,
+            })
+            return result
+        except HTTPException:
+            raise
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except RuntimeError as exc:
+            # Out-of-domain/empty line-time combinations are client errors.
+            if "No model data found" in str(exc):
+                logger.warning(f"Cross section request error: {exc}")
+                raise HTTPException(status_code=400, detail=str(exc))
+            logger.exception("extract_cross_section failed with RuntimeError")
+            raise HTTPException(status_code=500, detail=str(exc))
+        except Exception as exc:
+            logger.exception("get_cross_section failed")
             raise HTTPException(status_code=500, detail=str(exc))
 
 #######################################

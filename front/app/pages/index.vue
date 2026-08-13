@@ -164,13 +164,21 @@
                     </div>
                 </v-sheet>
 
-                <!-- Content area -->
+                <!-- Content area. Both panes stay mounted (like the fullscreen
+                     workspaces below) so switching tabs doesn't refetch or reset
+                     whatever each pane had already loaded. -->
                 <div class="flex-grow-1" style="min-width:0; height:100%; overflow:hidden;">
                     <!-- Timeseries tab -->
                     <!-- The one map-synced pane: the clicked point's data at the
                          map's depth, over a paged window. -->
-                    <div style="height:100%;">
+                    <div v-show="activeTab === 'explore'" style="height:100%;">
                         <ExplorePanel :active="activeTab === 'explore'" />
+                    </div>
+                    <!-- Cross-Section tab: reads a drawn line instead of a clicked
+                         point, so it gets its own pane rather than living inside
+                         ExplorePanel's point-shaped view. -->
+                    <div v-show="activeTab === 'crossSection'" style="height:100%;">
+                        <CrossSectionPanel :active="activeTab === 'crossSection'" />
                     </div>
                 </div>
 
@@ -196,11 +204,13 @@ import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import { useRuntimeConfig } from '#app';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import MapboxDraw from '@mapbox/mapbox-gl-draw';
+import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import axios from 'axios'
 import moment from 'moment-timezone'
 import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
-import type { FeatureCollection, Geometry, GeoJsonProperties, Feature, Polygon } from 'geojson';
+import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { utc2pst } from '~~/composables/useUTC2PST'
 import useStationsInteraction from '~~/composables/useStationsInteraction';
@@ -209,6 +219,7 @@ import getSensorTimeseries from '~~/composables/useSensorTimeseries';
 import AnalysisWorkspace from '../components/AnalysisWorkspace.vue'
 import ExplorePanel from '../components/ExplorePanel.vue'
 import ComparisonWorkspace from '../components/ComparisonWorkspace.vue'
+import CrossSectionPanel from '../components/crossSection/CrossSectionPanel.vue'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
@@ -226,6 +237,7 @@ const apiBaseUrl = config.public.apiBaseUrl
 
 const mapContainer = ref<HTMLDivElement | null>(null);
 let map: mapboxgl.Map | null = null;
+let crossSectionDraw: MapboxDraw | null = null;
 const meta = ref<any>(null);
 const drawerOpen = ref(false);
 
@@ -240,10 +252,11 @@ watch(() => mainStore.exploreView, (view) => {
 
 const activeTab = computed({
     get: () => mainStore.activeBottomTab,
-    set: (v: 'explore' | 'analysis' | 'comparison') => mainStore.setActiveBottomTab(v),
+    set: (v: 'explore' | 'analysis' | 'comparison' | 'crossSection') => mainStore.setActiveBottomTab(v),
 });
 const footerTabs = computed(() => [
     { value: 'explore' as const, icon: 'mdi-chart-line', label: 'Explore' },
+    { value: 'crossSection' as const, icon: 'mdi-vector-polyline', label: 'Cross-Section' },
     { value: 'analysis' as const, icon: 'mdi-poll', label: 'Analysis' },
     ...(mainStore.selectedSensor?.id
         ? [{ value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison' }]
@@ -309,8 +322,6 @@ watch(() => mainStore.selectedSensor, (sensor) => {
     }
 });
 
-const isRectangleDrawing = ref(false);
-const drawnRectangle = ref<Feature<Polygon> | null>(null);
 // Bottom-sheet height is user-resizable via the drag handle on the footer's top edge.
 const MIN_FOOTER_PX = 160;
 const footerHeightPx = ref<number>(440);
@@ -468,6 +479,18 @@ onMounted(async () => {
         });
 
         updateAnalysisBox();
+
+        // Cross-Section tab's line-drawing control. Added once and left on the
+        // map permanently (mode is toggled by the activeTab watcher below)
+        // rather than added/removed per tab switch — mapbox-gl-draw's own
+        // draw_line_string mode already handles double-click-zoom
+        // suspension and Enter/Escape-to-finish, so there's nothing else to
+        // hand-roll here.
+        crossSectionDraw = new MapboxDraw({ displayControlsDefault: false, controls: {} });
+        map?.addControl(crossSectionDraw);
+        map?.on('draw.create', onCrossSectionDrawChange);
+        map?.on('draw.update', onCrossSectionDrawChange);
+        map?.on('draw.delete', () => mainStore.setCrossSectionLine(null));
     });
 
 
@@ -1080,6 +1103,11 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
     // register a click handler that queries the API for a timeseries at the clicked coordinate
     const onMapClick = async (evt: any) => {
+        // While drawing a cross-section line, clicks add vertices via
+        // crossSectionDraw (see onCrossSectionDrawChange) — they aren't a
+        // point query, and must not clear the sensor selection mid-draw.
+        if (mainStore.activeBottomTab === 'crossSection') return;
+
         const { lng, lat } = evt.lngLat;
 
         // Check if click landed on a sensor feature (layer may not exist yet)
@@ -1407,6 +1435,37 @@ watch(() => mainStore.queryMode, () => {
 // No activeTab watcher any more: panes that were hidden used to miss updates
 // because this page fetched on their behalf and gated on which tab was showing.
 // Each pane now watches the store itself and re-measures when it becomes active.
+
+// --- CROSS-SECTION LINE DRAWING ---
+// This one *is* an activeTab watcher, unlike the panes above — it isn't data
+// fetching done on a pane's behalf, it's map-control-mode plumbing that has to
+// live here because `crossSectionDraw`/`map` are page-scoped, not reachable
+// from CrossSectionPanel.vue.
+function onCrossSectionDrawChange() {
+    const line = crossSectionDraw?.getAll().features
+        .find((f) => f.geometry?.type === 'LineString') as GeoJSON.Feature<GeoJSON.LineString> | undefined;
+    if (!line) { mainStore.setCrossSectionLine(null); return; }
+    // GeoJSON coordinates are [lng, lat]; the store (like lastClickedMapPoint) uses {lat, lng}.
+    mainStore.setCrossSectionLine(line.geometry.coordinates.map(([lng, lat]) => ({ lat: lat!, lng: lng! })));
+}
+
+watch(activeTab, (tab) => {
+    if (!crossSectionDraw) return;
+    crossSectionDraw.deleteAll();
+    mainStore.setCrossSectionLine(null);
+    crossSectionDraw.changeMode(tab === 'crossSection' ? 'draw_line_string' : 'simple_select');
+});
+
+// A finished line leaves mapbox-gl-draw in simple_select mode (its own
+// draw_line_string mode exits there once you click back on the last vertex or
+// press Enter) — clicking the map again would just select/drag the existing
+// line, not start a new one. CrossSectionPanel's "New line" button bumps this
+// token to re-arm drawing without waiting for a tab round-trip.
+watch(() => mainStore.crossSectionRedrawToken, () => {
+    if (!crossSectionDraw) return;
+    crossSectionDraw.deleteAll();
+    crossSectionDraw.changeMode('draw_line_string');
+});
 
 
 </script>

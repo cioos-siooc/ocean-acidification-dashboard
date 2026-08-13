@@ -60,11 +60,22 @@ export const useMainStore = defineStore('main', {
 
         showCursorCoords: false,
 
-        // 'explore' is the only footer pane — the one view that reads the map's
-        // coordinate, depth and clock. 'analysis'/'comparison' are fullscreen
-        // workspaces: they take a coordinate as input and then have nothing more
-        // to say to the map, so showing the map behind them is wasted space.
-        activeBottomTab: 'explore' as 'explore' | 'analysis' | 'comparison',
+        // 'explore' and 'crossSection' are the footer panes that read the map's
+        // own state (coordinate/clock, and a drawn line, respectively).
+        // 'analysis'/'comparison' are fullscreen workspaces: they take a
+        // coordinate as input and then have nothing more to say to the map, so
+        // showing the map behind them is wasted space.
+        activeBottomTab: 'explore' as 'explore' | 'analysis' | 'comparison' | 'crossSection',
+
+        // The polyline drawn on the map for the Cross-Section tab, in vertex
+        // order. Null until the user finishes drawing a line.
+        crossSectionLine: null as { lat: number, lng: number }[] | null,
+
+        // Bumped by CrossSectionPanel's "New line" button to ask index.vue (the
+        // only place holding the MapboxDraw instance) to clear the map and
+        // re-arm line-drawing mode — a plain counter rather than a boolean so a
+        // click while already mid-redraw still fires the watcher.
+        crossSectionRedrawToken: 0,
 
         // Which record the Analysis tab runs against. Was a whole separate tab
         // ("Sensor Analysis") until the two were merged behind one surface.
@@ -197,6 +208,15 @@ export const useMainStore = defineStore('main', {
             this.lastClickedMapPoint = point;
         },
 
+        setCrossSectionLine(line: { lat: number, lng: number }[] | null) {
+            this.crossSectionLine = line;
+        },
+
+        requestCrossSectionRedraw() {
+            this.crossSectionLine = null;
+            this.crossSectionRedrawToken++;
+        },
+
         setMapCenter(center: { lat: number, lng: number } | null) {
             this.mapCenter = center;
         },
@@ -220,7 +240,7 @@ export const useMainStore = defineStore('main', {
             this.queryMode = mode;
         },
 
-        setActiveBottomTab(tab: 'explore' | 'analysis' | 'comparison') {
+        setActiveBottomTab(tab: 'explore' | 'analysis' | 'comparison' | 'crossSection') {
             if (tab !== this.activeBottomTab) {
                 trackEvent('tab_switched', { from_tab: this.activeBottomTab, to_tab: tab });
             }
