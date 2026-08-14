@@ -40,8 +40,15 @@
           <!-- Segment-boundary markers. TimeDepthHeatmap's own gridlineBins is a
                single uniform interval, not arbitrary positions, so the original
                drawn vertices (irregularly spaced in sample-index space) are drawn
-               as a plain CSS overlay instead of touching that shared component. -->
-          <div v-for="(frac, i) in vertexPositionsFrac" :key="i" class="vertex-mark" :style="{ left: `calc(${AXIS_LEFT_PX}px + ${frac} * (100% - ${AXIS_LEFT_PX + DATAZOOM_RIGHT_PX}px))` }" />
+               as a plain CSS overlay instead of touching that shared component.
+               Numbered 1..N to match the numbered markers index.vue draws at the
+               same vertices on the map (see updateCrossSectionVertexLabels) — the
+               numbers, not the dashes, are what ties a chart segment back to a
+               specific point on the drawn line. -->
+          <div v-for="v in vertexMarks" :key="v.num" class="vertex-mark" :class="{ 'vertex-mark--edge': v.isEdge }"
+            :style="{ left: `calc(${AXIS_LEFT_PX}px + ${v.frac} * (100% - ${AXIS_LEFT_PX + DATAZOOM_RIGHT_PX}px))` }">
+            <span class="vertex-num" :class="`vertex-num--${v.align}`">{{ v.num }}</span>
+          </div>
         </div>
 
         <div class="info-row">
@@ -50,7 +57,7 @@
               <span class="hover-dt">{{ hoverInfo.distance }} &#183; {{ hoverInfo.depth }}</span>
               <span class="hover-val"><span class="dot" style="background:#3987e5;" />{{ varName }} <b>{{ hoverInfo.value }}</b></span>
             </template>
-            <span v-else class="hover-placeholder">Hover to inspect the section &#183; dashed lines mark the drawn line's own vertices</span>
+            <span v-else class="hover-placeholder">Hover to inspect the section &#183; numbered markers match the drawn line's vertices on the map</span>
           </div>
           <v-spacer />
           <div class="legend">
@@ -181,12 +188,21 @@ function xLabel(binIdx: number) {
 // not pixel-exact.
 const AXIS_LEFT_PX = 44
 const DATAZOOM_RIGHT_PX = 26
-const vertexPositionsFrac = computed(() => {
+// 1-based, matching the numbered map markers (updateCrossSectionVertexLabels
+// in index.vue). Endpoints (first/last) get a number badge but no dashed
+// line — a line right on the plot's own edge would be redundant — and their
+// badge aligns outward (start/end) instead of centering, so it doesn't hang
+// off the chart into the axis label gutter.
+const vertexMarks = computed(() => {
   const total = distances.value.length ? distances.value[distances.value.length - 1] : 0
-  if (!total) return []
-  // Drop the first/last vertex — those are the line's own endpoints, already
-  // implied by the chart's edges.
-  return vertexDistances.value.slice(1, -1).map(d => d / total)
+  if (!total || !vertexDistances.value.length) return []
+  const lastIdx = vertexDistances.value.length - 1
+  return vertexDistances.value.map((d, i) => ({
+    num: i + 1,
+    frac: Math.max(0, Math.min(1, d / total)),
+    isEdge: i === 0 || i === lastIdx,
+    align: i === 0 ? 'start' : i === lastIdx ? 'end' : 'center',
+  }))
 })
 
 // ── COLOUR RAMP — reads off the map's own colorbar, same as ExplorePanel's
@@ -278,6 +294,19 @@ watch(() => props.active, (isActive) => {
   border-left: 1px dashed rgba(255,255,255,0.35);
   pointer-events: none;
 }
+.vertex-mark--edge { border-left: none; }
+
+.vertex-num {
+  position: absolute; top: 2px; left: 0;
+  background: rgba(18,24,31,0.85); color: #eef3f7;
+  font-size: 9px; font-weight: 700; line-height: 1;
+  padding: 2px 4px; border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.25);
+  white-space: nowrap;
+}
+.vertex-num--center { transform: translateX(-50%); }
+.vertex-num--start { transform: translateX(0); }
+.vertex-num--end { transform: translateX(-100%); }
 
 .info-row {
   display: flex; align-items: center; gap: 16px;

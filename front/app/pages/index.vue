@@ -1449,6 +1449,51 @@ function onCrossSectionDrawChange() {
     mainStore.setCrossSectionLine(line.geometry.coordinates.map(([lng, lat]) => ({ lat: lat!, lng: lng! })));
 }
 
+// mapbox-gl-draw only renders vertex handles while the line is the *active*
+// selection (mid-draw, or selected in simple_select) — once you click away it
+// reverts to a plain line, so there's nothing on the map to tell "dashed line
+// #2 in the chart" apart from "dashed line #3". This numbered overlay stays
+// pinned to the vertices regardless of draw/selection state, matching the
+// 1-based numbering CrossSectionPanel.vue's own vertex markers use.
+const CS_VERTEX_SOURCE = 'cross-section-vertices'
+const CS_VERTEX_CIRCLES = 'cross-section-vertex-circles'
+const CS_VERTEX_LABELS = 'cross-section-vertex-labels'
+
+function updateCrossSectionVertexLabels() {
+    if (!map || !map.isStyleLoaded()) return
+    const line = mainStore.crossSectionLine
+    const data: GeoJSON.FeatureCollection<GeoJSON.Point> = {
+        type: 'FeatureCollection',
+        features: (line ?? []).map((pt, i) => ({
+            type: 'Feature',
+            properties: { label: String(i + 1) },
+            geometry: { type: 'Point', coordinates: [pt.lng, pt.lat] },
+        })),
+    }
+    if (map.getSource(CS_VERTEX_SOURCE)) {
+        (map.getSource(CS_VERTEX_SOURCE) as mapboxgl.GeoJSONSource).setData(data)
+    } else {
+        map.addSource(CS_VERTEX_SOURCE, { type: 'geojson', data })
+        map.addLayer({
+            id: CS_VERTEX_CIRCLES, type: 'circle', source: CS_VERTEX_SOURCE,
+            paint: {
+                'circle-radius': 8, 'circle-color': '#12181f',
+                'circle-stroke-width': 1.5, 'circle-stroke-color': '#eef3f7',
+            },
+        })
+        map.addLayer({
+            id: CS_VERTEX_LABELS, type: 'symbol', source: CS_VERTEX_SOURCE,
+            layout: {
+                'text-field': ['get', 'label'], 'text-size': 10, 'text-font': ['Open Sans Bold'],
+                'text-allow-overlap': true, 'text-ignore-placement': true,
+            },
+            paint: { 'text-color': '#eef3f7' },
+        })
+    }
+}
+
+watch(() => mainStore.crossSectionLine, updateCrossSectionVertexLabels, { deep: true })
+
 watch(activeTab, (tab) => {
     if (!crossSectionDraw) return;
     crossSectionDraw.deleteAll();
