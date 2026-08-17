@@ -16,10 +16,6 @@
       <v-col cols="12" class="ma-0 pa-0" style="height:20px">
         <span>Depth {{ selectedVariable.depth }}{{ selectedVariable.depth && !isNaN(Number(selectedVariable.depth)) ? ' m' : '' }}</span>
       </v-col>
-      <v-col v-if="lastClicked" cols="12" class="ma-0 pa-0" style="height:20px">
-        <span>{{ lastClicked?.lat.toFixed(5) }} , {{ lastClicked?.lng.toFixed(5)
-          }}</span>
-      </v-col>
 
       <!-- <v-divider class="mx-0"></v-divider>
 
@@ -50,7 +46,6 @@ const showColorbarSettings = computed({
 });
 
 const selectedVariable = computed(() => mainStore.selected_variable);
-const lastClicked = computed(() => mainStore.lastClickedMapPoint);
 
 // selected_variable.dt is a real model instant in hourly mode (PST display
 // makes sense there), but a UTC calendar-day/month bin start in daily/monthly

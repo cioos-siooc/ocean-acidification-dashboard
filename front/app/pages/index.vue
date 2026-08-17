@@ -131,6 +131,14 @@
                             </v-btn>
                         </div>
 
+                        <v-divider v-if="remainingFooterTabs.length > 0" />
+
+                        <v-btn v-for="t in remainingFooterTabs" :key="t.value" :prepend-icon="t.icon" variant="text"
+                            block class="footer-rail-item"
+                            :class="{ 'footer-rail-item--active': activeTab === t.value }" @click="activeTab = t.value">
+                            {{ t.label }}
+                        </v-btn>
+
                         <v-divider />
 
                         <!-- Analysis is a fullscreen dialog with no rail of its own once
@@ -154,13 +162,7 @@
                             </v-btn>
                         </div>
 
-                        <v-divider v-if="remainingFooterTabs.length > 0" />
 
-                        <v-btn v-for="t in remainingFooterTabs" :key="t.value" :prepend-icon="t.icon" variant="text"
-                            block class="footer-rail-item"
-                            :class="{ 'footer-rail-item--active': activeTab === t.value }" @click="activeTab = t.value">
-                            {{ t.label }}
-                        </v-btn>
                     </div>
                 </v-sheet>
 
@@ -988,7 +990,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     // resolution in sync with the Explore panel's bin-mode toggle used by the timeseries/depth charts.
     const dtFormat = mainStore.exploreBinMode === 'daily' ? 'YYYY-MM-DD'
         : mainStore.exploreBinMode === 'monthly' ? 'YYYY-MM'
-        : 'YYYY-MM-DDTHHmmss';
+            : 'YYYY-MM-DDTHHmmss';
     const dt = mainStore.selected_variable.dt?.format(dtFormat) || '';
     const depth = mainStore.selected_variable.depth
     const pngPath = `${apiBaseUrl}/png/${source}/${varName}/${dt}/${depth}`;

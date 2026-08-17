@@ -1,22 +1,24 @@
 <template>
   <v-row class="time-controls">
     <v-spacer></v-spacer>
-    <v-menu v-model="datePickerOpen" :close-on-content-click="false" offset-y>
-      <template #activator="{ props: menuProps }">
-        <v-btn v-bind="menuProps" size="20px" icon flat :title="'Jump to date'"><v-icon size="14px">mdi-calendar</v-icon></v-btn>
-      </template>
-      <v-card>
-        <v-date-picker v-model="pickedDate" :allowed-dates="allowedDates" hide-header show-adjacent-months :max="maxDate"
-          :min="minDate"></v-date-picker>
-        <v-card-actions>
-          <v-spacer></v-spacer>
-          <v-btn text @click="cancelDatePicker">Cancel</v-btn>
-          <v-btn color="primary" @click="confirmDatePicker">OK</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-menu>
+    <template v-if="!hideDatePicker">
+      <v-menu v-model="datePickerOpen" :close-on-content-click="false" offset-y>
+        <template #activator="{ props: menuProps }">
+          <v-btn v-bind="menuProps" size="20px" icon flat :title="'Jump to date'"><v-icon size="14px">mdi-calendar</v-icon></v-btn>
+        </template>
+        <v-card>
+          <v-date-picker v-model="pickedDate" :allowed-dates="allowedDates" hide-header show-adjacent-months :max="maxDate"
+            :min="minDate"></v-date-picker>
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn text @click="cancelDatePicker">Cancel</v-btn>
+            <v-btn color="primary" @click="confirmDatePicker">OK</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-menu>
 
-    <v-divider vertical class="mx-2" style="height: 24px"></v-divider>
+      <v-divider vertical class="mx-2" style="height: 24px"></v-divider>
+    </template>
 
     <v-btn size="20px" icon flat :title="`Back one ${unitLabel}`" @click="stepBackward"><v-icon
         size="14px">mdi-skip-previous</v-icon></v-btn>
@@ -52,6 +54,13 @@ import { addBins, floorToBin } from '~~/composables/useTimeDepthWindow'
 const mainStore = useMainStore();
 
 ////////////////////////////////////  PROPS & STATE  ///////////////////////////////////
+
+// ExplorePanel already has its own jump-to-date control (the clickable range
+// label next to the paging arrows) that also recentres its window on the
+// picked date — this icon would be a second, redundant way to do the same
+// thing there. Cross-Section has no such control of its own, so it keeps this
+// as its only way to jump to an arbitrary date.
+const props = defineProps<{ hideDatePicker?: boolean }>()
 
 const playing = ref(false);
 const datePickerOpen = ref(false);

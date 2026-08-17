@@ -48,6 +48,12 @@ const props = withDefaults(defineProps<{
   markCell?: { binIdx: number, depthIdx: number } | null
   /** Caption drawn over the panel's top-left corner. */
   label?: string
+  /**
+   * Enables ECharts' own per-cell tooltip, formatted by the caller from
+   * (binIdx, depthIdx, value). Left unset by multi-panel consumers (Comparison's
+   * stacked model/sensor view) — see the `tooltip` option below for why.
+   */
+  tooltipFormatter?: (binIdx: number, depthIdx: number, value: number | null) => string
 }>(), {
   showXAxis: false,
   markDepth: null,
@@ -180,10 +186,29 @@ function baseOption(): echarts.EChartsOption {
       },
       { type: 'inside', yAxisIndex: 0, zoomOnMouseWheel: true, moveOnMouseWheel: false, moveOnMouseMove: true },
     ],
-    // Per-cell tooltips are deliberately off: consumers stacking several panels
-    // render one shared hover-info bar instead, since several floating tooltip
-    // boxes moving independently was distracting.
-    tooltip: { show: false },
+    // Per-cell tooltips are opt-in via `tooltipFormatter`. Left off by default:
+    // consumers stacking several panels (Comparison's model/sensor view) render
+    // one shared hover-info bar instead, since several floating tooltip boxes
+    // moving independently was distracting — a single-panel consumer has no
+    // such conflict, so it can just use ECharts' own tooltip directly.
+    tooltip: props.tooltipFormatter
+      ? {
+          trigger: 'item',
+          confine: true,
+          backgroundColor: 'rgba(18,24,31,0.92)',
+          borderColor: 'rgba(255,255,255,0.18)',
+          borderWidth: 1,
+          padding: 8,
+          textStyle: { color: '#eef3f7', fontSize: 11 },
+          formatter: (params: any) => {
+            const d = params.data as (number | null)[]
+            const bin = d[0] as number
+            const depthIdx = d[5] as number
+            const v = d[4] as number | null
+            return props.tooltipFormatter!(bin, depthIdx, v == null ? null : v)
+          },
+        }
+      : { show: false },
     series: [{
       type: 'custom',
       clip: true,

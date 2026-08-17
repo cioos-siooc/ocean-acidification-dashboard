@@ -9,13 +9,6 @@
     </div>
 
     <template v-else>
-      <!-- Model clock: steps/animates which timestamp the raster layer paints.
-           Shared across all three sub-views — the depth sections' "MAP" marker
-           and the map's own raster layer both read `selected_variable.dt`. -->
-      <div class="time-controls-row mb-2">
-        <TimeControls />
-      </div>
-
       <div class="d-flex align-center mb-2" style="gap:8px;">
         <v-btn-toggle v-model="binMode" mandatory variant="tonal" :disabled="loading">
           <v-btn v-for="m in AVAILABLE_MODES" :key="m" :value="m" size="x-small" :title="BIN_CONFIG[m].label">
@@ -25,12 +18,23 @@
         <!-- Which sub-view (Timeseries / Model depth / Sensor depth) is showing
              is picked from the footer's nav rail now, not a toggle in here. -->
         <v-progress-circular v-if="loading" indeterminate size="14" width="2" color="teal" />
-        <span class="text-caption point-label">{{ point.lat.toFixed(4) }}, {{ point.lng.toFixed(4) }}</span>
+
         <v-spacer />
-        <v-btn icon="mdi-chevron-left" size="x-small" variant="text" :disabled="!canPageBack || loading" @click="pageWindow(-1)" />
+
+        <!-- Model clock: steps/animates which timestamp the raster layer paints.
+           Shared across all three sub-views — the depth sections' "MAP" marker
+           and the map's own raster layer both read `selected_variable.dt`. -->
+        <div class="time-controls-row mb-2">
+          <TimeControls hide-date-picker />
+        </div>
+
+        <v-spacer />
+        <v-btn icon="mdi-chevron-left" size="x-small" variant="text" :disabled="!canPageBack || loading"
+          @click="pageWindow(-1)" />
         <v-menu v-model="dateMenuOpen" :close-on-content-click="false" :disabled="loading" location="bottom">
           <template #activator="{ props: menuProps }">
-            <span v-bind="menuProps" class="text-caption range-label range-label--clickable" title="Jump to a date">{{ rangeLabel }}</span>
+            <span v-bind="menuProps" class="text-caption range-label range-label--clickable" title="Jump to a date">{{
+              rangeLabel }}</span>
           </template>
           <v-card>
             <v-date-picker v-model="pickedDate" hide-header show-adjacent-months :min="minDateStr" :max="maxDateStr" />
@@ -41,49 +45,49 @@
             </v-card-actions>
           </v-card>
         </v-menu>
-        <v-btn icon="mdi-chevron-right" size="x-small" variant="text" :disabled="!canPageForward || loading" @click="pageWindow(1)" />
+        <v-btn icon="mdi-chevron-right" size="x-small" variant="text" :disabled="!canPageForward || loading"
+          @click="pageWindow(1)" />
       </div>
 
       <v-alert v-if="loadError" type="error" variant="tonal" border="start" density="compact" class="mb-2">
         {{ loadError }}
       </v-alert>
 
+      <ChartContextBar :items="contextItems" />
+
       <div class="chart-region">
         <!-- One source at a time. Showing model and sensor side by side here is
              what the Comparison tab is for; this tab answers "what does this one
              record look like through the water column". -->
-        <div v-if="showSection" class="hm-slot" :style="{ height: sectionH + 'px' }" @mouseleave="hoverCell = null">
+        <div v-if="showSection" class="hm-slot" :style="{ height: sectionH + 'px' }">
           <TimeDepthHeatmap ref="modelPanel" :label="panelLabel" :depths="depths" :values="activeGrid"
-            :bin-count="binCount" :color-fn="seqColorFn" :gridline-bins="gridlineBins"
-            :mark-cell="selectedCell"
-            show-x-axis :x-label="xLabel"
-            @cell-click="onCellClick" @hover="hoverCell = $event" />
+            :bin-count="binCount" :color-fn="seqColorFn" :gridline-bins="gridlineBins" :mark-cell="selectedCell"
+            :tooltip-formatter="cellTooltip" show-x-axis :x-label="xLabel" @cell-click="onCellClick" />
         </div>
 
-        <!-- Hover readout and legend share one row: this pane lives in a short
-             resizable footer, so every fixed row costs the charts real height. -->
-        <div ref="depthHeaderRef" class="info-row">
-          <div class="hover-side">
-            <template v-if="showSection && hoverInfo">
-              <span class="hover-dt">{{ hoverInfo.dt }} &#183; {{ hoverInfo.depth }}</span>
-              <span class="hover-val"><span class="dot" style="background:#3987e5;" />{{ varName }} <b>{{ hoverInfo.value }}</b></span>
-            </template>
-            <span v-else-if="showSection" class="hover-placeholder">Hover to inspect &#183; click to change the selected depth and time</span>
-            <span v-else class="hover-placeholder">{{ varName }} at {{ depthLabel }} &#183; model{{ sensorName ? ` and ${sensorName}` : '' }}</span>
-          </div>
-          <v-spacer />
-          <!-- Scale is the map's; its colorbar is the legend. Only the
-               "no data" convention is specific to this view. -->
-          <div v-if="showSection" class="legend">
-            <span class="swatch-hatch" :title="emptyCellLabel" />
-            <span class="legend-label">{{ emptyCellLabel }}</span>
-          </div>
+        <!-- Legend only — per-cell values now show in the heatmap's own ECharts
+             tooltip (see `cellTooltip`) instead of a shared readout row here.
+             This pane lives in a short resizable footer, so every fixed row
+             costs the charts real height: series view has nothing left to put
+             here (its field/depth are already in ChartContextBar above), so it
+             collapses to zero height rather than an empty bar — kept in the DOM
+             either way (not v-if'd out) so computeLayout below still has a real
+             rect to measure. -->
+        <div ref="depthHeaderRef" class="info-row" :class="{ 'info-row--compact': !showSection }">
+          <template v-if="showSection">
+            <v-spacer />
+            <!-- Scale is the map's; its colorbar is the legend. Only the
+                 "no data" convention is specific to this view. -->
+            <div class="legend">
+              <span class="swatch-hatch" :title="emptyCellLabel" />
+              <span class="legend-label">{{ emptyCellLabel }}</span>
+            </div>
+          </template>
         </div>
 
         <div v-if="!showSection" class="line-slot" :style="{ height: chartH + 'px' }">
           <TimeseriesChart ref="lineChart" :window-start="windowStart" :window-end="chartWindowEnd"
             :grid-left="AXIS_LEFT_PX" :grid-right="DATAZOOM_RIGHT_PX" legend-layout="top" />
-          <span class="panel-label">{{ depthLabel }}</span>
           <div v-if="!depthHasData && !loading" class="line-empty">No model data at {{ depthLabel }} here</div>
         </div>
 
@@ -107,6 +111,7 @@ import { getSensorTimeseries } from '~~/composables/useSensorTimeseries'
 import TimeDepthHeatmap from './depth/TimeDepthHeatmap.vue'
 import TimeseriesChart from './TimeseriesChart.vue'
 import TimeControls from './TimeControls.vue'
+import ChartContextBar from './ChartContextBar.vue'
 
 /**
  * Explore: the one footer pane that is tied to the map.
@@ -139,7 +144,6 @@ const varMeta = computed(() => mainStore.variables.find(v => v.source === source
 const varName = computed(() => varMeta.value?.name || varId.value || 'Variable')
 
 const panelLabel = computed(() => `${showingSensor.value ? 'SENSOR · BINNED' : 'MODEL'} · ${BIN_CONFIG[binMode.value].short}`)
-const sensorName = computed(() => mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id)?.name ?? '')
 
 // ── DEPTH LEVELS — as in the Comparison view: real model levels, minus the -1
 // "bottom" pseudo-level which would NaN out the sqrt depth scale. ─────────────
@@ -486,28 +490,23 @@ function xLabel(binIdx: number) {
     : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 
-const hoverCell = ref<{ binIdx: number, depthIdx: number } | null>(null)
-const hoverInfo = computed(() => {
-  const cell = hoverCell.value
-  if (!cell) return null
-  const v = grid.value[cell.depthIdx]?.[cell.binIdx] ?? null
-  const depth = depths.value[cell.depthIdx]
-  const dt = binStarts.value[cell.binIdx]
+// Per-cell tooltip, rendered by TimeDepthHeatmap's own ECharts tooltip rather
+// than a shared info-row bar (see that component's `tooltipFormatter` prop
+// comment for why single-panel consumers can use the native tooltip while
+// Comparison's stacked model/sensor view still shares one row).
+function cellTooltip(binIdx: number, depthIdx: number, value: number | null): string {
+  const depth = depths.value[depthIdx]
+  const dt = binStarts.value[binIdx]
   const dtOpts: Intl.DateTimeFormatOptions = binMode.value === 'hourly'
     ? { month: 'short', day: 'numeric', hour: 'numeric', timeZone: 'UTC' }
     : binMode.value === 'monthly'
       ? { month: 'short', year: 'numeric', timeZone: 'UTC' }
       : { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }
-  const sv = sensorGrid.value?.[cell.depthIdx]?.[cell.binIdx] ?? null
-  const dv = (v == null || sv == null) ? null : v - sv
-  return {
-    dt: dt ? dt.toLocaleString('en-US', dtOpts) : '—',
-    depth: depth != null ? `${depth.toFixed(depth < 10 ? 1 : 0)}m` : '—',
-    value: v == null ? 'no data' : v.toFixed(3),
-    sensor: sv == null ? 'no cast' : sv.toFixed(3),
-    diff: dv == null ? 'no cast' : `${dv >= 0 ? '+' : ''}${dv.toFixed(3)}`,
-  }
-})
+  const dtStr = dt ? dt.toLocaleString('en-US', dtOpts) : '—'
+  const depthStr = depth != null ? `${depth.toFixed(depth < 10 ? 1 : 0)}m` : '—'
+  const valueStr = value == null ? 'no data' : value.toFixed(3)
+  return `<div style="opacity:.7;margin-bottom:2px;">${dtStr} &middot; ${depthStr}</div><div>${varName.value}: <b>${valueStr}</b></div>`
+}
 
 // ── DEPTH SELECTION — two-way with the map's own depth control, so picking a
 // level here re-renders the raster layer at that depth and vice versa. ────────
@@ -517,6 +516,18 @@ const depthLabel = computed(() => {
   return d != null ? `${d.toFixed(d < 10 ? 1 : 0)} m` : '—'
 })
 const depthHasData = computed(() => (grid.value[selectedDepthIdx.value] ?? []).some(v => v != null))
+
+// ── CHART CONTEXT — what the chart below is actually plotting, as opposed to
+// selectedInfo.vue's map-corner box (map layer only). Depth is omitted for
+// the heatmap sections: they plot every depth against time, so a single
+// selected depth would misleadingly suggest the chart is scoped to it.
+const contextItems = computed(() => {
+  const items: { label: string; value: string }[] = [{ label: 'Field', value: varName.value }]
+  if (!showSection.value) items.push({ label: 'Depth', value: depthLabel.value })
+  items.push({ label: 'Range', value: rangeLabel.value })
+  if (point.value) items.push({ label: 'Point', value: `${point.value.lat.toFixed(4)}, ${point.value.lng.toFixed(4)}` })
+  return items
+})
 
 /**
  * The selected depth is inherited from the map control, which is set for the
@@ -724,7 +735,9 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.model-depth-profile { min-height: 0; }
+.model-depth-profile {
+  min-height: 0;
+}
 
 /* TimeControls is a v-row, whose negative Vuetify gutters collapse this
    wrapper to zero height unless neutralised directly. */
@@ -734,55 +747,121 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-.chart-region { position: relative; }
+.chart-region {
+  position: relative;
+}
+
 .loading-overlay {
-  position: absolute; inset: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: center;
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: rgba(10, 14, 18, 0.4);
   border-radius: 6px;
   pointer-events: none;
 }
 
-.point-label { color: rgba(255,255,255,0.45); font-variant-numeric: tabular-nums; }
-.range-label { min-width: 150px; text-align: center; color: rgba(255,255,255,0.6); font-variant-numeric: tabular-nums; }
-.range-label--clickable { cursor: pointer; border-radius: 3px; }
-.range-label--clickable:hover { color: #fff; text-decoration: underline dotted; }
+.range-label {
+  min-width: 150px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+}
 
-.hm-slot { margin-bottom: 3px; }
+.range-label--clickable {
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.range-label--clickable:hover {
+  color: #fff;
+  text-decoration: underline dotted;
+}
+
+.hm-slot {
+  margin-bottom: 3px;
+}
 
 .info-row {
-  display: flex; align-items: center; gap: 16px;
-  margin-top: 6px; padding: 4px 10px; min-height: 30px;
-  background: rgba(255,255,255,0.03); border-radius: 4px; font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 6px;
+  padding: 4px 10px;
+  min-height: 30px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  font-size: 11.5px;
 }
-.hover-side { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; min-width: 0; }
-.hover-dt { color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums; }
-.hover-val { display: flex; align-items: center; gap: 6px; color: rgba(255,255,255,0.6); font-variant-numeric: tabular-nums; }
-.hover-val b { color: #eef3f7; font-weight: 700; }
-.hover-val .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-.hover-placeholder { color: rgba(255,255,255,0.3); font-size: 11px; }
 
-.legend { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.legend-item { display: flex; flex-direction: column; gap: 2px; }
-.legend-label { font-size: 9.5px; color: rgba(255,255,255,0.4); }
-.ramp { width: 130px; height: 7px; border-radius: 4px; }
-.ramp-div { background: linear-gradient(90deg, #2b6cb0, #ffffff, #c53030); }
-.ramp-ticks { display: flex; justify-content: space-between; font-size: 9px; color: rgba(255,255,255,0.4); width: 130px; font-variant-numeric: tabular-nums; }
+.info-row--compact {
+  margin-top: 0;
+  padding: 0;
+  min-height: 0;
+  background: transparent;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.legend-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.legend-label {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.ramp {
+  width: 130px;
+  height: 7px;
+  border-radius: 4px;
+}
+
+.ramp-div {
+  background: linear-gradient(90deg, #2b6cb0, #ffffff, #c53030);
+}
+
+.ramp-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.4);
+  width: 130px;
+  font-variant-numeric: tabular-nums;
+}
+
 .swatch-hatch {
-  width: 18px; height: 11px; border-radius: 2px; background-color: #1a232c;
-  background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.22) 0, rgba(255,255,255,0.22) 1px, transparent 1px, transparent 6px);
-  border: 1px solid rgba(255,255,255,0.09);
+  width: 18px;
+  height: 11px;
+  border-radius: 2px;
+  background-color: #1a232c;
+  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.22) 0, rgba(255, 255, 255, 0.22) 1px, transparent 1px, transparent 6px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
 }
 
-.line-slot { position: relative; margin-top: 3px; }
-.panel-label {
-  position: absolute; top: 2px; left: 48px;
-  font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
-  color: #06282a; background: #35c2c9;
-  padding: 1px 6px; border-radius: 3px; pointer-events: none; z-index: 2;
+.line-slot {
+  position: relative;
+  margin-top: 3px;
 }
+
 .line-empty {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  font-size: 11px; color: rgba(255,255,255,0.3); pointer-events: none;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  pointer-events: none;
 }
 </style>
