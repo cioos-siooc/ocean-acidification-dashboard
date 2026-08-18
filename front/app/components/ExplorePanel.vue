@@ -638,13 +638,19 @@ async function updateLineChart() {
   let clim: any = null
   if (point.value && depths.value[d] != null) {
     try {
+      // Pad a day on each side: the API places each calendar day's point at
+      // noon UTC (extract_climate_timeseries.py), but the chart's axis bounds
+      // are these same window edges rendered in local (Pacific) time — up to
+      // ~8h off from UTC midnight. Without padding, the first/last real point
+      // can land inside the local window instead of past its edge, so the
+      // band/mean line stops short of the axis instead of running to it.
       const resp = await fetchClimateTimeseries({
         variable: varId.value,
         lat: point.value.lat,
         lon: point.value.lng,
         depth: depths.value[d]!,
-        fromDate: toApiIso(windowStart.value),
-        toDate: toApiIso(chartWindowEnd.value),
+        fromDate: toApiIso(new Date(windowStart.value.getTime() - 86400e3)),
+        toDate: toApiIso(new Date(chartWindowEnd.value.getTime() + 86400e3)),
       })
       clim = resp?.data ?? null
     } catch {
