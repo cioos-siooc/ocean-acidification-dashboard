@@ -23,7 +23,7 @@
             :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }">
             <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
-            <Overlays @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
+            <Overlays @show-how="showHow = true"
                 @autorange="autorange" class="overlay"
                 :style="{ top: `${overlayGap}px`, left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap : overlayGap) + 'px' }" />
 
@@ -241,7 +241,10 @@ const mapContainer = ref<HTMLDivElement | null>(null);
 let map: mapboxgl.Map | null = null;
 let crossSectionDraw: MapboxDraw | null = null;
 const meta = ref<any>(null);
-const drawerOpen = ref(true);
+const drawerOpen = computed({
+    get: () => mainStore.isVerticalProfileOpen,
+    set: (v: boolean) => mainStore.setIsVerticalProfileOpen(v),
+});
 
 // Auto-open the vertical profile drawer on switching into either depth
 // section — the section is a time-depth slice at one instant per column, the
@@ -249,7 +252,7 @@ const drawerOpen = ref(true);
 // two naturally belong side by side. One-directional on purpose: leaving a
 // depth view never force-closes a drawer the user opened deliberately.
 watch(() => mainStore.exploreView, (view) => {
-    if (view === 'model-depth' || view === 'sensor-depth') drawerOpen.value = true;
+    if (view === 'model-depth' || view === 'sensor-depth') mainStore.setIsVerticalProfileOpen(true);
 });
 
 const activeTab = computed({
@@ -462,6 +465,14 @@ onMounted(async () => {
 
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
+        // Every other layer added below/elsewhere on this page (PNG overlay,
+        // bathymetry, stations, analysis box, cross-section...) can land
+        // above the style's built-in "water names" labels depending on add
+        // order. Re-raising on 'idle' (fires once per settled render, not
+        // per frame) keeps it on top of whatever's underneath without every
+        // layer-adding function here needing to know it exists.
+        map?.on('idle', raiseWaterNamesLayer);
+
         map?.on('mousemove', (e) => {
             mouseCoords.value.lng = e.lngLat.lng;
             mouseCoords.value.lat = e.lngLat.lat;
@@ -500,6 +511,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
     if (map) {
+        map.off('idle', raiseWaterNamesLayer);
+
         const handlers = (map as any)?.__anchoredChartsHandlers;
         const refs = (map as any)?.__anchoredCharts as Array<any> | undefined;
         const svg = (map as any)?.__anchoredChartsSvg as SVGElement | undefined;
@@ -716,6 +729,14 @@ watch(() => mainStore.showBathymetryContours, (show) => {
         console.warn('Failed to toggle bathymetry contours layer visibility:', e);
     }
 }, { immediate: true });
+
+watch(() => mainStore.showMapLabels, (visible: boolean) => {
+    try {
+        setMapLabelsVisibility(visible);
+    } catch (e) {
+        console.warn('Failed to toggle map labels visibility:', e);
+    }
+});
 
 watch(() => mainStore.lastClickedMapPoint, (point) => {
     if (!point) return;
@@ -1151,6 +1172,70 @@ function trigger_mapClick(lat: number, lng: number) {
 // immediately after it updated the selected timestamp (dt). That logic is already handled by the
 // var/depth watcher above. Removed the blanket watcher to avoid stopping playback when the animator
 // updates the selected datetime.
+
+// Cached id of the style's built-in water-name-labels layer (added directly
+// in Mapbox Studio, e.g. "Puget Sound", "Strait of Georgia" — not something
+// this app adds itself). Studio slugifies a layer's display name into its
+// id, so resolve by fuzzy match rather than hardcoding a guess at the id.
+let waterNamesLayerId: string | null = null;
+let warnedMissingWaterNamesLayer = false;
+
+function resolveWaterNamesLayer(): string | null {
+    if (!map) return null;
+    if (waterNamesLayerId && map.getLayer(waterNamesLayerId)) return waterNamesLayerId;
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const layers = map.getStyle()?.layers ?? [];
+    const match = layers.find((l: { id: string }) => normalize(l.id) === normalize('water names'));
+    waterNamesLayerId = match ? match.id : null;
+    if (!waterNamesLayerId && !warnedMissingWaterNamesLayer) {
+        warnedMissingWaterNamesLayer = true;
+        console.warn('Could not find a "water names" layer in the map style; labels will not be forced on top.');
+    }
+    return waterNamesLayerId;
+}
+
+// Re-raise the water-name labels to the very top of the style's layer stack.
+// Bound to the map's 'idle' event so every current and future layer-adding
+// function on this page stays below it without each needing to know this
+// layer exists. Skips the move when already topmost so it can't loop.
+function raiseWaterNamesLayer() {
+    if (!map) return;
+    const layerId = resolveWaterNamesLayer();
+    if (!layerId) return;
+    try {
+        const layers = map.getStyle()?.layers;
+        if (!layers || !layers.length) return;
+        if (layers[layers.length - 1].id !== layerId) {
+            map.moveLayer(layerId);
+        }
+    } catch (e) { /* map may be mid-teardown */ }
+}
+
+// Base style's "Place labels" group (settlement/state/country/continent
+// names) — a fixed, standard set of Mapbox Streets layer ids, unlike the
+// water-names layer which is custom and has to be resolved by name.
+const PLACE_LABEL_LAYER_IDS = [
+    'settlement-subdivision-label',
+    'settlement-minor-label',
+    'settlement-major-label',
+    'state-label',
+    'country-label',
+    'continent-label',
+];
+
+// Drives the "Map Labels" overlay button: shows/hides the water-name labels
+// together with the place-name labels as one group.
+function setMapLabelsVisibility(visible: boolean) {
+    if (!map) return;
+    const visibility = visible ? 'visible' : 'none';
+    const waterLayerId = resolveWaterNamesLayer();
+    const targetIds = waterLayerId ? [waterLayerId, ...PLACE_LABEL_LAYER_IDS] : PLACE_LABEL_LAYER_IDS;
+    for (const id of targetIds) {
+        try {
+            if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility);
+        } catch (e) { /* layer not present in this style version */ }
+    }
+}
 
 function removePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
     if (!map) return;

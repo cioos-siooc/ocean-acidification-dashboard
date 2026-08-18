@@ -29,6 +29,10 @@ export const useMainStore = defineStore('main', {
         variables: [] as Array<{ var: string, name: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number] }>,
         selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as string | null, depth_nc: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null, colormapStops: [null, null, null] as (number | null)[] },
         showBathymetryContours: false,
+        // The style's built-in "water names" and "Place labels" text layers
+        // are visible by default (part of the base Mapbox style), so this
+        // defaults to true — matching what's on screen until toggled off.
+        showMapLabels: true,
         colormaps: {} as Record<string, any>,
         autoRangeDisabled: false,
 
@@ -59,6 +63,8 @@ export const useMainStore = defineStore('main', {
         queryMode: 'point' as 'point' | 'area',
 
         showCursorCoords: false,
+
+        isVerticalProfileOpen: true,
 
         // 'explore' and 'crossSection' are the footer panes that read the map's
         // own state (coordinate/clock, and a drawn line, respectively).
@@ -138,6 +144,10 @@ export const useMainStore = defineStore('main', {
 
         setShowBathymetryContours(value: boolean) {
             this.showBathymetryContours = value;
+        },
+
+        setShowMapLabels(value: boolean) {
+            this.showMapLabels = value;
         },
 
         setShowCursorCoords(value: boolean) {
@@ -231,6 +241,14 @@ export const useMainStore = defineStore('main', {
 
         setShowColorbarSettings(value: boolean) {
             this.showColorbarSettings = value;
+        },
+
+        setIsVerticalProfileOpen(value: boolean) {
+            this.isVerticalProfileOpen = value;
+        },
+
+        toggleIsVerticalProfileOpen() {
+            this.isVerticalProfileOpen = !this.isVerticalProfileOpen;
         },
 
         setQueryMode(mode: 'point' | 'area') {
