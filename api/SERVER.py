@@ -551,32 +551,6 @@ async def get_vector(z: int, x: int, y: int):
     }
     return FileResponse(full_path, media_type="application/octet-stream", headers=headers)
 
-@app.get("/sea_names/{z}/{x}/{y}.pbf")
-async def get_sea_names_vector(z: int, x: int, y: int):
-    SEA_NAMES_ROOT = os.environ.get("SEA_NAMES_ROOT", "/opt/data/sea_names")
-    # Serve the sea/region-name label vector tile with appropriate headers for caching
-    safe_z = os.path.basename(str(z))
-    safe_x = os.path.basename(str(x))
-    safe_y = os.path.basename(str(y))
-    path = os.path.join(SEA_NAMES_ROOT, safe_z, safe_x)
-    filename = f"{safe_y}.pbf"
-    full_path = os.path.join(path, filename)
-
-    # os.path.isfile is fast but still better in a thread if the FS is slow
-    exists = await run_in_threadpool(os.path.isfile, full_path)
-    if not exists:
-        raise HTTPException(status_code=404, detail="Sea name tile not found")
-
-    headers = {
-        "Cache-Control": "public, max-age=31536000, immutable",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Access-Control-Allow-Headers": "*",
-        "Vary": "Origin",
-        "ETag": f'"{full_path}-v1"',
-    }
-    return FileResponse(full_path, media_type="application/octet-stream", headers=headers)
-
 @app.get("/raster_tiles/{z}/{x}/{y}.webp")
 async def get_raster_tiles(z: int, x: int, y: int):
     RASTER_ROOT = os.environ.get("RASTER_TILES_ROOT", "/opt/data/bathymetry/NONNA/raster_tiles")
