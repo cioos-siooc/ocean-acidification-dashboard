@@ -112,14 +112,12 @@ function renderItem(_params: unknown, api: any) {
   const top = api.value(2) as number
   const bottom = api.value(3) as number
   const v = api.value(4) as number | null
-  const depthIdx = api.value(5) as number
   const p0 = api.coord([h, top])
   const p1 = api.coord([h + 1, bottom])
   const x = Math.min(p0[0], p1[0])
   const y = Math.min(p0[1], p1[1])
   const width = Math.abs(p1[0] - p0[0]) + 0.6
   const height = Math.abs(p1[1] - p0[1]) + 0.6
-  const isMarked = props.markCell != null && h === props.markCell.binIdx && depthIdx === props.markCell.depthIdx
   // Empty cells are stored as null, but ECharts' api.value() surfaces a null
   // numeric-dimension entry as NaN (not null) — so guard on both, else a NaN
   // would fall through to colorFn() and paint the top of the ramp (highest
@@ -129,25 +127,68 @@ function renderItem(_params: unknown, api: any) {
   // decal object dirty on every renderItem call, so
   // createOrUpdatePatternFromDecal regenerates the whole offscreen canvas
   // pattern from scratch for every single empty cell — thousands of them per
-  // panel when data is sparse, which freezes the tab for many seconds. The
-  // marked cell is the one exception worth paying for: at most one per panel,
-  // so a plain stroke (no decal) outline is cheap regardless of whether it
-  // lands on a data cell or an empty one.
-  if (v == null || Number.isNaN(v)) {
-    if (!isMarked) return undefined
-    return { type: 'rect', shape: { x, y, width, height }, style: { fill: 'transparent', stroke: '#ffffff', lineWidth: 2 } }
-  }
-  return {
-    type: 'rect',
-    shape: { x, y, width, height },
-    style: isMarked
-      ? { fill: props.colorFn(v), stroke: '#ffffff', lineWidth: 2 }
-      : { fill: props.colorFn(v) },
-  }
+  // panel when data is sparse, which freezes the tab for many seconds.
+  if (v == null || Number.isNaN(v)) return undefined
+  return { type: 'rect', shape: { x, y, width, height }, style: { fill: props.colorFn(v) } }
 }
 
 function markLineData() {
   return props.markDepth == null ? [] : [{ yAxis: depthToFrac(props.markDepth) }]
+}
+
+// ── HOVER/CLICK CROSSHAIRS ───────────────────────────────────────────────────
+// Drawn as raw zrender Line graphics, positioned directly with .attr() rather
+// than routed through chart.setOption(). The hover crosshair repositions on
+// every mousemove-driven cell change — a custom series has no fine-grained
+// diffing, so a setOption there re-runs renderItem for every cell (hundreds
+// to low thousands) on each call, which reads as visible lag trailing the
+// cursor. Mutating standalone graphic elements skips ECharts' update pipeline
+// entirely, so it's effectively free regardless of how many cells the panel
+// has. The click crosshair works the same way for consistency, though it
+// changes far less often.
+const hoverCell = ref<{ binIdx: number, depthIdx: number } | null>(null)
+let hoverLineX: any = null, hoverLineY: any = null
+let clickLineX: any = null, clickLineY: any = null
+
+/** Cell centre in [x, yFrac] chart coordinates. */
+function cellCenter(binIdx: number, depthIdx: number): [number, number] {
+  const b = bounds.value
+  const top = b[depthIdx] ?? 0, bottom = b[depthIdx + 1] ?? 1
+  return [binIdx + 0.5, (top + bottom) / 2]
+}
+
+function makeCrosshairLine(color: string, width: number, dashed: boolean) {
+  return new echarts.graphic.Line({
+    shape: { x1: 0, y1: 0, x2: 0, y2: 0 },
+    style: { stroke: color, lineWidth: width, lineDash: dashed ? [4, 4] : undefined },
+    silent: true, // must not steal hit-testing from the series' own click handler
+    invisible: true,
+    z: 10,
+  })
+}
+
+function toPixel(x: number, yFrac: number): [number, number] {
+  return chart!.convertToPixel({ xAxisIndex: 0, yAxisIndex: 0 }, [x, yFrac]) as [number, number]
+}
+
+/** Repositions one crosshair pair to a cell centre, in current pixel space —
+ *  called on hover/click changes but also on zoom/pan/resize, since those
+ *  change the data->pixel mapping without changing which cell is marked. */
+function positionCrosshair(lineX: any, lineY: any, cell: { binIdx: number, depthIdx: number } | null) {
+  if (!chart || !lineX || !lineY) return
+  if (!cell) { lineX.attr({ invisible: true }); lineY.attr({ invisible: true }); return }
+  const [x, yFrac] = cellCenter(cell.binIdx, cell.depthIdx)
+  const [px, pyTop] = toPixel(x, 0)
+  const [, pyBottom] = toPixel(x, 1)
+  const [pxLeft, py] = toPixel(0, yFrac)
+  const [pxRight] = toPixel(props.binCount, yFrac)
+  lineX.attr({ invisible: false, shape: { x1: px, y1: pyTop, x2: px, y2: pyBottom } })
+  lineY.attr({ invisible: false, shape: { x1: pxLeft, y1: py, x2: pxRight, y2: py } })
+}
+
+function repositionCrosshairs() {
+  positionCrosshair(hoverLineX, hoverLineY, hoverCell.value)
+  positionCrosshair(clickLineX, clickLineY, props.markCell ?? null)
 }
 
 /** Plot-area margins, shared by init and the showXAxis re-patch below. */
@@ -237,11 +278,24 @@ function baseOption(): echarts.EChartsOption {
   }
 }
 
+function setHoverCell(next: { binIdx: number, depthIdx: number } | null) {
+  const prev = hoverCell.value
+  if (prev?.binIdx === next?.binIdx && prev?.depthIdx === next?.depthIdx) return
+  hoverCell.value = next
+  positionCrosshair(hoverLineX, hoverLineY, next)
+}
+
 function handleMouseMove(x: number, y: number) {
   if (!chart) return
   const [binVal, fracVal] = chart.convertFromPixel({ xAxisIndex: 0, yAxisIndex: 0 }, [x, y]) as [number, number]
-  if (binVal < 0 || binVal >= props.binCount || fracVal < 0 || fracVal > 1) { emit('hover', null); return }
-  emit('hover', { binIdx: Math.floor(binVal), depthIdx: nearestDepthIdx(fracToDepth(fracVal)) })
+  if (binVal < 0 || binVal >= props.binCount || fracVal < 0 || fracVal > 1) {
+    emit('hover', null)
+    setHoverCell(null)
+    return
+  }
+  const cell = { binIdx: Math.floor(binVal), depthIdx: nearestDepthIdx(fracToDepth(fracVal)) }
+  emit('hover', cell)
+  setHoverCell(cell)
 }
 
 // xAxis.max/interval are baked in at init time from whatever binCount/
@@ -250,10 +304,14 @@ function handleMouseMove(x: number, y: number) {
 // rescales the x-axis instead of clipping the new, differently-sized series to
 // the old range.
 function updateData() {
+  // The hovered cell may no longer exist under new data (e.g. a smaller
+  // binCount) — drop it rather than leaving a stale crosshair behind.
+  hoverCell.value = null
   chart?.setOption({
     xAxis: { max: props.binCount, interval: props.gridlineBins },
-    series: [{ data: buildSeriesData() }],
+    series: [{ data: buildSeriesData(), markLine: { data: markLineData() } }],
   })
+  repositionCrosshairs()
 }
 
 // `showXAxis` is baked into the option at init, but which panel is *last* in a
@@ -275,15 +333,14 @@ function updateMarkLine() {
   chart?.setOption({ series: [{ markLine: { data: markLineData() } }] })
 }
 
-function resize() { chart?.resize() }
+function resize() {
+  chart?.resize()
+  repositionCrosshairs()
+}
 
 watch([() => props.values, () => props.colorFn, () => props.binCount, () => props.gridlineBins], updateData)
 watch(() => props.markDepth, updateMarkLine)
-// markCell isn't part of the series' own data — renderItem only re-runs on a
-// setOption call against this series, so re-pass a fresh `data` array (a new
-// reference forces every cell to be reconsidered) rather than something
-// markCell-shaped that ECharts has no dedicated slot for.
-watch(() => props.markCell, updateData)
+watch(() => props.markCell, (cell) => positionCrosshair(clickLineX, clickLineY, cell ?? null))
 
 // The depth zoom is only meaningful for the current variable's depth domain —
 // reset it to full whenever the level set changes (e.g. switching to a variable
@@ -309,7 +366,22 @@ onMounted(() => {
     const depthIdx = params?.data?.[5]
     if (binIdx != null && depthIdx != null) emit('cell-click', { binIdx, depthIdx })
   })
+  hoverLineX = makeCrosshairLine('rgba(255,255,255,0.45)', 1, true)
+  hoverLineY = makeCrosshairLine('rgba(255,255,255,0.45)', 1, true)
+  clickLineX = makeCrosshairLine('#ffb300', 1.5, false)
+  clickLineY = makeCrosshairLine('#ffb300', 1.5, false)
+  chart.getZr().add(hoverLineX)
+  chart.getZr().add(hoverLineY)
+  chart.getZr().add(clickLineX)
+  chart.getZr().add(clickLineY)
+  positionCrosshair(clickLineX, clickLineY, props.markCell ?? null)
   chart.getZr().on('mousemove', (e: any) => handleMouseMove(e.offsetX, e.offsetY))
+  // Pointer left the canvas entirely (not just the plot area) — mousemove
+  // stops firing, so the hover crosshair would otherwise freeze in place.
+  chart.getZr().on('globalout', () => { emit('hover', null); setHoverCell(null) })
+  // The depth axis has its own zoom/pan (slider + wheel) — the crosshairs'
+  // pixel positions depend on the current view, so they need to follow it.
+  chart.on('dataZoom', repositionCrosshairs)
   if (typeof ResizeObserver !== 'undefined') {
     resizeObs = new ResizeObserver(() => resize())
     resizeObs.observe(chartRef.value)

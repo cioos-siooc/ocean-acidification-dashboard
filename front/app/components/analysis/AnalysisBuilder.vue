@@ -414,7 +414,7 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
       boundaryGap: false,
       axisLabel: { rotate: 45, fontSize: 9, color: '#ccc', formatter: (value: number) => fmtOverlayDate(value) },
     },
-    yAxis: { type: 'value', name: `${varName.value} (${primaryStat.value})`, nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10, color: '#ccc' }, min: 'dataMin', max: 'dataMax' },
+    yAxis: { type: 'value', name: `${varName.value} (${primaryStat.value})`, nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10, color: '#ccc' }, scale: true },
     dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 16 }],
     series: [...statsSeries, ...yearSeries]
   }, true)
