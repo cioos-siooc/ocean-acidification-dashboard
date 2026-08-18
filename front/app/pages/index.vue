@@ -241,7 +241,7 @@ const mapContainer = ref<HTMLDivElement | null>(null);
 let map: mapboxgl.Map | null = null;
 let crossSectionDraw: MapboxDraw | null = null;
 const meta = ref<any>(null);
-const drawerOpen = ref(false);
+const drawerOpen = ref(true);
 
 // Auto-open the vertical profile drawer on switching into either depth
 // section — the section is a time-depth slice at one instant per column, the

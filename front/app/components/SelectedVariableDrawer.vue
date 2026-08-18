@@ -1,6 +1,6 @@
 <template>
     <v-navigation-drawer v-model="isOpen" location="right" width="300" class="pa-2" absolute persistent mobile
-        :scrim="false" style="height:100%; z-index:9999; top:0;">
+        :scrim="false" style="height:100%; z-index:999; top:0;">
         <v-row class="ma-0 pa-0 align-center" style="height: 38px;">
             <div class="drawer-header flex-grow-1" style="min-width:0;">
                 <div class="title-text text-truncate">{{ title }}</div>
