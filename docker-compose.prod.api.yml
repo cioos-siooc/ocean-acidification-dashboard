@@ -24,6 +24,8 @@ services:
       # scripts/bathymetry.sh. Default points at the old NONNA output; set
       # VECTOR_ROOT to override for a different source (e.g. west coast DEM).
       - VECTOR_ROOT=${VECTOR_ROOT:-/opt/data/bathymetry/NONNA/tiles}
+      # Sea/region name label vector tiles (GET /sea_names/{z}/{x}/{y}.pbf).
+      - SEA_NAMES_ROOT=${SEA_NAMES_ROOT:-/opt/data/sea_names}
       # ClickHouse: local docker-compose instance (db-ch below) by default
       - CH_HOST=${CH_HOST:-db-ch}
       - CH_PORT=${CH_PORT:-8123}

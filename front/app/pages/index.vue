@@ -232,6 +232,9 @@ const mainStore = useMainStore();
 const config = useRuntimeConfig();
 const apiBaseUrl = config.public.apiBaseUrl
 
+const SEA_NAMES_SOURCE = 'sea-names'
+const SEA_NAMES_LAYER = 'sea-names-labels'
+
 // Colormaps cache
 // const colormaps = ref<Record<string, any>>({});
 
@@ -462,6 +465,17 @@ onMounted(async () => {
 
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
+        addSeaNamesLayer();
+        // Every other layer in this file gets added/removed dynamically (PNG
+        // overlay, bathymetry, stations, analysis box, cross-section
+        // vertices...), any of which can land above the sea-name labels
+        // depending on add order. Re-raising on 'idle' (fires after each
+        // render settles, not per-frame) keeps labels on top of whatever's
+        // underneath without every layer-adding function needing to know
+        // about this one. moveLayer is skipped when already topmost so this
+        // doesn't loop.
+        map?.on('idle', raiseSeaNamesLayer);
+
         map?.on('mousemove', (e) => {
             mouseCoords.value.lng = e.lngLat.lng;
             mouseCoords.value.lat = e.lngLat.lat;
@@ -500,6 +514,10 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
     if (map) {
+        map.off('idle', raiseSeaNamesLayer);
+        try { if (map.getLayer && map.getLayer(SEA_NAMES_LAYER)) map.removeLayer(SEA_NAMES_LAYER); } catch (e) { }
+        try { if (map.getSource && map.getSource(SEA_NAMES_SOURCE)) map.removeSource(SEA_NAMES_SOURCE); } catch (e) { }
+
         const handlers = (map as any)?.__anchoredChartsHandlers;
         const refs = (map as any)?.__anchoredCharts as Array<any> | undefined;
         const svg = (map as any)?.__anchoredChartsSvg as SVGElement | undefined;
@@ -1151,6 +1169,65 @@ function trigger_mapClick(lat: number, lng: number) {
 // immediately after it updated the selected timestamp (dt). That logic is already handled by the
 // var/depth watcher above. Removed the blanket watcher to avoid stopping playback when the animator
 // updates the selected datetime.
+
+// Sea/region name labels (Puget Sound, Strait of Georgia, etc.), sourced
+// from tiles pre-built and dropped on the API machine at SEA_NAMES_ROOT.
+// Added once on map load and never toggled off — see raiseSeaNamesLayer for
+// how it's kept above every other layer this page adds/removes at runtime.
+function addSeaNamesLayer() {
+    if (!map) return;
+    try {
+        if (!map.getSource(SEA_NAMES_SOURCE)) {
+            map.addSource(SEA_NAMES_SOURCE, {
+                type: 'vector',
+                tiles: [`${apiBaseUrl}/sea_names/{z}/{x}/{y}.pbf`],
+            });
+        }
+        if (!map.getLayer(SEA_NAMES_LAYER)) {
+            map.addLayer({
+                id: SEA_NAMES_LAYER,
+                type: 'symbol',
+                source: SEA_NAMES_SOURCE,
+                'source-layer': 'export',
+                layout: {
+                    'text-field': ['get', 'name'],
+                    'text-size': ['interpolate', ['linear'], ['zoom'], 5, 10, 10, 14, 14, 18],
+                    'text-letter-spacing': 0.05,
+                    'text-max-width': 8,
+                    // Always visible regardless of what else wants that screen
+                    // space — these are reference labels, not competing POIs.
+                    'text-allow-overlap': true,
+                    'text-ignore-placement': true,
+                },
+                paint: {
+                    'text-color': '#e8eef5',
+                    'text-halo-color': 'rgba(15, 23, 32, 0.85)',
+                    'text-halo-width': 1.2,
+                    'text-halo-blur': 0.5,
+                },
+            });
+        }
+    } catch (e) {
+        console.warn('Failed to add sea names layer:', e);
+    }
+}
+
+// Re-raise the sea-name labels to the very top of the style's layer stack.
+// Bound to the map's 'idle' event (fires once per settled render, not per
+// frame) so every current and future layer-adding function here — PNG
+// overlay, bathymetry, stations, analysis box, cross-section — stays below
+// it without each one needing to know this layer exists. Skips the move
+// when already topmost so it can't turn into a render loop.
+function raiseSeaNamesLayer() {
+    if (!map || !map.getLayer(SEA_NAMES_LAYER)) return;
+    try {
+        const layers = map.getStyle()?.layers;
+        if (!layers || !layers.length) return;
+        if (layers[layers.length - 1].id !== SEA_NAMES_LAYER) {
+            map.moveLayer(SEA_NAMES_LAYER);
+        }
+    } catch (e) { /* map may be mid-teardown */ }
+}
 
 function removePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
     if (!map) return;
