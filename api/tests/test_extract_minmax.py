@@ -116,3 +116,56 @@ def test_extract_minmax_unknown_variable(monkeypatch):
 
     with pytest.raises(ValueError, match="Unknown variable"):
         extract_minmax(source='SalishSeaCast', var='not_a_variable', dt=datetime(2026, 1, 1, 0, 30))
+
+
+def test_extract_minmax_unsupported_bin_mode(monkeypatch):
+    monkeypatch.setattr('extractMinMax.get_ch_client', lambda: FakeClient())
+
+    with pytest.raises(ValueError, match="Unsupported bin_mode"):
+        extract_minmax(source='SalishSeaCast', var='temperature', dt=datetime(2026, 1, 1, 0, 30), bin_mode='weekly')
+
+
+def test_extract_minmax_daily_reads_daily_table(monkeypatch):
+    fake = FakeClient(minmax_row=(2.0, 8.0, 2))
+    monkeypatch.setattr('extractMinMax.get_ch_client', lambda: fake)
+
+    extract_minmax(
+        source='SalishSeaCast', var='temperature', dt=datetime(2026, 1, 15, 0, 0),
+        depth=5.0, bin_mode='daily', north=50, south=48, east=-122, west=-124,
+    )
+
+    main_query = " ".join(fake.queries[-1].lower().split())
+    assert "from salishseacast_daily" in main_query
+    assert "temperature_mean" in main_query
+    assert "time = todate(%(day)s)" in main_query
+    assert "from grid_ssc" in main_query
+
+
+def test_extract_minmax_monthly_averages_across_days(monkeypatch):
+    fake = FakeClient(minmax_row=(2.0, 8.0, 2))
+    monkeypatch.setattr('extractMinMax.get_ch_client', lambda: fake)
+
+    extract_minmax(
+        source='SalishSeaCast', var='temperature', dt=datetime(2026, 1, 15, 0, 0),
+        depth=5.0, bin_mode='monthly',
+    )
+
+    main_query = " ".join(fake.queries[-1].lower().split())
+    assert "from salishseacast_daily" in main_query
+    assert "temperature_mean" in main_query
+    assert "tostartofmonth(time) = todate(%(month)s)" in main_query
+    assert "avg(temperature_mean)" in main_query
+
+
+def test_extract_minmax_monthly_no_depth_uses_argmin_then_averages(monkeypatch):
+    fake = FakeClient(minmax_row=(2.0, 8.0, 2))
+    monkeypatch.setattr('extractMinMax.get_ch_client', lambda: fake)
+
+    extract_minmax(
+        source='SalishSeaCast', var='temperature', dt=datetime(2026, 1, 15, 0, 0),
+        depth=None, bin_mode='monthly',
+    )
+
+    main_query = " ".join(fake.queries[-1].lower().split())
+    assert "argmin(temperature_mean, depth)" in main_query
+    assert "group by gridx, gridy, time" in main_query

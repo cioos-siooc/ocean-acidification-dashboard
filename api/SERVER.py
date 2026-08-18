@@ -717,6 +717,7 @@ class minmaxRequest(BaseModel):
     var: str
     dt: str
     depth: Optional[float] = None
+    bin_mode: str = "hourly"
     north: Optional[float] = None
     south: Optional[float] = None
     east: Optional[float] = None
@@ -731,7 +732,7 @@ async def fn_get_minmax(request: minmaxRequest, http_request: Request):
     if cached is not None:
         capture_event(http_request, "get_minmax", {
             "source": request.source, "var": request.var,
-            "dt": request.dt, "depth": request.depth,
+            "dt": request.dt, "depth": request.depth, "bin_mode": request.bin_mode,
         })
         return cached
     async with extract_slot("getMinMax"):
@@ -750,6 +751,7 @@ async def fn_get_minmax(request: minmaxRequest, http_request: Request):
                     var=var,
                     dt=dt,
                     depth=request.depth,
+                    bin_mode=request.bin_mode,
                     north=request.north,
                     south=request.south,
                     east=request.east,
@@ -762,7 +764,7 @@ async def fn_get_minmax(request: minmaxRequest, http_request: Request):
             logger.info(f"FINISH getMinMax: source={request.source}, var={request.var}, range=[{min_val}, {max_val}]")
             capture_event(http_request, "get_minmax", {
                 "source": request.source, "var": request.var,
-                "dt": request.dt, "depth": request.depth,
+                "dt": request.dt, "depth": request.depth, "bin_mode": request.bin_mode,
             })
             return result
         except HTTPException:

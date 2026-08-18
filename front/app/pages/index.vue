@@ -1437,6 +1437,7 @@ async function autorange() {
             var: selectedVar,
             dt: dtStr,
             depth: selectedDepth,
+            bin_mode: mainStore.exploreBinMode,
             north: north,
             south: south,
             east: east,
