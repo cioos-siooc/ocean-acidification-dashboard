@@ -8,6 +8,7 @@ export type CrossSectionResponse = {
     depths: number[];              // model depth levels (metres), ascending
     model: (number | null)[][];    // [depth][sample]
     vertex_distances_km: number[]; // cumulative distance (km) at each original drawn vertex
+    points: [number, number][];    // [lat, lon] of each resampled sample point, same order as distances_km
 };
 
 export type CrossSectionFetchParams = {

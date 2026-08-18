@@ -142,6 +142,10 @@ def extract_cross_section(
       "model"                — 2D list [depthIdx][sampleIdx] of float | None
       "vertex_distances_km"  — cumulative distance (km) at each original
                                 drawn vertex, for segment-boundary markers
+      "points"                — [lat, lon] of each resampled sample point,
+                                 same order/length as "distances_km" — lets a
+                                 client map a clicked column back to a map
+                                 coordinate (e.g. the vertical-profile drawer)
 
     Raises
     ------
@@ -218,6 +222,7 @@ def extract_cross_section(
             "depths": levels,
             "model": model_grid,
             "vertex_distances_km": vertex_distances_km,
+            "points": [[lat, lon] for lat, lon in points],
         }
     finally:
         client.close()

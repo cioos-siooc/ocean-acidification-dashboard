@@ -38,7 +38,7 @@
         <div class="hm-slot">
           <TimeDepthHeatmap ref="panel" label="MODEL" :depths="depths" :values="grid" :bin-count="distances.length"
             :color-fn="seqColorFn" :gridline-bins="gridlineBins" :tooltip-formatter="cellTooltip" show-x-axis
-            :x-label="xLabel" />
+            :x-label="xLabel" :mark-cell="selectedCell" @cell-click="onCellClick" />
           <!-- Segment-boundary markers. TimeDepthHeatmap's own gridlineBins is a
                single uniform interval, not arbitrary positions, so the original
                drawn vertices (irregularly spaced in sample-index space) are drawn
@@ -76,7 +76,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import moment from 'moment'
-import { useMainStore } from '../../stores/main'
+import { useMainStore, formatDepthLabel } from '../../stores/main'
 import { fetchCrossSection, type CrossSectionResponse } from '~~/composables/useCrossSectionFetch'
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, type BinMode } from '~~/composables/useTimeDepthWindow'
@@ -129,6 +129,7 @@ const depths = ref<number[]>([])
 const grid = ref<(number | null)[][]>([])
 const distances = ref<number[]>([])
 const vertexDistances = ref<number[]>([])
+const points = ref<[number, number][]>([])
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 
@@ -137,6 +138,7 @@ function applyResponse(resp: CrossSectionResponse) {
   grid.value = resp.model
   distances.value = resp.distances_km
   vertexDistances.value = resp.vertex_distances_km
+  points.value = resp.points
 }
 
 let fetchSeq = 0
@@ -285,6 +287,52 @@ function cellTooltip(binIdx: number, depthIdx: number, value: number | null): st
 
 watch(() => props.active, (isActive) => {
   if (isActive) panel.value?.resize()
+})
+
+// ── CELL CLICK — this pane has no clicked map point of its own (the whole
+// line is one query), but a clicked cell still names a real coordinate/depth
+// along it. Feed both into the same universal selection ExplorePanel's own
+// onCellClick drives, so the vertical-profile drawer and the map's depth
+// layer react here too, same as they do for a clicked point elsewhere. ─────
+function nearestLevelIdx(depth: number, levels: number[]) {
+  let best = 0, bestDist = Infinity
+  levels.forEach((d, i) => { const dist = Math.abs(d - depth); if (dist < bestDist) { bestDist = dist; best = i } })
+  return best
+}
+
+function onCellClick({ binIdx, depthIdx }: { binIdx: number, depthIdx: number }) {
+  const d = depths.value[depthIdx]
+  const partial: Partial<typeof mainStore.selected_variable> = {}
+  if (d != null) { partial.depth = formatDepthLabel(d); partial.depth_nc = d }
+  if (Object.keys(partial).length) mainStore.updateSelectedVariable(partial)
+  const p = points.value[binIdx]
+  if (p) mainStore.setLastClickedMapPoint({ lat: p[0], lng: p[1] })
+}
+
+// Mirrors ExplorePanel's own `selectedCell`: derived from the universal
+// selection rather than tracked locally, so it stays in sync no matter what
+// moved it (a click here, or the point/depth changing elsewhere). Unlike
+// Explore's time axis, distance-along-line has no natural match test, so a
+// point selected far from this line (e.g. from Explore) is only highlighted
+// if it lands within ~1.5x the resampled points' own spacing — otherwise
+// it'd always snap to whichever end of the line happens to be nearest.
+const selectedCell = computed<{ binIdx: number, depthIdx: number } | null>(() => {
+  const p = mainStore.lastClickedMapPoint
+  const d = mainStore.selected_variable.depth_nc
+  if (!p || d == null || points.value.length < 2 || !depths.value.length) return null
+
+  let binIdx = 0, bestDistSq = Infinity
+  points.value.forEach(([plat, plng]: [number, number], i: number) => {
+    const distSq = (plat - p.lat) ** 2 + (plng - p.lng) ** 2
+    if (distSq < bestDistSq) { bestDistSq = distSq; binIdx = i }
+  })
+
+  const totalKm = distances.value[distances.value.length - 1] ?? 0
+  const stepKm = totalKm / (points.value.length - 1)
+  const thresholdDeg = (stepKm * 1.5) / 111
+  if (Math.sqrt(bestDistSq) > thresholdDeg) return null
+
+  return { binIdx, depthIdx: nearestLevelIdx(d, depths.value) }
 })
 </script>
 

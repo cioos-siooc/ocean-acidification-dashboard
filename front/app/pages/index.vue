@@ -1462,7 +1462,7 @@ const CS_VERTEX_CIRCLES = 'cross-section-vertex-circles'
 const CS_VERTEX_LABELS = 'cross-section-vertex-labels'
 
 function updateCrossSectionVertexLabels() {
-    if (!map || !map.isStyleLoaded()) return
+    if (!map) return
     const line = mainStore.crossSectionLine
     const data: GeoJSON.FeatureCollection<GeoJSON.Point> = {
         type: 'FeatureCollection',
@@ -1472,9 +1472,14 @@ function updateCrossSectionVertexLabels() {
             geometry: { type: 'Point', coordinates: [pt.lng, pt.lat] },
         })),
     }
-    if (map.getSource(CS_VERTEX_SOURCE)) {
-        (map.getSource(CS_VERTEX_SOURCE) as mapboxgl.GeoJSONSource).setData(data)
-    } else {
+    const existingSource = map.getSource(CS_VERTEX_SOURCE) as mapboxgl.GeoJSONSource | undefined;
+    if (existingSource) {
+        // Updating an existing source's data doesn't require the style to be
+        // fully loaded — only creating new sources/layers below does. Gating
+        // this on isStyleLoaded() left stale vertex markers on the map when a
+        // tab switch fired mid-style-update (e.g. right after deleteAll()).
+        existingSource.setData(data)
+    } else if (map.isStyleLoaded()) {
         map.addSource(CS_VERTEX_SOURCE, { type: 'geojson', data })
         map.addLayer({
             id: CS_VERTEX_CIRCLES, type: 'circle', source: CS_VERTEX_SOURCE,
@@ -1501,6 +1506,14 @@ watch(activeTab, (tab) => {
     crossSectionDraw.deleteAll();
     mainStore.setCrossSectionLine(null);
     crossSectionDraw.changeMode(tab === 'crossSection' ? 'draw_line_string' : 'simple_select');
+
+    // The point-click marker and the cross-section line/vertices are mutually
+    // exclusive map decorations — only one mode's input should be visible at a time.
+    if (tab === 'crossSection') {
+        try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
+    } else if (lastClicked.value) {
+        trigger_mapClick(lastClicked.value.lat, lastClicked.value.lng);
+    }
 });
 
 // A finished line leaves mapbox-gl-draw in simple_select mode (its own
