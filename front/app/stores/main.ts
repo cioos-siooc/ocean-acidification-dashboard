@@ -32,7 +32,7 @@ export const useMainStore = defineStore('main', {
         // The style's built-in "water names" and "Place labels" text layers
         // are visible by default (part of the base Mapbox style), so this
         // defaults to true — matching what's on screen until toggled off.
-        showMapLabels: true,
+        showMapLabels: false,
         colormaps: {} as Record<string, any>,
         autoRangeDisabled: false,
 
