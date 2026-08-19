@@ -70,6 +70,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint } from '~~/composables/useAnalysisFetch'
 import {
   filterBySeason, maskBySeason, breakDataGaps, computeClimatologyBaseline, detectExtremeEvents, summarizeEventsByYear,
@@ -77,6 +78,10 @@ import {
 } from '~~/composables/useAnalysisStatistics'
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable: string }>()
+
+const { variableUnit } = useVariableRegistry()
+const unit = computed(() => variableUnit(props.variable))
+const unitSuffix = computed(() => unit.value ? ` (${unit.value})` : '')
 
 const yearSpan = computed(() => distinctYearSpan(props.series))
 const isShortHistory = computed(() => yearSpan.value < 2)
@@ -99,24 +104,24 @@ const seasonalSeries = computed(() => filterBySeason(props.series, props.season)
 const events = computed(() => detectExtremeEvents(seasonalSeries.value, thresholdLookup.value, direction.value, minDurationDays.value, maxGapDays.value))
 const yearlySummary = computed(() => summarizeEventsByYear(events.value))
 
-const eventHeaders = [
+const eventHeaders = computed(() => [
   { title: 'Start', key: 'startTime' },
   { title: 'End', key: 'endTime' },
   { title: 'Days', key: 'durationDays' },
-  { title: 'Peak', key: 'peakValue' },
-  { title: 'Peak Δ', key: 'peakAnomaly' },
-]
+  { title: `Peak${unitSuffix.value}`, key: 'peakValue' },
+  { title: `Peak Δ${unitSuffix.value}`, key: 'peakAnomaly' },
+])
 const eventRows = computed(() => events.value.map(e => ({
   startTime: e.startTime, endTime: e.endTime, durationDays: e.durationDays,
   peakValue: e.peakValue.toFixed(3), peakAnomaly: e.peakAnomaly.toFixed(3),
 })))
 
-const yearHeaders = [
+const yearHeaders = computed(() => [
   { title: 'Year', key: 'year' },
   { title: 'Events', key: 'eventCount' },
   { title: 'Days', key: 'totalEventDays' },
-  { title: 'Max Δ', key: 'maxIntensity' },
-]
+  { title: `Max Δ${unitSuffix.value}`, key: 'maxIntensity' },
+])
 const yearRows = computed(() => yearlySummary.value.map(y => ({
   year: y.year, eventCount: y.eventCount, totalEventDays: y.totalEventDays, maxIntensity: y.maxIntensity.toFixed(3),
 })))
@@ -158,7 +163,10 @@ function render() {
     tooltip: { trigger: 'axis' },
     grid: { left: '4%', right: '3%', bottom: '12%', top: '8%', containLabel: true },
     xAxis: { type: 'time', axisLabel: { fontSize: 9, color: '#ccc' } },
-    yAxis: { type: 'value', axisLabel: { fontSize: 10, color: '#ccc' }, scale: true },
+    yAxis: {
+      type: 'value', name: unit.value, nameLocation: 'middle', nameGap: 38,
+      axisLabel: { fontSize: 10, color: '#ccc' }, scale: true,
+    },
     dataZoom: [
       { type: 'inside', start: zoomRange.start, end: zoomRange.end },
       { type: 'slider', bottom: 4, height: 14, start: zoomRange.start, end: zoomRange.end },

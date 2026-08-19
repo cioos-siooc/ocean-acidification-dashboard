@@ -26,10 +26,6 @@
       </v-btn-toggle>
 
       <v-spacer />
-
-      <v-btn block color="warning" size="small" prepend-icon="mdi-open-in-full" @click="openAdvanced">
-        Advanced Analysis
-      </v-btn>
     </div>
 
     <!-- CENTER: Chart -->
@@ -108,7 +104,7 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
-import { trackEvent } from '~~/composables/useAnalytics'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { useMainStore } from '../../stores/main'
 import { fetchAnalysisSeries, type SeriesPoint } from '~~/composables/useAnalysisFetch'
 import { fetchSensorAnalysisSeries } from '~~/composables/useSensorAnalysisFetch'
@@ -117,11 +113,11 @@ import {
 } from '~~/composables/useAnalysisStatistics'
 
 const props = defineProps<{ active?: boolean; source?: 'model' | 'sensor' }>()
-const emit = defineEmits<{ 'open-advanced': [] }>()
 const analysisSource = computed(() => props.source ?? 'model')
 const isSensor = computed(() => analysisSource.value === 'sensor')
 
 const mainStore = useMainStore()
+const { variableUnit } = useVariableRegistry()
 
 // ── SENSOR CONTEXT (unused in model mode) ────────────────────────────────────
 const selectedSensor = computed(() => mainStore.selectedSensor)
@@ -136,11 +132,6 @@ const isVariableDepth = computed(() => sensorInfo.value?.depth === -1)
 // Only fetch while the Analysis Builder tab is actually visible — the parent
 // page keeps this component mounted (v-show) even when another tab is shown.
 
-
-function openAdvanced() {
-  trackEvent('advanced_analysis_opened', { dialog_type: isSensor.value ? 'sensor_analysis' : 'model_analysis' })
-  emit('open-advanced')
-}
 
 // --- STORE-DERIVED STATE ---
 const variable = computed(() => mainStore.selected_variable.var)
@@ -195,6 +186,7 @@ const polygonFromClick = computed<[number, number][]>(() => {
 const varName = computed(() =>
   availableVariables.find(v => v.id === variable.value)?.name || variable.value || 'Variable'
 )
+const varUnit = computed(() => variable.value ? variableUnit(variable.value) : '')
 
 const pointLabel = computed(() => {
   if (isSensor.value) return sensorInfo.value?.name ?? ''
@@ -414,7 +406,11 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
       boundaryGap: false,
       axisLabel: { rotate: 45, fontSize: 9, color: '#ccc', formatter: (value: number) => fmtOverlayDate(value) },
     },
-    yAxis: { type: 'value', name: `${varName.value} (${primaryStat.value})`, nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10, color: '#ccc' }, scale: true },
+    yAxis: {
+      type: 'value',
+      name: `${varName.value} (${primaryStat.value})${varUnit.value ? ` [${varUnit.value}]` : ''}`,
+      nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10, color: '#ccc' }, scale: true,
+    },
     dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 16 }],
     series: [...statsSeries, ...yearSeries]
   }, true)

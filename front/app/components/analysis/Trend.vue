@@ -2,7 +2,7 @@
   <div class="d-flex h-100" style="overflow:hidden;">
     <div class="pa-3 d-flex flex-column flex-shrink-0" style="width:240px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Theil-Sen slope</div>
-      <div class="text-h6 mb-3">{{ result ? result.theilSen.slope.toFixed(4) : '—' }} <span class="text-caption text-grey">/ year</span></div>
+      <div class="text-h6 mb-3">{{ result ? result.theilSen.slope.toFixed(4) : '—' }} <span class="text-caption text-grey">{{ unit ? `${unit} / year` : '/ year' }}</span></div>
 
       <div class="ctrl-label">Mann-Kendall significance</div>
       <div class="text-body-2 mb-1">
@@ -37,10 +37,14 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint } from '~~/composables/useAnalysisFetch'
 import { filterBySeason, groupByYear, mannKendallTest, theilSenSlope } from '~~/composables/useAnalysisStatistics'
 
-const props = defineProps<{ series: SeriesPoint[]; season: string }>()
+const props = defineProps<{ series: SeriesPoint[]; season: string; variable?: string }>()
+
+const { variableUnit } = useVariableRegistry()
+const unit = computed(() => props.variable ? variableUnit(props.variable) : '')
 
 const annualMeans = computed(() => {
   const seasonal = filterBySeason(props.series, props.season)
@@ -82,8 +86,11 @@ function render() {
     tooltip: { trigger: 'axis' },
     legend: { data: ['Annual Mean', 'Theil-Sen Trend'], top: 4, textStyle: { fontSize: 10 } },
     grid: { left: '4%', right: '3%', bottom: '8%', top: '18%', containLabel: true },
-    xAxis: { type: 'category', data: years, axisLabel: { fontSize: 9, color: '#ccc' } },
-    yAxis: { type: 'value', axisLabel: { fontSize: 10, color: '#ccc' }, scale: true },
+    xAxis: { type: 'category', data: years, name: 'Year', nameLocation: 'middle', nameGap: 22, nameTextStyle: { fontSize: 9, color: '#ccc' }, axisLabel: { fontSize: 9, color: '#ccc' } },
+    yAxis: {
+      type: 'value', name: unit.value, nameLocation: 'middle', nameGap: 38,
+      axisLabel: { fontSize: 10, color: '#ccc' }, scale: true,
+    },
     series: [
       { name: 'Annual Mean', type: 'line', data: means, symbol: 'circle', symbolSize: 6, itemStyle: { color: '#58d9f9' }, lineStyle: { color: '#58d9f9' } },
       { name: 'Theil-Sen Trend', type: 'line', data: trendLine, symbol: 'none', lineStyle: { color: '#ff9800', type: 'dashed', width: 1.5 } },

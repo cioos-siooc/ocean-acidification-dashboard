@@ -42,6 +42,21 @@ export function useVariableRegistry() {
         return labels.value.get(varId) ?? var2name(varId);
     }
 
+    // var -> unit (e.g. "°C", "mmol/m³"), same config-sourced list as `labels`.
+    // Unitless variables (pH, Omega) resolve to '' — callers skip the suffix rather
+    // than rendering an empty parenthetical.
+    const units = computed(() => {
+        const map = new Map<string, string>();
+        for (const v of mainStore.variables) {
+            if (v?.var) map.set(v.var, (v as { unit?: string }).unit ?? '');
+        }
+        return map;
+    });
+
+    function variableUnit(varId: string): string {
+        return units.value.get(varId) ?? '';
+    }
+
     /**
      * A sensor's variables narrowed to the ones the app shows, in config order
      * so every sensor lists them consistently rather than in per-source
@@ -54,5 +69,5 @@ export function useVariableRegistry() {
             .filter((varId, i, arr) => arr.indexOf(varId) === i && present.has(varId));
     }
 
-    return { labels, isModelVariable, variableLabel, modelVariablesOf };
+    return { labels, isModelVariable, variableLabel, variableUnit, modelVariablesOf };
 }

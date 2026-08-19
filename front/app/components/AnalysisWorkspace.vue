@@ -58,8 +58,8 @@
             <CompoundStress v-else-if="activeTab === 'compound'"
               :primary-series="primarySeries" :primary-variable="variable" :season="selectedSeason"
               :depth="depth" :location="location" :year-range="yearRange" :fetch-series="fetchSeriesFor" />
-            <Trend v-else-if="activeTab === 'trend'" :series="primarySeries" :season="selectedSeason" />
-            <Climatology v-else-if="activeTab === 'climatology'" :series="primarySeries" :season="selectedSeason" />
+            <Trend v-else-if="activeTab === 'trend'" :series="primarySeries" :season="selectedSeason" :variable="variable" />
+            <Climatology v-else-if="activeTab === 'climatology'" :series="primarySeries" :season="selectedSeason" :variable="variable" />
             <Correlation v-else-if="activeTab === 'correlation'"
               :primary-series="primarySeries" :primary-variable="variable" :season="selectedSeason"
               :depth="depth" :location="location" :year-range="yearRange" :fetch-series="fetchSeriesFor" />

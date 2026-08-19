@@ -1,5 +1,5 @@
 <template>
-    <!-- <v-navigation-drawer expand-on-hover permanent rail>
+  <!-- <v-navigation-drawer expand-on-hover permanent rail>
         <v-list>
             <v-list-item prepend-avatar="https://randomuser.me/api/portraits/women/85.jpg"
                 subtitle="sandra_a88@gmailcom" title="Sandra Adams"></v-list-item>
@@ -14,191 +14,320 @@
         </v-list>
     </v-navigation-drawer> -->
 
-    <v-main>
-        <BetaDisclaimerDialog />
-        <howTo v-model="showHow" />
-        <!-- <div class="d-flex flex-column h-screen overflow-hidden"> -->
-        <!-- Top: Map -->
-        <div ref="mapContainer" class="flex-grow-1"
-            :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }">
-            <!-- <Layers @toggleLayer="onToggleLayer" /> -->
+  <v-main>
+    <BetaDisclaimerDialog />
+    <howTo v-model="showHow" />
+    <!-- <div class="d-flex flex-column h-screen overflow-hidden"> -->
+    <!-- Top: Map -->
+    <div
+      ref="mapContainer"
+      class="flex-grow-1"
+      :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }"
+    >
+      <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
-            <Overlays @show-how="showHow = true"
-                @autorange="autorange" class="overlay"
-                :style="{ top: `${overlayGap}px`, left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap : overlayGap) + 'px' }" />
+      <Overlays
+        @show-how="showHow = true"
+        @autorange="autorange"
+        class="overlay"
+        :style="{
+          top: `${overlayGap}px`,
+          left:
+            (mainStore.isControlPanelOpen
+              ? mainStore.controlPanel_width + overlayGap
+              : overlayGap) + 'px',
+        }"
+      />
 
-            <ColorbarSettings v-if="showColorbarSettings" class="overlay"
-                :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap + 50 : overlayGap + 50) + 'px', transition: 'left 0.3s ease' }" />
+      <ColorbarSettings
+        v-if="showColorbarSettings"
+        class="overlay"
+        :style="{
+          left:
+            (mainStore.isControlPanelOpen
+              ? mainStore.controlPanel_width + overlayGap + 50
+              : overlayGap + 50) + 'px',
+          transition: 'left 0.3s ease',
+        }"
+      />
 
-            <selectedInfo class="overlay"
-                :style="{ bottom: `${overlayGap}px`, left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap : overlayGap) + 'px' }" />
+      <selectedInfo
+        class="overlay"
+        :style="{
+          bottom: `${overlayGap}px`,
+          left:
+            (mainStore.isControlPanelOpen
+              ? mainStore.controlPanel_width + overlayGap
+              : overlayGap) + 'px',
+        }"
+      />
 
-            <controlPanel />
+      <controlPanel />
 
-            <!-- <div class="map-drawer-toggle" :style="{ right: drawerOpen ? '312px' : '12px' }">
+      <!-- <div class="map-drawer-toggle" :style="{ right: drawerOpen ? '312px' : '12px' }">
                 <v-btn size="24px" color="warning" class="ma-0 pa-0" @click="drawerOpen = !drawerOpen"
                     title="Vertical Profile">
                     <v-icon size="20px">mdi-chart-line</v-icon>
                 </v-btn>
             </div> -->
 
-            <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
+      <SelectedVariableDrawer
+        v-model="drawerOpen"
+        :selected-point="lastClicked"
+        :footer-height="footerHeight"
+      />
 
-            <!-- Query mode toggle -->
-            <div style="position:absolute; top:10px; right:10px; z-index:10;">
-                <v-btn-toggle :model-value="mainStore.queryMode" mandatory variant="tonal"
-                    @update:model-value="(v) => mainStore.setQueryMode(v)">
-                    <v-btn value="point" size="small" title="Point query">
-                        <v-icon size="16">mdi-map-marker</v-icon>
-                        <span class="ml-1" style="font-size:0.7rem;">Point</span>
-                    </v-btn>
-                    <v-btn value="area" size="small" title="Area query">
-                        <v-icon size="16">mdi-vector-square</v-icon>
-                        <span class="ml-1" style="font-size:0.7rem;">Area</span>
-                    </v-btn>
-                </v-btn-toggle>
-            </div>
+      <!-- Query mode toggle -->
+      <div style="position: absolute; top: 10px; right: 10px; z-index: 10">
+        <v-btn-toggle
+          :model-value="mainStore.queryMode"
+          mandatory
+          variant="tonal"
+          @update:model-value="(v) => mainStore.setQueryMode(v)"
+        >
+          <v-btn value="point" size="small" title="Point query">
+            <v-icon size="16">mdi-map-marker</v-icon>
+            <span class="ml-1" style="font-size: 0.7rem">Point</span>
+          </v-btn>
+          <v-btn value="area" size="small" title="Area query">
+            <v-icon size="16">mdi-vector-square</v-icon>
+            <span class="ml-1" style="font-size: 0.7rem">Area</span>
+          </v-btn>
+        </v-btn-toggle>
+      </div>
 
-            <!-- Multi-sensor location picker (exact same coordinate) -->
-            <SensorPickerPopover :visible="sensorPicker.visible" :x="sensorPicker.x" :y="sensorPicker.y"
-                :sensors="sensorPicker.sensors" @pick="(s) => clickSensor(s.id, s.depth)"
-                @close="sensorPicker.visible = false" />
+      <!-- Multi-sensor location picker (exact same coordinate) -->
+      <SensorPickerPopover
+        :visible="sensorPicker.visible"
+        :x="sensorPicker.x"
+        :y="sensorPicker.y"
+        :sensors="sensorPicker.sensors"
+        @pick="(s) => clickSensor(s.id, s.depth)"
+        @close="sensorPicker.visible = false"
+      />
 
-            <!-- Spiderfy overlay (nearby sensors at different coordinates) -->
-            <div v-if="spiderfy.visible" style="position: absolute; inset: 0; z-index: 5000; pointer-events: all;"
-                @click.self="spiderfy.visible = false">
-                <svg style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;">
-                    <line v-for="(spoke, i) in spiderfy.spokes" :key="`sl-${i}`" :x1="spiderfy.centerX"
-                        :y1="spiderfy.centerY" :x2="spoke.x" :y2="spoke.y"
-                        :stroke="spoke.sensor.isRealtime ? 'rgba(102,187,106,0.75)' : 'rgba(255,167,38,0.75)'"
-                        stroke-width="1.5" />
-                    <circle :cx="spiderfy.centerX" :cy="spiderfy.centerY" r="5" fill="#aaaaaa" stroke="#333"
-                        stroke-width="1.5" />
-                </svg>
-                <div v-for="(spoke, i) in spiderfy.spokes" :key="`sn-${i}`" class="spiderfy-node"
-                    :style="{ left: spoke.x + 'px', top: spoke.y + 'px' }"
-                    @click.stop="clickSensorFromSpiderfy(spoke.sensor)">
-                    <div class="spiderfy-dot"
-                        :style="{ background: spoke.sensor.isRealtime ? '#66BB6A' : '#FFA726' }" />
-                    <div class="spiderfy-label">{{ spoke.sensor.name }}</div>
-                </div>
-            </div>
-
-            <v-snackbar-queue ref="snackbarQueue" v-model="snackMessages" :total-visible="3" closable
-                contained></v-snackbar-queue>
-
-            <div class="px-2 pt-2"
-                style="width:250px; position: absolute; bottom:0; z-index: 999; background-color: #11111199; border-top-left-radius: 20px; border-top-right-radius: 20px; margin:auto; right:0; "
-                :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap + 50 : overlayGap + 50) + 'px', transition: 'left 0.3s ease' }">
-                <ColormapBar class="ma-2" />
-            </div>
-
-            <!-- Cursor coordinate readout, follows the mouse over the map -->
-            <v-card v-if="mainStore.showCursorCoords && mouseCoords.visible" class="cursor-coord-label"
-                :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }">
-                {{ mouseCoords.lat?.toFixed(5) }}, {{ mouseCoords.lng?.toFixed(5) }}
-            </v-card>
-
+      <!-- Spiderfy overlay (nearby sensors at different coordinates) -->
+      <div
+        v-if="spiderfy.visible"
+        style="position: absolute; inset: 0; z-index: 5000; pointer-events: all"
+        @click.self="spiderfy.visible = false"
+      >
+        <svg
+          style="
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+          "
+        >
+          <line
+            v-for="(spoke, i) in spiderfy.spokes"
+            :key="`sl-${i}`"
+            :x1="spiderfy.centerX"
+            :y1="spiderfy.centerY"
+            :x2="spoke.x"
+            :y2="spoke.y"
+            :stroke="
+              spoke.sensor.isRealtime ? 'rgba(102,187,106,0.75)' : 'rgba(255,167,38,0.75)'
+            "
+            stroke-width="1.5"
+          />
+          <circle
+            :cx="spiderfy.centerX"
+            :cy="spiderfy.centerY"
+            r="5"
+            fill="#aaaaaa"
+            stroke="#333"
+            stroke-width="1.5"
+          />
+        </svg>
+        <div
+          v-for="(spoke, i) in spiderfy.spokes"
+          :key="`sn-${i}`"
+          class="spiderfy-node"
+          :style="{ left: spoke.x + 'px', top: spoke.y + 'px' }"
+          @click.stop="clickSensorFromSpiderfy(spoke.sensor)"
+        >
+          <div
+            class="spiderfy-dot"
+            :style="{ background: spoke.sensor.isRealtime ? '#66BB6A' : '#FFA726' }"
+          />
+          <div class="spiderfy-label">{{ spoke.sensor.name }}</div>
         </div>
+      </div>
 
-        <!-- Bottom: Global Chart Footer -->
-        <v-footer class="ma-0 pa-0 footer-resizable" :style="{ height: footerHeight, maxHeight: footerHeight }">
-            <!-- Drag handle: resize the bottom sheet by dragging this top edge up/down -->
-            <div class="footer-resize-handle" :class="{ 'is-resizing': isResizingFooter }" title="Drag to resize"
-                @pointerdown="startFooterResize">
-                <div class="footer-resize-grip"></div>
-            </div>
-            <div class="d-flex footer-content" style="width: 100%;">
+      <v-snackbar-queue
+        ref="snackbarQueue"
+        v-model="snackMessages"
+        :total-visible="3"
+        closable
+        contained
+      ></v-snackbar-queue>
 
-                <!-- Vertical tab rail. Plain buttons with explicit active classes
+      <div
+        class="px-2 pt-2"
+        style="
+          width: 250px;
+          position: absolute;
+          bottom: 0;
+          z-index: 999;
+          background-color: #11111199;
+          border-top-left-radius: 20px;
+          border-top-right-radius: 20px;
+          margin: auto;
+          right: 0;
+        "
+        :style="{
+          left:
+            (mainStore.isControlPanelOpen
+              ? mainStore.controlPanel_width + overlayGap + 50
+              : overlayGap + 50) + 'px',
+          transition: 'left 0.3s ease',
+        }"
+      >
+        <ColormapBar class="ma-2" />
+      </div>
+
+      <!-- Cursor coordinate readout, follows the mouse over the map -->
+      <v-card
+        v-if="mainStore.showCursorCoords && mouseCoords.visible"
+        class="cursor-coord-label"
+        :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }"
+      >
+        {{ mouseCoords.lat?.toFixed(5) }}, {{ mouseCoords.lng?.toFixed(5) }}
+      </v-card>
+    </div>
+
+    <!-- Bottom: Global Chart Footer -->
+    <v-footer
+      class="ma-0 pa-0 footer-resizable"
+      :style="{ height: footerHeight, maxHeight: footerHeight }"
+    >
+      <!-- Drag handle: resize the bottom sheet by dragging this top edge up/down -->
+      <div
+        class="footer-resize-handle"
+        :class="{ 'is-resizing': isResizingFooter }"
+        title="Drag to resize"
+        @pointerdown="startFooterResize"
+      >
+        <div class="footer-resize-grip"></div>
+      </div>
+      <div class="d-flex footer-content" style="width: 100%">
+        <!-- Vertical tab rail. Plain buttons with explicit active classes
                      rather than v-btn-toggle: Explore's sub-list is nested directly
                      beneath it and only shown while Explore is active, which makes
                      the rail's item heights variable — incompatible with the sliding
                      "pill" a uniform-height toggle group can animate. -->
-                <v-sheet class="footer-rail d-flex flex-column flex-shrink-0">
-                    <div class="footer-rail-track">
-                        <v-btn prepend-icon="mdi-chart-line" variant="text" block class="footer-rail-item"
-                            :class="{ 'footer-rail-item--active': activeTab === 'explore' }"
-                            @click="activeTab = 'explore'">
-                            Explore
-                        </v-btn>
-                        <div v-if="activeTab === 'explore'" class="footer-rail-sublist">
-                            <v-btn v-for="sv in exploreSubViews" :key="sv.value" variant="text" block
-                                class="footer-rail-subitem"
-                                :class="{ 'footer-rail-subitem--active': mainStore.exploreView === sv.value }"
-                                @click="mainStore.setExploreView(sv.value)">
-                                {{ sv.label }}
-                            </v-btn>
-                        </div>
+        <v-sheet class="footer-rail d-flex flex-column flex-shrink-0">
+          <div class="footer-rail-track">
+            <v-btn
+              prepend-icon="mdi-chart-line"
+              variant="text"
+              block
+              class="footer-rail-item"
+              :class="{ 'footer-rail-item--active': activeTab === 'explore' }"
+              @click="activeTab = 'explore'"
+            >
+              Explore
+            </v-btn>
+            <div v-if="activeTab === 'explore'" class="footer-rail-sublist">
+              <v-btn
+                v-for="sv in exploreSubViews"
+                :key="sv.value"
+                variant="text"
+                block
+                class="footer-rail-subitem"
+                :class="{
+                  'footer-rail-subitem--active': mainStore.exploreView === sv.value,
+                }"
+                @click="mainStore.setExploreView(sv.value)"
+              >
+                {{ sv.label }}
+              </v-btn>
+            </div>
 
-                        <v-divider v-if="remainingFooterTabs.length > 0" />
+            <v-divider v-if="remainingFooterTabs.length > 0" />
 
-                        <v-btn v-for="t in remainingFooterTabs" :key="t.value" :prepend-icon="t.icon" variant="text"
-                            block class="footer-rail-item"
-                            :class="{ 'footer-rail-item--active': activeTab === t.value }" @click="activeTab = t.value">
-                            {{ t.label }}
-                        </v-btn>
+            <v-btn
+              v-for="t in remainingFooterTabs"
+              :key="t.value"
+              :prepend-icon="t.icon"
+              variant="text"
+              block
+              class="footer-rail-item"
+              :class="{ 'footer-rail-item--active': activeTab === t.value }"
+              @click="activeTab = t.value"
+            >
+              {{ t.label }}
+            </v-btn>
 
-                        <v-divider />
+            <v-divider />
 
-                        <!-- Analysis is a fullscreen dialog with no rail of its own once
+            <!-- Analysis is a fullscreen dialog with no rail of its own once
                              open, so Model/Sensor is picked here rather than inside it —
                              a sub-item both sets the source and opens the workspace. The
                              top-level row only expands the sub-list (rather than opening
                              straight away, as Explore's does) since opening immediately
                              would cover the rail before the sub-list was ever clickable. -->
-                        <v-btn prepend-icon="mdi-poll" variant="text" block class="footer-rail-item"
-                            :class="{ 'footer-rail-item--active': activeTab === 'analysis' }"
-                            @click="analysisExpanded = !analysisExpanded">
-                            Analysis
-                        </v-btn>
-                        <div v-if="analysisExpanded" class="footer-rail-sublist">
-                            <v-btn v-for="sv in analysisSubViews" :key="sv.value" variant="text" block
-                                class="footer-rail-subitem"
-                                :class="{ 'footer-rail-subitem--active': mainStore.analysisSource === sv.value }"
-                                :disabled="sv.disabled" :title="sv.title"
-                                @click="mainStore.setAnalysisSource(sv.value); activeTab = 'analysis'">
-                                {{ sv.label }}
-                            </v-btn>
-                        </div>
+            <v-btn
+              prepend-icon="mdi-poll"
+              variant="text"
+              block
+              class="footer-rail-item"
+              :class="{ 'footer-rail-item--active': activeTab === 'analysis' }"
+            >
+              Analysis
+            </v-btn>
+            <div class="footer-rail-sublist">
+              <v-btn
+                v-for="sv in analysisSubViews"
+                :key="sv.value"
+                variant="text"
+                block
+                class="footer-rail-subitem"
+                :disabled="sv.disabled"
+                :title="sv.title"
+                @click="
+                  mainStore.setAnalysisSource(sv.value);
+                  activeTab = 'analysis';
+                "
+              >
+                {{ sv.label }}
+              </v-btn>
+            </div>
+          </div>
+        </v-sheet>
 
-
-                    </div>
-                </v-sheet>
-
-                <!-- Content area. Both panes stay mounted (like the fullscreen
+        <!-- Content area. Both panes stay mounted (like the fullscreen
                      workspaces below) so switching tabs doesn't refetch or reset
                      whatever each pane had already loaded. -->
-                <div class="flex-grow-1" style="min-width:0; height:100%; overflow:hidden;">
-                    <!-- Timeseries tab -->
-                    <!-- The one map-synced pane: the clicked point's data at the
+        <div class="flex-grow-1" style="min-width: 0; height: 100%; overflow: hidden">
+          <!-- Timeseries tab -->
+          <!-- The one map-synced pane: the clicked point's data at the
                          map's depth, over a paged window. -->
-                    <div v-show="activeTab === 'explore'" style="height:100%;">
-                        <ExplorePanel :active="activeTab === 'explore'" />
-                    </div>
-                    <!-- Cross-Section tab: reads a drawn line instead of a clicked
+          <div v-show="activeTab === 'explore'" style="height: 100%">
+            <ExplorePanel :active="activeTab === 'explore'" />
+          </div>
+          <!-- Cross-Section tab: reads a drawn line instead of a clicked
                          point, so it gets its own pane rather than living inside
                          ExplorePanel's point-shaped view. -->
-                    <div v-show="activeTab === 'crossSection'" style="height:100%;">
-                        <CrossSectionPanel :active="activeTab === 'crossSection'" />
-                    </div>
-                </div>
+          <div v-show="activeTab === 'crossSection'" style="height: 100%">
+            <CrossSectionPanel :active="activeTab === 'crossSection'" />
+          </div>
+        </div>
+      </div>
+    </v-footer>
 
-            </div>
-
-        </v-footer>
-
-        <!-- Fullscreen workspaces. Kept mounted so closing and reopening one
+    <!-- Fullscreen workspaces. Kept mounted so closing and reopening one
              doesn't refetch everything it had already loaded. -->
-        <AnalysisWorkspace v-model="analysisOpen" />
-        <ComparisonWorkspace v-model="comparisonOpen" />
-        <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
+    <AnalysisWorkspace v-model="analysisOpen" />
+    <ComparisonWorkspace v-model="comparisonOpen" />
+    <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
             <div ref="globalChartContainer" class="w-100 h-100"></div>
         </div> -->
-        <!-- </div> -->
-
-
-    </v-main>
+    <!-- </div> -->
+  </v-main>
 </template>
 
 <script setup lang="ts">
@@ -299,15 +428,6 @@ const analysisSubViews = computed(() => {
     ];
 });
 
-// Rail-only expand/collapse for Analysis's sub-list — separate from `activeTab`
-// because opening the fullscreen workspace immediately (as Explore's plain tab
-// switch does) would cover the rail before the sub-list was ever clickable.
-// Re-expands whenever the workspace opens (including via the sub-items
-// themselves) so it's still showing, one click from re-selecting the other
-// source, after the dialog is closed again.
-const analysisExpanded = ref(false);
-watch(activeTab, (v) => { if (v === 'analysis') analysisExpanded.value = true; });
-
 // Analysis and Comparison are fullscreen workspaces rather than footer panes.
 // Picking them in the rail opens the workspace; closing it drops back to Explore,
 // the only tab whose content is tied to the map behind it.
@@ -401,7 +521,7 @@ const mapLoaded = ref(false);
 const selectedReady = ref(false);
 let didInitClick = false;
 
-/** 
+/**
  * Number of days from now to fetch for climate timeseries. This is used both for the API request parameter and for computing the x-axis range of the chart (now +/- DFN days). The API will return all available data within that range, which may be less than DFN if the model run does not extend that far into the future.
 */
 
@@ -1612,239 +1732,237 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
     crossSectionDraw.deleteAll();
     crossSectionDraw.changeMode('draw_line_string');
 });
-
-
 </script>
 
 <style scoped>
 .footer-resizable {
-    position: relative;
-    flex-direction: column;
-    align-items: stretch;
+  position: relative;
+  flex-direction: column;
+  align-items: stretch;
 }
 
 /* Handle sits in the layout flow as a reserved band above the content,
    so it never overlaps the tab controls (playback buttons, etc.). */
 .footer-resize-handle {
-    flex: 0 0 12px;
-    height: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: ns-resize;
-    touch-action: none;
-    background: transparent;
-    transition: background 0.15s ease;
+  flex: 0 0 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  touch-action: none;
+  background: transparent;
+  transition: background 0.15s ease;
 }
 
 .footer-content {
-    flex: 1 1 auto;
-    min-height: 0;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .footer-resize-handle:hover,
 .footer-resize-handle.is-resizing {
-    background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .footer-resize-grip {
-    width: 44px;
-    height: 4px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.25);
-    transition: background 0.15s ease;
+  width: 44px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.25);
+  transition: background 0.15s ease;
 }
 
 .footer-resize-handle:hover .footer-resize-grip,
 .footer-resize-handle.is-resizing .footer-resize-grip {
-    background: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.55);
 }
 
 .map-drawer-toggle {
-    position: absolute;
-    top: 12px;
-    z-index: 2;
-    border-radius: 8px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  position: absolute;
+  top: 12px;
+  z-index: 2;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .footer-rail {
-    width: 136px;
-    background: rgba(255, 255, 255, 0.03);
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  width: 136px;
+  background: rgba(255, 255, 255, 0.03);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .footer-rail-track {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    gap: 2px;
-    padding: 6px;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 2px;
+  padding: 6px;
 }
 
 .footer-rail-item {
-    height: 32px;
-    padding: 0 10px;
-    border-radius: 8px !important;
-    font-size: 0.75rem;
-    letter-spacing: 0;
-    opacity: 0.65;
-    transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
-    /* v-btn centers its prepend-icon + content as a group by default; override so all rows share a left edge regardless of label length */
-    justify-content: flex-start;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px !important;
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  opacity: 0.65;
+  transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
+  /* v-btn centers its prepend-icon + content as a group by default; override so all rows share a left edge regardless of label length */
+  justify-content: flex-start;
 }
 
 .footer-rail-item :deep(.v-btn__content) {
-    justify-content: flex-start;
+  justify-content: flex-start;
 }
 
 .footer-rail-item:hover {
-    opacity: 0.9;
+  opacity: 0.9;
 }
 
 .footer-rail-item--active {
-    opacity: 1;
-    font-weight: 600;
-    color: rgb(var(--v-theme-primary));
-    background: rgba(var(--v-theme-primary), 0.16);
+  opacity: 1;
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.16);
 }
 
 /* Explore's sub-views, nested directly beneath the Explore row while it's active. */
 .footer-rail-sublist {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding-left: 14px;
-    margin: 1px 0 3px;
-    border-left: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 14px;
+  margin: 1px 0 3px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .footer-rail-subitem {
-    height: 26px;
-    padding: 0 8px;
-    border-radius: 6px !important;
-    font-size: 0.7rem;
-    letter-spacing: 0;
-    opacity: 0.55;
-    transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
-    justify-content: flex-start;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px !important;
+  font-size: 0.7rem;
+  letter-spacing: 0;
+  opacity: 0.55;
+  transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
+  justify-content: flex-start;
 }
 
 .footer-rail-subitem :deep(.v-btn__content) {
-    justify-content: flex-start;
+  justify-content: flex-start;
 }
 
 .footer-rail-subitem:hover {
-    opacity: 0.85;
+  opacity: 0.85;
 }
 
 .footer-rail-subitem--active {
-    opacity: 1;
-    font-weight: 600;
-    color: rgb(var(--v-theme-primary));
-    background: rgba(var(--v-theme-primary), 0.12);
+  opacity: 1;
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.12);
 }
 
 .cursor-coord-label {
-    position: absolute;
-    z-index: 998;
-    pointer-events: none;
-    transform: translate(-14px, 14px);
-    width: fit-content;
-    padding: 3px 6px;
-    border-radius: 6px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    font-family: monospace;
-    font-size: 11px;
-    color: #ccc;
-    white-space: nowrap;
+  position: absolute;
+  z-index: 998;
+  pointer-events: none;
+  transform: translate(-14px, 14px);
+  width: fit-content;
+  padding: 3px 6px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  font-family: monospace;
+  font-size: 11px;
+  color: #ccc;
+  white-space: nowrap;
 }
 </style>
 
 /* Shrink Mapbox bottom-left controls (logo + attribution) to reduce visual footprint */
 <style>
 .mapboxgl-ctrl-bottom-left .mapboxgl-ctrl-logo {
-    transform: scale(0.5) translateY(1px) !important;
-    transform-origin: left center !important;
+  transform: scale(0.5) translateY(1px) !important;
+  transform-origin: left center !important;
 }
 
 /* make sure the controls remain clickable when scaled */
 .mapboxgl-ctrl-bottom-left a {
-    pointer-events: auto;
+  pointer-events: auto;
 }
 
 .footer-text {
-    font-family: "Roboto Mono", monospace;
-    font-size: 0.75rem;
-    vertical-align: text-bottom;
+  font-family: "Roboto Mono", monospace;
+  font-size: 0.75rem;
+  vertical-align: text-bottom;
 }
 
 @keyframes map-click-pulse {
-    0% {
-        box-shadow: 0 0 0 0 rgba(255, 87, 34, 0.7);
-    }
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 87, 34, 0.7);
+  }
 
-    70% {
-        box-shadow: 0 0 0 14px rgba(255, 87, 34, 0);
-    }
+  70% {
+    box-shadow: 0 0 0 14px rgba(255, 87, 34, 0);
+  }
 
-    100% {
-        box-shadow: 0 0 0 0 rgba(255, 87, 34, 0);
-    }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 87, 34, 0);
+  }
 }
 
 .map-click-marker {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #ff5722;
-    border: 2px solid white;
-    animation: map-click-pulse 1.5s ease-out infinite;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff5722;
+  border: 2px solid white;
+  animation: map-click-pulse 1.5s ease-out infinite;
 }
 </style>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap");
 
 .h-screen {
-    height: calc(100vh - 48px);
+  height: calc(100vh - 48px);
 }
 
 .overlay {
-    position: absolute;
-    z-index: 998;
+  position: absolute;
+  z-index: 998;
 }
 
 .spiderfy-node {
-    position: absolute;
-    transform: translate(-50%, -50%);
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
 }
 
 .spiderfy-dot {
-    width: 13px;
-    height: 13px;
-    border: 2px solid #333;
-    border-radius: 50%;
-    transition: transform 0.12s ease;
+  width: 13px;
+  height: 13px;
+  border: 2px solid #333;
+  border-radius: 50%;
+  transition: transform 0.12s ease;
 }
 
 .spiderfy-node:hover .spiderfy-dot {
-    transform: scale(1.35);
+  transform: scale(1.35);
 }
 
 .spiderfy-label {
-    color: #fff;
-    font-size: 10px;
-    white-space: nowrap;
-    max-width: 110px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-shadow: 0 1px 3px #000, 0 0 5px #000;
-    pointer-events: none;
+  color: #fff;
+  font-size: 10px;
+  white-space: nowrap;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px #000, 0 0 5px #000;
+  pointer-events: none;
 }
 </style>

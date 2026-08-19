@@ -46,6 +46,7 @@
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint, AnalysisLocation } from '~~/composables/useAnalysisFetch'
 import { availableVariables, filterBySeason, pearsonCorrelation, joinSeriesByDate, linearRegression } from '~~/composables/useAnalysisStatistics'
 
@@ -60,6 +61,8 @@ const props = defineProps<{
 }>()
 
 function varName(id: string) { return availableVariables.find(v => v.id === id)?.name || id }
+const { variableUnit } = useVariableRegistry()
+function axisName(id: string) { const u = variableUnit(id); return u ? `${varName(id)} (${u})` : varName(id) }
 
 const selectableVariables = availableVariables
 const MAX_VARS = 4
@@ -182,8 +185,8 @@ function renderScatter() {
   scatterInstance.setOption({
     tooltip: { formatter: (p: any) => Array.isArray(p.value) ? `${varName(xVar)}: ${p.value[0]}<br/>${varName(yVar)}: ${p.value[1]}<br/>Year: ${p.value[2]}` : '' },
     grid: { left: '10%', right: '5%', bottom: '12%', top: '8%', containLabel: true },
-    xAxis: { type: 'value', name: varName(xVar), nameLocation: 'middle', nameGap: 28, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
-    yAxis: { type: 'value', name: varName(yVar), nameLocation: 'middle', nameGap: 40, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
+    xAxis: { type: 'value', name: axisName(xVar), nameLocation: 'middle', nameGap: 28, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
+    yAxis: { type: 'value', name: axisName(yVar), nameLocation: 'middle', nameGap: 40, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
     series: [
       { type: 'scatter', symbolSize: 4, data: points, itemStyle: { color: '#58d9f9', opacity: 0.5 } },
       { type: 'line', data: trendLine, showSymbol: false, lineStyle: { color: '#ff9800', width: 1.5, type: 'dashed' } },

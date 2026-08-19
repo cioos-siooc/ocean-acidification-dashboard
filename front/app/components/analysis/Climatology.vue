@@ -27,13 +27,17 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint } from '~~/composables/useAnalysisFetch'
 import {
   filterBySeason, groupByYear, breakDataGaps, computeClimatologyBaseline, climatologyForDate, yearColor,
   distinctYearSpan, attachStickyLegendHighlight,
 } from '~~/composables/useAnalysisStatistics'
 
-const props = defineProps<{ series: SeriesPoint[]; season: string }>()
+const props = defineProps<{ series: SeriesPoint[]; season: string; variable?: string }>()
+
+const { variableUnit } = useVariableRegistry()
+const unit = computed(() => props.variable ? variableUnit(props.variable) : '')
 
 const windowDays = ref(5)
 const climatology = computed(() => computeClimatologyBaseline(props.series, windowDays.value))
@@ -101,7 +105,10 @@ function render() {
     legend: { top: 4, type: 'scroll', textStyle: { fontSize: 10 } },
     grid: { left: '4%', right: '3%', bottom: '12%', top: '18%', containLabel: true },
     xAxis: { type: 'time', axisLabel: { fontSize: 9, color: '#ccc' } },
-    yAxis: { type: 'value', name: 'Anomaly', nameLocation: 'middle', nameGap: 40, axisLabel: { fontSize: 10, color: '#ccc' }, scale: true },
+    yAxis: {
+      type: 'value', name: unit.value ? `Anomaly (${unit.value})` : 'Anomaly',
+      nameLocation: 'middle', nameGap: 40, axisLabel: { fontSize: 10, color: '#ccc' }, scale: true,
+    },
     dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 14 }],
     series,
   }, true)
