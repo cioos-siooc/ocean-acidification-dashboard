@@ -9,8 +9,13 @@ export function formatDepthLabel(depth: number): string {
     return depth === -1 ? 'bottom' : depth.toFixed(1);
 }
 
-export const useMainStore = defineStore('main', {
-    state: () => ({
+// Pulled out (rather than inlined in `state:`) so its return type can be
+// named via `ReturnType<>` below — Pinia's `this` typing inside `actions`
+// collapses to just the actions' own shape once the inline state literal
+// gets complex enough (this store is right at that edge), silently losing
+// access to every state property. Naming the type keeps `this.<state>` working.
+function createInitialState() {
+    return {
         colors: {
             model: {
                 line: colors.red.lighten3,
@@ -26,8 +31,14 @@ export const useMainStore = defineStore('main', {
         },
 
         dfnDays: 14, // days from now for climate timeseries
-        variables: [] as Array<{ var: string, name: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number] }>,
+        variables: [] as Array<{ var: string, name: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number], alt_units?: Array<{ unit: string, scale: number, offset?: number }> }>,
         selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as string | null, depth_nc: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null, colormapStops: [null, null, null] as (number | null)[] },
+
+        // var -> chosen display unit. Absent means "show the canonical unit"
+        // (variable_config.yml's `unit`) — only variables with `alt_units`
+        // ever get an entry. Display-only: canonical values in ClickHouse,
+        // colormapMin/Max, and rendered tiles are never touched by this.
+        unitPreference: {} as Record<string, string>,
         showBathymetryContours: false,
         // The style's built-in "water names" and "Place labels" text layers
         // are visible by default (part of the base Mapbox style), so this
@@ -98,7 +109,13 @@ export const useMainStore = defineStore('main', {
         // not a child of it — can request a profile aggregated the same way
         // the depth section currently on screen is.
         exploreBinMode: 'hourly' as 'hourly' | 'daily' | 'monthly',
-    }),
+    };
+}
+
+type MainStoreState = ReturnType<typeof createInitialState>;
+
+export const useMainStore = defineStore('main', {
+    state: (): MainStoreState => createInitialState(),
 
     getters: {
         // A *profiler* sensor (registry depth === -1) is the only kind that casts
@@ -135,7 +152,7 @@ export const useMainStore = defineStore('main', {
             this.variables = vars;
         },
 
-        updateSelectedVariable(partial: Partial<typeof this.selected_variable>) {
+        updateSelectedVariable(partial: Partial<MainStoreState['selected_variable']>) {
             // Use individual property assignment to ensure Pinia tracks mutations properly
             for (const [key, value] of Object.entries(partial)) {
                 (this.selected_variable as any)[key] = value;
@@ -148,6 +165,10 @@ export const useMainStore = defineStore('main', {
 
         setShowMapLabels(value: boolean) {
             this.showMapLabels = value;
+        },
+
+        setUnitPreference(varId: string, unit: string) {
+            this.unitPreference[varId] = unit;
         },
 
         setShowCursorCoords(value: boolean) {

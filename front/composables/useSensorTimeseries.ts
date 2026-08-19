@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useRuntimeConfig } from '#app';
 import { createRequestCache } from './useRequestCache';
+import { useVariableRegistry } from './useVariableRegistry';
 
 // ReplacingMergeTree read via FINAL, revised outside the SSC sync path by the
 // separate `sensors/` ingestion service — short TTL bounds staleness, same as
@@ -31,7 +32,22 @@ export async function getSensorTimeseries(sensorId: string|null, canonicalVariab
     }
     const url = `${apiBaseUrl}/sensorTimeseries`;
     const key = JSON.stringify(payload);
-    return cache.fetch(key, () => axios.post(url, payload));
+    const raw = await cache.fetch(key, () => axios.post(url, payload));
+
+    // Every caller reads `.data.time`/`.data.value` off the axios-response
+    // shape this returns — preserve that, just with `value` converted to the
+    // currently-selected display unit. Cached value is canonical (keyed only
+    // by request params, not by unit), so build a fresh object rather than
+    // mutating `raw` in place.
+    if (!raw?.data?.value) return raw;
+    const { toDisplayValue } = useVariableRegistry();
+    return {
+        ...raw,
+        data: {
+            ...raw.data,
+            value: raw.data.value.map((v: number | null) => toDisplayValue(canonicalVariable, v)),
+        },
+    };
 }
 
 export default getSensorTimeseries;

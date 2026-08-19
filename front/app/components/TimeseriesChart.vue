@@ -28,7 +28,9 @@ import colors from 'vuetify/util/colors';
 import timeseriesChartHelpImg from '../../public/timeseriesChartHelp.png';
 
 import { useMainStore } from '../stores/main';
+import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 const mainStore = useMainStore();
+const { displayUnit } = useVariableRegistry();
 
 const chartContainer = ref<HTMLDivElement | null>(null);
 let chart: echarts.ECharts | null = null;
@@ -248,6 +250,12 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     const lat = mainStore.lastClickedMapPoint?.lat;
     const lng = mainStore.lastClickedMapPoint?.lng;
 
+    const varId = mainStore.selected_variable.var;
+
+    // model/climate/sensor values arrive already converted to the current
+    // display unit — every fetch composable behind these (useModelTimeseries,
+    // useDepthProfileFetch, useClimateTimeseries, useSensorTimeseries)
+    // converts at the source, so no per-chart conversion happens here.
     const hasModelData = modelData && Array.isArray(modelData.time) && modelData.time.length > 0;
     let __series_model: any[] = [];
     if (hasModelData) {
@@ -391,7 +399,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
             min: 'dataMin',
             max: 'dataMax',
             splitLine: { show: false },
-            name: (mainStore.variables as any[]).find((v: any) => v.var === mainStore.selected_variable.var)?.unit ?? '',
+            name: displayUnit(varId),
             nameLocation: 'center',
             nameTextStyle: { color: '#e0e0e0' },
             axisLabel: { color: '#e0e0e0', formatter: (v: any) => Number(v).toFixed(axisDecimals) }
@@ -433,6 +441,9 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         const climate_ts = climateData.map((row: any) => moment.utc(row.requested_date).valueOf());
         const mean = climateData.map((row: any) => row.mean);
         const min = climateData.map((row: any) => row.min);
+        // useClimateTimeseries.ts converts mean/min/max independently (not
+        // `max - min` as a lump sum), so subtracting the already-converted
+        // fields here is safe even under an affine unit like temperature's °F.
         const maxDiff = climateData.map((row: any) => row.max - row.min);
 
         // endLabel renders at each series' own last (for _stats_mean) or stacked-cumulative
@@ -478,7 +489,6 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     option.legend.data = seriesArr.filter((s: any) => s.name && !s.name.startsWith('_')).map((s: any) => s.name);
 
     chart.setOption(option, true);
-    console.log(option);
     chart.resize();
 
     // Stats legend toggle — clicking 'Climatology' shows/hides internal series.

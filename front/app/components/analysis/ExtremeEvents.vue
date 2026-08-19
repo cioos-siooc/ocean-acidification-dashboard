@@ -79,8 +79,8 @@ import {
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable: string }>()
 
-const { variableUnit } = useVariableRegistry()
-const unit = computed(() => variableUnit(props.variable))
+const { displayUnit } = useVariableRegistry()
+const unit = computed(() => displayUnit(props.variable))
 const unitSuffix = computed(() => unit.value ? ` (${unit.value})` : '')
 
 const yearSpan = computed(() => distinctYearSpan(props.series))

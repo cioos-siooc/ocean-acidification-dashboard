@@ -78,7 +78,7 @@ const isOpen = computed({
 
 const mainStore = useMainStore();
 
-const { variableLabel } = useVariableRegistry();
+const { variableLabel, displayUnit, toDisplayValue } = useVariableRegistry();
 
 const title = computed(() => {
     const varId = mainStore.selected_variable?.var;
@@ -118,6 +118,10 @@ let currentController: AbortController | null = null;
 let requestSequence = 0;
 
 const selectedVariableLabel = computed(() => variableLabel(mainStore.selected_variable.var ?? 'Value'));
+const selectedVariableUnit = computed(() => displayUnit(mainStore.selected_variable.var ?? ''));
+const selectedVariableAxisName = computed(() =>
+    selectedVariableUnit.value ? `${selectedVariableLabel.value} (${selectedVariableUnit.value})` : selectedVariableLabel.value
+);
 
 const requestParams = computed<ProfileRequest | null>(() => {
     const lat = props.selectedPoint?.lat;
@@ -178,6 +182,12 @@ watch([requestParams, isOpen], ([params, open]) => {
     }
 }, { immediate: true, flush: 'post' });
 
+// Re-render off the already-fetched (canonical) points when the display unit
+// changes — no refetch needed, only the conversion applied at render time.
+watch(() => mainStore.unitPreference[mainStore.selected_variable.var], () => {
+    renderChart(profilePoints.value);
+});
+
 function ensureChart() {
     if (profileChart || !chartContainer.value) return;
     profileChart = echarts.init(chartContainer.value, 'dark', { renderer: 'canvas' });
@@ -188,8 +198,9 @@ function renderChart(points: ProfilePoint[]) {
     ensureChart();
     if (!profileChart) return;
 
+    const varId = mainStore.selected_variable.var;
     const sorted = [...points].sort((a, b) => a.depth - b.depth);
-    const data = sorted.map((point) => [point.value, point.depth]);
+    const data = sorted.map((point) => [toDisplayValue(varId, point.value), point.depth]);
 
     const option = {
         tooltip: {
@@ -199,7 +210,7 @@ function renderChart(points: ProfilePoint[]) {
                 const entry = params?.[0];
                 if (!entry) return '';
                 const [value, depth] = entry.value ?? [];
-                return `${selectedVariableLabel.value}<br/>Value: ${value ?? '–'}<br/>Depth: ${depth ?? '–'} m`;
+                return `${selectedVariableLabel.value}<br/>Value: ${value ?? '–'} ${selectedVariableUnit.value}<br/>Depth: ${depth ?? '–'} m`;
             }
         },
         grid: { left: 32, right: 20, top: 12, bottom: 12 },
@@ -210,7 +221,7 @@ function renderChart(points: ProfilePoint[]) {
         },
         xAxis: {
             type: 'value',
-            name: selectedVariableLabel.value,
+            name: selectedVariableAxisName.value,
             nameLocation: 'middle',
             nameGap: 24,
             axisLine: { show: true },

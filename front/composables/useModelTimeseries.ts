@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useRuntimeConfig } from '#app';
 import { createRequestCache } from './useRequestCache';
+import { useVariableRegistry } from './useVariableRegistry';
 
 type ModelTimeseriesParams = {
     source: string;
@@ -29,7 +30,7 @@ export async function fetchModelTimeseries(params: ModelTimeseriesParams): Promi
     const apiBaseUrl = config.public.apiBaseUrl;
 
     const key = JSON.stringify(params);
-    return cache.fetch(key, async () => {
+    const raw = await cache.fetch(key, async () => {
         const response = await axios.post(`${apiBaseUrl}/extractTimeseries`, {
             source: params.source,
             var: params.variable,
@@ -46,4 +47,10 @@ export async function fetchModelTimeseries(params: ModelTimeseriesParams): Promi
             value: response.data?.value ?? [],
         };
     });
+
+    // Cached value is canonical (keyed only by request params, not by unit) —
+    // convert a fresh copy on every call so switching units doesn't require a
+    // cache-busting refetch, and never touch the cached array in place.
+    const { toDisplayValue } = useVariableRegistry();
+    return { time: raw.time, value: raw.value.map((v) => toDisplayValue(params.variable, v)) };
 }

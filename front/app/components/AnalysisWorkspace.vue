@@ -171,8 +171,11 @@ async function fetchPrimary() {
 }
 
 // Only fetch once a deep-dive tab is actually asked for — the Overview tab
-// doesn't use this series, and most visits never leave it.
-watch([isOpen, activeTab, location, variable, depth], () => {
+// doesn't use this series, and most visits never leave it. mainStore.unitPreference
+// is included so toggling the display unit re-fetches (a cheap cache hit — see
+// useAnalysisFetch.ts/useSensorAnalysisFetch.ts) rather than every deep-dive tab
+// showing stale numbers under the old unit.
+watch([isOpen, activeTab, location, variable, depth, () => mainStore.unitPreference[variable.value]], () => {
   if (isOpen.value && activeTab.value !== 'builder') fetchPrimary()
 })
 

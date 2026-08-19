@@ -2,12 +2,12 @@
   <div class="d-flex h-100" style="overflow:hidden;">
     <div class="pa-2 d-flex flex-column flex-shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Primary variable</div>
-      <div class="text-caption mb-3">{{ varName(primaryVariable) }} {{ primaryDirection === '>' ? '>' : '<' }} {{ primaryThreshold }}{{ variableUnit(primaryVariable) ? ` ${variableUnit(primaryVariable)}` : '' }}</div>
+      <div class="text-caption mb-3">{{ varName(primaryVariable) }} {{ primaryDirection === '>' ? '>' : '<' }} {{ primaryThreshold }}{{ displayUnit(primaryVariable) ? ` ${displayUnit(primaryVariable)}` : '' }}</div>
       <v-btn-toggle v-model="primaryDirection" mandatory variant="tonal" class="mb-1 w-100">
         <v-btn value=">" size="x-small" class="flex-grow-1">Above</v-btn>
         <v-btn value="<" size="x-small" class="flex-grow-1">Below</v-btn>
       </v-btn-toggle>
-      <v-text-field v-model.number="primaryThreshold" type="number" :suffix="variableUnit(primaryVariable)" hide-details class="mb-3" />
+      <v-text-field v-model.number="primaryThreshold" type="number" :suffix="displayUnit(primaryVariable)" hide-details class="mb-3" />
 
       <div class="ctrl-label">Compare against</div>
       <v-select v-model="secondaryVariable" :items="otherVariables" item-title="name" item-value="id"
@@ -16,7 +16,7 @@
         <v-btn value=">" size="x-small" class="flex-grow-1">Above</v-btn>
         <v-btn value="<" size="x-small" class="flex-grow-1">Below</v-btn>
       </v-btn-toggle>
-      <v-text-field v-model.number="secondaryThreshold" type="number" :suffix="variableUnit(secondaryVariable)" hide-details class="mb-3" />
+      <v-text-field v-model.number="secondaryThreshold" type="number" :suffix="displayUnit(secondaryVariable)" hide-details class="mb-3" />
 
       <v-alert v-if="secondaryError" type="error" variant="tonal" class="mt-2">{{ secondaryError }}</v-alert>
     </div>
@@ -46,6 +46,9 @@ import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint, AnalysisLocation } from '~~/composables/useAnalysisFetch'
 import { availableVariables, filterBySeason, maskBySeason, breakDataGaps, groupByYear } from '~~/composables/useAnalysisStatistics'
+import { useMainStore } from '../../stores/main'
+
+const mainStore = useMainStore()
 
 const props = defineProps<{
   primarySeries: SeriesPoint[]
@@ -58,8 +61,8 @@ const props = defineProps<{
 }>()
 
 function varName(id: string) { return availableVariables.find(v => v.id === id)?.name || id }
-const { variableUnit } = useVariableRegistry()
-function axisName(id: string) { const u = variableUnit(id); return u ? `${varName(id)} (${u})` : varName(id) }
+const { displayUnit } = useVariableRegistry()
+function axisName(id: string) { const u = displayUnit(id); return u ? `${varName(id)} (${u})` : varName(id) }
 
 const otherVariables = computed(() => availableVariables.filter(v => v.id !== props.primaryVariable))
 const secondaryVariable = ref(otherVariables.value[0]?.id || '')
@@ -85,7 +88,10 @@ async function loadSecondary() {
     secondaryLoading.value = false
   }
 }
-watch(secondaryVariable, loadSecondary)
+// mainStore.unitPreference is included so toggling the secondary variable's
+// display unit re-fetches it too (a cheap cache hit — see useAnalysisFetch.ts) —
+// the primary series already reacts via AnalysisWorkspace.vue's own trigger.
+watch([secondaryVariable, () => mainStore.unitPreference[secondaryVariable.value]], loadSecondary)
 onMounted(loadSecondary)
 
 const seasonalPrimary = computed(() => filterBySeason(props.primarySeries, props.season))

@@ -55,6 +55,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useMainStore, formatDepthLabel } from '../../stores/main'
 import { fetchDepthProfile, parseCoverageBound, type DepthProfileResponse } from '~~/composables/useDepthProfileFetch'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, useTimeDepthWindow, toApiIso, type BinMode } from '~~/composables/useTimeDepthWindow'
 import TimeDepthHeatmap from '../depth/TimeDepthHeatmap.vue'
@@ -71,6 +72,7 @@ import TimeDepthHeatmap from '../depth/TimeDepthHeatmap.vue'
 const props = defineProps<{ active?: boolean }>()
 
 const mainStore = useMainStore()
+const { toDisplayValue } = useVariableRegistry()
 
 const sensorInfo = computed(() => mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id) ?? null)
 const modelSource = computed(() => mainStore.selected_variable.source)
@@ -162,7 +164,10 @@ async function fetchWindow() {
   }
 }
 
-watch([windowEnd, depths, binMode, () => mainStore.selectedSensor?.id, () => props.active], () => {
+// mainStore.unitPreference is included so toggling the display unit re-fetches
+// (a cheap cache hit — see useDepthProfileFetch.ts) rather than leaving the
+// section showing stale numbers under the old unit.
+watch([windowEnd, depths, binMode, () => mainStore.selectedSensor?.id, () => props.active, () => mainStore.unitPreference[varId.value]], () => {
   if (props.active) fetchWindow()
 }, { immediate: true })
 
@@ -186,9 +191,12 @@ function colorFromStops(stops: [number, string][], t: number): number[] {
 }
 const FALLBACK = [hexToRgb('#0d366b'), hexToRgb('#3987e5'), hexToRgb('#cde2fb')]
 const stops = computed(() => resolveColormap(mainStore.colormaps, mainStore.selected_variable.colormap)?.stops ?? null)
-const lo = computed(() => mainStore.selected_variable.colormapMin ?? varMeta.value?.colormapMin ?? 0)
+// Converted to the current display unit — `modelGrid`/`sensorGrid` values are
+// (useDepthProfileFetch.ts converts at the source), so these normalization
+// bounds have to match.
+const lo = computed(() => toDisplayValue(varId.value, mainStore.selected_variable.colormapMin ?? varMeta.value?.colormapMin ?? 0) ?? 0)
 const hi = computed(() => {
-  const v = mainStore.selected_variable.colormapMax ?? varMeta.value?.colormapMax ?? 1
+  const v = toDisplayValue(varId.value, mainStore.selected_variable.colormapMax ?? varMeta.value?.colormapMax ?? 1) ?? 1
   return v > lo.value ? v : lo.value + 1
 })
 const colorFn = computed(() => {

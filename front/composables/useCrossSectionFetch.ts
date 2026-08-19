@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useRuntimeConfig } from '#app';
 import type { BinMode } from './useTimeDepthWindow';
 import { createRequestCache } from './useRequestCache';
+import { useVariableRegistry } from './useVariableRegistry';
 
 export type CrossSectionResponse = {
     distances_km: number[];        // cumulative distance (km) at each sample point, ascending
@@ -40,8 +41,14 @@ export async function fetchCrossSection(params: CrossSectionFetchParams): Promis
     };
 
     const key = JSON.stringify(body);
-    return modelCache.fetch(key, async () => {
+    const raw = await modelCache.fetch(key, async () => {
         const response = await axios.post(`${apiBaseUrl}/crossSection`, body);
         return response.data;
     });
+
+    // Cached grid is canonical (keyed only by request params, not by unit) —
+    // build a fresh [depth][sample] array converted to the current display
+    // unit rather than mutating the cached grid in place.
+    const { toDisplayValue } = useVariableRegistry();
+    return { ...raw, model: raw.model.map((row: (number | null)[]) => row.map((v) => toDisplayValue(params.var, v))) };
 }

@@ -78,6 +78,7 @@ import { ref, computed, watch } from 'vue'
 import moment from 'moment'
 import { useMainStore, formatDepthLabel } from '../../stores/main'
 import { fetchCrossSection, type CrossSectionResponse } from '~~/composables/useCrossSectionFetch'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { utc2pst } from '~~/composables/useUTC2PST'
@@ -99,6 +100,7 @@ import ChartContextBar from '../ChartContextBar.vue'
 const props = defineProps<{ active?: boolean }>()
 
 const mainStore = useMainStore()
+const { toDisplayValue, displayUnit } = useVariableRegistry()
 
 const line = computed(() => mainStore.crossSectionLine)
 const source = computed(() => mainStore.selected_variable.source)
@@ -167,7 +169,10 @@ async function fetchSection() {
 // Only fetch while the tab is actually on screen — this sits in a v-show'd
 // footer pane, and a drawn line/clock change would otherwise refetch here for
 // a view nobody is looking at (mirrors ExplorePanel's own `props.active` gate).
-watch([line, source, varId, dtStr, binMode, () => props.active], () => {
+// mainStore.unitPreference is included so toggling the display unit re-fetches
+// (a cheap cache hit — see useCrossSectionFetch.ts) rather than leaving the
+// section showing stale numbers under the old unit.
+watch([line, source, varId, dtStr, binMode, () => props.active, () => mainStore.unitPreference[varId.value]], () => {
   if (props.active) fetchSection()
 }, { immediate: true })
 
@@ -256,9 +261,11 @@ const SEQ = [hexToRgb('#0d366b'), hexToRgb('#3987e5'), hexToRgb('#cde2fb')]
 const resolvedSeqStops = computed(() =>
   resolveColormap(mainStore.colormaps, mainStore.selected_variable.colormap)?.stops ?? null)
 
-const seqMin = computed(() => mainStore.selected_variable.colormapMin ?? varMeta.value?.colormapMin ?? 0)
+// Converted to the current display unit — `grid`'s values are (useCrossSectionFetch.ts
+// converts at the source), so these normalization bounds have to match.
+const seqMin = computed(() => toDisplayValue(varId.value, mainStore.selected_variable.colormapMin ?? varMeta.value?.colormapMin ?? 0) ?? 0)
 const seqMax = computed(() => {
-  const hi = mainStore.selected_variable.colormapMax ?? varMeta.value?.colormapMax ?? 1
+  const hi = toDisplayValue(varId.value, mainStore.selected_variable.colormapMax ?? varMeta.value?.colormapMax ?? 1) ?? 1
   const lo = seqMin.value
   return hi > lo ? hi : lo + 1
 })
@@ -281,7 +288,7 @@ function cellTooltip(binIdx: number, depthIdx: number, value: number | null): st
   const dist = distances.value[binIdx]
   const distStr = dist != null ? `${dist.toFixed(1)} km` : '—'
   const depthStr = depth != null ? `${depth.toFixed(depth < 10 ? 1 : 0)}m` : '—'
-  const valueStr = value == null ? 'no data' : value.toFixed(3)
+  const valueStr = value == null ? 'no data' : `${value.toFixed(3)} ${displayUnit(varId.value)}`
   return `<div style="opacity:.7;margin-bottom:2px;">${distStr} &middot; ${depthStr}</div><div>${varName.value}: <b>${valueStr}</b></div>`
 }
 

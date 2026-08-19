@@ -43,8 +43,8 @@ import { filterBySeason, groupByYear, mannKendallTest, theilSenSlope } from '~~/
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable?: string }>()
 
-const { variableUnit } = useVariableRegistry()
-const unit = computed(() => props.variable ? variableUnit(props.variable) : '')
+const { displayUnit } = useVariableRegistry()
+const unit = computed(() => props.variable ? displayUnit(props.variable) : '')
 
 const annualMeans = computed(() => {
   const seasonal = filterBySeason(props.series, props.season)

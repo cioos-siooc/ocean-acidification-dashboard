@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useRuntimeConfig } from '#app';
 import { createRequestCache } from './useRequestCache';
+import { useVariableRegistry } from './useVariableRegistry';
 
 export type SeriesPoint = { time: string; value: number | null };
 
@@ -35,8 +36,16 @@ export async function fetchAnalysisSeries(params: AnalysisFetchParams): Promise<
     };
 
     const key = JSON.stringify(params);
-    return cache.fetch(key, async () => {
+    const raw = await cache.fetch(key, async () => {
         const response = await axios.post(`${apiBaseUrl}/analysis/timeseries`, body);
         return response.data?.data || [];
     });
+
+    // Cached series is canonical (keyed only by request params, not by unit) —
+    // map to a fresh array converted to the current display unit rather than
+    // mutating the cached series in place. This also covers every Analysis
+    // tab's *secondary*-variable fetch, since each just calls this again with
+    // that variable's id.
+    const { toDisplayValue } = useVariableRegistry();
+    return raw.map((pt: SeriesPoint) => ({ ...pt, value: toDisplayValue(params.variable, pt.value) }));
 }

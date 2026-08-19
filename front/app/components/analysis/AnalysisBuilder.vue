@@ -117,7 +117,7 @@ const analysisSource = computed(() => props.source ?? 'model')
 const isSensor = computed(() => analysisSource.value === 'sensor')
 
 const mainStore = useMainStore()
-const { variableUnit } = useVariableRegistry()
+const { displayUnit } = useVariableRegistry()
 
 // ── SENSOR CONTEXT (unused in model mode) ────────────────────────────────────
 const selectedSensor = computed(() => mainStore.selectedSensor)
@@ -186,7 +186,7 @@ const polygonFromClick = computed<[number, number][]>(() => {
 const varName = computed(() =>
   availableVariables.find(v => v.id === variable.value)?.name || variable.value || 'Variable'
 )
-const varUnit = computed(() => variable.value ? variableUnit(variable.value) : '')
+const varUnit = computed(() => variable.value ? displayUnit(variable.value) : '')
 
 const pointLabel = computed(() => {
   if (isSensor.value) return sensorInfo.value?.name ?? ''
@@ -436,7 +436,10 @@ watch(selectedSeason, () => {
 })
 
 // Auto-fetch on point/area, variable, depth, or statistic change — but only while this tab is visible.
-watch([lastClicked, variable, depth, queryMode, primaryStat, analysisSource, selectedSensor], scheduleAutoRun)
+// mainStore.unitPreference is included so toggling the display unit re-fetches
+// (a cheap cache hit — see useAnalysisFetch.ts/useSensorAnalysisFetch.ts)
+// rather than the chart showing stale numbers under the old unit.
+watch([lastClicked, variable, depth, queryMode, primaryStat, analysisSource, selectedSensor, () => mainStore.unitPreference[variable.value]], scheduleAutoRun)
 
 // Switching into this tab fetches fresh data for whatever changed while it was hidden.
 // immediate: true also covers first mount — the dialog only creates this component once

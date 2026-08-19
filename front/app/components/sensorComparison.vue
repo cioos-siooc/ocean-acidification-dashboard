@@ -123,6 +123,7 @@ import { fetchAnalysisSeries } from '~~/composables/useAnalysisFetch'
 import { getSensorTimeseries } from '~~/composables/useSensorTimeseries'
 import { fetchModelTimeseries } from '~~/composables/useModelTimeseries'
 import { availableVariables } from '~~/composables/useAnalysisStatistics'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import {
   aggregateSensorToDaily,
   buildComparisonSeries,
@@ -137,6 +138,7 @@ const props = defineProps<{ active?: boolean }>()
 // pairs — emitting them keeps this component the single fetch owner.
 const emit = defineEmits<{ data: [ComparisonPoint[]] }>()
 const mainStore = useMainStore()
+const { displayUnit } = useVariableRegistry()
 
 // --- STORE-DERIVED STATE ---
 const variable = computed(() => mainStore.selected_variable.var)
@@ -244,7 +246,7 @@ async function loadHourly() {
   hourlyData.value = Array.from(byTime.values()).sort((a, b) => a.date.localeCompare(b.date))
 }
 
-watch(resolution, async () => {
+async function refreshHourlyIfNeeded() {
   if (resolution.value === 'hourly' && !hourlyData.value.length) {
     isLoading.value = true
     loadingStep.value = 'Fetching hourly data…'
@@ -259,10 +261,19 @@ watch(resolution, async () => {
   }
   await nextTick()
   renderTimeseriesChart()
-})
+}
+
+watch(resolution, refreshHourlyIfNeeded)
 
 // A different sensor/variable/depth invalidates the cached hourly window.
-watch([selectedSensor, variable, depth], () => { hourlyData.value = [] })
+// mainStore.unitPreference is included so toggling the display unit
+// invalidates it too and, if hourly is the active resolution, re-fetches
+// (a cheap cache hit — see useModelTimeseries.ts/useSensorTimeseries.ts)
+// rather than leaving the chart showing stale numbers under the old unit.
+watch([selectedSensor, variable, depth, () => mainStore.unitPreference[variable.value]], () => {
+  hourlyData.value = []
+  refreshHourlyIfNeeded()
+})
 
 // --- CHART REFS ---
 const timeseriesContainerRef = ref<HTMLDivElement | null>(null)
@@ -317,7 +328,7 @@ function renderTimeseriesChart() {
     },
     yAxis: {
       type: 'value',
-      name: varName.value,
+      name: displayUnit(variable.value) ? `${varName.value} (${displayUnit(variable.value)})` : varName.value,
       nameLocation: 'middle',
       nameGap: 50,
       axisLabel: { fontSize: 10, color: '#ccc' },
@@ -439,7 +450,10 @@ async function loadData() {
 }
 
 // --- WATCHERS ---
-watch([selectedSensor, variable, depth], () => {
+// mainStore.unitPreference is included so toggling the display unit
+// re-fetches (a cheap cache hit — see useAnalysisFetch.ts/useSensorTimeseries.ts)
+// rather than leaving the chart/stats showing stale numbers under the old unit.
+watch([selectedSensor, variable, depth, () => mainStore.unitPreference[variable.value]], () => {
   // The old guard against reloading while the Advanced dialog was open is gone
   // with the dialog: `props.active` now covers it, since the workspace only
   // marks this tab active while it is the visible one.

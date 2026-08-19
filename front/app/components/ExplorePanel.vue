@@ -108,6 +108,7 @@ import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, floorToBin, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { fetchClimateTimeseries } from '~~/composables/useClimateTimeseries'
 import { getSensorTimeseries } from '~~/composables/useSensorTimeseries'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import TimeDepthHeatmap from './depth/TimeDepthHeatmap.vue'
 import TimeseriesChart from './TimeseriesChart.vue'
 import TimeControls from './TimeControls.vue'
@@ -136,6 +137,7 @@ import ChartContextBar from './ChartContextBar.vue'
 const props = defineProps<{ active?: boolean }>()
 
 const mainStore = useMainStore()
+const { toDisplayValue, displayUnit } = useVariableRegistry()
 
 const point = computed(() => mainStore.lastClickedMapPoint)
 const source = computed(() => mainStore.selected_variable.source)
@@ -419,7 +421,11 @@ async function fetchWindow() {
 // Only fetch while the tab is actually on screen — this sits in a v-show'd
 // footer pane alongside three other tabs, and a map click would otherwise
 // refetch here for a view nobody is looking at.
-watch([windowEnd, depths, binMode, point, sensorId, () => props.active], () => {
+// mainStore.unitPreference is included so toggling the display unit
+// re-fetches (a cheap cache hit against the same request params — see
+// useDepthProfileFetch.ts) and re-converts, rather than leaving the section
+// showing stale numbers under the old unit.
+watch([windowEnd, depths, binMode, point, sensorId, () => props.active, () => mainStore.unitPreference[varId.value]], () => {
   if (props.active) fetchWindow()
 }, { immediate: true })
 
@@ -454,10 +460,13 @@ const resolvedSeqStops = computed(() =>
   resolveColormap(mainStore.colormaps, mainStore.selected_variable.colormap)?.stops ?? null)
 
 // Map colorbar bounds, with the variable's configured defaults as a fallback for
-// the moment before the map has published its own.
-const seqMin = computed(() => mainStore.selected_variable.colormapMin ?? varMeta.value?.colormapMin ?? 0)
+// the moment before the map has published its own. Converted to the current
+// display unit — `grid`'s values are (useDepthProfileFetch.ts converts at the
+// source), so these normalization bounds have to match or every cell would
+// clamp to one end of the colour ramp under a non-canonical unit.
+const seqMin = computed(() => toDisplayValue(varId.value, mainStore.selected_variable.colormapMin ?? varMeta.value?.colormapMin ?? 0) ?? 0)
 const seqMax = computed(() => {
-  const hi = mainStore.selected_variable.colormapMax ?? varMeta.value?.colormapMax ?? 1
+  const hi = toDisplayValue(varId.value, mainStore.selected_variable.colormapMax ?? varMeta.value?.colormapMax ?? 1) ?? 1
   const lo = seqMin.value
   return hi > lo ? hi : lo + 1
 })
@@ -504,7 +513,7 @@ function cellTooltip(binIdx: number, depthIdx: number, value: number | null): st
       : { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }
   const dtStr = dt ? dt.toLocaleString('en-US', dtOpts) : '—'
   const depthStr = depth != null ? `${depth.toFixed(depth < 10 ? 1 : 0)}m` : '—'
-  const valueStr = value == null ? 'no data' : value.toFixed(3)
+  const valueStr = value == null ? 'no data' : `${value.toFixed(3)} ${displayUnit(varId.value)}`
   return `<div style="opacity:.7;margin-bottom:2px;">${dtStr} &middot; ${depthStr}</div><div>${varName.value}: <b>${valueStr}</b></div>`
 }
 
@@ -561,7 +570,7 @@ watch([selectedDepthIdx, viewMode], updateLineChart)
 // and a watcher's source array is evaluated during setup, so it has to come
 // after that ref is declared.
 watch(
-  [windowEnd, binMode, varId, () => mainStore.selectedSensor?.id, selectedDepthIdx, () => props.active],
+  [windowEnd, binMode, varId, () => mainStore.selectedSensor?.id, selectedDepthIdx, () => props.active, () => mainStore.unitPreference[varId.value]],
   async () => {
     if (!props.active) return
     await fetchSensorOverlay()

@@ -57,6 +57,37 @@ export function useVariableRegistry() {
         return units.value.get(varId) ?? '';
     }
 
+    // Alternate display units for a variable (e.g. DO's mg/L, mL/L; temperature's
+    // °F), sourced from variable_config.yml's `alt_units`. Empty for the other
+    // variables — those keep a single, non-toggleable canonical unit.
+    function variableAltUnits(varId: string): Array<{ unit: string; scale: number; offset: number }> {
+        const v = mainStore.variables.find(v => v.var === varId);
+        return (v?.alt_units ?? []).map(u => ({ unit: u.unit, scale: u.scale, offset: u.offset ?? 0 }));
+    }
+
+    // The unit currently chosen for display — the user's preference if they've
+    // toggled one, otherwise the canonical unit. This is what every chart/label
+    // should render, in place of `variableUnit()`.
+    function displayUnit(varId: string): string {
+        return mainStore.unitPreference[varId] ?? variableUnit(varId);
+    }
+
+    /** Canonical (ClickHouse/model) value -> the unit `displayUnit()` currently reports. */
+    function toDisplayValue(varId: string, canonicalValue: number | null | undefined): number | null {
+        if (canonicalValue === null || canonicalValue === undefined) return null;
+        const target = mainStore.unitPreference[varId];
+        const alt = target ? variableAltUnits(varId).find(u => u.unit === target) : undefined;
+        return alt ? canonicalValue * alt.scale + alt.offset : canonicalValue;
+    }
+
+    /** Inverse of `toDisplayValue()` — a value typed/dragged in the display unit, back to canonical. */
+    function toCanonicalValue(varId: string, displayValue: number | null | undefined): number | null {
+        if (displayValue === null || displayValue === undefined) return null;
+        const target = mainStore.unitPreference[varId];
+        const alt = target ? variableAltUnits(varId).find(u => u.unit === target) : undefined;
+        return alt ? (displayValue - alt.offset) / alt.scale : displayValue;
+    }
+
     /**
      * A sensor's variables narrowed to the ones the app shows, in config order
      * so every sensor lists them consistently rather than in per-source
@@ -69,5 +100,8 @@ export function useVariableRegistry() {
             .filter((varId, i, arr) => arr.indexOf(varId) === i && present.has(varId));
     }
 
-    return { labels, isModelVariable, variableLabel, variableUnit, modelVariablesOf };
+    return {
+        labels, isModelVariable, variableLabel, variableUnit, modelVariablesOf,
+        variableAltUnits, displayUnit, toDisplayValue, toCanonicalValue,
+    };
 }

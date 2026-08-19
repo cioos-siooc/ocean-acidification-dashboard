@@ -73,6 +73,7 @@ import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
 import { useMainStore } from '../stores/main'
 import { availableVariables } from '~~/composables/useAnalysisStatistics'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import {
   filterBySeason,
   maskBySeason,
@@ -96,6 +97,8 @@ import ComparisonSections from './comparison/ComparisonSections.vue'
 const isOpen = defineModel<boolean>()
 
 const mainStore = useMainStore()
+const { displayUnit } = useVariableRegistry()
+const varUnit = computed(() => displayUnit(mainStore.selected_variable.var))
 
 const sensorInfo = computed(() => mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id) ?? null)
 const sensorName = computed(() => sensorInfo.value?.name ?? '')
@@ -200,8 +203,8 @@ function renderChart() {
     chart.setOption({
       tooltip: { trigger: 'item', formatter: (p: any) => `obs ${p.value[0].toFixed(3)}<br/>model ${p.value[1].toFixed(3)}` },
       grid: { left: 60, right: 30, top: 20, bottom: 50 },
-      xAxis: { type: 'value', name: 'Observed', nameLocation: 'middle', nameGap: 28, min: lo, max: hi, axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'value', name: 'Model', nameLocation: 'middle', nameGap: 42, min: lo, max: hi, axisLabel: { fontSize: 10 } },
+      xAxis: { type: 'value', name: varUnit.value ? `Observed (${varUnit.value})` : 'Observed', nameLocation: 'middle', nameGap: 28, min: lo, max: hi, axisLabel: { fontSize: 10 } },
+      yAxis: { type: 'value', name: varUnit.value ? `Model (${varUnit.value})` : 'Model', nameLocation: 'middle', nameGap: 42, min: lo, max: hi, axisLabel: { fontSize: 10 } },
       series: [
         { type: 'scatter', data: pts, symbolSize: 4, itemStyle: { color: 'rgba(255,152,0,0.55)' } },
         { type: 'line', data: [[lo, lo], [hi, hi]], symbol: 'none', lineStyle: { type: 'dashed', color: 'rgba(255,255,255,0.4)' } },
@@ -215,7 +218,7 @@ function renderChart() {
       tooltip: { trigger: 'axis' },
       grid: { left: 60, right: 30, top: 20, bottom: 50 },
       xAxis: { type: 'time', axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'value', name: 'Model − obs', nameLocation: 'middle', nameGap: 42, axisLabel: { fontSize: 10 } },
+      yAxis: { type: 'value', name: varUnit.value ? `Model − obs (${varUnit.value})` : 'Model − obs', nameLocation: 'middle', nameGap: 42, axisLabel: { fontSize: 10 } },
       series: [
         { type: 'line', data: pts, symbol: 'none', connectNulls: false, lineStyle: { color: '#ff9800', width: 1.2 } },
         { type: 'line', markLine: { symbol: 'none', silent: true, data: [{ yAxis: 0 }], lineStyle: { color: 'rgba(255,255,255,0.35)', type: 'dashed' } }, data: [] },
@@ -228,7 +231,7 @@ function renderChart() {
       legend: { data: ['Model', 'Sensor'], top: 0, textStyle: { fontSize: 10 } },
       grid: { left: 60, right: 30, top: 30, bottom: 50 },
       xAxis: { type: 'category', data: MONTH_LABELS, axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'value', axisLabel: { fontSize: 10 } },
+      yAxis: { type: 'value', name: varUnit.value, nameLocation: 'middle', nameGap: 42, axisLabel: { fontSize: 10 } },
       series: [
         { name: 'Model', type: 'line', data: clim.map(m => m.model), symbol: 'circle', symbolSize: 5, lineStyle: { color: '#ff9800' }, itemStyle: { color: '#ff9800' } },
         { name: 'Sensor', type: 'line', data: clim.map(m => m.sensor), symbol: 'circle', symbolSize: 5, lineStyle: { color: '#a5d6a7' }, itemStyle: { color: '#a5d6a7' } },

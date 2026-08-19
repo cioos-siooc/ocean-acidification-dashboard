@@ -25,6 +25,17 @@
 # the colormap (see colormaps.json) before coloring a tile — independent of
 # `precision`, which only controls storage/transport quantization.
 #
+# alt_units: optional list of alternate *display-only* units a variable can
+# be toggled to in the frontend (see colorbarSettings.vue). `unit` above
+# stays the one canonical unit everything is stored/queried in — nothing
+# here changes ClickHouse, ingestion, or tile rendering. Each entry is a
+# linear map from the canonical unit: `display = canonical * scale + offset`
+# (offset defaults to 0, so a pure scalar factor just omits it). Only add an
+# entry here if the conversion truly is linear — e.g. salinity (PSU vs g/kg)
+# and pH scale are deliberately absent because they need TEOS-10-style
+# lon/lat/pressure-dependent conversion, not a fixed scale/offset (same gap
+# as sensors.variables' conversion_factor, see shared/variable_config.py).
+#
 # LiveOcean is intentionally not covered here — support for it was removed
 # entirely (not yet being implemented), so there's nothing to migrate.
 
@@ -93,6 +104,10 @@ variables:
     colormapMin: 0.01
     colormapMax: 25
     precision: 0.01
+    alt_units:
+      - unit: "°F"
+        scale: 1.8
+        offset: 32
   salinity:
     name: "Salinity"
     unit: "g/kg"
@@ -114,6 +129,13 @@ variables:
     colormapMin: 0.1
     colormapMax: 450
     precision: 0.1
+    # Inverse of sensors.variables' conversion_factor for the same units
+    # (mg/L x31.25, mL/L x44.66 -> mmol/m3), see project-sensor-unit-conversions.
+    alt_units:
+      - unit: "mg/L"
+        scale: 0.032
+      - unit: "mL/L"
+        scale: 0.022392
   dissolved_inorganic_carbon:
     name: "Dissolved Inorganic Carbon"
     unit: "mmol/m³"

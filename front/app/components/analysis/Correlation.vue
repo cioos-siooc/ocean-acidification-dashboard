@@ -61,8 +61,8 @@ const props = defineProps<{
 }>()
 
 function varName(id: string) { return availableVariables.find(v => v.id === id)?.name || id }
-const { variableUnit } = useVariableRegistry()
-function axisName(id: string) { const u = variableUnit(id); return u ? `${varName(id)} (${u})` : varName(id) }
+const { displayUnit } = useVariableRegistry()
+function axisName(id: string) { const u = displayUnit(id); return u ? `${varName(id)} (${u})` : varName(id) }
 
 const selectableVariables = availableVariables
 const MAX_VARS = 4

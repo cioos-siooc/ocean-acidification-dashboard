@@ -36,8 +36,8 @@ import {
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable?: string }>()
 
-const { variableUnit } = useVariableRegistry()
-const unit = computed(() => props.variable ? variableUnit(props.variable) : '')
+const { displayUnit } = useVariableRegistry()
+const unit = computed(() => props.variable ? displayUnit(props.variable) : '')
 
 const windowDays = ref(5)
 const climatology = computed(() => computeClimatologyBaseline(props.series, windowDays.value))

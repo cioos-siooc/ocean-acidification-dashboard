@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useRuntimeConfig } from '#app';
 import type { BinMode } from './useTimeDepthWindow';
 import { createRequestCache } from './useRequestCache';
+import { useVariableRegistry } from './useVariableRegistry';
 
 export type DepthProfileResponse = {
     time: string[];               // ISO bin-start strings at the requested resolution, ascending
@@ -72,8 +73,16 @@ export async function fetchDepthProfile(params: DepthProfileFetchParams): Promis
 
     const cache = params.sensorId ? sensorCache : modelCache;
     const key = JSON.stringify(body);
-    return cache.fetch(key, async () => {
+    const raw = await cache.fetch(key, async () => {
         const response = await axios.post(`${apiBaseUrl}/depthProfile`, body);
         return response.data;
     });
+
+    // Cached grid is canonical (keyed only by request params, not by unit) —
+    // build fresh [depth][time] arrays converted to the current display unit
+    // rather than mutating the cached grid in place.
+    const { toDisplayValue } = useVariableRegistry();
+    const convertGrid = (grid: (number | null)[][] | null) =>
+        grid ? grid.map((row) => row.map((v) => toDisplayValue(params.var, v))) : grid;
+    return { ...raw, model: convertGrid(raw.model), sensor: convertGrid(raw.sensor) };
 }
