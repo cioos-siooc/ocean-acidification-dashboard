@@ -627,10 +627,13 @@ const lineChart = ref<InstanceType<typeof TimeseriesChart> | null>(null)
  * The model series is sliced straight out of `grid` — the section above was
  * fetched at every depth, so the selected level costs no extra request. The
  * climatology envelope does need one: `/extract_climateTimeseries` returns
- * one point per *calendar day* in the window (deduped by month/day before
- * querying, so a 20-year window is no more expensive than a 14-day one), so
- * it draws correctly at every bin mode — a single annual cycle at daily, or
- * that same cycle repeating across the monthly window's two decades.
+ * one point per *calendar day* in the window at daily/hourly bin mode
+ * (deduped by month/day before querying, so a 20-year window is no more
+ * expensive than a 14-day one) — a single annual cycle, repeated across the
+ * window's span. At monthly bin mode it instead requests month-of-year
+ * aggregation (`binMode`), one point per calendar month, so the overlay's
+ * resolution matches the monthly view's own coarse bins instead of showing
+ * day-level texture stretched across the window's two decades.
  */
 async function updateLineChart() {
   // The chart only exists in the series sub-view now — depth sections are
@@ -660,6 +663,7 @@ async function updateLineChart() {
         depth: depths.value[d]!,
         fromDate: toApiIso(new Date(windowStart.value.getTime() - 86400e3)),
         toDate: toApiIso(new Date(chartWindowEnd.value.getTime() + 86400e3)),
+        binMode: binMode.value,
       })
       clim = resp?.data ?? null
     } catch {

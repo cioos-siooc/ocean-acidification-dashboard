@@ -10,14 +10,19 @@ type ClimateTimeseriesParams = {
     depth: number | null;
     fromDate: string;
     toDate: string;
+    binMode?: 'hourly' | 'daily' | 'monthly';
 };
 
 // Climatology, always model-backed — matches the backend's `_model_cache` TTL.
 const cache = createRequestCache<any>(1_200_000);
 
 /**
- * POSTs to /extract_climateTimeseries — the day-of-year climatological
- * min/mean/max envelope at a point and depth, over a date window.
+ * POSTs to /extract_climateTimeseries — the climatological min/mean/max
+ * envelope at a point and depth, over a date window. `binMode: 'monthly'`
+ * requests month-of-year aggregation (12 points/year) instead of the default
+ * day-of-year one (365 points/year), so the overlay's resolution matches the
+ * monthly view's own coarse bins rather than showing day-level texture
+ * stretched across a 20-year window.
  *
  * Returns the raw axios response so callers can hand `.data` straight to
  * TimeseriesChart's `plot()`, which expects rows of
@@ -38,6 +43,7 @@ export async function fetchClimateTimeseries(params: ClimateTimeseriesParams) {
         depth: params.depth,
         fromDate: params.fromDate,
         toDate: params.toDate,
+        bin_mode: params.binMode === 'monthly' ? 'monthly' : 'daily',
     }));
 
     if (!Array.isArray(raw?.data)) return raw;

@@ -3,8 +3,10 @@
 Climatology timeseries extraction from ClickHouse SalishSeaCast_daily.
 
 For a given lat/lon/variable/depth and a date window, aggregates all available
-historical years to produce daily climatological mean, min, and max — one entry
-per calendar day in the window mapped back onto the requested dates.
+historical years to produce climatological mean, min, and max — one entry per
+calendar day (day-of-year grouping) or per calendar month (month-of-year
+grouping, for `bin_mode='monthly'`) in the window, mapped back onto the
+requested dates.
 """
 import math
 import logging
@@ -22,14 +24,21 @@ def _clean(v):
     return None if (math.isnan(f) or math.isinf(f)) else round(f, 6)
 
 
-def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date):
+def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, bin_mode='daily'):
     """
-    Returns [{requested_date, mean, min, max}, ...] — one entry per calendar
-    day in [from_date, to_date], with climatological stats aggregated across
-    all available years in SalishSeaCast_daily.
+    Returns [{requested_date, mean, min, max}, ...] with climatological stats
+    aggregated across all available years in SalishSeaCast_daily.
 
-    requested_date is set to noon UTC on each day so it plots centred within
-    the day on the hourly-resolution model chart.
+    For `bin_mode='daily'`/`'hourly'`, one entry per calendar day in
+    [from_date, to_date], grouped by day-of-year — a single annual cycle,
+    repeated across the window's span. requested_date is set to noon UTC on
+    each day so it plots centred within the day on the hourly-resolution
+    model chart.
+
+    For `bin_mode='monthly'`, one entry per calendar month in the window,
+    grouped by month-of-year only (12 points/year) — matching the monthly
+    view's own coarse bins instead of overlaying a much finer day-of-year
+    cycle stretched across the 20-year window.
     """
     from modules.ocean_analysis import lookup_nearest_grid_cell
 
@@ -57,9 +66,66 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date):
             return []
         depth_sel = float(r.result_rows[0][0])
 
-    # Generate all calendar days in the window
+    col_mean = f"{variable}_mean"
+    col_min  = f"{variable}_min"
+    col_max  = f"{variable}_max"
+
     start_dt = pd.to_datetime(from_date).normalize()
     end_dt = pd.to_datetime(to_date).normalize()
+
+    if bin_mode == 'monthly':
+        # One point per calendar month in the window, grouped by month-of-year
+        # only — 12 climatological values, not 365 — so the overlay matches
+        # the monthly view's own coarse bins instead of showing a much finer
+        # day-of-year cycle stretched across the 20-year window.
+        months = pd.date_range(start=start_dt.replace(day=1), end=end_dt, freq='MS')
+        if len(months) == 0:
+            return []
+
+        month_nums = sorted({int(m.month) for m in months})
+        mo_sql = ", ".join(str(mo) for mo in month_nums)
+
+        query = f"""
+            SELECT
+                toMonth(time) AS mo,
+                avg({col_mean}),
+                min({col_min}),
+                max({col_max})
+            FROM SalishSeaCast_daily
+            WHERE gridX = {grid_x}
+              AND gridY = {grid_y}
+              AND depth = {depth_sel}
+              AND toYear(time) <= 2025
+              AND toMonth(time) IN ({mo_sql})
+            GROUP BY mo
+            ORDER BY mo
+        """
+
+        result = client.query(query)
+        lookup = {
+            int(row[0]): (_clean(row[1]), _clean(row[2]), _clean(row[3]))
+            for row in result.result_rows
+        }
+
+        output = []
+        for m in months:
+            key = int(m.month)
+            if key in lookup:
+                mean_v, min_v, max_v = lookup[key]
+                output.append({
+                    'requested_date': m.strftime('%Y-%m-%dT00:00:00'),
+                    'mean': mean_v,
+                    'min':  min_v,
+                    'max':  max_v,
+                })
+
+        logger.info(
+            "Climatology: %d months returned for %s at depth=%.2f (grid %d,%d)",
+            len(output), variable, depth_sel, grid_x, grid_y,
+        )
+        return output
+
+    # daily/hourly: one entry per calendar day, grouped by day-of-year
     days = pd.date_range(start=start_dt, end=end_dt, freq='D')
     if len(days) == 0:
         return []
@@ -67,10 +133,6 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date):
     # Build (month, day) IN list — deduped so year-spanning windows don't repeat
     month_day_pairs = sorted({(int(d.month), int(d.day)) for d in days})
     md_sql = ", ".join(f"({mo}, {dy})" for mo, dy in month_day_pairs)
-
-    col_mean = f"{variable}_mean"
-    col_min  = f"{variable}_min"
-    col_max  = f"{variable}_max"
 
     query = f"""
         SELECT

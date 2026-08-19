@@ -675,10 +675,11 @@ class climate_timeseriesRequest(BaseModel):
     depth: float
     fromDate: str
     toDate: str
+    bin_mode: str = 'daily'
 
 @app.post("/extract_climateTimeseries")
 async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_request: Request):
-    logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
+    logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}, bin_mode={request.bin_mode}")
     key = response_cache.make_key("extract_climateTimeseries", request)
     cached = response_cache.get_model(key)
     if cached is not None:
@@ -692,6 +693,7 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_
             extract_climate_timeseries,
             lat=request.lat, lon=request.lon, variable=request.var,
             depth=request.depth, from_date=request.fromDate, to_date=request.toDate,
+            bin_mode=request.bin_mode,
         )
         if result is None:
             logger.error("extract_climate_timeseries returned None")

@@ -78,7 +78,7 @@
       />
 
       <!-- Query mode toggle -->
-      <div style="position: absolute; top: 10px; right: 10px; z-index: 10">
+      <!-- <div style="position: absolute; top: 10px; right: 10px; z-index: 10">
         <v-btn-toggle
           :model-value="mainStore.queryMode"
           mandatory
@@ -94,7 +94,7 @@
             <span class="ml-1" style="font-size: 0.7rem">Area</span>
           </v-btn>
         </v-btn-toggle>
-      </div>
+      </div> -->
 
       <!-- Multi-sensor location picker (exact same coordinate) -->
       <SensorPickerPopover
@@ -1739,6 +1739,8 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
   position: relative;
   flex-direction: column;
   align-items: stretch;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.35);
 }
 
 /* Handle sits in the layout flow as a reserved band above the content,
