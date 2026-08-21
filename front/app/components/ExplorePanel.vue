@@ -1,25 +1,27 @@
 <template>
-  <div class="model-depth-profile d-flex flex-column fill-height pa-3" ref="rootRef">
+  <div class="model-depth-profile flex flex-col h-full p-3" ref="rootRef">
     <!-- No point picked yet — the whole view is keyed off one map coordinate. -->
-    <div v-if="!point" class="d-flex flex-column align-center justify-center flex-grow-1 text-center px-6">
-      <v-icon size="56" color="grey-darken-1">mdi-layers-search</v-icon>
-      <div class="text-caption text-grey-darken-1 mt-2">
+    <div v-if="!point" class="flex flex-col items-center justify-center grow text-center px-6">
+      <UIcon name="i-mdi-layers-search" class="size-[56px] text-gray-500" />
+      <div class="text-gray-500 mt-2">
         Click a point on the map to see its full water-column section over time.
       </div>
     </div>
 
     <template v-else>
-      <div class="d-flex align-center mb-2" style="gap:8px;">
-        <v-btn-toggle v-model="binMode" mandatory variant="tonal" :disabled="loading">
-          <v-btn v-for="m in AVAILABLE_MODES" :key="m" :value="m" size="x-small" :title="BIN_CONFIG[m].label">
-            {{ BIN_CONFIG[m].short }}
-          </v-btn>
-        </v-btn-toggle>
+      <div class="flex items-center mb-2" style="gap:8px;">
+        <SegmentedControl
+          v-model="binMode"
+          :items="binModeItems"
+          size="xs"
+          :disabled="loading"
+          aria-label="Time bin resolution"
+        />
         <!-- Which sub-view (Timeseries / Model depth / Sensor depth) is showing
              is picked from the footer's nav rail now, not a toggle in here. -->
-        <v-progress-circular v-if="loading" indeterminate size="14" width="2" color="teal" />
+        <UIcon name="i-mdi-loading" class="animate-spin size-[14px] text-teal-400" v-if="loading" />
 
-        <v-spacer />
+        <div class="grow" />
 
         <!-- Model clock: steps/animates which timestamp the raster layer paints.
            Shared across all three sub-views — the depth sections' "MAP" marker
@@ -28,30 +30,28 @@
           <TimeControls hide-date-picker />
         </div>
 
-        <v-spacer />
-        <v-btn icon="mdi-chevron-left" size="x-small" variant="text" :disabled="!canPageBack || loading"
-          @click="pageWindow(-1)" />
-        <v-menu v-model="dateMenuOpen" :close-on-content-click="false" :disabled="loading" location="bottom">
-          <template #activator="{ props: menuProps }">
-            <span v-bind="menuProps" class="text-caption range-label range-label--clickable" title="Jump to a date">{{
-              rangeLabel }}</span>
-          </template>
-          <v-card>
-            <v-date-picker v-model="pickedDate" hide-header show-adjacent-months :min="minDateStr" :max="maxDateStr" />
-            <v-card-actions>
-              <v-spacer />
-              <v-btn variant="text" @click="dateMenuOpen = false">Cancel</v-btn>
-              <v-btn color="primary" variant="text" @click="confirmDatePickAndUnpin">OK</v-btn>
-            </v-card-actions>
-          </v-card>
-        </v-menu>
-        <v-btn icon="mdi-chevron-right" size="x-small" variant="text" :disabled="!canPageForward || loading"
-          @click="pageWindow(1)" />
+        <div class="grow" />
+        <UButton variant="ghost" size="xs" icon="i-mdi-chevron-left" class="shrink-0" :disabled="!canPageBack || loading" @click="pageWindow(-1)" />
+        <UPopover v-model:open="dateMenuOpen" arrow :content="{ side: 'bottom' }" :disabled="loading">
+  <span class="range-label range-label--clickable" title="Jump to a date">{{
+                rangeLabel }}</span>
+  <template #content>
+    <div class="bg-elevated rounded-lg">
+                <UCalendar v-model="pickedCalendarDate" :min-value="minCalendarDate" :max-value="maxCalendarDate" />
+                <div class="flex items-center gap-2 px-2 py-2">
+                  <div class="grow" />
+                  <UButton variant="ghost" @click="dateMenuOpen = false">Cancel</UButton>
+                  <UButton variant="ghost" color="primary" @click="confirmDatePickAndUnpin">OK</UButton>
+                </div>
+              </div>
+  </template>
+</UPopover>
+        <UButton variant="ghost" size="xs" icon="i-mdi-chevron-right" class="shrink-0" :disabled="!canPageForward || loading" @click="pageWindow(1)" />
       </div>
 
-      <v-alert v-if="loadError" type="error" variant="tonal" border="start" density="compact" class="mb-2">
+      <UAlert color="error" variant="subtle" class="mb-2" v-if="loadError">
         {{ loadError }}
-      </v-alert>
+      </UAlert>
 
       <ChartContextBar :items="contextItems" />
 
@@ -75,7 +75,7 @@
              rect to measure. -->
         <div ref="depthHeaderRef" class="info-row" :class="{ 'info-row--compact': !showSection }">
           <template v-if="showSection">
-            <v-spacer />
+            <div class="grow" />
             <!-- Scale is the map's; its colorbar is the legend. Only the
                  "no data" convention is specific to this view. -->
             <div class="legend">
@@ -92,7 +92,7 @@
         </div>
 
         <div v-if="loading" class="loading-overlay">
-          <v-progress-circular indeterminate size="42" width="3" color="teal" />
+          <UIcon name="i-mdi-loading" class="animate-spin size-[42px] text-teal-400" />
         </div>
       </div>
     </template>
@@ -113,6 +113,8 @@ import TimeDepthHeatmap from './depth/TimeDepthHeatmap.vue'
 import TimeseriesChart from './TimeseriesChart.vue'
 import TimeControls from './TimeControls.vue'
 import ChartContextBar from './ChartContextBar.vue'
+import SegmentedControl from './ui/SegmentedControl.vue'
+import { toCalendarDate, fromCalendarDate } from '~~/composables/useCalendarDate'
 
 /**
  * Explore: the one footer pane that is tied to the map.
@@ -159,6 +161,13 @@ const depths = computed<number[]>(() => {
 // Monthly is offered here (unlike the Comparison view) because the daily table
 // reaches back ~two decades at any grid cell — see the coverage note below.
 const AVAILABLE_MODES: BinMode[] = ['hourly', 'daily', 'monthly']
+const pickedCalendarDate = computed({
+  get: () => toCalendarDate(pickedDate.value),
+  set: (v) => { pickedDate.value = fromCalendarDate(v) },
+})
+const minCalendarDate = computed(() => toCalendarDate(minDateStr.value) ?? undefined)
+const maxCalendarDate = computed(() => toCalendarDate(maxDateStr.value) ?? undefined)
+const binModeItems = computed(() => AVAILABLE_MODES.map(m => ({ value: m, label: BIN_CONFIG[m].short, title: BIN_CONFIG[m].label })))
 // Lives in the store, not a local ref: the vertical profile drawer (a sibling
 // under index.vue, not a child of this panel) reads it to aggregate its own
 // profile the same way this panel's depth section is currently binned.

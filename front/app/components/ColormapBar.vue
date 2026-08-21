@@ -3,25 +3,27 @@
         <div style="flex: 1; min-width: 0;">
             <div class="bar" :style="barStyle"></div>
             <div class="ticks">
-                <div class="tick left text-label-small">{{ displayMin?.toFixed(precisionDigits) }}</div>
-                <div class="tick center text-label-small">{{ colormapAvg }}</div>
-                <div class="tick right text-label-small">{{ displayMax?.toFixed(precisionDigits) }}</div>
+                <div class="tick left text-[11px] font-medium">{{ displayMin?.toFixed(precisionDigits) }}</div>
+                <div class="tick center text-[11px] font-medium">{{ colormapAvg }}</div>
+                <div class="tick right text-[11px] font-medium">{{ displayMax?.toFixed(precisionDigits) }}</div>
             </div>
         </div>
         <div style="flex: 0 0 auto; padding-bottom: 2px;">
-            <v-menu v-if="unitOptions.length > 1" location="top">
-                <template #activator="{ props: menuProps }">
-                    <button v-bind="menuProps" type="button" class="unit-label unit-label--clickable">
-                        {{ unit }}<v-icon size="10px" class="ml-1">mdi-menu-down</v-icon>
-                    </button>
-                </template>
-                <v-list density="compact" min-width="0">
-                    <v-list-item v-for="u in unitOptions" :key="u" :active="u === unit"
-                        @click="mainStore.setUnitPreference(selectedVariable.var, u)">
-                        <v-list-item-title class="text-caption">{{ u }}</v-list-item-title>
-                    </v-list-item>
-                </v-list>
-            </v-menu>
+            <UPopover v-if="unitOptions.length > 1" arrow :content="{ side: 'top' }">
+  <button type="button" class="unit-label unit-label--clickable">
+                          {{ unit }}<UIcon name="i-mdi-menu-down" class="size-[10px] ml-1" />
+                      </button>
+  <template #content>
+    <div class="py-1">
+                        <div v-for="u in unitOptions" :key="u" role="button" tabindex="0"
+                            class="px-3 py-1 text-sm cursor-pointer hover:bg-elevated"
+                            :class="u === unit ? 'text-primary font-medium' : ''"
+                            @click="mainStore.setUnitPreference(selectedVariable.var, u)">
+                            {{ u }}
+                        </div>
+                    </div>
+  </template>
+</UPopover>
             <span v-else class="unit-label">{{ unit }}</span>
         </div>
     </div>

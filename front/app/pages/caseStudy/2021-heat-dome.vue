@@ -1,5 +1,5 @@
 <template>
-  <v-main class="case-study">
+  <main class="grow min-h-0 case-study">
     <div class="wrap col back-row">
       <NuxtLink to="/" class="back-link">&larr; Back to the map</NuxtLink>
     </div>
@@ -18,10 +18,10 @@
         </div>
 
         <div class="stat-strip">
-          <v-card v-for="s in stats" :key="s.label" class="stat" elevation="0">
+          <div v-for="s in stats" :key="s.label" class="stat">
             <span class="num">{{ s.num }}</span>
             <span class="label">{{ s.label }}</span>
-          </v-card>
+          </div>
         </div>
       </div>
     </header>
@@ -30,37 +30,37 @@
 
       <section>
         <div class="col">
-          <v-chip class="tag" variant="outlined" size="small" label>01 &mdash; Explore &middot; Timeseries</v-chip>
+          <UBadge size="sm" variant="outline" class="tag">01 &mdash; Explore &middot; Timeseries</UBadge>
           <h2>The spike at the surface</h2>
           <p class="lede">Two weeks tell the whole story. Pick a point in the central Strait of Georgia, set the depth to the surface, and watch the daily model line climb through the top of its own climatology.</p>
           <p>OceanECO always plots a variable against its own history &mdash; a shaded band running from the historical minimum to maximum for that day of year, with the long&#8209;term mean dashed through the middle. On June 12, 2021, surface temperature at this point was an unremarkable 14.5&nbsp;&deg;C. Seventeen days later it was <span class="stat-inline">20.9&nbsp;&deg;C</span>. A week after that, <span class="stat-inline">22.1&nbsp;&deg;C</span>. The model line doesn't just rise &mdash; for most of July it sits above the shaded &ldquo;Max&rdquo; band entirely, which is the chart's plain-language way of saying: this hadn't happened before in the record it's comparing against.</p>
         </div>
         <figure class="shot">
-          <v-card class="frame" elevation="0">
+          <div class="frame">
             <img src="/case-studies/2021-heat-dome/timeseries.webp" alt="OceanECO Timeseries pane showing daily surface temperature at 49.2N -123.5W for the year ending June 2021, with the model line rising sharply above the shaded historical max band in late June and peaking above 22 degrees C.">
-          </v-card>
+          </div>
           <figcaption><span class="fig-no mono">FIG&nbsp;1</span><span class="fig-text">Explore &rarr; Timeseries, Temperature at 0.5&nbsp;m, daily bins, window centred on Jun&nbsp;29,&nbsp;2021. The orange &ldquo;MAP&rdquo; marker sits at the day the raster layer is painting; the model line pushes well past the blue &ldquo;Max&rdquo; band through most of July.</span></figcaption>
         </figure>
       </section>
 
       <section>
         <div class="col">
-          <v-chip class="tag" variant="outlined" size="small" label>02 &mdash; Analysis &middot; Extreme Events</v-chip>
+          <UBadge size="sm" variant="outline" class="tag">02 &mdash; Analysis &middot; Extreme Events</UBadge>
           <h2>Thirty-three days above threshold</h2>
           <p class="lede">The same point's full record, run through a marine-heatwave detector, without telling it where to look.</p>
           <p>OceanECO's Extreme Events tool flags any run of days crossing the 90th percentile of a day-of-year climatological baseline &mdash; the standard marine&#8209;heatwave definition &mdash; then merges nearby runs and discards anything shorter than five days. Pointed at this location's full 2007&ndash;2026 daily record with no hints about 2021, it independently surfaces a run from <span class="stat-inline">July&nbsp;5 to August&nbsp;6, 2021</span>: 33 days, peaking at 24.5&nbsp;&deg;C, 4.5&nbsp;&deg;C above baseline. The per&#8209;year tally on the right puts 2021 at 4 events and 48 heatwave-days total &mdash; a lot, but not even the single worst year at this point: 2022 edges it out with a higher peak anomaly (+4.89&nbsp;&deg;C), a reminder that the tool is reporting what the record actually contains rather than confirming a story picked in advance.</p>
         </div>
         <figure class="shot">
-          <v-card class="frame" elevation="0">
+          <div class="frame">
             <img src="/case-studies/2021-heat-dome/extreme-events.png" alt="OceanECO Analysis Extreme Events tab showing nineteen years of daily temperature with detected heatwave events highlighted as vertical bands, and an events table listing a 33-day event from July 5 to August 6 2021 peaking at 24.5 degrees C.">
-          </v-card>
+          </div>
           <figcaption><span class="fig-no mono">FIG&nbsp;2</span><span class="fig-text">Analysis (Model) &rarr; Extreme Events, 90th&#8209;percentile threshold, 5&#8209;day minimum duration, 2&#8209;day merge gap &mdash; the built-in marine-heatwave methodology. Third row of the events table is the 2021 heat dome.</span></figcaption>
         </figure>
       </section>
 
       <section>
         <div class="col">
-          <v-chip class="tag" variant="outlined" size="small" label>03 &mdash; Explore &middot; Model depth</v-chip>
+          <UBadge size="sm" variant="outline" class="tag">03 &mdash; Explore &middot; Model depth</UBadge>
           <h2>How deep did it go</h2>
           <p class="lede">The Hovm&ouml;ller view answers a question the surface chart can't: did the rest of the water column feel this at all?</p>
           <p>Switching to Model depth trades the single-depth line for the whole water column at this point across a year &mdash; depth down, time across, colour for the variable. The temperature panel makes the answer obvious at a glance: the bright band is a thin skin, confined to roughly the top 20&nbsp;metres, sitting on top of water that stays cold and essentially unmoved year&#8209;round. Click June 29 and the companion depth profile on the right draws the same story as a single curve: about 21&nbsp;&deg;C at the surface, collapsing to 9&nbsp;&deg;C by 100&nbsp;metres &mdash; strong, heatwave&#8209;driven stratification, not a water&#8209;column&#8209;wide warming event.</p>
@@ -68,15 +68,15 @@
         </div>
         <div class="shot-pair">
           <figure class="shot">
-            <v-card class="frame" elevation="0">
+            <div class="frame">
               <img src="/case-studies/2021-heat-dome/depth-temperature.webp" alt="OceanECO Model depth Hovmoller heatmap of temperature across the full water column for one year, showing a bright warm band confined to the top 20 metres around late June 2021, with a stratified vertical profile shown alongside.">
-            </v-card>
+            </div>
             <figcaption><span class="fig-no mono">FIG&nbsp;3</span><span class="fig-text">Temperature, full column, daily bins. Warm band confined near-surface; profile drawer shows the Jun&nbsp;29 cast.</span></figcaption>
           </figure>
           <figure class="shot">
-            <v-card class="frame" elevation="0">
+            <div class="frame">
               <img src="/case-studies/2021-heat-dome/depth-omega.webp" alt="OceanECO Model depth Hovmoller heatmap of omega aragonite across the full water column for one year, showing a noisier, patchier signal than temperature and chronic undersaturation below about 20 metres.">
-            </v-card>
+            </div>
             <figcaption><span class="fig-no mono">FIG&nbsp;4</span><span class="fig-text">Omega Aragonite, same point and window. Noisier signal; chronic undersaturation below ~20&nbsp;m year&#8209;round.</span></figcaption>
           </figure>
         </div>
@@ -84,45 +84,45 @@
 
       <section>
         <div class="col">
-          <v-chip class="tag" variant="outlined" size="small" label>04 &mdash; Analysis &middot; Compound Stress</v-chip>
+          <UBadge size="sm" variant="outline" class="tag">04 &mdash; Analysis &middot; Compound Stress</UBadge>
           <h2>Warm and corrosive, at once</h2>
           <p class="lede">A single threshold rarely tells the whole ecological story. Compound Stress asks for two at a time.</p>
           <p>Set a joint condition &mdash; Temperature above 19&nbsp;&deg;C <em>and</em> Omega Aragonite below 1 on the same day &mdash; and OceanECO counts, per year, how often both held at once. In 2021 that's a comparatively modest <span class="stat-inline">4&nbsp;days</span>, in a longest streak of 2. 2022 is the standout year on this particular pairing, with 18 days and a 6&#8209;day streak &mdash; a useful check against assuming the year with the biggest heat anomaly must also be the year of worst compound stress. It usually isn't the same year twice.</p>
         </div>
         <figure class="shot">
-          <v-card class="frame" elevation="0">
+          <div class="frame">
             <img src="/case-studies/2021-heat-dome/compound-stress.png" alt="OceanECO Analysis Compound Stress tab configured for Temperature above 19 degrees C and Omega Aragonite below 1, with a per-year table of days both conditions held simultaneously.">
-          </v-card>
+          </div>
           <figcaption><span class="fig-no mono">FIG&nbsp;5</span><span class="fig-text">Analysis (Model) &rarr; Compound Stress: Temperature &gt; 19&nbsp;&deg;C vs. Omega Aragonite &lt; 1, per-year days and longest streak.</span></figcaption>
         </figure>
       </section>
 
       <section>
         <div class="col">
-          <v-chip class="tag" variant="outlined" size="small" label>05 &mdash; Analysis &middot; Climatology Anomaly</v-chip>
+          <UBadge size="sm" variant="outline" class="tag">05 &mdash; Analysis &middot; Climatology Anomaly</UBadge>
           <h2>The long view</h2>
           <p class="lede">Zoomed out to nineteen years, 2021 stops looking singular and starts looking like a data point in a widening spread.</p>
           <p>Climatology Anomaly re-plots every year's daily values as a deviation from the pooled day-of-year mean, all overlaid on one synthetic calendar. What jumps out isn't just 2021's summer excursions past +3&nbsp;&deg;C &mdash; it's how many other years, especially from the mid-2010s onward, reach into the same territory. The heat dome was extreme, but the chart it shows up on is one this location has been filling in with warmer and more erratic summers for a while.</p>
         </div>
         <figure class="shot">
-          <v-card class="frame" elevation="0">
+          <div class="frame">
             <img src="/case-studies/2021-heat-dome/climatology-anomaly.png" alt="OceanECO Analysis Climatology Anomaly tab showing every year from 2007 to 2026 overlaid as a deviation from the pooled day-of-year mean, a dense tangle of coloured lines with several years reaching well above zero in summer.">
-          </v-card>
+          </div>
           <figcaption><span class="fig-no mono">FIG&nbsp;6</span><span class="fig-text">Analysis (Model) &rarr; Climatology Anomaly, all 20 years overlaid, full season. Colour runs cool&#8209;to&#8209;warm from 2007 (blue) to 2026 (red).</span></figcaption>
         </figure>
       </section>
 
       <section style="margin-bottom: 0;">
         <div class="col">
-          <v-chip class="tag" variant="outlined" size="small" label>06 &mdash; Comparison &middot; Timeseries</v-chip>
+          <UBadge size="sm" variant="outline" class="tag">06 &mdash; Comparison &middot; Timeseries</UBadge>
           <h2>Does the water agree with the model?</h2>
           <p class="lede">A hindcast is only as useful as its agreement with something that was actually moored in the water. So we asked one.</p>
           <p>ONC's <strong>Boundary Pass Mooring</strong> sat at 223&nbsp;metres depth from October 2012 to August 2021, logging temperature the entire time &mdash; including straight through the 2021 heat dome. OceanECO's Comparison workspace lines its record up against the model at the matched depth: <span class="stat-inline">bias &minus;0.017&nbsp;&deg;C</span>, <span class="stat-inline">RMSE 0.284&nbsp;&deg;C</span>, <span class="stat-inline">Pearson r&nbsp;0.922</span> across 2,675 matched days. Model and sensor track each other closely for the whole record &mdash; and both stay flat between roughly 7 and 11&nbsp;&deg;C straight through the summer of 2021. At 223&nbsp;metres, an instrument that was actually there confirms what the model already said: the heat dome never reached it.</p>
         </div>
         <figure class="shot">
-          <v-card class="frame" elevation="0">
+          <div class="frame">
             <img src="/case-studies/2021-heat-dome/comparison.png" alt="OceanECO Comparison workspace Timeseries tab overlaying model and sensor temperature at Boundary Pass Mooring, 226 metres depth, from 2012 to 2021, with the two lines tracking closely and staying between roughly 7 and 11 degrees C throughout, including summer 2021.">
-          </v-card>
+          </div>
           <figcaption><span class="fig-no mono">FIG&nbsp;7</span><span class="fig-text">Comparison &rarr; Timeseries, Boundary Pass Mooring vs. model, 226.3&nbsp;m, full overlapping record. Right-hand panel: matched-day summary statistics.</span></figcaption>
         </figure>
       </section>
@@ -140,7 +140,7 @@
         </div>
       </div>
     </footer>
-  </v-main>
+  </main>
 </template>
 
 <script setup lang="ts">

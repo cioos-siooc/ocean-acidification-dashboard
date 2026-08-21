@@ -1,6 +1,6 @@
 import type moment from 'moment';
 import { defineStore } from 'pinia'
-import colors from 'vuetify/util/colors';
+import colors from '@/config/palette';
 import { trackEvent } from '~~/composables/useAnalytics';
 
 // Depths are plain numbers (the WebP filename stem too, e.g. 18.0 -> "18.0.webp")

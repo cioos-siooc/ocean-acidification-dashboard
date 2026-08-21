@@ -1,5 +1,5 @@
 <template>
-  <v-main class="cs-index">
+  <main class="grow min-h-0 cs-index">
     <header class="masthead">
       <div class="wrap">
         <span class="eyebrow">OceanECO &middot; Field Notes</span>
@@ -10,7 +10,7 @@
 
     <div class="wrap">
       <NuxtLink v-for="c in cases" :key="c.to" :to="c.to" class="case-card-link">
-        <v-card class="case-card" elevation="0">
+        <div class="case-card">
           <span class="tag mono">{{ c.tag }}</span>
           <h2>{{ c.title }}</h2>
           <p>{{ c.dek }}</p>
@@ -18,10 +18,10 @@
             <span v-for="s in c.stats" :key="s">{{ s }}</span>
           </div>
           <span class="read-link">Read the walkthrough &rarr;</span>
-        </v-card>
+        </div>
       </NuxtLink>
     </div>
-  </v-main>
+  </main>
 </template>
 
 <script setup lang="ts">

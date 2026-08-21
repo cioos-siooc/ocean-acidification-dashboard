@@ -1,26 +1,25 @@
 <template>
-    <v-navigation-drawer v-model="isOpen" location="right" width="300" class="pa-2" absolute persistent mobile
-        :scrim="false" style="height:100%; z-index:999; top:0;">
-        <v-row class="ma-0 pa-0 align-center" style="height: 38px;">
-            <div class="drawer-header flex-grow-1" style="min-width:0;">
-                <div class="title-text text-truncate">{{ title }}</div>
-                <div class="subtitle-text text-truncate">{{ timestamp }}</div>
+    <aside v-show="isOpen" class="p-2 absolute right-0 top-0 h-full w-[300px] overflow-y-auto bg-default border-l border-default"
+        style="z-index:999;">
+        <div class="flex flex-wrap m-0 p-0 items-center" style="height: 38px;">
+            <div class="drawer-header grow" style="min-width:0;">
+                <div class="title-text truncate">{{ title }}</div>
+                <div class="subtitle-text truncate">{{ timestamp }}</div>
             </div>
-            <v-btn icon size="20px" color="error" flat @click="isOpen = false">
-                <v-icon size="16px">mdi-close</v-icon>
-            </v-btn>
-        </v-row>
+            <UButton variant="solid" color="error" class="size-[20px] p-0 justify-center shrink-0" @click="isOpen = false">
+                <UIcon name="i-mdi-close" class="size-[16px]" />
+            </UButton>
+        </div>
 
         <div class="profile-chart-wrapper">
             <div ref="chartContainer" class="profile-chart"></div>
             <div v-if="statusMessage" class="profile-chart-overlay"
                 :class="{ loading: loading, error: !!errorMessage }">
-                <v-progress-circular v-if="loading" indeterminate color="warning" :size="64" :width="12"
-                    class="progress" />
+                <UIcon name="i-mdi-loading" class="animate-spin text-warning progress" :style="{ fontSize: 64 + 'px' }" v-if="loading" />
                 <span v-else>{{ statusMessage }}</span>
             </div>
         </div>
-    </v-navigation-drawer>
+    </aside>
 </template>
 
 <script setup lang="ts">

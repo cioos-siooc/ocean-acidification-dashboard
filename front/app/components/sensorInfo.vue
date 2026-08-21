@@ -1,139 +1,136 @@
 <template>
-    <v-card flat class="ma-0 pa-0">
-        <v-card-text>
+    <div class="rounded-lg m-0 p-0">
+        <div class="px-4 py-3">
             <div v-if="sensors.length === 0">
                 No sensors found.
             </div>
             <div v-else>
                 <!-- FILTERS -->
-                <v-row class="ma-0 pa-0" dense>
-                    <v-col cols="12" class="pa-1">
-                        <v-text-field v-model="searchQuery" label="Search sensors" hide-details clearable
-                            prepend-inner-icon="mdi-magnify" rounded></v-text-field>
-                    </v-col>
-                    <v-col cols="12" class="pa-1">
-                        <v-select v-model="organizationFilter" :items="organizationOptions" label="Organization"
-                            hide-details clearable multiple chips closable-chips></v-select>
-                    </v-col>
-                    <v-col cols="12" class="pa-1">
-                        <v-select v-model="variableFilter" :items="variableOptions" item-title="label"
-                            item-value="value" label="Variable" hide-details clearable multiple chips
-                            closable-chips></v-select>
-                    </v-col>
-                </v-row>
+                <div class="flex flex-wrap m-0 p-0">
+                    <div class="w-full p-1">
+                        <UFormField label="Search sensors">
+  <UInput v-model="searchQuery" icon="i-mdi-magnify" />
+</UFormField>
+                    </div>
+                    <div class="w-full p-1">
+                        <UFormField label="Organization">
+  <USelectMenu v-model="organizationFilter" :items="organizationOptions" clearable multiple class="w-full" />
+</UFormField>
+                    </div>
+                    <div class="w-full p-1">
+                        <UFormField label="Variable">
+  <USelectMenu v-model="variableFilter" :items="variableOptions" label-key="label" value-key="value" clearable multiple class="w-full" />
+</UFormField>
+                    </div>
+                </div>
 
-                <div v-if="filteredSensors.length === 0" class="text-center text-medium-emphasis pa-4">
+                <div v-if="filteredSensors.length === 0" class="text-center text-muted p-4">
                     No sensors match your filters.
                 </div>
 
                 <!-- SENSOR LIST -->
-                <v-list-item v-for="(sensor, i) in filteredSensors" :key="sensor.id" :ref="setSensorRef(sensor.id)"
-                    :active="sensor.id === selectedSensor?.id" @click="selectSensor(sensor.id)" variant="text"
-                    class="rounded my-3" color="yellow" :style="{ backgroundColor: '#33333399' }">
-                    <v-list-item-content>
-                        <v-list-item-title class="text-body-medium">
-                            <v-icon size="12px" :color="sensorStatusColor(sensor)">mdi-circle</v-icon>
+                <div v-for="(sensor, i) in filteredSensors" :key="sensor.id" :ref="setSensorRef(sensor.id)"
+                    role="button" tabindex="0" @click="selectSensor(sensor.id)" @keydown.enter="selectSensor(sensor.id)"
+                    class="rounded my-3 px-3 py-1 cursor-pointer hover:bg-white/5"
+                    :class="sensor.id === selectedSensor?.id ? 'ring-1 ring-yellow-400' : ''"
+                    :style="{ backgroundColor: '#33333399' }">
+                    <div>
+                        <div class="text-sm">
+                            <UIcon name="i-mdi-circle" :style="{ color: sensorStatusColor(sensor) }" class="size-[12px]" />
                             {{ sensor.name }}
-                        </v-list-item-title>
+                        </div>
 
                         <div class="ml-4">
-                            <v-list-item-subtitle class="text-label-small">
+                            <div class="text-[11px] font-medium text-muted">
                                 <span v-if="sensor.organization" class="sensor-org">{{ sensor.organization }} </span>
                                 {{ depth2txt(sensor) }}
-                            </v-list-item-subtitle>
-
-                            <v-list-item-subtitle class="text-label-small">
-                                {{ coordTxt(sensor.latitude, sensor.longitude) }}
-                            </v-list-item-subtitle>
-
-                            <v-list-item-subtitle class="text-label-small">{{ formatDataRange(sensor)
-                            }}</v-list-item-subtitle>
-
-                            <div class="mt-1 d-flex flex-wrap gap-1">
-                                <v-chip v-for="varKey in modelVariablesOf(sensor.variables)" :key="varKey"
-                                    size="x-small" variant="tonal" color="grey">
-                                    {{ variableLabel(varKey) }}
-                                </v-chip>
                             </div>
 
-                            <v-row class="mt-2 d-flex gap-1">
-                                <v-spacer />
-                                <v-col cols="1">
-                                    <v-btn icon size="x-small" variant="tonal" color="yellow"
-                                        @click.stop="openInfoDialog(sensor)">
-                                        <v-icon size="12px">mdi-information-variant</v-icon>
-                                    </v-btn>
-                                </v-col>
-                                <v-col cols="1">
-                                    <v-btn v-if="sensor.id === selectedSensor?.id" icon size="x-small" variant="tonal"
-                                        color="red-lighten-2" @click.stop="mainStore.setActiveBottomTab('comparison')">
-                                        <v-icon size="12px">mdi-chart-bar</v-icon>
-                                    </v-btn>
-                                </v-col>
-                            </v-row>
+                            <div class="text-[11px] font-medium text-muted">
+                                {{ coordTxt(sensor.latitude, sensor.longitude) }}
+                            </div>
+
+                            <div class="text-[11px] font-medium text-muted">{{ formatDataRange(sensor)
+                            }}</div>
+
+                            <div class="mt-1 flex flex-wrap gap-1">
+                                <UBadge size="xs" color="neutral" variant="subtle" class="rounded-full" v-for="varKey in modelVariablesOf(sensor.variables)" :key="varKey">
+                                    {{ variableLabel(varKey) }}
+                                </UBadge>
+                            </div>
+
+                            <div class="flex flex-wrap mt-2 flex gap-1">
+                                <div class="grow" />
+                                <div class="p-3 w-1/12">
+                                    <UButton variant="subtle" size="xs" color="neutral" class="shrink-0" @click.stop="openInfoDialog(sensor)">
+                                        <UIcon name="i-mdi-information-variant" class="size-[12px]" />
+                                    </UButton>
+                                </div>
+                                <div class="p-3 w-1/12">
+                                    <UButton variant="subtle" size="xs" color="neutral" class="shrink-0" v-if="sensor.id === selectedSensor?.id" @click.stop="mainStore.setActiveBottomTab('comparison')">
+                                        <UIcon name="i-mdi-chart-bar" class="size-[12px]" />
+                                    </UButton>
+                                </div>
+                            </div>
 
                         </div>
-                    </v-list-item-content>
-                </v-list-item>
+                    </div>
+                </div>
             </div>
-        </v-card-text>
-    </v-card>
+        </div>
+    </div>
 
 
     <!-- DIALOGS -->
     <!-- DEPTH PICKER (reserved for future variable-depth/profiler sensors) -->
 
     <!-- HEATMATP -->
-    <v-dialog v-model="showHeatmapDialog" width="85%" height="85%" transition="dialog-transition">
-        <HeatmapChart :sensor-id="heatmap_sensorId" :model-variable="heatmap_variable" />
-    </v-dialog>
+    <UModal v-model:open="showHeatmapDialog" :ui="{ content: 'max-w-[85vw]' }">
+        <template #content>
+            <HeatmapChart :sensor-id="heatmap_sensorId" :model-variable="heatmap_variable" />
+        </template>
+    </UModal>
 
     <!-- SENSOR INFO -->
-    <v-dialog v-model="showInfoDialog" width="480" transition="dialog-transition">
-        <v-card v-if="infoDialogSensor">
-            <v-card-title class="d-flex align-center">
-                <v-icon size="14px" :color="sensorStatusColor(infoDialogSensor)" class="mr-2">mdi-circle</v-icon>
+    <UModal v-model:open="showInfoDialog" :ui="{ content: 'max-w-[480px]' }">
+        <template #content>
+        <div class="bg-elevated rounded-lg" v-if="infoDialogSensor">
+            <div class="px-4 pt-4 pb-2 text-lg flex items-center">
+                <UIcon name="i-mdi-circle" :style="{ color: sensorStatusColor(infoDialogSensor) }" class="size-[14px] mr-2" />
                 {{ infoDialogSensor.name }}
-            </v-card-title>
-            <v-card-subtitle v-if="infoDialogSensor.organization">{{ infoDialogSensor.organization }}</v-card-subtitle>
-            <v-card-text>
-                <v-list>
-                    <v-list-item>
-                        <v-list-item-title class="text-caption text-medium-emphasis">Location</v-list-item-title>
-                        <v-list-item-subtitle>{{ coordTxt(infoDialogSensor.latitude, infoDialogSensor.longitude)
-                            }}</v-list-item-subtitle>
-                    </v-list-item>
-                    <v-list-item>
-                        <v-list-item-title class="text-caption text-medium-emphasis">Depth</v-list-item-title>
-                        <v-list-item-subtitle>{{ depth2txt(infoDialogSensor) }}</v-list-item-subtitle>
-                    </v-list-item>
-                    <v-list-item>
-                        <v-list-item-title class="text-caption text-medium-emphasis">Data range</v-list-item-title>
-                        <v-list-item-subtitle>{{ formatDataRange(infoDialogSensor) }}</v-list-item-subtitle>
-                    </v-list-item>
-                    <v-list-item>
-                        <v-list-item-title class="text-caption text-medium-emphasis">Variables</v-list-item-title>
+            </div>
+            <div class="px-4 pb-2 text-sm text-muted" v-if="infoDialogSensor.organization">{{ infoDialogSensor.organization }}</div>
+            <div class="px-4 py-3">
+                <div>
+                    <div class="px-4 py-1"><div class="text-muted text-xs">Location</div>
+                        <div class="text-sm">{{ coordTxt(infoDialogSensor.latitude, infoDialogSensor.longitude)
+                            }}</div>
+                    </div>
+                    <div class="px-4 py-1"><div class="text-muted text-xs">Depth</div>
+                        <div class="text-sm">{{ depth2txt(infoDialogSensor) }}</div>
+                    </div>
+                    <div class="px-4 py-1"><div class="text-muted text-xs">Data range</div>
+                        <div class="text-sm">{{ formatDataRange(infoDialogSensor) }}</div>
+                    </div>
+                    <div class="px-4 py-1"><div class="text-muted text-xs">Variables</div>
                         <!-- Sensors with nothing to download (ONC, or an ERDDAP link of an
                              unrecognized layout) fall back to a plain list. -->
-                        <v-list-item-subtitle v-if="!infoDownloads?.variables.length">
+                        <div class="text-sm" v-if="!infoDownloads?.variables.length">
                             {{ infoDialogVariables.map(variableLabel).join(', ') }}
-                        </v-list-item-subtitle>
+                        </div>
                         <div v-else>
                             <div v-for="v in infoDownloads.variables" :key="v.canonical"
-                                class="d-flex align-center gap-1 mt-2">
+                                class="flex items-center gap-1 mt-2">
                                 <span class="var-name">{{ variableLabel(v.canonical) }}</span>
-                                <v-btn v-if="v.nc" size="x-small" variant="tonal" color="yellow"
-                                    prepend-icon="mdi-download" :href="v.nc" target="_blank" rel="noopener">
+                                <UButton variant="subtle" size="xs" color="neutral" v-if="v.nc" leading-icon="i-mdi-download" :href="v.nc" target="_blank" rel="noopener">
                                     NetCDF
-                                </v-btn>
-                                <v-btn v-if="v.csv" size="x-small" variant="tonal" color="yellow"
-                                    prepend-icon="mdi-download" :href="v.csv" target="_blank" rel="noopener">
+                                </UButton>
+                                <UButton variant="subtle" size="xs" color="neutral" v-if="v.csv" leading-icon="i-mdi-download" :href="v.csv" target="_blank" rel="noopener">
                                     CSV
-                                </v-btn>
-                                <v-btn v-if="v.page" size="x-small" variant="tonal" color="yellow"
-                                    prepend-icon="mdi-open-in-new" :href="v.page" target="_blank" rel="noopener">
+                                </UButton>
+                                <UButton variant="subtle" size="xs" color="neutral" v-if="v.page" leading-icon="i-mdi-open-in-new" :href="v.page" target="_blank" rel="noopener">
                                     Oceans 3.0
-                                </v-btn>
+                                </UButton>
                             </div>
                             <!-- ONC has no direct-download URL: Oceans 3.0 is a cart/order
                                  flow, so say so rather than let the buttons imply a file. -->
@@ -142,28 +139,28 @@
                                 Search with that instrument selected.
                             </div>
                         </div>
-                    </v-list-item>
+                    </div>
 
-                </v-list>
-            </v-card-text>
-            <v-divider v-if="infoDownloads"></v-divider>
-            <v-card-actions>
-                <v-btn v-if="infoDownloads?.dataset" size="x-small" variant="tonal" prepend-icon="mdi-open-in-new"
-                    :href="infoDownloads.dataset" target="_blank" rel="noopener">
+                </div>
+            </div>
+            <USeparator v-if="infoDownloads" />
+            <div class="flex items-center gap-2 px-2 py-2">
+                <UButton variant="subtle" size="xs" v-if="infoDownloads?.dataset" leading-icon="i-mdi-open-in-new" :href="infoDownloads.dataset" target="_blank" rel="noopener">
                     Go to {{ infoDownloads.api }}
-                </v-btn>
-                <v-spacer />
-                <v-btn size="small" variant="text" @click="showInfoDialog = false">Close</v-btn>
-            </v-card-actions>
-        </v-card>
-    </v-dialog>
+                </UButton>
+                <div class="grow" />
+                <UButton variant="ghost" size="sm" @click="showInfoDialog = false">Close</UButton>
+            </div>
+        </div>
+        </template>
+    </UModal>
 </template>
 
 <script setup lang="ts">
 import { useMainStore } from '@/stores/main';
 import { storeToRefs } from 'pinia';
 import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue';
-import colors from 'vuetify/util/colors';
+import colors from '@/config/palette';
 import { sensorStatusColor } from '~~/composables/useSensorStatus';
 import { sensorDownloads } from '~~/composables/useSensorDownloadLinks';
 import { useVariableRegistry } from '~~/composables/useVariableRegistry';

@@ -1,27 +1,12 @@
 <template>
-  <!-- <v-navigation-drawer expand-on-hover permanent rail>
-        <v-list>
-            <v-list-item prepend-avatar="https://randomuser.me/api/portraits/women/85.jpg"
-                subtitle="sandra_a88@gmailcom" title="Sandra Adams"></v-list-item>
-        </v-list>
-
-        <v-divider></v-divider>
-
-        <v-list nav>
-            <v-list-item prepend-icon="mdi-folder" title="My Files" value="myfiles"></v-list-item>
-            <v-list-item prepend-icon="mdi-account-multiple" title="Shared with me" value="shared"></v-list-item>
-            <v-list-item prepend-icon="mdi-star" title="Starred" value="starred"></v-list-item>
-        </v-list>
-    </v-navigation-drawer> -->
-
-  <v-main>
+  <main class="grow min-h-0">
     <BetaDisclaimerDialog />
     <howTo v-model="showHow" />
-    <!-- <div class="d-flex flex-column h-screen overflow-hidden"> -->
+    <!-- <div class="flex flex-col h-screen overflow-hidden"> -->
     <!-- Top: Map -->
     <div
       ref="mapContainer"
-      class="flex-grow-1"
+      class="grow"
       :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }"
     >
       <!-- <Layers @toggleLayer="onToggleLayer" /> -->
@@ -65,10 +50,9 @@
       <controlPanel />
 
       <!-- <div class="map-drawer-toggle" :style="{ right: drawerOpen ? '312px' : '12px' }">
-                <v-btn size="24px" color="warning" class="ma-0 pa-0" @click="drawerOpen = !drawerOpen"
-                    title="Vertical Profile">
-                    <v-icon size="20px">mdi-chart-line</v-icon>
-                </v-btn>
+                <UButton color="warning" class="size-[24px] p-0 justify-center m-0 p-0" @click="drawerOpen = !drawerOpen" title="Vertical Profile">
+                    <UIcon name="i-mdi-chart-line" class="size-[20px]" />
+                </UButton>
             </div> -->
 
       <SelectedVariableDrawer
@@ -79,21 +63,13 @@
 
       <!-- Query mode toggle -->
       <!-- <div style="position: absolute; top: 10px; right: 10px; z-index: 10">
-        <v-btn-toggle
+        <SegmentedControl
           :model-value="mainStore.queryMode"
-          mandatory
-          variant="tonal"
-          @update:model-value="(v) => mainStore.setQueryMode(v)"
-        >
-          <v-btn value="point" size="small" title="Point query">
-            <v-icon size="16">mdi-map-marker</v-icon>
-            <span class="ml-1" style="font-size: 0.7rem">Point</span>
-          </v-btn>
-          <v-btn value="area" size="small" title="Area query">
-            <v-icon size="16">mdi-vector-square</v-icon>
-            <span class="ml-1" style="font-size: 0.7rem">Area</span>
-          </v-btn>
-        </v-btn-toggle>
+          :items="queryModeItems"
+          size="sm"
+          aria-label="Map query mode"
+          @update:model-value="(v) => mainStore.setQueryMode(v as string)"
+        />
       </div> -->
 
       <!-- Multi-sensor location picker (exact same coordinate) -->
@@ -157,14 +133,6 @@
         </div>
       </div>
 
-      <v-snackbar-queue
-        ref="snackbarQueue"
-        v-model="snackMessages"
-        :total-visible="3"
-        closable
-        contained
-      ></v-snackbar-queue>
-
       <div
         class="px-2 pt-2"
         style="
@@ -186,22 +154,18 @@
           transition: 'left 0.3s ease',
         }"
       >
-        <ColormapBar class="ma-2" />
+        <ColormapBar class="m-2" />
       </div>
 
       <!-- Cursor coordinate readout, follows the mouse over the map -->
-      <v-card
-        v-if="mainStore.showCursorCoords && mouseCoords.visible"
-        class="cursor-coord-label"
-        :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }"
-      >
+      <div class="bg-elevated rounded-lg cursor-coord-label" v-if="mainStore.showCursorCoords && mouseCoords.visible" :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }">
         {{ mouseCoords.lat?.toFixed(5) }}, {{ mouseCoords.lng?.toFixed(5) }}
-      </v-card>
+      </div>
     </div>
 
     <!-- Bottom: Global Chart Footer -->
-    <v-footer
-      class="ma-0 pa-0 footer-resizable"
+    <footer
+      class="m-0 p-0 footer-resizable"
       :style="{ height: footerHeight, maxHeight: footerHeight }"
     >
       <!-- Drag handle: resize the bottom sheet by dragging this top edge up/down -->
@@ -213,56 +177,30 @@
       >
         <div class="footer-resize-grip"></div>
       </div>
-      <div class="d-flex footer-content" style="width: 100%">
+      <div class="flex footer-content" style="width: 100%">
         <!-- Vertical tab rail. Plain buttons with explicit active classes
                      rather than v-btn-toggle: Explore's sub-list is nested directly
                      beneath it and only shown while Explore is active, which makes
                      the rail's item heights variable — incompatible with the sliding
                      "pill" a uniform-height toggle group can animate. -->
-        <v-sheet class="footer-rail d-flex flex-column flex-shrink-0">
+        <div class="footer-rail flex flex-col shrink-0">
           <div class="footer-rail-track">
-            <v-btn
-              prepend-icon="mdi-chart-line"
-              variant="text"
-              block
-              class="footer-rail-item"
-              :class="{ 'footer-rail-item--active': activeTab === 'explore' }"
-              @click="activeTab = 'explore'"
-            >
+            <UButton variant="ghost" class="footer-rail-item" block leading-icon="i-mdi-chart-line" :class="{ 'footer-rail-item--active': activeTab === 'explore' }" @click="activeTab = 'explore'">
               Explore
-            </v-btn>
+            </UButton>
             <div v-if="activeTab === 'explore'" class="footer-rail-sublist">
-              <v-btn
-                v-for="sv in exploreSubViews"
-                :key="sv.value"
-                variant="text"
-                block
-                class="footer-rail-subitem"
-                :class="{
-                  'footer-rail-subitem--active': mainStore.exploreView === sv.value,
-                }"
-                @click="mainStore.setExploreView(sv.value)"
-              >
+              <UButton variant="ghost" class="footer-rail-subitem" block v-for="sv in exploreSubViews" :key="sv.value" :class="{ 'footer-rail-subitem--active': mainStore.exploreView === sv.value, }" @click="mainStore.setExploreView(sv.value)">
                 {{ sv.label }}
-              </v-btn>
+              </UButton>
             </div>
 
-            <v-divider v-if="remainingFooterTabs.length > 0" />
+            <USeparator v-if="remainingFooterTabs.length > 0" />
 
-            <v-btn
-              v-for="t in remainingFooterTabs"
-              :key="t.value"
-              :prepend-icon="t.icon"
-              variant="text"
-              block
-              class="footer-rail-item"
-              :class="{ 'footer-rail-item--active': activeTab === t.value }"
-              @click="activeTab = t.value"
-            >
+            <UButton variant="ghost" class="footer-rail-item" block v-for="t in remainingFooterTabs" :key="t.value" :leading-icon="'i-' + t.icon" :class="{ 'footer-rail-item--active': activeTab === t.value }" @click="activeTab = t.value">
               {{ t.label }}
-            </v-btn>
+            </UButton>
 
-            <v-divider />
+            <USeparator />
 
             <!-- Analysis is a fullscreen dialog with no rail of its own once
                              open, so Model/Sensor is picked here rather than inside it —
@@ -270,39 +208,24 @@
                              top-level row only expands the sub-list (rather than opening
                              straight away, as Explore's does) since opening immediately
                              would cover the rail before the sub-list was ever clickable. -->
-            <v-btn
-              prepend-icon="mdi-poll"
-              variant="text"
-              block
-              class="footer-rail-item"
-              :class="{ 'footer-rail-item--active': activeTab === 'analysis' }"
-            >
+            <UButton variant="ghost" class="footer-rail-item" block leading-icon="i-mdi-poll" :class="{ 'footer-rail-item--active': activeTab === 'analysis' }">
               Analysis
-            </v-btn>
+            </UButton>
             <div class="footer-rail-sublist">
-              <v-btn
-                v-for="sv in analysisSubViews"
-                :key="sv.value"
-                variant="text"
-                block
-                class="footer-rail-subitem"
-                :disabled="sv.disabled"
-                :title="sv.title"
-                @click="
+              <UButton variant="ghost" class="footer-rail-subitem" block v-for="sv in analysisSubViews" :key="sv.value" :disabled="sv.disabled" :title="sv.title" @click="
                   mainStore.setAnalysisSource(sv.value);
                   activeTab = 'analysis';
-                "
-              >
+                ">
                 {{ sv.label }}
-              </v-btn>
+              </UButton>
             </div>
           </div>
-        </v-sheet>
+        </div>
 
         <!-- Content area. Both panes stay mounted (like the fullscreen
                      workspaces below) so switching tabs doesn't refetch or reset
                      whatever each pane had already loaded. -->
-        <div class="flex-grow-1" style="min-width: 0; height: 100%; overflow: hidden">
+        <div class="grow" style="min-width: 0; height: 100%; overflow: hidden">
           <!-- Timeseries tab -->
           <!-- The one map-synced pane: the clicked point's data at the
                          map's depth, over a paged window. -->
@@ -317,17 +240,17 @@
           </div>
         </div>
       </div>
-    </v-footer>
+    </footer>
 
     <!-- Fullscreen workspaces. Kept mounted so closing and reopening one
              doesn't refetch everything it had already loaded. -->
     <AnalysisWorkspace v-model="analysisOpen" />
     <ComparisonWorkspace v-model="comparisonOpen" />
     <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
-            <div ref="globalChartContainer" class="w-100 h-100"></div>
+            <div ref="globalChartContainer" class="w-full h-full"></div>
         </div> -->
     <!-- </div> -->
-  </v-main>
+  </main>
 </template>
 
 <script setup lang="ts">
@@ -343,6 +266,7 @@ import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 import { resolveColormap } from '~~/composables/useColormapResolver'
+import { MAP_BOUNDS, MAP_MIN_ZOOM, MAP_MAX_ZOOM, MAP_STYLE } from '@/config/app'
 import { utc2pst } from '~~/composables/useUTC2PST'
 import useStationsInteraction from '~~/composables/useStationsInteraction';
 import { addBuoyLayer, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '~~/composables/useBuoyLayer';
@@ -351,11 +275,18 @@ import AnalysisWorkspace from '../components/AnalysisWorkspace.vue'
 import ExplorePanel from '../components/ExplorePanel.vue'
 import ComparisonWorkspace from '../components/ComparisonWorkspace.vue'
 import CrossSectionPanel from '../components/crossSection/CrossSectionPanel.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
 import { trackEvent } from '~~/composables/useAnalytics'
+
+const queryModeItems = [
+    { value: 'point', label: 'Point', icon: 'i-mdi-map-marker', title: 'Point query' },
+    { value: 'area', label: 'Area', icon: 'i-mdi-vector-square', title: 'Area query' },
+]
+
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
@@ -506,7 +437,7 @@ const spiderfy = ref<{
 }>({ visible: false, centerX: 0, centerY: 0, spokes: [] });
 
 // [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
-const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, number]];
+const bounds = MAP_BOUNDS;
 
 const mouseCoords = ref<{ lng: number | null, lat: number | null, x: number, y: number, visible: boolean }>({ lng: null, lat: null, x: 0, y: 0, visible: false });
 
@@ -526,6 +457,17 @@ let didInitClick = false;
 */
 
 const zoom = ref('');
+
+// Nuxt UI has no queue component: UApp renders a single Toaster and `toast.add`
+// pushes into it. Drain the store's queue as messages arrive so every existing
+// `pushSnack` caller keeps working unchanged.
+const toast = useToast();
+watch(() => mainStore.snackMessages.length, (n) => {
+    if (!n) return;
+    for (const m of mainStore.snackMessages.splice(0)) {
+        toast.add({ title: m.text, color: (m.color as never) ?? 'info' });
+    }
+});
 
 const snackMessages = computed({
     get: () => mainStore.snackMessages,
@@ -571,13 +513,13 @@ onMounted(async () => {
         container: mapContainer.value,
         // style: 'mapbox://styles/taimazb/cmk1jwu8o005101sv1j41cj6j?optimize=true&fresh=true',
         // style: 'mapbox://styles/taimazb/cmkcsejwe005m01ssgtdz3tgd?optimize=true&fresh=true',
-        style: 'mapbox://styles/taimazb/cmkfvuotu00mw01svbld48v7y?optimize=true&fresh=true',
+        style: MAP_STYLE,
         // center: [-123.2, 48.8],
         bounds,
         // zoom: 9.5,
         // pitch: 45,
-        minZoom: 5,
-        maxZoom: 14,
+        minZoom: MAP_MIN_ZOOM,
+        maxZoom: MAP_MAX_ZOOM,
         antialias: true,
         preserveDrawingBuffer: true, // needed for exporting canvas
     });
@@ -1737,6 +1679,11 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
 <style scoped>
 .footer-resizable {
   position: relative;
+  /* `flex-direction`/`align-items` below always assumed a flex box — Vuetify's
+     v-footer supplied `display: flex` itself. A plain <footer> is block, which
+     left .footer-content unbounded and let the chart grow to its content height. */
+  display: flex;
+  overflow: hidden;
   flex-direction: column;
   align-items: stretch;
   border-top: 1px solid rgba(255, 255, 255, 0.16);
@@ -1810,11 +1757,11 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
   letter-spacing: 0;
   opacity: 0.65;
   transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
-  /* v-btn centers its prepend-icon + content as a group by default; override so all rows share a left edge regardless of label length */
+  /* UButton centres its leading icon + label as a group by default; override so all rows share a left edge regardless of label length */
   justify-content: flex-start;
 }
 
-.footer-rail-item :deep(.v-btn__content) {
+.footer-rail-item {
   justify-content: flex-start;
 }
 
@@ -1850,7 +1797,7 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
   justify-content: flex-start;
 }
 
-.footer-rail-subitem :deep(.v-btn__content) {
+.footer-rail-subitem {
   justify-content: flex-start;
 }
 
@@ -1924,7 +1871,6 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
 </style>
 
 <style scoped>
-@import url("https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap");
 
 .h-screen {
   height: calc(100vh - 48px);

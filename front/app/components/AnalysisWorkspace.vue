@@ -1,56 +1,44 @@
 <template>
-  <v-dialog v-model="isOpen" fullscreen transition="dialog-bottom-transition" :scrim="false">
-    <v-card class="d-flex flex-column" style="height:100vh;">
-      <v-toolbar color="grey-darken-4" density="compact">
-        <v-toolbar-title class="text-body-2">
+  <UModal v-model:open="isOpen" fullscreen :overlay="false">
+    <template #content>
+    <div class="flex flex-col bg-default" style="height:100vh;">
+      <div class="flex items-center gap-2 px-3 h-12 bg-elevated shrink-0">
+        <div class="font-medium truncate">
           Analysis — {{ varName }}
-          <v-chip v-if="contextLabel" size="x-small" color="warning" variant="tonal" class="ml-2">{{ contextLabel }}</v-chip>
-        </v-toolbar-title>
-        <v-spacer />
-        <v-btn icon="mdi-close" variant="text" title="Close (Esc)" @click="isOpen = false" />
-      </v-toolbar>
+          <UBadge size="xs" color="warning" variant="subtle" class="ml-2 rounded-full" v-if="contextLabel">{{ contextLabel }}</UBadge>
+        </div>
+        <div class="grow" />
+        <UButton variant="ghost" icon="i-mdi-close" class="shrink-0" title="Close (Esc)" @click="isOpen = false" />
+      </div>
 
-      <v-tabs v-model="activeTab" color="warning" density="compact" class="flex-shrink-0">
-        <v-tab value="builder">Overview</v-tab>
-        <v-tab value="extremes">Extreme Events</v-tab>
-        <v-tab value="compound">Compound Stress</v-tab>
-        <v-tab value="trend">Trend</v-tab>
-        <v-tab value="climatology">Climatology Anomaly</v-tab>
-        <v-tab value="correlation">Correlation</v-tab>
-      </v-tabs>
+      <UTabs v-model="activeTab" :items="tabItems" :content="false" class="shrink-0" />
 
-      <div class="flex-grow-1" style="min-height:0; overflow:hidden;">
+      <div class="grow" style="min-height:0; overflow:hidden;">
         <!-- Overview keeps its own fetch and chart; the deep-dive tabs share one
              series fetched here. v-show so switching tabs never refetches. -->
         <div v-show="activeTab === 'builder'" style="height:100%;">
           <AnalysisBuilder :active="isOpen && activeTab === 'builder'" :source="source" />
         </div>
 
-        <div v-if="activeTab !== 'builder'" class="h-100" style="overflow:auto;">
-          <div class="d-flex align-center px-4 pt-3" style="gap:10px;">
+        <div v-if="activeTab !== 'builder'" class="h-full" style="overflow:auto;">
+          <div class="flex items-center px-4 pt-3" style="gap:10px;">
             <span class="ctrl-label">Season</span>
-            <v-btn-toggle v-model="selectedSeason" mandatory variant="tonal" density="compact">
-              <v-btn value="full_year" size="x-small">All</v-btn>
-              <v-btn value="mam" size="x-small">MAM</v-btn>
-              <v-btn value="jja" size="x-small">JJA</v-btn>
-              <v-btn value="son" size="x-small">SON</v-btn>
-              <v-btn value="djf" size="x-small">DJF</v-btn>
-            </v-btn-toggle>
+            <SegmentedControl v-model="selectedSeason" :items="seasonItems" size="xs" aria-label="Season" />
           </div>
 
-          <v-alert v-if="primaryError" type="error" variant="tonal" class="ma-4">{{ primaryError }}</v-alert>
+          <UAlert color="error" variant="subtle" class="m-4" v-if="primaryError">{{ primaryError }}</UAlert>
 
           <div v-else-if="!location || !variable || depth == null"
-            class="d-flex flex-column align-center justify-center text-center px-6" style="height:60vh;">
-            <v-icon size="56" color="grey-darken-1">mdi-poll</v-icon>
-            <div class="text-caption text-grey-darken-1 mt-2">
+            class="flex flex-col items-center justify-center text-center px-6" style="height:60vh;">
+            <UIcon name="i-mdi-poll" class="size-[56px] text-gray-500" />
+            <div class="text-gray-500 mt-2">
               {{ source === 'sensor' ? 'Select a sensor and a depth first.' : 'Select a point, variable and depth first.' }}
             </div>
           </div>
 
           <div v-else-if="primaryLoading && !primarySeries.length"
-            class="d-flex align-center justify-center" style="height:60vh;">
-            <v-progress-circular indeterminate color="warning" size="48" />
+            class="flex items-center justify-center" style="height:60vh;">
+            <UIcon name="i-mdi-loading" class="animate-spin size-[48px] text-warning" />
           </div>
 
           <template v-else>
@@ -66,8 +54,9 @@
           </template>
         </div>
       </div>
-    </v-card>
-  </v-dialog>
+    </div>
+    </template>
+  </UModal>
 </template>
 
 <script setup lang="ts">
@@ -82,6 +71,9 @@ import CompoundStress from './analysis/CompoundStress.vue'
 import Trend from './analysis/Trend.vue'
 import Climatology from './analysis/Climatology.vue'
 import Correlation from './analysis/Correlation.vue'
+import SegmentedControl from './ui/SegmentedControl.vue'
+const seasonItems = [{ value: 'full_year', label: 'All' }, { value: 'mam', label: 'MAM' }, { value: 'jja', label: 'JJA' }, { value: 'son', label: 'SON' }, { value: 'djf', label: 'DJF' }]
+const tabItems = [{ value: 'builder', label: 'Overview' }, { value: 'extremes', label: 'Extreme Events' }, { value: 'compound', label: 'Compound Stress' }, { value: 'trend', label: 'Trend' }, { value: 'climatology', label: 'Climatology Anomaly' }, { value: 'correlation', label: 'Correlation' }]
 
 /**
  * Analysis workspace — fullscreen, because nothing in it is tied to the map.

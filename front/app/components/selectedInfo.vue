@@ -1,30 +1,30 @@
 <template>
-  <v-card class="colorbar" max-width="200px" width="fit-content">
-    <v-row gap="0" class="my-0 mx-2 pa-0">
-      <v-col cols="12" class="ma-0 pa-0" style="height:20px">
+  <div class="colorbar bg-elevated" style="max-width:200px; width:fit-content;">
+    <div class="flex flex-wrap my-0 mx-2 p-0">
+      <div class="w-full m-0 p-0" style="height:20px">
         <span>{{ variableLabel(selectedVariable.var) }}</span>
-      </v-col>
+      </div>
 
-      <!-- <v-divider class="mx-0"></v-divider> -->
+      <!-- <USeparator class="mx-0" /> -->
 
-      <!-- <v-col cols="12" class="ma-0 pa-0" style="height:20px">
+      <!-- <div class="w-full m-0 p-0" style="height:20px">
         <span>Model</span>
-      </v-col> -->
-      <v-col cols="12" class="ma-0 pa-0" style="height:20px">
+      </div> -->
+      <div class="w-full m-0 p-0" style="height:20px">
         <span>{{ formattedDt }}</span>
-      </v-col>
-      <v-col cols="12" class="ma-0 pa-0" style="height:20px">
+      </div>
+      <div class="w-full m-0 p-0" style="height:20px">
         <span>Depth {{ selectedVariable.depth }}{{ selectedVariable.depth && !isNaN(Number(selectedVariable.depth)) ? ' m' : '' }}</span>
-      </v-col>
+      </div>
 
-      <!-- <v-divider class="mx-0"></v-divider>
+      <!-- <USeparator class="mx-0" />
 
-      <v-col cols="12" class="ma-0 pa-0" style="height:20px">
+      <div class="w-full m-0 p-0" style="height:20px">
         <span>Sensor</span>
-      </v-col> -->
+      </div> -->
 
-    </v-row>
-  </v-card>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

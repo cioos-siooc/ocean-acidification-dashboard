@@ -1,48 +1,47 @@
 <template>
-  <v-row class="time-controls">
-    <v-spacer></v-spacer>
+  <div class="flex flex-wrap -m-3 time-controls">
+    <div class="grow" />
     <template v-if="!hideDatePicker">
-      <v-menu v-model="datePickerOpen" :close-on-content-click="false" offset-y>
-        <template #activator="{ props: menuProps }">
-          <v-btn v-bind="menuProps" size="20px" icon flat :title="'Jump to date'"><v-icon size="14px">mdi-calendar</v-icon></v-btn>
-        </template>
-        <v-card>
-          <v-date-picker v-model="pickedDate" :allowed-dates="allowedDates" hide-header show-adjacent-months :max="maxDate"
-            :min="minDate"></v-date-picker>
-          <v-card-actions>
-            <v-spacer></v-spacer>
-            <v-btn text @click="cancelDatePicker">Cancel</v-btn>
-            <v-btn color="primary" @click="confirmDatePicker">OK</v-btn>
-          </v-card-actions>
-        </v-card>
-      </v-menu>
+      <UPopover v-model:open="datePickerOpen">
+  <UButton variant="solid" class="size-[20px] p-0 justify-center shrink-0" :title="'Jump to date'"><UIcon name="i-mdi-calendar" class="size-[14px]" /></UButton>
+  <template #content>
+    <div class="bg-elevated rounded-lg">
+              <UCalendar v-model="pickedCalendarDate" :min-value="minCalendarDate" :max-value="maxCalendarDate"
+                :is-date-disabled="isCalendarDateDisabled" />
+              <div class="flex items-center gap-2 px-2 py-2">
+                <div class="grow" />
+                <UButton variant="ghost" @click="cancelDatePicker">Cancel</UButton>
+                <UButton color="primary" @click="confirmDatePicker">OK</UButton>
+              </div>
+            </div>
+  </template>
+</UPopover>
 
-      <v-divider vertical class="mx-2" style="height: 24px"></v-divider>
+      <USeparator orientation="vertical" class="mx-2" style="height: 24px" />
     </template>
 
-    <v-btn size="20px" icon flat :title="`Back one ${unitLabel}`" @click="stepBackward"><v-icon
-        size="14px">mdi-skip-previous</v-icon></v-btn>
-    <v-btn size="20px" icon flat :title="playing ? 'Pause' : 'Play'" @click="togglePlay">
-      <v-icon size="14px" v-if="!playing">mdi-play</v-icon>
-      <v-icon size="14px" v-else>mdi-pause </v-icon>
-    </v-btn>
-    <v-btn size="20px" icon flat :title="`Forward one ${unitLabel}`" @click="stepForward"><v-icon size="14px">mdi-skip-next</v-icon></v-btn>
+    <UButton variant="solid" class="size-[20px] p-0 justify-center shrink-0" :title="`Back one ${unitLabel}`" @click="stepBackward"><UIcon name="i-mdi-skip-previous" class="size-[14px]" /></UButton>
+    <UButton variant="solid" class="size-[20px] p-0 justify-center shrink-0" :title="playing ? 'Pause' : 'Play'" @click="togglePlay">
+      <UIcon name="i-mdi-play" class="size-[14px]" v-if="!playing" />
+      <UIcon name="i-mdi-pause" class="size-[14px]" v-else />
+    </UButton>
+    <UButton variant="solid" class="size-[20px] p-0 justify-center shrink-0" :title="`Forward one ${unitLabel}`" @click="stepForward"><UIcon name="i-mdi-skip-next" class="size-[14px]" /></UButton>
 
-    <v-divider vertical class="mx-2" style="height: 24px"></v-divider>
+    <USeparator orientation="vertical" class="mx-2" style="height: 24px" />
 
-    <v-menu offset-y>
-      <template #activator="{ props }">
-        <v-btn v-bind="props" size="20px" icon flat
-          :title="`Speed: x${speed}`"><v-icon size="14px">mdi-speedometer</v-icon></v-btn>
-      </template>
-      <v-list>
-        <v-list-item v-for="s in speeds" :key="s" @click="setSpeed(s)">
-          <v-list-item-title>{{ s }}x</v-list-item-title>
-        </v-list-item>
-      </v-list>
-    </v-menu>
-    <v-spacer></v-spacer>
-  </v-row>
+    <UPopover>
+  <UButton variant="solid" class="size-[20px] p-0 justify-center shrink-0" :title="`Speed: x${speed}`"><UIcon name="i-mdi-speedometer" class="size-[14px]" /></UButton>
+  <template #content>
+    <div class="py-1">
+            <div v-for="s in speeds" :key="s" role="button" tabindex="0" @click="setSpeed(s)"
+              class="px-3 py-1 text-sm cursor-pointer hover:bg-elevated">
+              {{ s }}x
+            </div>
+          </div>
+  </template>
+</UPopover>
+    <div class="grow" />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -51,6 +50,7 @@ import moment from 'moment';
 
 import { useMainStore } from '../stores/main'
 import { addBins, floorToBin } from '~~/composables/useTimeDepthWindow'
+import { toCalendarDate, fromCalendarDate } from '~~/composables/useCalendarDate'
 const mainStore = useMainStore();
 
 ////////////////////////////////////  PROPS & STATE  ///////////////////////////////////
@@ -65,6 +65,17 @@ const props = defineProps<{ hideDatePicker?: boolean }>()
 const playing = ref(false);
 const datePickerOpen = ref(false);
 const pickedDate = ref<Date | null>(null);
+
+// UCalendar speaks CalendarDate; the rest of this component keeps working in
+// Date. See composables/useCalendarDate.ts for why the boundary sits here.
+const pickedCalendarDate = computed({
+  get: () => toCalendarDate(pickedDate.value),
+  set: (v) => { pickedDate.value = fromCalendarDate(v) },
+});
+const minCalendarDate = computed(() => toCalendarDate(minDate.value) ?? undefined);
+const maxCalendarDate = computed(() => toCalendarDate(maxDate.value) ?? undefined);
+const isCalendarDateDisabled = (d: { year: number; month: number; day: number }) =>
+  !allowedDates(new Date(d.year, d.month - 1, d.day));
 
 const speeds = [0.5, 1, 2];
 const speed = ref(1);

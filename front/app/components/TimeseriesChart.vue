@@ -2,19 +2,21 @@
     <div class="global-chart-wrapper" style="width: 100%; height: 100%;">
         <div ref="chartContainer" style="width: 100%; height: 100%;"></div>
         <div v-if="loading" class="global-chart-overlay">
-            <v-progress-circular indeterminate color="warning" :size="64" :width="12" class="progress" />
+            <UIcon name="i-mdi-loading" class="animate-spin text-warning progress" :style="{ fontSize: 64 + 'px' }" />
         </div>
 
-        <!-- <v-btn icon variant="text" flat size="18px" class="chart-info" @click="showChartInfo = true">
-            <v-icon color="yellow" size="14px">mdi-information-variant</v-icon>
-        </v-btn> -->
+        <!-- <UButton variant="ghost" class="size-[18px] p-0 justify-center shrink-0 chart-info" @click="showChartInfo = true">
+            <UIcon name="i-mdi-information-variant" class="size-[14px] text-yellow-400" />
+        </UButton> -->
 
         <!-- CHART USAGE AND PLOTS HELP DIALOG -->
-        <v-dialog v-model="showChartInfo" max-width="75%">
-            <v-card class="pa-5">
-                <v-img :src="timeseriesChartHelpImg" alt="Timeseries Chart Help" ></v-img>
-            </v-card>
-        </v-dialog>
+        <UModal v-model:open="showChartInfo" :ui="{ content: 'max-w-[75vw]' }">
+            <template #content>
+            <div class="p-5 bg-elevated rounded-lg">
+                <img :src="timeseriesChartHelpImg" alt="Timeseries Chart Help" class="block w-full h-auto">
+            </div>
+            </template>
+        </UModal>
     </div>
 </template>
 
@@ -24,7 +26,8 @@ import * as echarts from 'echarts';
 import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme';
 import { computeNightRanges } from '~~/composables/useSunCalc';
 import moment from 'moment-timezone';
-import colors from 'vuetify/util/colors';
+import { APP_TIMEZONE } from '@/config/app';
+import colors from '@/config/palette';
 import timeseriesChartHelpImg from '../../public/timeseriesChartHelp.png';
 
 import { useMainStore } from '../stores/main';
@@ -84,7 +87,7 @@ const legendConfig = computed(() => props.legendLayout === 'top'
 const DFN = computed(() => mainStore.dfnDays);
 const midDate = computed(() => mainStore.midDate ?? moment.utc());
 
-const TZ = 'America/Vancouver';
+const TZ = APP_TIMEZONE;
 const windowStartLocal = computed(() => props.windowStart
     ? moment(props.windowStart).tz(TZ)
     : midDate.value.clone().tz(TZ).subtract(DFN.value, 'days'));
@@ -245,7 +248,7 @@ async function fetchAndPlot(
 
 function plot(modelData: any, climateData: any, sensorData: any | null) {
     if (!chart) return;
-    const tz = 'America/Vancouver';
+    const tz = APP_TIMEZONE;
 
     const lat = mainStore.lastClickedMapPoint?.lat;
     const lng = mainStore.lastClickedMapPoint?.lng;
@@ -517,7 +520,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
 // Update only the vertical "Map" marker when selected dt changes (no full re-plot)
 watch(() => mainStore.selected_variable.dt, (newDt) => {
     if (!chart) return;
-    const tz = 'America/Vancouver';
+    const tz = APP_TIMEZONE;
     const sel = newDt ? moment.utc(newDt).tz(tz).format() : null;
     try {
         chart.setOption({

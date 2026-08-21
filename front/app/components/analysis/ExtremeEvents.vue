@@ -1,34 +1,30 @@
 <template>
-  <div class="d-flex h-100" style="overflow:hidden;">
-    <div class="pa-2 d-flex flex-column flex-shrink-0" style="width:200px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
+  <div class="flex h-full" style="overflow:hidden;">
+    <div class="p-2 flex flex-col shrink-0" style="width:200px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Threshold Mode</div>
-      <v-btn-toggle v-model="thresholdMode" mandatory variant="tonal" class="w-100 mb-3">
-        <v-btn value="percentile" size="small">Percentile</v-btn>
-        <v-btn value="fixed" size="small">Fixed value</v-btn>
-      </v-btn-toggle>
+      <SegmentedControl v-model="thresholdMode" :items="thresholdModeItems" size="sm" block
+        class="mb-3" aria-label="Threshold mode" />
 
       <div class="ctrl-label">Direction</div>
-      <v-btn-toggle v-model="direction" mandatory variant="tonal" class="w-100 mb-3">
-        <v-btn value="above" size="small">Above (high)</v-btn>
-        <v-btn value="below" size="small">Below (low)</v-btn>
-      </v-btn-toggle>
+      <SegmentedControl v-model="direction" :items="directionItems" size="sm" block
+        class="mb-3" aria-label="Event direction" />
 
       <template v-if="thresholdMode === 'percentile'">
         <div class="ctrl-label">Baseline window (± days)</div>
-        <v-text-field v-model.number="windowDays" type="number" hide-details class="mb-3" min="1" max="30" />
+        <UInput v-model.number="windowDays" type="number" class="mb-3" min="1" max="30" />
       </template>
       <template v-else>
         <div class="ctrl-label">Fixed threshold</div>
-        <v-text-field v-model.number="fixedThreshold" type="number" hide-details class="mb-3" />
+        <UInput v-model.number="fixedThreshold" type="number" class="mb-3" />
       </template>
 
       <div class="ctrl-label">Min duration (days)</div>
-      <v-text-field v-model.number="minDurationDays" type="number" hide-details class="mb-3" min="1" />
+      <UInput v-model.number="minDurationDays" type="number" class="mb-3" min="1" />
 
       <div class="ctrl-label">Max merge gap (days)</div>
-      <v-text-field v-model.number="maxGapDays" type="number" hide-details class="mb-3" min="0" />
+      <UInput v-model.number="maxGapDays" type="number" class="mb-3" min="0" />
 
-      <div class="text-caption text-grey mt-2">
+      <div class="text-gray-500 mt-2">
         <template v-if="thresholdMode === 'percentile'">
           Flags days crossing the {{ direction === 'above' ? '90th' : '10th' }} percentile of a day-of-year
           climatological baseline (marine-heatwave-style methodology), merges nearby runs, and keeps events
@@ -40,26 +36,23 @@
         </template>
       </div>
 
-      <v-alert v-if="thresholdMode === 'percentile' && isShortHistory" type="warning" variant="tonal" icon="mdi-alert-outline"
-        class="mt-3 text-caption">
+      <UAlert color="warning" variant="subtle" icon="i-mdi-alert-outline" class="mt-3" v-if="thresholdMode === 'percentile' && isShortHistory">
         Only {{ yearSpan }} year{{ yearSpan === 1 ? '' : 's' }} of data available. The dashed threshold isn't a
         true multi-year climatology here — it's a local ±{{ windowDays }}-day rolling percentile of this same
         record, so it will track short-term swings rather than a stable "normal for this time of year."
-      </v-alert>
+      </UAlert>
     </div>
 
-    <div class="flex-grow-1 d-flex flex-column" style="min-width:0;">
-      <div ref="chartContainerRef" class="w-100" style="height:55%; flex-shrink:0;" />
-      <div class="flex-grow-1 d-flex" style="min-height:0; overflow:hidden;">
-        <div class="flex-grow-1 pa-2" style="overflow-y:auto;">
+    <div class="grow flex flex-col" style="min-width:0;">
+      <div ref="chartContainerRef" class="w-full" style="height:55%; flex-shrink:0;" />
+      <div class="grow flex" style="min-height:0; overflow:hidden;">
+        <div class="grow p-2" style="overflow-y:auto;">
           <div class="ctrl-label mb-1">Events ({{ events.length }})</div>
-          <v-data-table :headers="eventHeaders" :items="eventRows" hide-default-footer
-            :items-per-page="-1" :sort-by="[{ key: 'peakAnomaly', order: 'desc' as const }]" class="stats-table" />
+          <UTable v-model:sorting="sorting1" :columns="eventHeaders" :data="eventRows" class="stats-table" />
         </div>
-        <div style="width:260px; border-left:1px solid rgba(255,255,255,0.08); overflow-y:auto;" class="pa-2 flex-shrink-0">
+        <div style="width:260px; border-left:1px solid rgba(255,255,255,0.08); overflow-y:auto;" class="p-2 shrink-0">
           <div class="ctrl-label mb-1">Per-year summary</div>
-          <v-data-table :headers="yearHeaders" :items="yearRows" hide-default-footer
-            :items-per-page="-1" :sort-by="[{ key: 'year', order: 'desc' as const }]" class="stats-table" />
+          <UTable v-model:sorting="sorting2" :columns="yearHeaders" :data="yearRows" class="stats-table" />
         </div>
       </div>
     </div>
@@ -72,10 +65,15 @@ import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint } from '~~/composables/useAnalysisFetch'
+import SegmentedControl from '../ui/SegmentedControl.vue'
 import {
+
   filterBySeason, maskBySeason, breakDataGaps, computeClimatologyBaseline, detectExtremeEvents, summarizeEventsByYear,
   distinctYearSpan, climatologyThresholdLookup, fixedThresholdLookup, type ThresholdLookup,
 } from '~~/composables/useAnalysisStatistics'
+
+const thresholdModeItems = [{ value: 'percentile', label: 'Percentile' }, { value: 'fixed', label: 'Fixed value' }]
+const directionItems = [{ value: 'above', label: 'Above (high)' }, { value: 'below', label: 'Below (low)' }]
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable: string }>()
 
@@ -104,12 +102,17 @@ const seasonalSeries = computed(() => filterBySeason(props.series, props.season)
 const events = computed(() => detectExtremeEvents(seasonalSeries.value, thresholdLookup.value, direction.value, minDurationDays.value, maxGapDays.value))
 const yearlySummary = computed(() => summarizeEventsByYear(events.value))
 
+// v-data-table sorted by default; TanStack's table needs the initial state given explicitly.
+const sorting1 = ref([{ id: 'peakAnomaly', desc: true }])
+// v-data-table sorted by default; TanStack's table needs the initial state given explicitly.
+const sorting2 = ref([{ id: 'year', desc: true }])
+
 const eventHeaders = computed(() => [
-  { title: 'Start', key: 'startTime' },
-  { title: 'End', key: 'endTime' },
-  { title: 'Days', key: 'durationDays' },
-  { title: `Peak${unitSuffix.value}`, key: 'peakValue' },
-  { title: `Peak Δ${unitSuffix.value}`, key: 'peakAnomaly' },
+  { header: 'Start', accessorKey: 'startTime' },
+  { header: 'End', accessorKey: 'endTime' },
+  { header: 'Days', accessorKey: 'durationDays' },
+  { header: `Peak${unitSuffix.value}`, accessorKey: 'peakValue' },
+  { header: `Peak Δ${unitSuffix.value}`, accessorKey: 'peakAnomaly' },
 ])
 const eventRows = computed(() => events.value.map(e => ({
   startTime: e.startTime, endTime: e.endTime, durationDays: e.durationDays,
@@ -117,10 +120,10 @@ const eventRows = computed(() => events.value.map(e => ({
 })))
 
 const yearHeaders = computed(() => [
-  { title: 'Year', key: 'year' },
-  { title: 'Events', key: 'eventCount' },
-  { title: 'Days', key: 'totalEventDays' },
-  { title: `Max Δ${unitSuffix.value}`, key: 'maxIntensity' },
+  { header: 'Year', accessorKey: 'year' },
+  { header: 'Events', accessorKey: 'eventCount' },
+  { header: 'Days', accessorKey: 'totalEventDays' },
+  { header: `Max Δ${unitSuffix.value}`, accessorKey: 'maxIntensity' },
 ])
 const yearRows = computed(() => yearlySummary.value.map(y => ({
   year: y.year, eventCount: y.eventCount, totalEventDays: y.totalEventDays, maxIntensity: y.maxIntensity.toFixed(3),
@@ -211,8 +214,8 @@ onBeforeUnmount(() => {
   margin-bottom: 4px;
 }
 
-.stats-table :deep(.v-data-table__td),
-.stats-table :deep(.v-data-table__th) {
+.stats-table :deep(td),
+.stats-table :deep(th) {
   font-size: 0.72rem !important;
   padding: 2px 6px !important;
 }

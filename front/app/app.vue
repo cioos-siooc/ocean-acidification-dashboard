@@ -1,21 +1,19 @@
 <template>
-  <v-app theme="dark">
-    <v-app-bar class="px-5" app>
-      <div class="d-flex align-center" style="flex-shrink:0;">
+  <UApp>
+  <div class="h-screen flex flex-col overflow-hidden bg-default text-default">
+    <header class="flex items-center gap-3 px-5 h-12 shrink-0 bg-elevated border-b border-default">
+      <div class="flex items-center" style="flex-shrink:0;">
         <iconsOceanECOLogo :size="40" :loop="false" style="display:block;" />
       </div>
 
-      <v-app-bar-title>
+      <div class="flex items-center min-w-0">
         <span class="">OceanECO</span>
-        <span class="text-label-medium mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
-        <v-tooltip location="bottom" max-width="280">
-          <template #activator="{ props }">
-            <v-chip v-bind="props" size="small" color="warning" variant="flat" label>BETA</v-chip>
-          </template>
-          <span>This dashboard is in active development. Data, features, and layout may change without
-            notice.</span>
-        </v-tooltip>
-      </v-app-bar-title>
+        <span class="text-xs font-medium mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
+        <UTooltip text="This dashboard is in active development. Data, features, and layout may change without notice."
+          :content="{ side: 'bottom' }" :ui="{ content: 'max-w-[280px]' }">
+          <UBadge size="sm" color="warning" variant="solid">BETA</UBadge>
+        </UTooltip>
+      </div>
 
       <a href="https://cioospacific.ca/" target="_blank" rel="noopener noreferrer" class="logo-link"
         style="position: absolute; left: 50%; transform: translateX(-50%);">
@@ -24,25 +22,26 @@
 
       <!-- Optional: Add menu items here -->
       <!-- FEEDBACK FORM -->
-      <v-btn text href="https://docs.google.com/forms/d/e/1FAIpQLSdGiIclM5wvIbPReZydsXKiRBXbZsQVEdoQPlA0EruKIoNJkg/viewform?usp=dialog" target="_blank" rel="noopener noreferrer">
+      <UButton variant="ghost" href="https://docs.google.com/forms/d/e/1FAIpQLSdGiIclM5wvIbPReZydsXKiRBXbZsQVEdoQPlA0EruKIoNJkg/viewform?usp=dialog" target="_blank" rel="noopener noreferrer">
         Feedback
-      </v-btn>
+      </UButton>
 
       <NuxtLink to="/caseStudy" target="_blank">
-        <v-btn text>Case Studies</v-btn>
+        <UButton variant="ghost">Case Studies</UButton>
       </NuxtLink>
 
       <NuxtLink to="/about" target="_blank">
-        <v-btn text>About</v-btn>
+        <UButton variant="ghost">About</UButton>
       </NuxtLink>
 
-    </v-app-bar>
+    </header>
 
     <NuxtRouteAnnouncer />
     <NuxtPage v-if="!isMobile" />
 
     <MobileBlocker />
-  </v-app>
+  </div>
+  </UApp>
 </template>
 
 <script setup lang="ts">
@@ -146,24 +145,13 @@ async function getColormaps() {
 </script>
 
 <style>
-/* Global font application for Vuetify and general elements */
+/* Inter is self-hosted by @nuxt/fonts (pulled in by @nuxt/ui) — it picks the
+   family up from this declaration and the --font-sans theme token, so there is
+   no external stylesheet request. The old rule here also enumerated a long list
+   of .v-application/.text-* Vuetify selectors that no longer exist. */
 html,
-body,
-.v-application,
-.v-application .text-body-1,
-.v-application .text-body-2,
-.v-application .text-h1,
-.v-application .text-h2,
-.v-application .text-h3,
-.v-application .text-h4,
-.v-application .text-h5,
-.v-application .text-h6,
-.v-application .text-subtitle-1,
-.v-application .text-subtitle-2,
-.v-application .text-button,
-.v-application .text-caption,
-.v-application .text-overline {
-  font-family: 'Inter', sans-serif !important;
+body {
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Preserve monospace for code and specific monospace classes */
@@ -172,7 +160,7 @@ pre,
 kbd,
 samp,
 .text-monospace {
-  font-family: monospace !important;
+  font-family: monospace;
 }
 </style>
 

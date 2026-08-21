@@ -1,19 +1,15 @@
 <template>
-    <!-- <v-dialog v-model="showColorbarSettings" max-width="500px" transition="dialog-transition"> -->
-    <v-card width="420px" class="ma-0 py-3 px-5">
+    <div class="bg-elevated rounded-lg m-0 py-3 px-5" style="width:420px">
         <!-- RANGE — the unit toggle itself lives on the map's colorbar legend
              (ColormapBar.vue), which is always visible; these fields just
              follow whatever unit is chosen there via toDisplayValue/toCanonicalValue. -->
-        <div class="d-flex align-center ga-2 mt-4 mb-1">
-            <v-text-field v-model="minText" type="number" :step="numberStep"
-                hide-details class="range-input" @blur="commitMin" @keyup.enter="commitMin" />
-            <v-range-slider v-model="sliderEnds" thumb-label strict hide-details class="flex-grow-1">
-                <template #thumb-label="{ modelValue }">
-                    {{ toDisplayValue(selectedVariable.var, default_colormapMin + (default_colormapMax - default_colormapMin) * (modelValue / 100))?.toFixed(precisionDigits) }}
-                </template>
-            </v-range-slider>
-            <v-text-field v-model="maxText" type="number" :step="numberStep"
-                hide-details class="range-input" @blur="commitMax" @keyup.enter="commitMax" />
+        <div class="flex items-center gap-2 mt-4 mb-1">
+            <UInput v-model="minText" type="number" :step="numberStep" class="range-input" @blur="commitMin" @keyup.enter="commitMin" />
+            <!-- USlider has no per-thumb label slot, so the old #thumb-label (which
+                 mapped the 0-100 position back to a display value) is gone. The
+                 min/max number inputs either side already show those values. -->
+            <USlider v-model="sliderEnds" :min="0" :max="100" class="grow" />
+            <UInput v-model="maxText" type="number" :step="numberStep" class="range-input" @blur="commitMax" @keyup.enter="commitMax" />
         </div>
 
         <div class="bar-track">
@@ -23,17 +19,16 @@
         <!-- PALETTE -->
         <PalettePicker v-model="selectedColormap" class="mt-4" />
 
-        <v-card-actions class="pa-0 mt-2">
-            <v-spacer></v-spacer>
-            <v-btn color="error" variant="tonal" @click="resetToDefaults">
+        <div class="flex items-center gap-2 p-0 mt-2">
+            <div class="grow" />
+            <UButton variant="subtle" color="error" @click="resetToDefaults">
                 Reset to Defaults
-            </v-btn>
-            <v-btn color="primary" variant="tonal" @click="showColorbarSettings = false">
+            </UButton>
+            <UButton variant="subtle" color="primary" @click="showColorbarSettings = false">
                 Close
-            </v-btn>
-        </v-card-actions>
-    </v-card>
-    <!-- </v-dialog> -->
+            </UButton>
+        </div>
+    </div>
 </template>
 
 <script setup lang="ts">

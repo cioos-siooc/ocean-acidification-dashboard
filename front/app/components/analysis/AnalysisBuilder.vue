@@ -1,96 +1,87 @@
 <template>
-  <div class="analytics-panel d-flex h-100" style="overflow:hidden;">
+  <div class="analytics-panel flex h-full" style="overflow:hidden;">
 
     <!-- LEFT: Controls -->
-    <div class="analytics-sidebar pa-2 d-flex flex-column"
+    <div class="analytics-sidebar p-2 flex flex-col"
       style="width:190px; min-width:190px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
 
-      <div class="d-flex align-center justify-space-between mb-2">
+      <div class="flex items-center justify-between mb-2">
         <span class="ctrl-label" style="margin-bottom:0;">ANALYSIS</span>
       </div>
 
       <div class="ctrl-label">Season</div>
-      <v-btn-toggle v-model="selectedSeason" mandatory variant="tonal" class="flex-wrap w-100 mb-3">
-        <v-btn value="full_year" size="x-small" class="season-btn">All</v-btn>
-        <v-btn value="mam" size="x-small" class="season-btn">MAM</v-btn>
-        <v-btn value="jja" size="x-small" class="season-btn">JJA</v-btn>
-        <v-btn value="son" size="x-small" class="season-btn">SON</v-btn>
-        <v-btn value="djf" size="x-small" class="season-btn">DJF</v-btn>
-      </v-btn-toggle>
+      <SegmentedControl v-model="selectedSeason" :items="seasonItems" size="xs" block
+        item-class="px-1 min-w-0" class="mb-3" aria-label="Season" />
 
       <div class="ctrl-label">Statistic</div>
-      <v-btn-toggle v-model="primaryStat" mandatory variant="outlined" class="w-100 mb-3">
-        <v-btn value="min" size="small">Min</v-btn>
-        <v-btn value="mean" size="small">Mean</v-btn>
-        <v-btn value="max" size="small">Max</v-btn>
-      </v-btn-toggle>
+      <SegmentedControl v-model="primaryStat" :items="statItems" size="sm" block variant="outline"
+        class="mb-3" aria-label="Statistic" />
 
-      <v-spacer />
+      <div class="grow" />
     </div>
 
     <!-- CENTER: Chart -->
-    <div class="flex-grow-1 d-flex flex-column" style="min-width:0; overflow:hidden;">
+    <div class="grow flex flex-col" style="min-width:0; overflow:hidden;">
 
-      <div class="d-flex align-center px-2 flex-shrink-0"
+      <div class="flex items-center px-2 shrink-0"
         style="height:28px; border-bottom:1px solid rgba(255,255,255,0.06);">
-        <span class="text-caption font-weight-medium text-truncate">{{ chartTitle }}</span>
-        <v-spacer />
-        <v-chip size="x-small" color="warning" variant="tonal" class="ml-1 flex-shrink-0">{{ seasonLabel }}</v-chip>
+        <span class="font-medium truncate">{{ chartTitle }}</span>
+        <div class="grow" />
+        <UBadge size="xs" color="warning" variant="subtle" class="ml-1 shrink-0 rounded-full">{{ seasonLabel }}</UBadge>
       </div>
 
-      <div class="flex-grow-1" style="position:relative; min-height:0;">
+      <div class="grow" style="position:relative; min-height:0;">
 
         <!-- Chart — stays mounted once first render; greyscale while reloading -->
-        <div v-show="hasActivePlot" ref="chartContainerRef" class="w-100 h-100"
+        <div v-show="hasActivePlot" ref="chartContainerRef" class="w-full h-full"
           :class="{ 'chart-loading': isGenerating }" />
 
         <!-- First-time load spinner (no chart yet) -->
         <div v-if="isGenerating && !hasActivePlot"
-          class="d-flex flex-column align-center justify-center fill-height">
-          <v-progress-circular indeterminate color="warning" size="36" class="mb-2" />
-          <div class="text-caption text-warning">Querying ClickHouse...</div>
+          class="flex flex-col items-center justify-center h-full">
+          <UIcon name="i-mdi-loading" class="animate-spin size-[36px] text-warning mb-2" />
+          <div class="text-warning">Querying ClickHouse...</div>
         </div>
 
         <!-- Reload badge shown over greyscale chart -->
         <div v-if="isGenerating && hasActivePlot" class="chart-reload-badge">
-          <v-progress-circular indeterminate color="warning" size="14" width="2" class="mr-1" />
+          <UIcon name="i-mdi-loading" class="animate-spin size-[14px] text-warning mr-1" />
           <span>Updating…</span>
         </div>
 
-        <v-alert v-else-if="!hasActivePlot && plotErrorMessage" type="error" variant="tonal" border="start"
-          class="ma-3">
+        <UAlert color="error" variant="subtle" class="m-3" v-else-if="!hasActivePlot && plotErrorMessage">
           {{ plotErrorMessage }}
-        </v-alert>
+        </UAlert>
 
         <div v-else-if="!hasActivePlot && !isGenerating && !plotErrorMessage"
-          class="d-flex flex-column align-center justify-center h-100 text-center px-6">
-          <v-icon size="56" color="grey-darken-1">mdi-poll</v-icon>
-          <div class="text-caption text-grey-darken-1 mt-2">Select a point on the map — analysis loads
+          class="flex flex-col items-center justify-center h-full text-center px-6">
+          <UIcon name="i-mdi-poll" class="size-[56px] text-gray-500" />
+          <div class="text-gray-500 mt-2">Select a point on the map — analysis loads
             automatically</div>
         </div>
       </div>
     </div>
 
     <!-- RIGHT: Stats panel -->
-    <div class="analytics-stats pa-2 d-flex flex-column"
+    <div class="analytics-stats p-2 flex flex-col"
       style="width:215px; min-width:215px; overflow:hidden; border-left:1px solid rgba(255,255,255,0.08);">
 
       <template v-if="extremeRecords">
         <div class="ctrl-label">All-time Records</div>
-        <div class="d-flex align-center mb-1">
-          <v-icon size="13" color="red-lighten-2">mdi-arrow-up-bold</v-icon>
-          <span class="text-caption font-weight-medium ml-1">{{ Number(extremeRecords.max.value).toFixed(3) }}</span>
-          <span class="text-grey ml-auto" style="font-size:0.63rem;">{{ String(extremeRecords.max.time).slice(0,
+        <div class="flex items-center mb-1">
+          <UIcon name="i-mdi-arrow-up-bold" class="size-[13px] text-red-300" />
+          <span class="font-medium ml-1">{{ Number(extremeRecords.max.value).toFixed(3) }}</span>
+          <span class="text-gray-500 ml-auto" style="font-size:0.63rem;">{{ String(extremeRecords.max.time).slice(0,
             10) }}</span>
         </div>
-        <div class="d-flex align-center mb-3">
-          <v-icon size="13" color="blue-lighten-2">mdi-arrow-down-bold</v-icon>
-          <span class="text-caption font-weight-medium ml-1">{{ Number(extremeRecords.min.value).toFixed(3) }}</span>
-          <span class="text-grey ml-auto" style="font-size:0.63rem;">{{ String(extremeRecords.min.time).slice(0,
+        <div class="flex items-center mb-3">
+          <UIcon name="i-mdi-arrow-down-bold" class="size-[13px] text-blue-300" />
+          <span class="font-medium ml-1">{{ Number(extremeRecords.min.value).toFixed(3) }}</span>
+          <span class="text-gray-500 ml-auto" style="font-size:0.63rem;">{{ String(extremeRecords.min.time).slice(0,
             10) }}</span>
         </div>
       </template>
-      <div v-else class="text-caption text-grey text-center mt-6">
+      <div v-else class="text-gray-500 text-center mt-6">
         Records appear once analysis loads
       </div>
     </div>
@@ -108,9 +99,14 @@ import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { useMainStore } from '../../stores/main'
 import { fetchAnalysisSeries, type SeriesPoint } from '~~/composables/useAnalysisFetch'
 import { fetchSensorAnalysisSeries } from '~~/composables/useSensorAnalysisFetch'
+import SegmentedControl from '../ui/SegmentedControl.vue'
 import {
+
   availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor, computeYearBandStats,
 } from '~~/composables/useAnalysisStatistics'
+
+const seasonItems = [{ value: 'full_year', label: 'All' }, { value: 'mam', label: 'MAM' }, { value: 'jja', label: 'JJA' }, { value: 'son', label: 'SON' }, { value: 'djf', label: 'DJF' }]
+const statItems = [{ value: 'min', label: 'Min' }, { value: 'mean', label: 'Mean' }, { value: 'max', label: 'Max' }]
 
 const props = defineProps<{ active?: boolean; source?: 'model' | 'sensor' }>()
 const analysisSource = computed(() => props.source ?? 'model')
@@ -578,19 +574,9 @@ async function runAnalysis() {
   margin-bottom: 4px;
 }
 
-.analytics-sidebar :deep(.v-btn) {
+.analytics-sidebar :deep(button) {
   font-size: 0.7rem !important;
   letter-spacing: 0.02em !important;
-}
-
-.analytics-sidebar :deep(.v-btn__content) {
-  font-size: 0.7rem !important;
-}
-
-.season-btn {
-  min-width: 34px !important;
-  flex: 1 !important;
-  padding: 0 4px !important;
 }
 
 .chart-loading {

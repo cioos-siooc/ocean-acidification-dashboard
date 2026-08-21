@@ -1,71 +1,63 @@
 <template>
-  <v-card v-if="selectedVariableName" class="colorbar">
+  <div class="bg-elevated rounded-lg colorbar" v-if="selectedVariableName">
     <div class="label">
       <!-- VARIABLES -->
-      <v-select v-model="selectedVarName" label="Field" :items="variableItems" :disabled="variableItems.length === 0"
-        item-title="label" item-value="var" hide-details class="my-4"
-        :menu-props="{ location: 'end', offset: 35, zIndex: 9999 }" style="width: 100%"></v-select>
+      <UFormField label="Field" class="my-4">
+        <USelectMenu v-model="selectedVarName" :items="variableItems" :disabled="variableItems.length === 0"
+          label-key="label" value-key="var" class="w-full" />
+      </UFormField>
 
       <!-- SOURCES -->
-      <v-select v-model="selectedSource" :items="sourceItems" label="Model Source" item-title="label" item-value="source"
-        :disabled="sourceItems.length === 0" hide-details class="my-4"
-        :menu-props="{ location: 'end', offset: 35, zIndex: 9999 }" style="width: 100%">
-        <template #prepend-inner>
-          <v-btn icon size="12px" @click="showSourceInfo = !showSourceInfo" title="About this data source">
-            <v-icon :color="colors.yellow.base" size="12px">mdi-information-variant</v-icon>
-          </v-btn>
-        </template>
-      </v-select>
+      <UFormField label="Model Source" class="my-4">
+        <USelectMenu v-model="selectedSource" :items="sourceItems" label-key="label" value-key="source"
+          :disabled="sourceItems.length === 0" class="w-full">
+          <template #leading>
+            <UButton variant="ghost" class="size-[12px] p-0 justify-center shrink-0" @click.stop="showSourceInfo = !showSourceInfo" title="About this data source">
+              <UIcon name="i-mdi-information-variant" :style="{ color: colors.yellow.base }" class="size-[12px]" />
+            </UButton>
+          </template>
+        </USelectMenu>
+      </UFormField>
 
       <!-- DEPTHS -->
-      <v-select v-if="depths && depths.length > 0" v-model="selectedDepth" :items="depths" label="Depth"
-        item-title="title" item-value="value" :disabled="!depths || depths.length === 0" hide-details
-        class="my-4" :menu-props="{ location: 'end', offset: 75, zIndex: 9999 }" style="width: 100%">
-        <template #item="{ props, item }">
-          <v-list-item v-bind="props" :title="item.title"></v-list-item>
-        </template>
-        <template #selection="{ item }">
-          <div class="colormap-selection">{{ item.title }}</div>
-        </template>
-        <template #append>
-          <v-btn icon size="12px" @click="deeper" title="Deeper depth selection">
-            <v-icon :color="colors.orange.lighten2" size="10px">mdi-arrow-down</v-icon>
-          </v-btn>
-          <v-btn icon size="12px" @click="shallower" title="Shallower depth selection">
-            <v-icon :color="colors.green.lighten2" size="10px">mdi-arrow-up</v-icon>
-          </v-btn>
-        </template>
-        <!-- <template #append>
-          <v-btn icon size="12px" @click="shallower" title="Clear depth selection">
-            <v-icon size="10px">mdi-arrow-up</v-icon>
-          </v-btn>
-        </template> -->
-      </v-select>
+      <UFormField label="Depth" class="my-4">
+        <USelectMenu v-if="depths && depths.length > 0" v-model="selectedDepth" :items="depths"
+          label-key="title" value-key="value" :disabled="!depths || depths.length === 0" class="w-full">
+          <template #trailing>
+            <UButton variant="ghost" class="size-[12px] p-0 justify-center shrink-0" @click.stop="deeper" title="Deeper depth selection">
+              <UIcon name="i-mdi-arrow-down" :style="{ color: colors.orange.lighten2 }" class="size-[10px]" />
+            </UButton>
+            <UButton variant="ghost" class="size-[12px] p-0 justify-center shrink-0" @click.stop="shallower" title="Shallower depth selection">
+              <UIcon name="i-mdi-arrow-up" :style="{ color: colors.green.lighten2 }" class="size-[10px]" />
+            </UButton>
+          </template>
+        </USelectMenu>
+      </UFormField>
 
       <!-- COLORBAR -->
       <!-- <ColormapBar /> -->
 
-      <!-- <v-card-actions class="ma-0 pa-0" style="min-height:24px">
-        <v-spacer></v-spacer>
-        <v-btn size="x-small" icon @click="showSettings = !showSettings" class="ma-0 pa-0">
+      <!-- <div class="flex items-center gap-2 m-0 p-0" style="min-height:24px">
+        <div class="grow" />
+        <UButton variant="ghost" size="xs" class="shrink-0 m-0 p-0" @click="showSettings = !showSettings">
           <IconsConfig />
-        </v-btn>
-        <v-btn icon size="x-small" flat
-          :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled"
-          @click="autorange" title="Auto-range colorbar to data range" class="ma-0 pa-0">
+        </UButton>
+        <UButton variant="solid" size="xs" class="shrink-0 m-0 p-0" :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled" @click="autorange" title="Auto-range colorbar to data range">
           <IconsAutorange />
-        </v-btn>
-      </v-card-actions> -->
+        </UButton>
+      </div> -->
     </div>
 
-  </v-card>
+  </div>
 
-  <v-dialog v-model="showSourceInfo" max-width="50%">
-    <v-card class="pa-5">
+  <UModal v-model:open="showSourceInfo" :ui="{ content: 'max-w-[50vw]' }">
+    <template #content>
+      <div class="p-5">
       <about-ssc v-if="selectedSource === 'SalishSeaCast'"></about-ssc>
       <about-nonna v-else-if="selectedSource === 'NONNA'"></about-nonna>
-    </v-card>
-  </v-dialog>
+      </div>
+    </template>
+  </UModal>
 </template>
 
 <script setup lang="ts">
@@ -73,7 +65,7 @@ import { computed, toRef, ref, watch } from 'vue';
 import moment from 'moment-timezone';
 import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 import { trackEvent } from '~~/composables/useAnalytics';
-import colors from 'vuetify/util/colors'
+import colors from '@/config/palette'
 
 import { useMainStore, formatDepthLabel } from '../stores/main'
 const mainStore = useMainStore();

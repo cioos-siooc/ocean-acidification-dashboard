@@ -1,28 +1,34 @@
 <template>
-    <v-dialog v-model="showDialog" width="75%" height="75%"  >
-        <v-card>
-            <v-card-title class="beta-header pa-6">
-                <div class="text-headline-small font-weight-700 text-white">Visual Guide to OceanECO</div>
-            </v-card-title>
+    <UModal v-model:open="showDialog" :ui="{ content: 'max-w-[75vw]' }">
+        <template #content>
+        <div class="bg-elevated rounded-lg">
+            <div class="text-lg beta-header p-6">
+                <div class="text-2xl font-bold text-white">Visual Guide to OceanECO</div>
+            </div>
 
-            <v-row>
-                <v-col cols="6" v-for="video in videos" :key="video.filename">
-                    <v-card  :title="video.title" class="ma-3 pa-5" flat variant="outlined">
-                        <v-video :src="`/guide/${video.filename}.webm`" :image="`/guide/${video.filename}.webp`" theme="dark" color="primary" aspect-ratio="16/9"
-                            hide-volume  />
-                    </v-card>
-                </v-col>
-            </v-row>
+            <div class="flex flex-wrap -m-3">
+                <div class="p-3 w-1/2" v-for="video in videos" :key="video.filename">
+                    <div class="rounded-lg m-3 p-5" :title="video.title">
+                        <video :src="`/guide/${video.filename}.webm`" :poster="`/guide/${video.filename}.webp`" controls playsinline class="block w-full aspect-video rounded" />
+                    </div>
+                </div>
+            </div>
 
 
-        </v-card>
-    </v-dialog>
+        </div>
+        </template>
+    </UModal>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 
-const showDialog = ref(true);
+// The parent drives this: `<howTo v-model="showHow" />` in pages/index.vue, set
+// by the overlay's @show-how. Previously this was a local `ref(true)` and the
+// parent's v-model only worked by accident — it fell through as a `modelValue`
+// attr onto Vuetify's v-dialog, which happens to accept that prop. UModal names
+// it `open`, so the fallthrough stopped working and the dialog opened on load.
+const showDialog = defineModel<boolean>({ default: false });
 
 const videos = [
     { "filename": "01", "title": "Select a Variable" },

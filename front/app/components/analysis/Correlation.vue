@@ -1,42 +1,40 @@
 <template>
-  <div class="d-flex h-100" style="overflow:hidden;">
-    <div class="pa-2 d-flex flex-column flex-shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
+  <div class="flex h-full" style="overflow:hidden;">
+    <div class="p-2 flex flex-col shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Variables (2-4)</div>
-      <v-select v-model="selectedVariables" :items="selectableVariables" item-title="name" item-value="id" multiple
-        chips closable-chips hide-details class="mb-3"
-        :return-object="false" @update:model-value="onSelectionChange" />
+      <USelectMenu v-model="selectedVariables" :items="selectableVariables" label-key="name" value-key="id" class="mb-3 w-full" :return-object="false" multiple />
 
       <template v-for="id in selectedVariables" :key="id">
-        <v-alert v-if="errorByVar[id]" type="error" variant="tonal" class="mb-2">
+        <UAlert color="error" variant="subtle" class="mb-2" v-if="errorByVar[id]">
           {{ varName(id) }}: {{ errorByVar[id] }}
-        </v-alert>
+        </UAlert>
       </template>
 
-      <div class="text-caption text-grey mt-2">
+      <div class="text-gray-500 mt-2">
         Pearson correlation across the date-aligned overlap of each variable pair, at the selected point/depth.
         Click a matrix cell to see the underlying scatter.
       </div>
     </div>
 
-    <div class="flex-grow-1 d-flex" style="min-width:0;">
-      <div style="width:50%; min-width:0; position:relative;" class="d-flex flex-column">
-        <div v-if="anyLoading" class="d-flex align-center justify-center"
+    <div class="grow flex" style="min-width:0;">
+      <div style="width:50%; min-width:0; position:relative;" class="flex flex-col">
+        <div v-if="anyLoading" class="flex items-center justify-center"
           style="position:absolute; inset:0; z-index:1; background:rgba(0,0,0,0.45);">
-          <v-progress-circular indeterminate color="warning" size="40" />
+          <UIcon name="i-mdi-loading" class="animate-spin size-[40px] text-warning" />
         </div>
-        <div v-else-if="readyVariables.length < 2" class="d-flex align-center justify-center h-100 text-caption text-grey">
+        <div v-else-if="readyVariables.length < 2" class="flex items-center justify-center h-full text-gray-500">
           Select at least one more variable to compare
         </div>
         <!-- Container stays mounted across loading toggles — destroying/recreating it would
              orphan the ECharts instance, which keeps a reference to the old DOM node and
              silently stops updating (see Correlation matrix-frozen-at-one-cell bug). -->
-        <div v-show="!anyLoading && readyVariables.length >= 2" ref="matrixContainerRef" class="w-100 h-100" />
+        <div v-show="!anyLoading && readyVariables.length >= 2" ref="matrixContainerRef" class="w-full h-full" />
       </div>
       <div style="width:50%; min-width:0; border-left:1px solid rgba(255,255,255,0.08);">
-        <div v-if="!selectedPair" class="d-flex align-center justify-center h-100 text-caption text-grey">
+        <div v-if="!selectedPair" class="flex items-center justify-center h-full text-gray-500">
           Click a matrix cell to inspect a pair
         </div>
-        <div v-show="selectedPair" ref="scatterContainerRef" class="w-100 h-100" />
+        <div v-show="selectedPair" ref="scatterContainerRef" class="w-full h-full" />
       </div>
     </div>
   </div>

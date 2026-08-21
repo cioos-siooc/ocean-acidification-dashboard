@@ -1,34 +1,34 @@
 <template>
-  <div class="d-flex h-100" style="overflow:hidden;">
-    <div class="pa-3 d-flex flex-column flex-shrink-0" style="width:240px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
+  <div class="flex h-full" style="overflow:hidden;">
+    <div class="p-3 flex flex-col shrink-0" style="width:240px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Theil-Sen slope</div>
-      <div class="text-h6 mb-3">{{ result ? result.theilSen.slope.toFixed(4) : '—' }} <span class="text-caption text-grey">{{ unit ? `${unit} / year` : '/ year' }}</span></div>
+      <div class="mb-3">{{ result ? result.theilSen.slope.toFixed(4) : '—' }} <span class="text-gray-500">{{ unit ? `${unit} / year` : '/ year' }}</span></div>
 
       <div class="ctrl-label">Mann-Kendall significance</div>
-      <div class="text-body-2 mb-1">
-        <v-chip size="small" :color="trendColor" variant="tonal">{{ result?.mk.trend ?? '—' }}</v-chip>
+      <div class="mb-1">
+        <UBadge size="sm" :color="trendColor" variant="subtle" class="rounded-full">{{ result?.mk.trend ?? '—' }}</UBadge>
       </div>
-      <div class="text-caption text-grey mb-3">p = {{ result ? result.mk.p.toFixed(4) : '—' }} (α = 0.05)</div>
+      <div class="text-gray-500 mb-3">p = {{ result ? result.mk.p.toFixed(4) : '—' }} (α = 0.05)</div>
 
       <div class="ctrl-label">Detail</div>
-      <div class="text-caption text-grey">S = {{ result?.mk.S ?? '—' }}</div>
-      <div class="text-caption text-grey">Z = {{ result ? result.mk.Z.toFixed(3) : '—' }}</div>
-      <div class="text-caption text-grey mb-3">n (years) = {{ annualMeans.length }}</div>
+      <div class="text-gray-500">S = {{ result?.mk.S ?? '—' }}</div>
+      <div class="text-gray-500">Z = {{ result ? result.mk.Z.toFixed(3) : '—' }}</div>
+      <div class="text-gray-500 mb-3">n (years) = {{ annualMeans.length }}</div>
 
-      <div class="text-caption text-grey mt-2">
+      <div class="text-gray-500 mt-2">
         Computed on season-filtered annual means (not raw daily values) — Mann-Kendall tests for a
         monotonic trend, Theil-Sen estimates its robust magnitude.
       </div>
     </div>
 
-    <div class="flex-grow-1" style="min-width:0;">
-      <div v-if="annualMeans.length < 3" class="d-flex align-center justify-center h-100 text-caption text-grey">
+    <div class="grow" style="min-width:0;">
+      <div v-if="annualMeans.length < 3" class="flex items-center justify-center h-full text-gray-500">
         Not enough years of data to compute a trend.
       </div>
       <!-- Stays mounted via v-show (not v-else) once shown once, so the ECharts instance
            never gets orphaned by a destroyed/recreated container — see the same bug fixed
            in CompoundStress.vue and Correlation.vue. -->
-      <div v-show="annualMeans.length >= 3" ref="chartContainerRef" class="w-100 h-100" />
+      <div v-show="annualMeans.length >= 3" ref="chartContainerRef" class="w-full h-full" />
     </div>
   </div>
 </template>

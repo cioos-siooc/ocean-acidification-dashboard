@@ -1,40 +1,36 @@
 <template>
-  <div class="cross-section-panel d-flex flex-column fill-height pa-3">
+  <div class="cross-section-panel flex flex-col h-full p-3">
     <!-- No line drawn yet — the whole view is keyed off the map's drawn polyline. -->
-    <div v-if="!line" class="d-flex flex-column align-center justify-center flex-grow-1 text-center px-6">
-      <v-icon size="56" color="grey-darken-1">mdi-vector-polyline</v-icon>
-      <div class="text-caption text-grey-darken-1 mt-2">
+    <div v-if="!line" class="flex flex-col items-center justify-center grow text-center px-6">
+      <UIcon name="i-mdi-vector-polyline" class="size-[56px] text-gray-500" />
+      <div class="text-gray-500 mt-2">
         Draw a line on the map to see a depth section along it — click to add
         points, double-click (or press Enter) to finish.
       </div>
     </div>
 
     <template v-else>
-      <div class="d-flex align-center mb-2" style="gap:8px;">
-        <v-btn-toggle v-model="binMode" mandatory variant="tonal" :disabled="loading">
-          <v-btn v-for="m in AVAILABLE_MODES" :key="m" :value="m" size="x-small" :title="BIN_CONFIG[m].label">
-            {{ BIN_CONFIG[m].short }}
-          </v-btn>
-        </v-btn-toggle>
-        <v-progress-circular v-if="loading" indeterminate size="14" width="2" color="teal" />
-        <v-spacer />
+      <div class="flex items-center mb-2" style="gap:8px;">
+        <SegmentedControl v-model="binMode" :items="binModeItems" size="xs" :disabled="loading"
+          aria-label="Time bin resolution" />
+        <UIcon name="i-mdi-loading" class="animate-spin size-[14px] text-teal-400" v-if="loading" />
+        <div class="grow" />
         <div class="time-controls-row mb-2">
           <TimeControls />
         </div>
-        <v-spacer />
-        <v-btn size="x-small" variant="tonal" prepend-icon="mdi-vector-line"
-          @click="mainStore.requestCrossSectionRedraw()">
+        <div class="grow" />
+        <UButton variant="subtle" size="xs" leading-icon="i-mdi-vector-line" @click="mainStore.requestCrossSectionRedraw()">
           New line
-        </v-btn>
+        </UButton>
       </div>
 
-      <v-alert v-if="loadError" type="error" variant="tonal" border="start" density="compact" class="mb-2">
+      <UAlert color="error" variant="subtle" class="mb-2" v-if="loadError">
         {{ loadError }}
-      </v-alert>
+      </UAlert>
 
       <ChartContextBar :items="contextItems" />
 
-      <div class="chart-region flex-grow-1">
+      <div class="chart-region grow">
         <div class="hm-slot">
           <TimeDepthHeatmap ref="panel" label="MODEL" :depths="depths" :values="grid" :bin-count="distances.length"
             :color-fn="seqColorFn" :gridline-bins="gridlineBins" :tooltip-formatter="cellTooltip" show-x-axis
@@ -58,7 +54,7 @@
              hover-dependent: the vertex-marker hint and the empty-cell legend. -->
         <div class="info-row">
           <span class="hint-text">Numbered markers match the drawn line's vertices on the map</span>
-          <v-spacer />
+          <div class="grow" />
           <div class="legend">
             <span class="swatch-hatch" title="no model data (below seabed)" />
             <span class="legend-label">no model data (below seabed)</span>
@@ -66,7 +62,7 @@
         </div>
 
         <div v-if="loading" class="loading-overlay">
-          <v-progress-circular indeterminate size="42" width="3" color="teal" />
+          <UIcon name="i-mdi-loading" class="animate-spin size-[42px] text-teal-400" />
         </div>
       </div>
     </template>
@@ -85,6 +81,8 @@ import { utc2pst } from '~~/composables/useUTC2PST'
 import TimeDepthHeatmap from '../depth/TimeDepthHeatmap.vue'
 import TimeControls from '../TimeControls.vue'
 import ChartContextBar from '../ChartContextBar.vue'
+import SegmentedControl from '../ui/SegmentedControl.vue'
+const binModeItems = computed(() => AVAILABLE_MODES.map(m => ({ value: m, label: BIN_CONFIG[m].short, title: BIN_CONFIG[m].label })))
 
 /**
  * Cross-Section: the spatial counterpart to Explore's Model depth section —

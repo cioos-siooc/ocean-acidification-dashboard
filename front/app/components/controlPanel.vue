@@ -1,24 +1,24 @@
 <template>
-    <v-navigation-drawer v-model="isOpen" location="left" :width="mainStore.controlPanel_width" class="pa-2" absolute
-        persistent mobile :scrim="false" style="height:100%; z-index:999; top:0; ">
-        <!-- <v-row>
-            <v-col cols="1">
-                <v-btn icon>
-                     <v-icon @click="isOpen = !isOpen">mdi-chevron-left</v-icon>
-                </v-btn>
-            </v-col>
-        </v-row> -->
+    <aside v-show="isOpen" class="control-panel p-2 absolute left-0 top-0 h-full bg-default border-r border-default"
+        :style="{ width: mainStore.controlPanel_width + 'px', zIndex: 999 }">
+        <!-- <div class="flex flex-wrap -m-3">
+            <div class="p-3 w-1/12">
+                <UButton variant="ghost" class="shrink-0">
+                     <UIcon name="i-mdi-chevron-left" />
+                </UButton>
+            </div>
+        </div> -->
 
         <div class="variables-block">
             <variables />
         </div>
 
-        <v-divider class="my-2" />
+        <USeparator class="my-2" />
 
         <div class="sensors-block">
             <sensorInfo />
         </div>
-    </v-navigation-drawer>
+    </aside>
 </template>
 
 
@@ -33,7 +33,8 @@ const isOpen = computed(() => mainStore.isControlPanelOpen);
 <style scoped lang="scss">
 // Keep the Variables block always in view: the drawer itself doesn't scroll,
 // only the Sensors block's own content area does.
-:deep(.v-navigation-drawer__content) {
+// (These rules used to sit on Vuetify's internal .v-navigation-drawer__content.)
+.control-panel {
     display: flex;
     flex-direction: column;
     overflow: hidden;

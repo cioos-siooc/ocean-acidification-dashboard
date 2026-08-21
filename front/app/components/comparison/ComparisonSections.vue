@@ -1,27 +1,24 @@
 <template>
-  <div class="sections d-flex flex-column h-100 pa-3" ref="rootRef">
-    <div class="d-flex align-center mb-2" style="gap:8px;">
-      <v-btn-toggle v-model="binMode" mandatory variant="tonal" density="compact" :disabled="loading">
-        <v-btn v-for="m in AVAILABLE_MODES" :key="m" :value="m" size="x-small" :title="BIN_CONFIG[m].label">
-          {{ BIN_CONFIG[m].short }}
-        </v-btn>
-      </v-btn-toggle>
-      <v-progress-circular v-if="loading" indeterminate size="14" width="2" color="teal" />
-      <span v-if="stats" class="text-caption stat-strip">
+  <div class="sections flex flex-col h-full p-3" ref="rootRef">
+    <div class="flex items-center mb-2" style="gap:8px;">
+      <SegmentedControl v-model="binMode" :items="binModeItems" size="xs" :disabled="loading"
+        aria-label="Time bin resolution" />
+      <UIcon name="i-mdi-loading" class="animate-spin size-[14px] text-teal-400" v-if="loading" />
+      <span v-if="stats" class="stat-strip">
         bias {{ stats.bias }} &#183; r {{ stats.r }} &#183; RMSE {{ stats.rmse }} &#183; n {{ stats.n }}
-        <span class="text-grey"> at {{ depthLabel }}</span>
+        <span class="text-gray-500"> at {{ depthLabel }}</span>
       </span>
-      <v-spacer />
-      <v-btn icon="mdi-chevron-left" size="x-small" variant="text" :disabled="!canPageBack || loading" @click="page(-1)" />
-      <span class="text-caption range-label">{{ rangeLabel }}</span>
-      <v-btn icon="mdi-chevron-right" size="x-small" variant="text" :disabled="!canPageForward || loading" @click="page(1)" />
+      <div class="grow" />
+      <UButton variant="ghost" size="xs" icon="i-mdi-chevron-left" class="shrink-0" :disabled="!canPageBack || loading" @click="page(-1)" />
+      <span class="range-label">{{ rangeLabel }}</span>
+      <UButton variant="ghost" size="xs" icon="i-mdi-chevron-right" class="shrink-0" :disabled="!canPageForward || loading" @click="page(1)" />
     </div>
 
-    <v-alert v-if="loadError" type="error" variant="tonal" border="start" density="compact" class="mb-2">
+    <UAlert color="error" variant="subtle" class="mb-2" v-if="loadError">
       {{ loadError }}
-    </v-alert>
+    </UAlert>
 
-    <div class="flex-grow-1" style="min-height:0;" @mouseleave="hoverCell = null">
+    <div class="grow" style="min-height:0;" @mouseleave="hoverCell = null">
       <div class="hm-slot" :style="{ height: panelH + 'px' }">
         <TimeDepthHeatmap ref="modelPanel" label="MODEL" :depths="depths" :values="modelGrid"
           :bin-count="binCount" :color-fn="colorFn" :gridline-bins="gridlineBins"
@@ -59,6 +56,8 @@ import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, useTimeDepthWindow, toApiIso, type BinMode } from '~~/composables/useTimeDepthWindow'
 import TimeDepthHeatmap from '../depth/TimeDepthHeatmap.vue'
+import SegmentedControl from '../ui/SegmentedControl.vue'
+const binModeItems = computed(() => AVAILABLE_MODES.map(m => ({ value: m, label: BIN_CONFIG[m].short, title: BIN_CONFIG[m].label })))
 
 /**
  * Model and sensor water columns side by side, for a profiler.

@@ -1,17 +1,14 @@
 <template>
   <div class="palette-picker">
-    <v-text-field v-model="paletteSearch" placeholder="Search palettes…"
-      hide-details prepend-inner-icon="mdi-magnify" class="mb-2" clearable />
+    <UInput v-model="paletteSearch" placeholder="Search palettes…" icon="i-mdi-magnify" class="mb-2" />
 
-    <div class="d-flex ga-2 mb-3">
-      <v-btn size="small" :variant="reversedActive ? 'flat' : 'outlined'" :color="reversedActive ? 'primary' : undefined"
-        :disabled="!reverseAvailable" @click="toggleReversed">
+    <div class="flex gap-2 mb-3">
+      <UButton size="sm" :variant="reversedActive ? 'solid' : 'outline'" :color="reversedActive ? 'primary' : undefined" :disabled="!reverseAvailable" @click="toggleReversed">
         Reverse
-      </v-btn>
-      <v-btn size="small" :variant="invertedActive ? 'flat' : 'outlined'" :color="invertedActive ? 'primary' : undefined"
-        :disabled="!invertAvailable" @click="toggleInverted">
+      </UButton>
+      <UButton size="sm" :variant="invertedActive ? 'solid' : 'outline'" :color="invertedActive ? 'primary' : undefined" :disabled="!invertAvailable" @click="toggleInverted">
         Invert
-      </v-btn>
+      </UButton>
     </div>
 
     <div class="swatch-grid">

@@ -1,14 +1,16 @@
 <template>
-    <v-dialog v-model="showDialog" width="600" persistent @update:model-value="handleDialogToggle">
-        <v-card>
-            <v-card-title class="beta-header pa-6">
-                <div class="text-headline-small font-weight-700 text-white">Beta Version Notice</div>
-                <div class="text-body-small text-white" style="opacity: 0.9;">Help us improve</div>
-            </v-card-title>
+    <UModal v-model:open="showDialog" :dismissible="false" :ui="{ content: 'max-w-[600px]' }"
+        @update:open="handleDialogToggle">
+        <template #content>
+        <div class="bg-elevated rounded-lg">
+            <div class="text-lg beta-header p-6">
+                <div class="text-2xl font-bold text-white">Beta Version Notice</div>
+                <div class="text-xs text-white" style="opacity: 0.9;">Help us improve</div>
+            </div>
 
-            <v-card-text class="pa-6">
+            <div class="p-6">
                 <div class="mb-4">
-                    <p class="text-title-large mb-2">Welcome to the OceanECO app</p>
+                    <p class="text-[22px] mb-2">Welcome to the OceanECO app</p>
                     <p>
                         This application is currently in <strong>beta</strong> and actively under development.
                         Features, data, and functionality may change as we continue to improve the platform.
@@ -16,7 +18,7 @@
                 </div>
 
                 <div class="mb-4">
-                    <p class="text-title-large mb-2">We Value Your Feedback</p>
+                    <p class="text-[22px] mb-2">We Value Your Feedback</p>
                     <p>
                         Your input is crucial in helping us build a better tool. Whether you encounter issues,
                         have suggestions, or want to share your experience, we'd love to hear from you.
@@ -24,34 +26,32 @@
                 </div>
 
                 <div class="mb-6">
-                    <div class="d-flex gap-2 flex-wrap">
-                        <v-btn color="primary" variant="outlined" class="mx-2 pa-3"
-                            :to="{ name: 'about' }" @click="showDialog = false">
+                    <div class="flex gap-2 flex-wrap">
+                        <UButton variant="outline" color="primary" class="mx-2 p-3" :to="{ name: 'about' }" @click="showDialog = false">
                             Learn More
-                        </v-btn>
-                        <v-btn color="info" variant="outlined" class="mx-2 pa-3"
-                            href="https://docs.google.com/forms/d/e/1FAIpQLSdGiIclM5wvIbPReZydsXKiRBXbZsQVEdoQPlA0EruKIoNJkg/viewform?usp=dialog"
-                            target="_blank" rel="noopener noreferrer">
+                        </UButton>
+                        <UButton variant="outline" color="info" href="https://docs.google.com/forms/d/e/1FAIpQLSdGiIclM5wvIbPReZydsXKiRBXbZsQVEdoQPlA0EruKIoNJkg/viewform?usp=dialog" class="mx-2 p-3" target="_blank" rel="noopener noreferrer">
                             Feedback Survey
-                        </v-btn>
+                        </UButton>
                     </div>
                 </div>
 
-                <v-divider class="my-4"></v-divider>
+                <USeparator class="my-4" />
 
-                <div class="d-flex align-center gap-2">
-                    <v-checkbox v-model="dontShowAgain" label="Don't show this again" hide-details></v-checkbox>
+                <div class="flex items-center gap-2">
+                    <UCheckbox v-model="dontShowAgain" label="Don't show this again" />
                 </div>
-            </v-card-text>
+            </div>
 
-            <v-card-actions class="pa-4">
-                <v-spacer></v-spacer>
-                <v-btn color="error" variant="tonal" class="pa-3" @click="closeDialog">
+            <div class="flex items-center gap-2 p-4">
+                <div class="grow" />
+                <UButton variant="subtle" color="error" class="p-3" @click="closeDialog">
                     Close
-                </v-btn>
-            </v-card-actions>
-        </v-card>
-    </v-dialog>
+                </UButton>
+            </div>
+        </div>
+        </template>
+    </UModal>
 </template>
 
 <script setup lang="ts">

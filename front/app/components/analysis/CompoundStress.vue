@@ -1,39 +1,37 @@
 <template>
-  <div class="d-flex h-100" style="overflow:hidden;">
-    <div class="pa-2 d-flex flex-column flex-shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
+  <div class="flex h-full" style="overflow:hidden;">
+    <div class="p-2 flex flex-col shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Primary variable</div>
-      <div class="text-caption mb-3">{{ varName(primaryVariable) }} {{ primaryDirection === '>' ? '>' : '<' }} {{ primaryThreshold }}{{ displayUnit(primaryVariable) ? ` ${displayUnit(primaryVariable)}` : '' }}</div>
-      <v-btn-toggle v-model="primaryDirection" mandatory variant="tonal" class="mb-1 w-100">
-        <v-btn value=">" size="x-small" class="flex-grow-1">Above</v-btn>
-        <v-btn value="<" size="x-small" class="flex-grow-1">Below</v-btn>
-      </v-btn-toggle>
-      <v-text-field v-model.number="primaryThreshold" type="number" :suffix="displayUnit(primaryVariable)" hide-details class="mb-3" />
+      <div class="mb-3">{{ varName(primaryVariable) }} {{ primaryDirection === '>' ? '>' : '<' }} {{ primaryThreshold }}{{ displayUnit(primaryVariable) ? ` ${displayUnit(primaryVariable)}` : '' }}</div>
+      <SegmentedControl v-model="primaryDirection" :items="directionItems" size="xs" block
+        class="mb-1" aria-label="Primary threshold direction" />
+      <UInput v-model.number="primaryThreshold" type="number" class="mb-3">
+  <template #trailing><span class="text-xs text-muted">{{ displayUnit(primaryVariable) }}</span></template>
+</UInput>
 
       <div class="ctrl-label">Compare against</div>
-      <v-select v-model="secondaryVariable" :items="otherVariables" item-title="name" item-value="id"
-        hide-details class="mb-3" />
-      <v-btn-toggle v-model="secondaryDirection" mandatory variant="tonal" class="mb-1 w-100">
-        <v-btn value=">" size="x-small" class="flex-grow-1">Above</v-btn>
-        <v-btn value="<" size="x-small" class="flex-grow-1">Below</v-btn>
-      </v-btn-toggle>
-      <v-text-field v-model.number="secondaryThreshold" type="number" :suffix="displayUnit(secondaryVariable)" hide-details class="mb-3" />
+      <USelectMenu v-model="secondaryVariable" :items="otherVariables" label-key="name" value-key="id" class="mb-3 w-full" />
+      <SegmentedControl v-model="secondaryDirection" :items="directionItems" size="xs" block
+        class="mb-1" aria-label="Secondary threshold direction" />
+      <UInput v-model.number="secondaryThreshold" type="number" class="mb-3">
+  <template #trailing><span class="text-xs text-muted">{{ displayUnit(secondaryVariable) }}</span></template>
+</UInput>
 
-      <v-alert v-if="secondaryError" type="error" variant="tonal" class="mt-2">{{ secondaryError }}</v-alert>
+      <UAlert color="error" variant="subtle" class="mt-2" v-if="secondaryError">{{ secondaryError }}</UAlert>
     </div>
 
-    <div class="flex-grow-1 d-flex flex-column" style="min-width:0; position:relative;">
-      <div v-if="secondaryLoading" class="d-flex align-center justify-center"
+    <div class="grow flex flex-col" style="min-width:0; position:relative;">
+      <div v-if="secondaryLoading" class="flex items-center justify-center"
         style="position:absolute; inset:0; z-index:1; background:rgba(0,0,0,0.45);">
-        <v-progress-circular indeterminate color="warning" size="40" />
+        <UIcon name="i-mdi-loading" class="animate-spin size-[40px] text-warning" />
       </div>
       <!-- Chart container stays mounted across loading toggles — destroying/recreating it
            would orphan the ECharts instance, which keeps a reference to the old DOM node
            and silently stops updating (see CompoundStress chart-disappears bug). -->
-      <div ref="chartContainerRef" class="w-100" style="height:55%; flex-shrink:0;" />
-      <div class="flex-grow-1 pa-2" style="overflow-y:auto;">
+      <div ref="chartContainerRef" class="w-full" style="height:55%; flex-shrink:0;" />
+      <div class="grow p-2" style="overflow-y:auto;">
         <div class="ctrl-label mb-1">Per-year days both conditions hold</div>
-        <v-data-table :headers="yearHeaders" :items="yearRows" hide-default-footer
-          :items-per-page="-1" :sort-by="[{ key: 'year', order: 'desc' as const }]" class="stats-table" />
+        <UTable v-model:sorting="sorting" :columns="yearHeaders" :data="yearRows" class="stats-table" />
       </div>
     </div>
   </div>
@@ -47,6 +45,8 @@ import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint, AnalysisLocation } from '~~/composables/useAnalysisFetch'
 import { availableVariables, filterBySeason, maskBySeason, breakDataGaps, groupByYear } from '~~/composables/useAnalysisStatistics'
 import { useMainStore } from '../../stores/main'
+import SegmentedControl from '../ui/SegmentedControl.vue'
+const directionItems = [{ value: '>', label: 'Above' }, { value: '<', label: 'Below' }]
 
 const mainStore = useMainStore()
 
@@ -132,10 +132,13 @@ const yearRows = computed(() => {
   })
 })
 
+// v-data-table sorted by default; TanStack's table needs the initial state given explicitly.
+const sorting = ref([{ id: 'year', desc: true }])
+
 const yearHeaders = [
-  { title: 'Year', key: 'year' },
-  { title: 'Days', key: 'days' },
-  { title: 'Streak', key: 'streak' },
+  { header: 'Year', accessorKey: 'year' },
+  { header: 'Days', accessorKey: 'days' },
+  { header: 'Streak', accessorKey: 'streak' },
 ]
 
 // --- CHART ---
@@ -225,8 +228,8 @@ onBeforeUnmount(() => {
   margin-bottom: 4px;
 }
 
-.stats-table :deep(.v-data-table__td),
-.stats-table :deep(.v-data-table__th) {
+.stats-table :deep(td),
+.stats-table :deep(th) {
   font-size: 0.72rem !important;
   padding: 2px 6px !important;
 }

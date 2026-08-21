@@ -118,7 +118,7 @@ Shared between `api` and `process` containers: `shared/nc2tile.py` (curvilinear 
 Sensor ingestion (ONC/ERDDAP → ClickHouse) lives in the top-level `sensors/` directory, its own docker-compose service — unrelated to `process/`. An older, Postgres-backed `process/sensors/` subsystem existed before that migration; it's been removed entirely, superseded by `sensors/`.
 
 ### Frontend (`front/`)
-Nuxt 3 + Vuetify + Pinia. Key structure:
+Nuxt 4 + Nuxt UI (v4, Tailwind v4 + Reka UI) + Pinia. Key structure:
 - `app/pages/index.vue` — single main page with MapboxGL map
 - `app/pages/caseStudy/` — standalone long-form narrative pages (`index.vue` lists cases, `2021-heat-dome.vue` the first writeup), linked from the top nav (`app.vue`) and opened in a new tab. Built from static exports of the app's own charts (`public/images/case-studies/`), not live-fetched — separate from the map/dashboard's data-fetching architecture below.
 - `app/components/` — map overlays, chart dialogs, time controls, variable/sensor pickers
@@ -127,7 +127,13 @@ Nuxt 3 + Vuetify + Pinia. Key structure:
 
 Config via `nuxt.config.ts`. Runtime env vars: `NUXT_PUBLIC_API_BASE_URL`, `NUXT_PUBLIC_MAPBOX_TOKEN`, `NUXT_PUBLIC_POSTHOG_KEY`, `NUXT_PUBLIC_POSTHOG_HOST` (see Usage Analytics below).
 
-**UI conventions**: Prefer Vuetify components (`v-btn`, `v-card`, `v-sheet`, etc.) over raw `div`/`button` elements, even when heavily restyled — apply custom look via scoped CSS classes on top of the component (e.g. `selectedInfo.vue`'s `.colorbar` class on a `v-card`) rather than dropping to plain HTML. Use `:deep()` to reach into a component's internal classes (e.g. `.v-btn__content`) when the override needs to target inner markup.
+**UI conventions**: Use Nuxt UI components (`UButton`, `UModal`, `USelectMenu`, `UInput`, `UTabs`, `UPopover`, `UBadge`, `UAlert`, `USeparator`, `UTable`, `UCalendar`) for anything interactive. Plain elements + Tailwind utilities are the right call for pure layout and styled surfaces — Nuxt UI has no `UCard`-shaped answer for every panel, and wrapping a bare surface in one just fights its header/body/footer padding. Icons are Iconify via `@nuxt/icon`: `<UIcon name="i-mdi-foo" />` and `icon`/`leading-icon`/`trailing-icon` props, with the MDI set bundled locally by `@iconify-json/mdi` (never the remote Iconify API).
+
+Shared UI primitives live in `app/components/ui/` — currently `SegmentedControl.vue`, a mandatory single-select built on `UButton` with proper `role="radiogroup"` semantics and arrow-key navigation. It replaced 13 `v-btn-toggle`s; reach for it rather than hand-rolling another button row.
+
+App-wide domain constants (timezone, map extent/zoom/style) live in `app/config/app.ts`; the Material palette values the charts still use are in `app/config/palette.ts`. Per-environment values stay in `runtimeConfig`.
+
+Dark-only: `colorMode` is pinned in `nuxt.config.ts`. Light mode is a real option but nothing has been verified in it.
 
 **Charts/plots**: Always use ECharts for any chart or plot — never hand-roll rendering on a raw `<canvas>` (custom heatmaps, hit-testing, tooltips, zoom, etc. reimplement things ECharts already does correctly, e.g. its `dataZoom` component for zoom/pan). Even non-standard visualizations (variable-height heatmap cells, custom hatching) are buildable as an ECharts `custom` series with `renderItem` — see `app/components/depth/TimeDepthHeatmap.vue`. One gotcha: ECharts enables progressive rendering by default for `custom` series above a low item-count threshold, which silently paints only the first chunk of data for larger grids (thousands of cells) — set `progressive: false` on the series when the full render is cheap enough to do in one pass. Register the dark theme via `composables/useEchartsTheme.ts`.
 

@@ -1,24 +1,19 @@
 <template>
-  <v-dialog v-model="isOpen" fullscreen transition="dialog-bottom-transition" :scrim="false">
-    <v-card class="d-flex flex-column" style="height:100vh;">
-      <v-toolbar color="grey-darken-4" density="compact">
-        <v-toolbar-title class="text-body-2">
+  <UModal v-model:open="isOpen" fullscreen :overlay="false">
+    <template #content>
+    <div class="flex flex-col bg-default" style="height:100vh;">
+      <div class="flex items-center gap-2 px-3 h-12 bg-elevated shrink-0">
+        <div class="font-medium truncate">
           Comparison — {{ varName }}
-          <v-chip v-if="sensorName" size="x-small" color="warning" variant="tonal" class="ml-2">{{ sensorName }}</v-chip>
-        </v-toolbar-title>
-        <v-spacer />
-        <v-btn icon="mdi-close" variant="text" title="Close (Esc)" @click="isOpen = false" />
-      </v-toolbar>
+          <UBadge size="xs" color="warning" variant="subtle" class="ml-2 rounded-full" v-if="sensorName">{{ sensorName }}</UBadge>
+        </div>
+        <div class="grow" />
+        <UButton variant="ghost" icon="i-mdi-close" class="shrink-0" title="Close (Esc)" @click="isOpen = false" />
+      </div>
 
-      <v-tabs v-model="activeTab" color="warning" density="compact" class="flex-shrink-0">
-        <v-tab value="overview">Timeseries</v-tab>
-        <v-tab v-if="isVariableDepth" value="sections">Depth sections</v-tab>
-        <v-tab value="scatter">Scatter</v-tab>
-        <v-tab value="residuals">Residuals</v-tab>
-        <v-tab value="seasonal">Seasonal Cycle</v-tab>
-      </v-tabs>
+      <UTabs v-model="activeTab" :items="tabItems" :content="false" class="shrink-0" />
 
-      <div class="flex-grow-1" style="min-height:0; overflow:hidden;">
+      <div class="grow" style="min-height:0; overflow:hidden;">
         <!-- The pane owns the model/sensor fetch and the timeseries chart; the
              statistical views are derived from the same matched pairs, so they
              live behind tabs on this one surface instead of a second dialog. -->
@@ -30,29 +25,23 @@
           <ComparisonSections v-if="isVariableDepth" :active="isOpen && activeTab === 'sections'" />
         </div>
 
-        <div v-if="isStatsTab" class="h-100 d-flex" style="overflow:hidden;">
-          <div class="flex-grow-1 d-flex flex-column pa-2" style="min-width:0; min-height:0;">
-            <div class="d-flex align-center mb-2" style="gap:10px;">
+        <div v-if="isStatsTab" class="h-full flex" style="overflow:hidden;">
+          <div class="grow flex flex-col p-2" style="min-width:0; min-height:0;">
+            <div class="flex items-center mb-2" style="gap:10px;">
               <span class="ctrl-label">Season</span>
-              <v-btn-toggle v-model="selectedSeason" mandatory variant="tonal" density="compact">
-                <v-btn value="all" size="x-small">All</v-btn>
-                <v-btn value="mam" size="x-small">MAM</v-btn>
-                <v-btn value="jja" size="x-small">JJA</v-btn>
-                <v-btn value="son" size="x-small">SON</v-btn>
-                <v-btn value="djf" size="x-small">DJF</v-btn>
-              </v-btn-toggle>
+              <SegmentedControl v-model="selectedSeason" :items="seasonItems" size="xs" aria-label="Season" />
             </div>
-            <div v-if="!hasChartData" class="d-flex flex-column align-center justify-center flex-grow-1 text-center">
-              <v-icon size="48" color="grey-darken-1">mdi-chart-scatter-plot</v-icon>
-              <div class="text-caption text-grey-darken-1 mt-2">No matched pairs for this season.</div>
+            <div v-if="!hasChartData" class="flex flex-col items-center justify-center grow text-center">
+              <UIcon name="i-mdi-chart-scatter-plot" class="size-[48px] text-gray-500" />
+              <div class="text-gray-500 mt-2">No matched pairs for this season.</div>
             </div>
-            <div v-else ref="chartRef" class="flex-grow-1" style="min-height:0;" />
+            <div v-else ref="chartRef" class="grow" style="min-height:0;" />
           </div>
 
-          <div class="adv-sidebar pa-3 d-flex flex-column"
+          <div class="adv-sidebar p-3 flex flex-col"
             style="width:240px; min-width:240px; border-left:1px solid rgba(255,255,255,0.08); overflow-y:auto;">
             <div class="ctrl-label mb-1">About</div>
-            <p class="text-caption mb-4" style="line-height:1.6; color:rgba(255,255,255,0.6);">{{ tabDescription }}</p>
+            <p class="mb-4" style="line-height:1.6; color:rgba(255,255,255,0.6);">{{ tabDescription }}</p>
             <template v-if="hasChartData && currentStats.length">
               <div class="ctrl-label mb-2">Statistics</div>
               <div v-for="stat in currentStats" :key="stat.label" class="stat-row">
@@ -63,8 +52,9 @@
           </div>
         </div>
       </div>
-    </v-card>
-  </v-dialog>
+    </div>
+    </template>
+  </UModal>
 </template>
 
 <script setup lang="ts">
@@ -86,6 +76,8 @@ import {
 } from '~~/composables/useComparisonFetch'
 import SensorComparison from './sensorComparison.vue'
 import ComparisonSections from './comparison/ComparisonSections.vue'
+import SegmentedControl from './ui/SegmentedControl.vue'
+const seasonItems = [{ value: 'all', label: 'All' }, { value: 'mam', label: 'MAM' }, { value: 'jja', label: 'JJA' }, { value: 'son', label: 'SON' }, { value: 'djf', label: 'DJF' }]
 
 /**
  * Comparison workspace — fullscreen for the same reason Analysis is: it takes a
@@ -103,6 +95,15 @@ const varUnit = computed(() => displayUnit(mainStore.selected_variable.var))
 const sensorInfo = computed(() => mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id) ?? null)
 const sensorName = computed(() => sensorInfo.value?.name ?? '')
 const isVariableDepth = computed(() => sensorInfo.value?.depth === -1)
+// "Depth sections" only applies to variable-depth sensors, so the tab list is
+// computed rather than static (v-tabs used a v-if on the tab itself).
+const tabItems = computed(() => [
+    { value: 'overview', label: 'Timeseries' },
+    ...(isVariableDepth.value ? [{ value: 'sections', label: 'Depth sections' }] : []),
+    { value: 'scatter', label: 'Scatter' },
+    { value: 'residuals', label: 'Residuals' },
+    { value: 'seasonal', label: 'Seasonal Cycle' },
+])
 const varName = computed(() =>
   availableVariables.find(v => v.id === mainStore.selected_variable.var)?.name || mainStore.selected_variable.var || 'Variable')
 

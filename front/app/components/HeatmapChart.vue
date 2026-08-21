@@ -1,58 +1,57 @@
 <template>
-    <v-card class="pa-4" style="width: 100%; height: 100%;">
-        <v-row>
-            <v-col v-if="showDateWarning" cols="12">
-                <v-alert type="warning">
+    <div class="bg-elevated rounded-lg p-4" style="width: 100%; height: 100%;">
+        <div class="flex flex-wrap -m-3">
+            <div class="p-3 w-full" v-if="showDateWarning">
+                <UAlert color="warning" variant="subtle">
                     {{ dateWarning }}
-                </v-alert>
-            </v-col>
+                </UAlert>
+            </div>
 
-            <v-col cols="auto" style="align-content: center;">
-                <v-select v-model="plotVariable" :items="sensorVariables" label="Variable" item-title="label"
-                    item-value="var" hide-details class="my-4">
-                </v-select>
-            </v-col>
+            <div class="p-3 w-auto" style="align-content: center;">
+                <UFormField label="Variable" class="my-4">
+  <USelectMenu v-model="plotVariable" :items="sensorVariables" label-key="label" value-key="var" class="w-full" />
+</UFormField>
+            </div>
 
-            <v-col cols="auto" style="align-content: center;">
-                <v-btn-group variant="outlined" class="ml-2">
-                    <v-btn size="small" @click="setPresetDateRange(7)">1W</v-btn>
-                    <v-btn size="small" @click="setPresetDateRange(30)">1M</v-btn>
-                    <v-btn size="small" @click="setPresetDateRange(90)">3M</v-btn>
-                    <v-btn size="small" @click="setPresetDateRange(365)">1Y</v-btn>
-                </v-btn-group>
-            </v-col>
+            <div class="p-3 w-auto" style="align-content: center;">
+                <UFieldGroup class="ml-2">
+                    <UButton size="sm" variant="outline" color="neutral" @click="setPresetDateRange(7)">1W</UButton>
+                    <UButton size="sm" variant="outline" color="neutral" @click="setPresetDateRange(30)">1M</UButton>
+                    <UButton size="sm" variant="outline" color="neutral" @click="setPresetDateRange(90)">3M</UButton>
+                    <UButton size="sm" variant="outline" color="neutral" @click="setPresetDateRange(365)">1Y</UButton>
+                </UFieldGroup>
+            </div>
 
-            <v-col cols="auto" style="align-content: center;">
-                <v-menu v-model="datePickerMenuOpen" :close-on-content-click="false" offset-y>
-                    <template #activator="{ props }">
-                        <v-btn variant="outlined" v-bind="props">{{ 
-                    fromDate && toDate 
-                        ? `${moment(fromDate).format('DD MMM, YYYY')} - ${moment(toDate).format('DD MMM, YYYY')}` 
-                        : (pendingDateRange.length === 2 
-                            ? `${moment(pendingDateRange[0]).format('DD MMM, YYYY')} - ${moment(pendingDateRange[1]).format('DD MMM, YYYY')}` 
-                            : 'Select Time Range')
-                }}</v-btn>
-                    </template>
+            <div class="p-3 w-auto" style="align-content: center;">
+                <UPopover v-model:open="datePickerMenuOpen">
+  <UButton variant="outline">{{ 
+                      fromDate && toDate 
+                          ? `${moment(fromDate).format('DD MMM, YYYY')} - ${moment(toDate).format('DD MMM, YYYY')}` 
+                          : (pendingDateRange.length === 2 
+                              ? `${moment(pendingDateRange[0]).format('DD MMM, YYYY')} - ${moment(pendingDateRange[1]).format('DD MMM, YYYY')}` 
+                              : 'Select Time Range')
+                  }}</UButton>
+  <template #content>
+    <div class="bg-elevated rounded-lg">
+                            <UCalendar v-model="pendingCalendarRange" range :min-value="minCalendarDate"
+                                :max-value="maxCalendarDate" class="m-0 p-0" />
+                            <div class="flex items-center gap-2 px-2 py-2">
+                                <div class="grow" />
+                                <UButton variant="ghost" @click="cancelDatePicker">Cancel</UButton>
+                                <UButton color="primary" @click="confirmDatePicker">OK</UButton>
+                            </div>
+                        </div>
+  </template>
+</UPopover>
+            </div>
 
-                    <v-card>
-                        <v-date-picker v-model="pendingDateRange" multiple="range" :min="minDate" :max="maxDate"
-                            class="ma-0 pa-0" />
-                        <v-card-actions>
-                            <v-spacer></v-spacer>
-                            <v-btn text @click="cancelDatePicker">Cancel</v-btn>
-                            <v-btn color="primary" @click="confirmDatePicker">OK</v-btn>
-                        </v-card-actions>
-                    </v-card>
-                </v-menu>
-            </v-col>
-
-        </v-row>
+        </div>
 
         <div ref="chartContainer" style="width: 100%; height: 100%;"></div>
         <div v-if="loading" class="global-chart-overlay">
-            <v-progress-circular indeterminate color="warning" :size="64" :width="12" class="progress" />
+            <UIcon name="i-mdi-loading" class="animate-spin text-warning progress" :style="{ fontSize: 64 + 'px' }" />
         </div>
-    </v-card>
+    </div>
 </template>
 
 <script setup lang="ts">
@@ -60,6 +59,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import * as echarts from 'echarts';
 import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme';
 import axios from 'axios';
+import { toCalendarDate, calendarDateToIso } from '~~/composables/useCalendarDate';
 import moment from 'moment';
 
 import { useMainStore } from '../stores/main';
@@ -68,7 +68,7 @@ import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 const mainStore = useMainStore();
 const { variableLabel, modelVariablesOf } = useVariableRegistry();
 
-import colors from 'vuetify/util/colors';
+import colors from '@/config/palette';
 
 const config = useRuntimeConfig();
 const apiBaseUrl = config.public.apiBaseUrl
@@ -90,6 +90,21 @@ const fromDate = ref<string>('');
 const toDate = ref<string>('');
 const datePickerMenuOpen = ref(false);
 const pendingDateRange = ref<string[]>([]);
+
+// UCalendar's range model is { start, end } of CalendarDate; this component
+// stores the range as two ISO date strings. Convert only here.
+const pendingCalendarRange = computed({
+    get: () => ({
+        start: toCalendarDate(pendingDateRange.value[0]) ?? undefined,
+        end: toCalendarDate(pendingDateRange.value[1]) ?? undefined,
+    }),
+    set: (v: { start?: any; end?: any } | null) => {
+        const s = calendarDateToIso(v?.start), e = calendarDateToIso(v?.end);
+        pendingDateRange.value = [s, e].filter(Boolean) as string[];
+    },
+});
+const minCalendarDate = computed(() => toCalendarDate(minDate.value) ?? undefined);
+const maxCalendarDate = computed(() => toCalendarDate(maxDate.value) ?? undefined);
 const showDateWarning = ref(false);
 const dateWarning = ref('');
 

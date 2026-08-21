@@ -1,19 +1,19 @@
 <template>
     <div class="mobile-blocker">
-        <v-sheet class="mobile-blocker__card pa-8 text-center" color="transparent">
+        <div class="mobile-blocker__card p-8 text-center">
             <iconsOceanECOLogo :size="72" :loop="false" class="mb-6" style="display:inline-block;" />
 
-            <h1 class="text-headline-small font-weight-700 mb-3">Best viewed on desktop</h1>
+            <h1 class="text-2xl font-bold mb-3">Best viewed on desktop</h1>
 
-            <p class="text-body-medium mb-2" style="opacity: 0.85;">
+            <p class="text-sm mb-2" style="opacity: 0.85;">
                 OceanECO is a data-intensive mapping and analysis dashboard built for larger screens.
                 It isn't available on phones or small tablets yet.
             </p>
 
-            <p class="text-body-small" style="opacity: 0.7;">
+            <p class="text-xs" style="opacity: 0.7;">
                 Please open this page on a desktop or laptop browser to continue.
             </p>
-        </v-sheet>
+        </div>
     </div>
 </template>
 
