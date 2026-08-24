@@ -22,6 +22,7 @@
         <UButton variant="subtle" size="xs" leading-icon="i-mdi-vector-line" @click="mainStore.requestCrossSectionRedraw()">
           New line
         </UButton>
+        <DownloadButton :datasets="csvDatasets" size="xs" class="shrink-0" />
       </div>
 
       <UAlert color="error" variant="subtle" class="mb-2" v-if="loadError">
@@ -79,6 +80,8 @@ import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { utc2pst } from '~~/composables/useUTC2PST'
 import TimeDepthHeatmap from '../depth/TimeDepthHeatmap.vue'
+import DownloadButton from '../ui/DownloadButton.vue'
+import { csvMeta, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
 import TimeControls from '../TimeControls.vue'
 import ChartContextBar from '../ChartContextBar.vue'
 import SegmentedControl from '../ui/SegmentedControl.vue'
@@ -199,6 +202,71 @@ const contextItems = computed(() => {
   ]
   if (line.value?.length) items.push({ label: 'Line', value: `${line.value.length} pts · ${totalDistanceLabel.value}` })
   return items
+})
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// Long format, and carrying each sample's real coordinate: distance along the
+// line is only meaningful next to the line that produced it, so lat/lon is what
+// makes the file stand on its own once it leaves the app.
+const csvContext = computed<CsvContext | null>(() => {
+  if (!varId.value || !line.value?.length) return null
+  return {
+    source: 'model',
+    sourceLabel: 'SalishSeaCast model',
+    variable: varId.value,
+    variableName: varName.value,
+    unit: displayUnit(varId.value),
+    // A section spans the water column, and the line spans many coordinates —
+    // neither reduces to the single depth/point the other views carry.
+    depth: null,
+    locationLabel: `drawn line — ${line.value.length} vertices, ${totalDistanceLabel.value}`,
+    timeRange: dtStr.value ? [dtStr.value, dtStr.value] : null,
+  }
+})
+
+const csvExport = provideCsvExport(csvContext)
+const csvDatasets = csvExport.datasets
+
+const csvRows = computed(() => {
+  const rows: Record<string, unknown>[] = []
+  for (let si = 0; si < distances.value.length; si++) {
+    const pt = points.value[si]
+    for (let li = 0; li < depths.value.length; li++) {
+      const v = grid.value[li]?.[si]
+      if (v == null) continue
+      rows.push({
+        distance_km: distances.value[si],
+        latitude: pt?.[0] ?? null,
+        longitude: pt?.[1] ?? null,
+        depth: depths.value[li],
+        value: v,
+      })
+    }
+  }
+  return rows
+})
+
+csvExport.register((): CsvDataset[] => {
+  if (!csvRows.value.length) return []
+  const u = displayUnit(varId.value) ? ` (${displayUnit(varId.value)})` : ''
+  return [{
+    label: 'Cross-section',
+    slug: 'cross-section',
+    omitDatasetLine: true,
+    columns: [
+      { header: 'distance_km', accessorKey: 'distance_km' },
+      { header: 'latitude', accessorKey: 'latitude' },
+      { header: 'longitude', accessorKey: 'longitude' },
+      { header: 'depth_m', accessorKey: 'depth' },
+      { header: `value${u}`, accessorKey: 'value' },
+    ],
+    rows: csvRows.value,
+    meta: csvMeta(csvContext.value, [
+      ['bin_mode', BIN_CONFIG[binMode.value].label],
+      ['vertices', line.value?.map(v => `${v.lat.toFixed(4)},${v.lng.toFixed(4)}`).join(' → ')],
+      ['note', 'sample points are evenly spaced by arc length and snapped to the nearest model grid cell; cells below the seabed are omitted'],
+    ]),
+  }]
 })
 
 // A uniform fallback density (roughly one gridline every ~8 samples) — the

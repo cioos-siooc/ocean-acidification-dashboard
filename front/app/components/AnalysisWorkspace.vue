@@ -8,6 +8,7 @@
           <UBadge size="xs" color="warning" variant="subtle" class="ml-2 rounded-full" v-if="contextLabel">{{ contextLabel }}</UBadge>
         </div>
         <div class="grow" />
+        <DownloadButton :datasets="csvDatasets" class="shrink-0" />
         <UButton variant="ghost" icon="i-mdi-close" class="shrink-0" title="Close (Esc)" @click="isOpen = false" />
       </div>
 
@@ -65,6 +66,9 @@ import { useMainStore } from '../stores/main'
 import { fetchAnalysisSeries, type SeriesPoint, type AnalysisLocation } from '~~/composables/useAnalysisFetch'
 import { fetchSensorAnalysisSeries } from '~~/composables/useSensorAnalysisFetch'
 import { availableVariables } from '~~/composables/useAnalysisStatistics'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
+import { csvMeta, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
+import DownloadButton from './ui/DownloadButton.vue'
 import AnalysisBuilder from './analysis/AnalysisBuilder.vue'
 import ExtremeEvents from './analysis/ExtremeEvents.vue'
 import CompoundStress from './analysis/CompoundStress.vue'
@@ -129,6 +133,39 @@ const yearRange = computed<[number, number]>(() => {
 const activeTab = ref<'builder' | 'extremes' | 'compound' | 'trend' | 'climatology' | 'correlation'>('builder')
 const selectedSeason = ref('full_year')
 
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// The workspace owns the query (point/sensor, variable, depth, window) so it
+// provides the context; each deep-dive tab registers the files it can produce
+// and the single header button offers whatever the active tab registered.
+const { displayUnit } = useVariableRegistry()
+
+/** '49.283N 123.121W' — hemisphere letters keep the sign out of filenames. */
+function formatLatLon(lat: number, lon: number) {
+  return `${Math.abs(lat).toFixed(3)}${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(3)}${lon >= 0 ? 'E' : 'W'}`
+}
+
+const csvContext = computed<CsvContext | null>(() => {
+  if (!variable.value || !location.value) return null
+  const pt = mainStore.lastClickedMapPoint
+  return {
+    source: source.value,
+    sourceLabel: source.value === 'sensor'
+      ? `sensor — ${sensorInfo.value?.name ?? ''}`
+      : 'SalishSeaCast model',
+    variable: variable.value,
+    variableName: varName.value,
+    unit: displayUnit(variable.value),
+    depth: depth.value,
+    locationLabel: source.value === 'sensor'
+      ? (sensorInfo.value?.name ?? sensorInfo.value?.id ?? '')
+      : (pt ? formatLatLon(pt.lat, pt.lng) : ''),
+    timeRange: [`${yearRange.value[0]}-01-01`, `${yearRange.value[1]}-12-31`],
+    season: selectedSeason.value,
+  }
+})
+
+const csvExport = provideCsvExport(csvContext)
+const csvDatasets = csvExport.datasets
 // ── PRIMARY SERIES — fetched once per point/variable/depth, shared by the
 // deep-dive tabs (the Overview tab runs its own, since it also varies by stat).
 const primarySeries = ref<SeriesPoint[]>([])
@@ -169,6 +206,26 @@ async function fetchPrimary() {
 // showing stale numbers under the old unit.
 watch([isOpen, activeTab, location, variable, depth, () => mainStore.unitPreference[variable.value]], () => {
   if (isOpen.value && activeTab.value !== 'builder') fetchPrimary()
+})
+
+// The series every deep-dive tab charts, offered from all of them — each tab
+// then adds whatever it derives on top. Not on Overview: that tab runs its own
+// fetch (it varies by stat too) and registers its own file.
+csvExport.register((): CsvDataset[] => {
+  if (activeTab.value === 'builder' || !primarySeries.value.length) return []
+  const unit = displayUnit(variable.value)
+  return [{
+    label: 'Daily series',
+    slug: 'daily-series',
+    columns: [
+      { header: 'time', accessorKey: 'time' },
+      { header: unit ? `value (${unit})` : 'value', accessorKey: 'value' },
+    ],
+    rows: primarySeries.value as unknown as Record<string, unknown>[],
+    meta: csvMeta(csvContext.value, [
+      ['note', 'the full daily record — the season filter applies to the tabs\' own derived files, not this one'],
+    ]),
+  }]
 })
 
 // Secondary variables (Compound Stress / Correlation) call fetchSeriesFor

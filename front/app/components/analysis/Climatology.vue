@@ -32,6 +32,7 @@ import {
   filterBySeason, groupByYear, breakDataGaps, computeClimatologyBaseline, climatologyForDate, yearColor,
   distinctYearSpan, attachStickyLegendHighlight,
 } from '~~/composables/useAnalysisStatistics'
+import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable?: string }>()
 
@@ -68,6 +69,70 @@ const anomalySeries = computed(() => {
     })
     return { year, points: points.sort((a, b) => a[0] - b[0]) }
   }).filter(s => s.points.some(p => p[1] != null))
+})
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// The chart plots one line per year against a synthetic reference year, which is
+// a display trick — the file keeps the real dates and carries the climatological
+// mean each anomaly was measured against, so the subtraction is checkable.
+const csv = useCsvExport()
+
+const csvAnomalyRows = computed(() => {
+  const climByDoy = new Map(climatology.value.map(c => [c.doy, c]))
+  const out: Record<string, unknown>[] = []
+  for (const d of seasonalSeries.value) {
+    if (d.value == null) continue
+    const clim = climatologyForDate(climByDoy, d.time)
+    if (!clim || Number.isNaN(clim.mean)) continue
+    out.push({
+      time: d.time,
+      year: Number(d.time.slice(0, 4)),
+      value: d.value,
+      climatology_mean: clim.mean,
+      anomaly: (d.value as number) - clim.mean,
+    })
+  }
+  return out
+})
+
+if (csv) csv.register((): CsvDataset[] => {
+  if (!csvAnomalyRows.value.length) return []
+  const u = unit.value ? ` (${unit.value})` : ''
+  const meta = csvMeta(csv.context.value, [
+    ['baseline_window_days', `±${windowDays.value}`],
+    ...(isShortHistory.value
+      ? [['caveat', `only ${yearSpan.value} year(s) of data — the baseline is a local rolling mean, not a stable climatology`] as [string, unknown]]
+      : []),
+  ])
+  return [
+    {
+      label: 'Anomalies (daily)',
+      slug: 'climatology-anomalies',
+      columns: [
+        { header: 'time', accessorKey: 'time' },
+        { header: 'year', accessorKey: 'year' },
+        { header: `value${u}`, accessorKey: 'value' },
+        { header: `climatology_mean${u}`, accessorKey: 'climatology_mean' },
+        { header: `anomaly${u}`, accessorKey: 'anomaly' },
+      ],
+      rows: csvAnomalyRows.value,
+      meta,
+    },
+    {
+      label: 'Day-of-year climatology',
+      slug: 'climatology-baseline',
+      columns: [
+        { header: 'day_of_year', accessorKey: 'doy' },
+        { header: `mean${u}`, accessorKey: 'mean' },
+        { header: `std${u}`, accessorKey: 'std' },
+        { header: `p10${u}`, accessorKey: 'p10' },
+        { header: `p90${u}`, accessorKey: 'p90' },
+        { header: 'n_observations', accessorKey: 'n' },
+      ],
+      rows: climatology.value as unknown as Record<string, unknown>[],
+      meta,
+    },
+  ]
 })
 
 const chartContainerRef = ref<HTMLDivElement | null>(null)

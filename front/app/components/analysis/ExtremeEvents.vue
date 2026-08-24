@@ -66,6 +66,7 @@ import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint } from '~~/composables/useAnalysisFetch'
 import SegmentedControl from '../ui/SegmentedControl.vue'
+import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
 import {
 
   filterBySeason, maskBySeason, breakDataGaps, computeClimatologyBaseline, detectExtremeEvents, summarizeEventsByYear,
@@ -128,6 +129,60 @@ const yearHeaders = computed(() => [
 const yearRows = computed(() => yearlySummary.value.map(y => ({
   year: y.year, eventCount: y.eventCount, totalEventDays: y.totalEventDays, maxIntensity: y.maxIntensity.toFixed(3),
 })))
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// Built from `events`/`yearlySummary` rather than the table rows above: those
+// carry `.toFixed(3)` strings for display, and that rounding must not be what
+// lands in a file someone re-analyses. `meanIntensity` rides along too — it's
+// already computed and useful, it just has no column to spare on screen.
+const csv = useCsvExport()
+
+const csvParams = computed(() => thresholdMode.value === 'percentile'
+  ? [
+      ['threshold', `${direction.value === 'above' ? '90th' : '10th'} percentile of a day-of-year climatology`] as [string, unknown],
+      ['baseline_window_days', `±${windowDays.value}`] as [string, unknown],
+    ]
+  : [['threshold', `fixed ${direction.value === 'above' ? '>' : '<'} ${fixedThreshold.value}${unitSuffix.value}`] as [string, unknown]])
+
+const csvCommonMeta = computed(() => [
+  ...csvParams.value,
+  ['direction', direction.value] as [string, unknown],
+  ['min_duration_days', minDurationDays.value] as [string, unknown],
+  ['max_merge_gap_days', maxGapDays.value] as [string, unknown],
+])
+
+if (csv) csv.register((): CsvDataset[] => [
+  {
+    label: 'Extreme events',
+    slug: 'extreme-events',
+    columns: [
+      { header: 'start_time', accessorKey: 'startTime' },
+      { header: 'end_time', accessorKey: 'endTime' },
+      { header: 'duration_days', accessorKey: 'durationDays' },
+      { header: `peak_value${unitSuffix.value}`, accessorKey: 'peakValue' },
+      { header: `peak_anomaly${unitSuffix.value}`, accessorKey: 'peakAnomaly' },
+      { header: `mean_intensity${unitSuffix.value}`, accessorKey: 'meanIntensity' },
+    ],
+    rows: events.value as unknown as Record<string, unknown>[],
+    meta: csvMeta(csv.context.value, csvCommonMeta.value),
+  },
+  {
+    label: 'Per-year summary',
+    slug: 'extreme-events-by-year',
+    columns: [
+      { header: 'year', accessorKey: 'year' },
+      { header: 'event_count', accessorKey: 'eventCount' },
+      { header: 'total_event_days', accessorKey: 'totalEventDays' },
+      { header: `mean_intensity${unitSuffix.value}`, accessorKey: 'meanIntensity' },
+      { header: `max_intensity${unitSuffix.value}`, accessorKey: 'maxIntensity' },
+    ],
+    rows: yearlySummary.value as unknown as Record<string, unknown>[],
+    meta: csvMeta(csv.context.value, [
+      ...csvCommonMeta.value,
+      ['note', 'events are attributed to the year they start in'],
+    ]),
+  },
+])
 
 // --- CHART ---
 const chartContainerRef = ref<HTMLDivElement | null>(null)

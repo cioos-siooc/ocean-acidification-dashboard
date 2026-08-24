@@ -8,6 +8,7 @@
           <UBadge size="xs" color="warning" variant="subtle" class="ml-2 rounded-full" v-if="sensorName">{{ sensorName }}</UBadge>
         </div>
         <div class="grow" />
+        <DownloadButton :datasets="csvDatasets" class="shrink-0" />
         <UButton variant="ghost" icon="i-mdi-close" class="shrink-0" title="Close (Esc)" @click="isOpen = false" />
       </div>
 
@@ -77,6 +78,8 @@ import {
 import SensorComparison from './sensorComparison.vue'
 import ComparisonSections from './comparison/ComparisonSections.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
+import DownloadButton from './ui/DownloadButton.vue'
+import { csvMeta, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
 const seasonItems = [{ value: 'all', label: 'All' }, { value: 'mam', label: 'MAM' }, { value: 'jja', label: 'JJA' }, { value: 'son', label: 'SON' }, { value: 'djf', label: 'DJF' }]
 
 /**
@@ -148,6 +151,8 @@ const tabDescription = computed(() => {
 
 interface StatRow { label: string; value: string; cls?: string }
 
+
+
 const currentStats = computed((): StatRow[] => {
   if (activeTab.value === 'scatter') {
     const s = scatterStats.value
@@ -180,6 +185,109 @@ const currentStats = computed((): StatRow[] => {
     { label: 'Model amplitude', value: fmt(s.modelAmplitude) },
     { label: 'Sensor amplitude', value: fmt(s.sensorAmplitude) },
   ]
+})
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// Every tab here reads the same matched model/observation pairs, so the export
+// follows the tab rather than the chart: the pairs as plotted, plus whichever
+// derived table the current tab is actually about. The sidebar's statistics go
+// into the preamble — they're one result per file, not per row, and `currentStats`
+// is already exactly the label/value list the sidebar shows.
+const csvContext = computed<CsvContext | null>(() => {
+  if (!sensorInfo.value || !mainStore.selected_variable.var) return null
+  const dates = rawData.value.map(p => p.date)
+  return {
+    source: 'comparison',
+    sourceLabel: `SalishSeaCast model vs sensor — ${sensorName.value}`,
+    variable: mainStore.selected_variable.var,
+    variableName: varName.value,
+    unit: varUnit.value,
+    depth: isVariableDepth.value ? -1 : (mainStore.selectedSensor?.depth ?? null),
+    locationLabel: sensorName.value,
+    timeRange: dates.length ? [dates[0]!, dates[dates.length - 1]!] : null,
+    season: isStatsTab.value ? selectedSeason.value : undefined,
+  }
+})
+
+const csvExport = provideCsvExport(csvContext)
+const csvDatasets = csvExport.datasets
+
+const statsMeta = computed(() => currentStats.value.map(s => [s.label, s.value] as [string, unknown]))
+
+csvExport.register((): CsvDataset[] => {
+  const u = varUnit.value ? ` (${varUnit.value})` : ''
+  const pairColumns = [
+    { header: 'date', accessorKey: 'date' },
+    { header: `model${u}`, accessorKey: 'model' },
+    { header: `sensor${u}`, accessorKey: 'sensor' },
+    { header: `difference${u}`, accessorKey: 'difference' },
+  ]
+  const withDifference = (points: typeof rawData.value) => points.map(p => ({
+    date: p.date,
+    model: p.model,
+    modelMin: p.modelMin,
+    modelMax: p.modelMax,
+    sensor: p.sensor,
+    difference: (p.model != null && p.sensor != null) ? p.model - p.sensor : null,
+  }))
+
+  if (activeTab.value === 'overview') {
+    if (!rawData.value.length) return []
+    return [{
+      label: 'Model vs sensor (daily)',
+      slug: 'comparison-daily',
+      columns: [
+        ...pairColumns.slice(0, 2),
+        { header: `model_min${u}`, accessorKey: 'modelMin' },
+        { header: `model_max${u}`, accessorKey: 'modelMax' },
+        ...pairColumns.slice(2),
+      ],
+      rows: withDifference(rawData.value),
+      meta: csvMeta(csvContext.value, [
+        ['note', 'the full daily record, including days where only one of the two has a value'],
+      ]),
+    }]
+  }
+
+  if (activeTab.value === 'seasonal') {
+    if (!monthlyClim.value.length) return []
+    return [{
+      label: 'Monthly climatology',
+      slug: 'comparison-monthly-climatology',
+      columns: [
+        { header: 'month', accessorKey: 'month' },
+        { header: `model${u}`, accessorKey: 'model' },
+        { header: `sensor${u}`, accessorKey: 'sensor' },
+        { header: `difference${u}`, accessorKey: 'difference' },
+      ],
+      rows: monthlyClim.value.map(m => ({
+        month: MONTH_LABELS[m.month - 1],
+        model: m.model,
+        sensor: m.sensor,
+        difference: (m.model != null && m.sensor != null) ? m.model - m.sensor : null,
+      })),
+      meta: csvMeta(csvContext.value, [
+        ['season', 'full record — the seasonal cycle deliberately ignores the season filter'],
+        ...statsMeta.value,
+      ]),
+    }]
+  }
+
+  if (activeTab.value === 'scatter' || activeTab.value === 'residuals') {
+    if (!filteredData.value.length) return []
+    return [{
+      label: 'Matched pairs',
+      slug: activeTab.value === 'scatter' ? 'comparison-scatter' : 'comparison-residuals',
+      columns: pairColumns,
+      rows: withDifference(filteredData.value),
+      meta: csvMeta(csvContext.value, [
+        ['note', 'days where both the model and the sensor have a value'],
+        ...statsMeta.value,
+      ]),
+    }]
+  }
+
+  return []
 })
 
 // ── CHART ────────────────────────────────────────────────────────────────────

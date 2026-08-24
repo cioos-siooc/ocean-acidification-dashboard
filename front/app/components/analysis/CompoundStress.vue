@@ -46,6 +46,7 @@ import type { SeriesPoint, AnalysisLocation } from '~~/composables/useAnalysisFe
 import { availableVariables, filterBySeason, maskBySeason, breakDataGaps, groupByYear } from '~~/composables/useAnalysisStatistics'
 import { useMainStore } from '../../stores/main'
 import SegmentedControl from '../ui/SegmentedControl.vue'
+import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
 const directionItems = [{ value: '>', label: 'Above' }, { value: '<', label: 'Below' }]
 
 const mainStore = useMainStore()
@@ -140,6 +141,48 @@ const yearHeaders = [
   { header: 'Days', accessorKey: 'days' },
   { header: 'Streak', accessorKey: 'streak' },
 ]
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// The per-year rollup answers "how often", the compound days answer "which
+// days" — the second is the one people take away to cross-reference against
+// their own records, and it only exists in the chart's shading on screen.
+const csv = useCsvExport()
+
+const csvConditionMeta = computed(() => [
+  ['condition_primary', `${varName(props.primaryVariable)} ${primaryDirection.value} ${primaryThreshold.value}${displayUnit(props.primaryVariable) ? ` ${displayUnit(props.primaryVariable)}` : ''}`] as [string, unknown],
+  ['condition_secondary', `${varName(secondaryVariable.value)} ${secondaryDirection.value} ${secondaryThreshold.value}${displayUnit(secondaryVariable.value) ? ` ${displayUnit(secondaryVariable.value)}` : ''}`] as [string, unknown],
+  ['note', 'only days where both variables have a value are considered'] as [string, unknown],
+])
+
+if (csv) csv.register((): CsvDataset[] => [
+  {
+    label: 'Per-year compound days',
+    slug: 'compound-stress-by-year',
+    columns: [
+      { header: 'year', accessorKey: 'year' },
+      { header: 'compound_days', accessorKey: 'days' },
+      { header: 'longest_streak_days', accessorKey: 'streak' },
+    ],
+    rows: yearRows.value as unknown as Record<string, unknown>[],
+    meta: csvMeta(csv.context.value, csvConditionMeta.value),
+  },
+  {
+    label: 'Compound days (daily)',
+    slug: 'compound-stress-days',
+    columns: [
+      { header: 'time', accessorKey: 'time' },
+      { header: csvValueHeader(props.primaryVariable), accessorKey: 'a' },
+      { header: csvValueHeader(secondaryVariable.value), accessorKey: 'b' },
+    ],
+    rows: compoundDays.value as unknown as Record<string, unknown>[],
+    meta: csvMeta(csv.context.value, csvConditionMeta.value),
+  },
+])
+
+function csvValueHeader(id: string) {
+  const u = displayUnit(id)
+  return u ? `${id} (${u})` : id
+}
 
 // --- CHART ---
 const chartContainerRef = ref<HTMLDivElement | null>(null)

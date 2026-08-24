@@ -15,7 +15,7 @@
         class="shrink-0 mr-2" aria-label="Time resolution" />
       <UIcon name="i-mdi-loading" class="animate-spin size-[14px] text-warning shrink-0" v-if="isLoading" />
       <span v-if="isLoading" class="text-gray-500 shrink-0">{{ loadingStep }}</span>
-      <UBadge variant="subtle" class="rounded-full"> 0" size="x-small" color="teal" variant="tonal" class="shrink-0">
+      <UBadge v-if="stats && stats.n > 0" variant="subtle" class="rounded-full shrink-0">
         {{ stats.n }} days
       </UBadge>
     </div>

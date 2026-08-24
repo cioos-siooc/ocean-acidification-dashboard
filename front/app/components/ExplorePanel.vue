@@ -47,6 +47,7 @@
   </template>
 </UPopover>
         <UButton variant="ghost" size="xs" icon="i-mdi-chevron-right" class="shrink-0" :disabled="!canPageForward || loading" @click="pageWindow(1)" />
+        <DownloadButton :datasets="csvDatasets" size="xs" class="shrink-0" />
       </div>
 
       <UAlert color="error" variant="subtle" class="mb-2" v-if="loadError">
@@ -108,6 +109,8 @@ import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, floorToBin, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { fetchClimateTimeseries } from '~~/composables/useClimateTimeseries'
 import { getSensorTimeseries } from '~~/composables/useSensorTimeseries'
+import { csvMeta, csvTimestamp, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
+import DownloadButton from './ui/DownloadButton.vue'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import TimeDepthHeatmap from './depth/TimeDepthHeatmap.vue'
 import TimeseriesChart from './TimeseriesChart.vue'
@@ -545,6 +548,76 @@ const contextItems = computed(() => {
   items.push({ label: 'Range', value: rangeLabel.value })
   if (point.value) items.push({ label: 'Point', value: `${point.value.lat.toFixed(4)}, ${point.value.lng.toFixed(4)}` })
   return items
+})
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// This panel is the host: it owns the point, depth, window and bin mode, so it
+// provides the context and renders the one download control in its toolbar.
+// The section grid registers here; the timeseries sub-view's own files come
+// from TimeseriesChart, which unmounts with the sub-view and so takes its
+// registrations with it.
+const csvContext = computed<CsvContext | null>(() => {
+  if (!point.value || !varId.value) return null
+  const sensorName = mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id)?.name
+  return {
+    source: showingSensor.value ? 'sensor' : 'model',
+    sourceLabel: showingSensor.value ? `sensor — ${sensorName ?? ''}` : 'SalishSeaCast model',
+    variable: varId.value,
+    variableName: varName.value,
+    unit: displayUnit(varId.value),
+    // A section spans the whole water column, so no single depth describes it.
+    depth: showSection.value ? null : (depths.value[selectedDepthIdx.value] ?? null),
+    locationLabel: `${Math.abs(point.value.lat).toFixed(3)}${point.value.lat >= 0 ? 'N' : 'S'} ${Math.abs(point.value.lng).toFixed(3)}${point.value.lng >= 0 ? 'E' : 'W'}`,
+    timeRange: [csvTimestamp(windowStart.value), csvTimestamp(chartWindowEnd.value)],
+  }
+})
+
+const csvExport = provideCsvExport(csvContext)
+const csvDatasets = csvExport.datasets
+
+/**
+ * The section, long rather than wide: one row per (time, depth) cell. A grid of
+ * depths across the top would need the depth levels in the header, and those
+ * change with the model level set — long format survives that and joins against
+ * anything. Empty cells are dropped rather than written as blanks: below the
+ * seabed that's most of the grid.
+ */
+const csvSectionRows = computed(() => {
+  const g = activeGrid.value
+  const ds = depths.value
+  const starts = binStarts.value
+  const rows: Record<string, unknown>[] = []
+  for (let bi = 0; bi < binCount.value; bi++) {
+    const t = csvTimestamp(starts[bi])
+    for (let li = 0; li < ds.length; li++) {
+      const v = g[li]?.[bi]
+      if (v == null) continue
+      rows.push({ time: t, depth: ds[li], value: v })
+    }
+  }
+  return rows
+})
+
+csvExport.register((): CsvDataset[] => {
+  if (!showSection.value || !csvSectionRows.value.length) return []
+  const u = displayUnit(varId.value) ? ` (${displayUnit(varId.value)})` : ''
+  return [{
+    label: showingSensor.value ? 'Sensor depth section' : 'Model depth section',
+    slug: showingSensor.value ? 'sensor-depth-section' : 'model-depth-section',
+    omitDatasetLine: true,
+    columns: [
+      { header: 'time', accessorKey: 'time' },
+      { header: 'depth_m', accessorKey: 'depth' },
+      { header: `value${u}`, accessorKey: 'value' },
+    ],
+    rows: csvSectionRows.value,
+    meta: csvMeta(csvContext.value, [
+      ['bin_mode', BIN_CONFIG[binMode.value].label],
+      ['note', showingSensor.value
+        ? 'sensor casts binned onto the model time/depth grid; bins with no cast are omitted'
+        : 'cells with no model data (below the seabed) are omitted'],
+    ]),
+  }]
 })
 
 /**

@@ -104,6 +104,7 @@ import {
 
   availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor, computeYearBandStats,
 } from '~~/composables/useAnalysisStatistics'
+import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
 
 const seasonItems = [{ value: 'full_year', label: 'All' }, { value: 'mam', label: 'MAM' }, { value: 'jja', label: 'JJA' }, { value: 'son', label: 'SON' }, { value: 'djf', label: 'DJF' }]
 const statItems = [{ value: 'min', label: 'Min' }, { value: 'mean', label: 'Mean' }, { value: 'max', label: 'Max' }]
@@ -252,6 +253,75 @@ function initChart() {
   if (!chartContainerRef.value) return
   chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
 }
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// Two files for the two things on screen: the per-year lines (the record itself)
+// and the grey envelope behind them (the cross-year statistics). The envelope is
+// keyed by calendar day rather than the synthetic reference year the chart plots
+// it against, and it excludes years after the baseline cutoff exactly as the
+// chart does — otherwise the file wouldn't match the band that was drawn.
+const csv = useCsvExport()
+
+const csvBandRows = computed(() => {
+  if (!rawSeasonalData.value.length) return []
+  const perYearPoints = groupByYear(rawSeasonalData.value)
+    .filter(s => s.year <= STATS_BASELINE_MAX_YEAR)
+    .map(s => breakDataGaps(s.data)
+      .map(d => [overlayTimestamp(d.time), d.value] as [number, number | null])
+      .sort((a, b) => a[0] - b[0]))
+
+  return computeYearBandStats(perYearPoints).map(b => ({
+    month_day: fmtOverlayDate(b.ts),
+    mean: b.mean,
+    min: b.min,
+    max: b.max,
+    p10: b.p10,
+    p90: b.p90,
+  }))
+})
+
+if (csv) csv.register((): CsvDataset[] => {
+  // v-show keeps this component mounted behind the deep-dive tabs; without the
+  // guard its files would show up in their download menus too.
+  if (!props.active || !hasActivePlot.value || !rawSeasonalData.value.length) return []
+
+  const u = varUnit.value ? ` (${varUnit.value})` : ''
+  const meta = csvMeta(csv.context.value, [
+    ['season', seasonLabel.value],
+    ['statistic', primaryStat.value],
+    ['time_range', `${minYear.value}-01-01 .. ${maxYear.value}-12-31`],
+    ['location', queryMode.value === 'area' && !isSensor.value
+      ? `${pointLabel.value} — mean over a 0.1° box`
+      : pointLabel.value],
+  ])
+
+  return [
+    {
+      label: 'Daily series',
+      slug: 'overview-series',
+      columns: [
+        { header: 'time', accessorKey: 'time' },
+        { header: `value${u}`, accessorKey: 'value' },
+      ],
+      rows: rawSeasonalData.value as unknown as Record<string, unknown>[],
+      meta,
+    },
+    {
+      label: 'Historical range envelope',
+      slug: 'overview-envelope',
+      columns: [
+        { header: 'month_day', accessorKey: 'month_day' },
+        { header: `mean${u}`, accessorKey: 'mean' },
+        { header: `min${u}`, accessorKey: 'min' },
+        { header: `max${u}`, accessorKey: 'max' },
+        { header: `p10${u}`, accessorKey: 'p10' },
+        { header: `p90${u}`, accessorKey: 'p90' },
+      ],
+      rows: csvBandRows.value,
+      meta: [...meta, ['note', `cross-year statistics per calendar day, from years up to ${STATS_BASELINE_MAX_YEAR}`]],
+    },
+  ]
+})
 
 // --- CHART RENDERERS ---
 function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {

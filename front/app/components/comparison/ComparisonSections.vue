@@ -56,6 +56,7 @@ import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, useTimeDepthWindow, toApiIso, type BinMode } from '~~/composables/useTimeDepthWindow'
 import TimeDepthHeatmap from '../depth/TimeDepthHeatmap.vue'
+import { csvFilename, csvMeta, csvTimestamp, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
 import SegmentedControl from '../ui/SegmentedControl.vue'
 const binModeItems = computed(() => AVAILABLE_MODES.map(m => ({ value: m, label: BIN_CONFIG[m].short, title: BIN_CONFIG[m].label })))
 
@@ -71,7 +72,7 @@ const binModeItems = computed(() => AVAILABLE_MODES.map(m => ({ value: m, label:
 const props = defineProps<{ active?: boolean }>()
 
 const mainStore = useMainStore()
-const { toDisplayValue } = useVariableRegistry()
+const { toDisplayValue, displayUnit } = useVariableRegistry()
 
 const sensorInfo = computed(() => mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id) ?? null)
 const modelSource = computed(() => mainStore.selected_variable.source)
@@ -210,6 +211,67 @@ const colorFn = computed(() => {
 // ── DEPTH / HOVER / STATS ────────────────────────────────────────────────────
 const selectedDepthIdx = ref(0)
 const markDepth = computed(() => depths.value[selectedDepthIdx.value] ?? null)
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// One file, not two: the whole point of this tab is the two panels side by side,
+// and splitting them into separate downloads would leave the reader to re-join
+// them on (time, depth) to get back what they were looking at. Rows where both
+// are empty are dropped — below the seabed that's most of the grid.
+const csv = useCsvExport()
+
+const csvSectionRows = computed(() => {
+  const ds = depths.value
+  const starts = binStarts.value
+  const rows: Record<string, unknown>[] = []
+  for (let bi = 0; bi < binCount.value; bi++) {
+    const t = csvTimestamp(starts[bi])
+    for (let li = 0; li < ds.length; li++) {
+      const m = modelGrid.value[li]?.[bi] ?? null
+      const sv = sensorGrid.value[li]?.[bi] ?? null
+      if (m == null && sv == null) continue
+      rows.push({
+        time: t,
+        depth: ds[li],
+        model: m,
+        sensor: sv,
+        difference: (m != null && sv != null) ? m - sv : null,
+      })
+    }
+  }
+  return rows
+})
+
+if (csv) csv.register((): CsvDataset[] => {
+  if (!props.active || !csvSectionRows.value.length) return []
+  const u = displayUnit(varId.value) ? ` (${displayUnit(varId.value)})` : ''
+  return [{
+    label: 'Depth sections (model & sensor)',
+    slug: 'comparison-depth-sections',
+    // Named for the paged window it actually holds, not the sensor's whole
+    // record — the shared context spans the latter, and a file called
+    // 2010–2026 holding one year of it would be a lie.
+    filename: csvFilename([
+      'comparison-depth-sections',
+      varId.value,
+      sensorInfo.value?.name,
+      csvTimestamp(windowStart.value).slice(0, 10),
+      csvTimestamp(windowEnd.value).slice(0, 10),
+    ]),
+    columns: [
+      { header: 'time', accessorKey: 'time' },
+      { header: 'depth_m', accessorKey: 'depth' },
+      { header: `model${u}`, accessorKey: 'model' },
+      { header: `sensor${u}`, accessorKey: 'sensor' },
+      { header: `difference${u}`, accessorKey: 'difference' },
+    ],
+    rows: csvSectionRows.value,
+    meta: csvMeta(csv.context.value, [
+      ['bin_mode', BIN_CONFIG[binMode.value].label],
+      ['time_range', `${csvTimestamp(windowStart.value)} .. ${csvTimestamp(windowEnd.value)}`],
+      ['note', 'sensor casts binned onto the model time/depth grid; cells empty in both are omitted'],
+    ]),
+  }]
+})
+
 const depthLabel = computed(() => {
   const d = depths.value[selectedDepthIdx.value]
   return d != null ? `${d.toFixed(d < 10 ? 1 : 0)} m` : '—'

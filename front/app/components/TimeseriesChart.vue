@@ -32,6 +32,7 @@ import timeseriesChartHelpImg from '../../public/timeseriesChartHelp.png';
 
 import { useMainStore } from '../stores/main';
 import { useVariableRegistry } from '~~/composables/useVariableRegistry';
+import { csvMeta, csvTimestamp, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport';
 const mainStore = useMainStore();
 const { displayUnit } = useVariableRegistry();
 
@@ -42,6 +43,17 @@ let _statsLegendHandler: ((params: any) => void) | null = null;
 let zrClickHandler: ((evt: any) => void) | null = null;
 
 const loading = ref(false);
+// Last data handed to `plot()`, kept for CSV export (see the export block below).
+type PlotSeries = { time?: (string | number)[]; value?: (number | null)[]; depth?: number | null } | null;
+type ClimateRow = { requested_date: string; mean: number | null; min: number | null; max: number | null };
+const lastPlot = ref<{ model: PlotSeries; climate: ClimateRow[] | null; sensor: PlotSeries } | null>(null);
+// Which legend entries are currently switched on. Read by the CSV export so a
+// download mirrors what's actually drawn. `setOption(…, true)` on every re-plot
+// resets ECharts' own legend state, so this is re-seeded there rather than kept
+// across plots.
+const legendSelected = ref<Record<string, boolean>>({});
+type LegendSelectChanged = { name: string; selected: Record<string, boolean> };
+let _legendSelectionHandler: ((params: LegendSelectChanged) => void) | null = null;
 
 /**
  * Time domain. By default the chart spans `midDate ± dfnDays` — the map clock's
@@ -248,6 +260,10 @@ async function fetchAndPlot(
 
 function plot(modelData: any, climateData: any, sensorData: any | null) {
     if (!chart) return;
+    // Kept for CSV export: both callers (this component's own fetchAndPlot and
+    // ExplorePanel) funnel through here, so this is the one place that always
+    // sees what actually got drawn.
+    lastPlot.value = { model: modelData, climate: climateData, sensor: sensorData };
     const tz = APP_TIMEZONE;
 
     const lat = mainStore.lastClickedMapPoint?.lat;
@@ -494,6 +510,12 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     chart.setOption(option, true);
     chart.resize();
 
+    // Everything starts shown; the handler below keeps this in step with clicks.
+    legendSelected.value = Object.fromEntries((option.legend.data as string[]).map((n: string) => [n, true]));
+    if (_legendSelectionHandler) chart.off('legendselectchanged', _legendSelectionHandler);
+    _legendSelectionHandler = (params: LegendSelectChanged) => { legendSelected.value = { ...params.selected }; };
+    chart.on('legendselectchanged', _legendSelectionHandler);
+
     // Stats legend toggle — clicking 'Climatology' shows/hides internal series.
     // Use setOption rather than legendSelect/legendUnSelect: those dispatch actions
     // only work reliably for series registered in legend.data; the _stats_* series
@@ -550,6 +572,107 @@ watch(() => mainStore.selected_variable.dt, (newDt) => {
 function resize() {
     chart?.resize();
 }
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// One file for the whole chart, and its contents follow the legend: hide
+// Climatology and the climatology columns leave the file too. That keeps the
+// download honest about what was being looked at, rather than always dumping
+// everything that happened to be fetched.
+//
+// Day/Night is the one series never exported regardless of its legend state —
+// it carries no data of its own, only the dusk/dawn shading and the NOW and MAP
+// marker lines, which are chart furniture rather than measurements.
+//
+// The three sources keep their own x-grids (model/sensor at their reporting
+// cadence, climatology once per calendar day at noon UTC), so the table is a
+// union of timestamps with blanks rather than anything interpolated onto a
+// shared clock — inventing values to square the grid would be worse than a
+// sparse file.
+const csv = useCsvExport();
+
+/** Legend entries never offered for download, whatever their toggle state. */
+const CSV_EXCLUDED_SERIES = ['Day/Night'];
+
+if (csv) csv.register((): CsvDataset[] => {
+    const p = lastPlot.value;
+    if (!p) return [];
+
+    const varId = mainStore.selected_variable.var;
+    const u = displayUnit(varId) ? ` (${displayUnit(varId)})` : '';
+    const sensorName = mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id)?.name;
+
+    // Absent from the map means "never toggled", which ECharts treats as shown.
+    const shown = (name: string) => !CSV_EXCLUDED_SERIES.includes(name) && legendSelected.value[name] !== false;
+
+    const withModel = !!p.model?.time?.length && shown('Model');
+    const withSensor = !!p.sensor?.time?.length && shown('Sensor');
+    const withClimate = Array.isArray(p.climate) && p.climate.length > 0 && shown('Climatology');
+    if (!withModel && !withSensor && !withClimate) return [];
+
+    const byTime = new Map<string, Record<string, unknown>>();
+    const row = (iso: string) => {
+        let r = byTime.get(iso);
+        if (!r) { r = { time: iso }; byTime.set(iso, r); }
+        return r;
+    };
+    const put = (times: (string | number)[], values: (number | null)[] | undefined, key: string) => {
+        times.forEach((t, i) => {
+            const iso = csvTimestamp(t);
+            if (iso) row(iso)[key] = values?.[i] ?? null;
+        });
+    };
+
+    const columns = [{ header: 'time', accessorKey: 'time' }];
+    if (withModel) {
+        put(p.model!.time!, p.model!.value, 'model');
+        columns.push({ header: `model${u}`, accessorKey: 'model' });
+    }
+    if (withSensor) {
+        put(p.sensor!.time!, p.sensor!.value, 'sensor');
+        columns.push({ header: `sensor${u}`, accessorKey: 'sensor' });
+    }
+    if (withClimate) {
+        for (const c of p.climate!) {
+            const iso = csvTimestamp(c.requested_date);
+            if (!iso) continue;
+            const r = row(iso);
+            r.climMean = c.mean;
+            r.climMin = c.min;
+            r.climMax = c.max;
+        }
+        columns.push(
+            { header: `climatology_mean${u}`, accessorKey: 'climMean' },
+            { header: `climatology_min${u}`, accessorKey: 'climMin' },
+            { header: `climatology_max${u}`, accessorKey: 'climMax' },
+        );
+    }
+
+    // Clipped to the axis window: the climatology fetch covers whole calendar
+    // days, so its first point can sit before the window start, where the chart
+    // never draws it. "What's visible" has to mean the x-range too, not just
+    // which series are switched on.
+    const from = windowStartLocal.value.valueOf();
+    const to = windowEndLocal.value.valueOf();
+
+    return [{
+        label: 'Timeseries',
+        slug: 'timeseries',
+        columns,
+        rows: Array.from(byTime.values())
+            .filter(r => {
+                const t = moment.parseZone(String(r.time)).valueOf();
+                return t >= from && t <= to;
+            })
+            .sort((a, b) => String(a.time).localeCompare(String(b.time))),
+        omitDatasetLine: true,
+        meta: csvMeta(csv.context.value, [
+            ...(withSensor && sensorName ? [['sensor', sensorName] as [string, unknown]] : []),
+            ...(withClimate ? [
+                ['note', 'climatology is one row per calendar day at noon UTC, so its rows sit on their own timestamps rather than the model/sensor ones'] as [string, unknown],
+            ] : []),
+        ]),
+    }];
+});
 
 defineExpose({ plot, fetchAndPlot, resize, loading });
 </script>

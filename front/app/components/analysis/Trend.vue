@@ -40,6 +40,7 @@ import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint } from '~~/composables/useAnalysisFetch'
 import { filterBySeason, groupByYear, mannKendallTest, theilSenSlope } from '~~/composables/useAnalysisStatistics'
+import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable?: string }>()
 
@@ -59,6 +60,47 @@ const result = computed(() => {
   const mk = mannKendallTest(annualMeans.value.map(r => r.mean))
   const theilSen = theilSenSlope(annualMeans.value.map(r => ({ x: r.year, y: r.mean })))
   return { mk, theilSen }
+})
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// The annual means are the chart's points; the fitted Theil-Sen value per year
+// rides along as a second column so the trend line is reproducible from the file
+// rather than only visible on screen. The test statistics go in the preamble —
+// they're one result for the whole series, not a per-row value.
+const csv = useCsvExport()
+
+const csvRows = computed(() => annualMeans.value.map(r => ({
+  year: r.year,
+  mean: r.mean,
+  theil_sen_fit: result.value
+    ? result.value.theilSen.intercept + result.value.theilSen.slope * r.year
+    : null,
+})))
+
+if (csv) csv.register((): CsvDataset[] => {
+  if (!csvRows.value.length) return []
+  const u = unit.value ? ` (${unit.value})` : ''
+  const r = result.value
+  return [{
+    label: 'Annual means & trend',
+    slug: 'trend-annual-means',
+    columns: [
+      { header: 'year', accessorKey: 'year' },
+      { header: `annual_mean${u}`, accessorKey: 'mean' },
+      { header: `theil_sen_fit${u}`, accessorKey: 'theil_sen_fit' },
+    ],
+    rows: csvRows.value,
+    meta: csvMeta(csv.context.value, r ? [
+      ['trend', r.mk.trend],
+      ['theil_sen_slope_per_year', r.theilSen.slope],
+      ['theil_sen_slope_per_decade', r.theilSen.slope * 10],
+      ['theil_sen_intercept', r.theilSen.intercept],
+      ['mann_kendall_S', r.mk.S],
+      ['mann_kendall_Z', r.mk.Z],
+      ['mann_kendall_p', r.mk.p],
+      ['n_years', csvRows.value.length],
+    ] : [['note', 'fewer than 3 years — no trend test was run']]),
+  }]
 })
 
 const trendColor = computed(() => {

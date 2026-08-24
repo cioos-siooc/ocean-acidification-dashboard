@@ -47,6 +47,7 @@ import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint, AnalysisLocation } from '~~/composables/useAnalysisFetch'
 import { availableVariables, filterBySeason, pearsonCorrelation, joinSeriesByDate, linearRegression } from '~~/composables/useAnalysisStatistics'
+import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
 
 const props = defineProps<{
   primarySeries: SeriesPoint[]
@@ -116,6 +117,74 @@ const matrix = computed(() => {
 })
 
 const selectedPair = ref<[string, string] | null>(null)
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// The matrix goes out long (one row per pair) rather than as a grid — a square
+// of r values is awkward to join against anything, and this way the pair count
+// behind each coefficient can travel with it. The joined series is the scatter's
+// data, widened so every selected variable is one column against a shared date.
+const csv = useCsvExport()
+
+const csvMatrixRows = computed(() => {
+  const vars = readyVariables.value
+  const out: Record<string, unknown>[] = []
+  for (let i = 0; i < vars.length; i++) {
+    for (let j = 0; j < vars.length; j++) {
+      if (i === j) { out.push({ x: vars[i], y: vars[j], r: 1, n: null }); continue }
+      const { a, b } = joinSeriesByDate(seasonalByVar.value[vars[i]], seasonalByVar.value[vars[j]])
+      out.push({ x: vars[i], y: vars[j], r: a.length >= 2 ? pearsonCorrelation(a, b) : null, n: a.length })
+    }
+  }
+  return out
+})
+
+/** Union of dates across the selected variables, one column each. */
+const csvJoinedRows = computed(() => {
+  const vars = readyVariables.value
+  const byDate = new Map<string, Record<string, unknown>>()
+  for (const id of vars) {
+    for (const d of seasonalByVar.value[id] ?? []) {
+      if (d.value == null) continue
+      let row = byDate.get(d.time)
+      if (!row) { row = { time: d.time }; byDate.set(d.time, row) }
+      row[id] = d.value
+    }
+  }
+  return Array.from(byDate.values()).sort((a, b) => String(a.time).localeCompare(String(b.time)))
+})
+
+if (csv) csv.register((): CsvDataset[] => {
+  const vars = readyVariables.value
+  if (!vars.length) return []
+  const meta = csvMeta(csv.context.value, [
+    ['variables', vars.map(id => varName(id)).join(', ')],
+    ['method', 'Pearson correlation over dates where both variables have a value'],
+  ])
+  return [
+    {
+      label: 'Correlation matrix',
+      slug: 'correlation-matrix',
+      columns: [
+        { header: 'variable_x', accessorKey: 'x' },
+        { header: 'variable_y', accessorKey: 'y' },
+        { header: 'pearson_r', accessorKey: 'r' },
+        { header: 'n_days', accessorKey: 'n' },
+      ],
+      rows: csvMatrixRows.value,
+      meta,
+    },
+    {
+      label: 'Joined daily series',
+      slug: 'correlation-series',
+      columns: [
+        { header: 'time', accessorKey: 'time' },
+        ...vars.map(id => ({ header: axisName(id), accessorKey: id })),
+      ],
+      rows: csvJoinedRows.value,
+      meta,
+    },
+  ]
+})
 
 // --- MATRIX HEATMAP ---
 const matrixContainerRef = ref<HTMLDivElement | null>(null)
