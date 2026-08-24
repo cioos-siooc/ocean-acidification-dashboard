@@ -1,34 +1,74 @@
 <template>
-  <div class="bg-elevated rounded-lg colorbar" :class="{ 'colorbar--expanded': isHovering }" @mouseenter="isHovering = true" @mouseleave="isHovering = false">
+  <div
+    class="bg-elevated rounded-lg colorbar"
+    :class="{ 'colorbar--expanded': isHovering }"
+    @mouseenter="isHovering = true"
+    @mouseleave="isHovering = false"
+  >
     <div class="colorbar-inner">
       <!-- TOGGLE NAVIGATION PANEL -->
-      <UButton class="m-1 overlay-btn" :variant="isControlPanelOpen ? 'solid' : 'ghost'" @click="mainStore.toggleIsControlPanelOpen">
-        <UIcon :name="isControlPanelOpen ? 'i-mdi-menu-open' : 'i-mdi-menu'" class="size-[16px]" />
+      <UButton
+        class="m-1 overlay-btn"
+        :variant="isControlPanelOpen ? 'solid' : 'ghost'"
+        @click="mainStore.toggleIsControlPanelOpen"
+      >
+        <UIcon
+          :name="isControlPanelOpen ? 'i-mdi-menu-open' : 'i-mdi-menu'"
+          class="size-[16px]"
+        />
         <span class="overlay-btn__label">Toggle Left Panel</span>
       </UButton>
 
       <USeparator />
 
       <!-- BATHYMETRY CONTOURS -->
-      <UButton class="m-1 overlay-btn" :variant="showBathymetryContours ? 'solid' : 'ghost'" :color="showBathymetryContours ? 'primary' : undefined" @click="mainStore.setShowBathymetryContours(!showBathymetryContours)">
+      <UButton
+        class="m-1 overlay-btn"
+        :variant="showBathymetryContours ? 'solid' : 'ghost'"
+        :color="showBathymetryContours ? 'primary' : undefined"
+        @click="mainStore.setShowBathymetryContours(!showBathymetryContours)"
+      >
         <IconsContour />
         <span class="overlay-btn__label">Bathymetry Contours</span>
       </UButton>
 
       <!-- MAP LABELS (water names + place labels) -->
-      <UButton class="m-1 overlay-btn" :variant="showMapLabels ? 'solid' : 'ghost'" :color="showMapLabels ? 'primary' : undefined" @click="mainStore.setShowMapLabels(!showMapLabels)">
-        <UIcon :name="showMapLabels ? 'i-mdi-tag-text' : 'i-mdi-tag-text-outline'" class="size-[16px]" />
+      <UButton
+        class="m-1 overlay-btn"
+        :variant="showMapLabels ? 'solid' : 'ghost'"
+        :color="showMapLabels ? 'primary' : undefined"
+        @click="mainStore.setShowMapLabels(!showMapLabels)"
+      >
+        <UIcon
+          :name="showMapLabels ? 'i-mdi-tag-text' : 'i-mdi-tag-text-outline'"
+          class="size-[16px]"
+        />
         <span class="overlay-btn__label">Map Labels</span>
       </UButton>
 
       <!-- CURSOR COORDINATES -->
-      <UButton class="m-1 overlay-btn" :variant="showCursorCoords ? 'solid' : 'ghost'" :color="showCursorCoords ? 'primary' : undefined" @click="mainStore.setShowCursorCoords(!showCursorCoords)">
-        <UIcon :name="showCursorCoords ? 'i-mdi-cursor-default' : 'i-mdi-cursor-default-outline'" class="size-[16px]" />
+      <UButton
+        class="m-1 overlay-btn"
+        :variant="showCursorCoords ? 'solid' : 'ghost'"
+        :color="showCursorCoords ? 'primary' : undefined"
+        @click="mainStore.setShowCursorCoords(!showCursorCoords)"
+      >
+        <UIcon
+          :name="
+            showCursorCoords ? 'i-mdi-cursor-default' : 'i-mdi-cursor-default-outline'
+          "
+          class="size-[16px]"
+        />
         <span class="overlay-btn__label">Cursor Coordinates</span>
       </UButton>
 
       <!-- VERTICAL PROFILE -->
-      <UButton variant="solid" class="m-1 overlay-btn" :color="mainStore.isVerticalProfileOpen ? 'primary' : undefined" @click="mainStore.toggleIsVerticalProfileOpen">
+      <UButton
+        variant="solid"
+        class="m-1 overlay-btn"
+        :color="mainStore.isVerticalProfileOpen ? 'primary' : undefined"
+        @click="mainStore.toggleIsVerticalProfileOpen"
+      >
         <IconsProfile />
         <span class="overlay-btn__label">Vertical Profile</span>
       </UButton>
@@ -36,17 +76,28 @@
       <USeparator />
 
       <!-- AUTO COLOR -->
-      <UButton variant="solid" class="m-1 overlay-btn" :disabled="
+      <UButton
+        variant="solid"
+        class="m-1 overlay-btn"
+        color=""
+        :disabled="
           !selectedVariableName ||
           selectedVariableName === 'bathymetry' ||
           mainStore.autoRangeDisabled
-        " @click="autorange">
+        "
+        @click="autorange"
+      >
         <IconsAutorange />
         <span class="overlay-btn__label">Auto Color</span>
       </UButton>
 
       <!-- COLOR SETTINGS -->
-      <UButton variant="solid" class="m-1 overlay-btn" @click="showColorbarSettings = !showColorbarSettings">
+      <UButton
+        variant="solid"
+        color=""
+        class="m-1 overlay-btn"
+        @click="showColorbarSettings = !showColorbarSettings"
+      >
         <UIcon name="i-mdi-palette" class="size-[16px]" />
         <span class="overlay-btn__label">Color Settings</span>
       </UButton>
