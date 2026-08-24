@@ -25,7 +25,7 @@
       <UButton
         class="m-1 overlay-btn"
         :variant="showBathymetryContours ? 'solid' : 'ghost'"
-        :color="showBathymetryContours ? 'primary' : undefined"
+        :color="showBathymetryContours ? 'primary' : ''"
         @click="mainStore.setShowBathymetryContours(!showBathymetryContours)"
       >
         <IconsContour />
@@ -36,7 +36,7 @@
       <UButton
         class="m-1 overlay-btn"
         :variant="showMapLabels ? 'solid' : 'ghost'"
-        :color="showMapLabels ? 'primary' : undefined"
+        :color="showMapLabels ? 'primary' : ''"
         @click="mainStore.setShowMapLabels(!showMapLabels)"
       >
         <UIcon
@@ -50,7 +50,7 @@
       <UButton
         class="m-1 overlay-btn"
         :variant="showCursorCoords ? 'solid' : 'ghost'"
-        :color="showCursorCoords ? 'primary' : undefined"
+        :color="showCursorCoords ? 'primary' : ''"
         @click="mainStore.setShowCursorCoords(!showCursorCoords)"
       >
         <UIcon
@@ -64,9 +64,9 @@
 
       <!-- VERTICAL PROFILE -->
       <UButton
-        variant="solid"
         class="m-1 overlay-btn"
-        :color="mainStore.isVerticalProfileOpen ? 'primary' : undefined"
+        :variant="mainStore.isVerticalProfileOpen ? 'solid' : 'ghost'"
+        :color="mainStore.isVerticalProfileOpen ? 'primary' : ''"
         @click="mainStore.toggleIsVerticalProfileOpen"
       >
         <IconsProfile />

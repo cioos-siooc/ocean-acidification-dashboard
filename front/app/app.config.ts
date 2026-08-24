@@ -6,7 +6,7 @@ export default defineAppConfig({
     // assets/css/main.css) to rebrand the whole UI.
     colors: {
       primary: 'blue',
-      neutral: 'slate',
+      neutral: 'neutral',
     },
   },
 })

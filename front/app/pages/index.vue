@@ -158,7 +158,11 @@
       </div>
 
       <!-- Cursor coordinate readout, follows the mouse over the map -->
-      <div class="bg-elevated rounded-lg cursor-coord-label" v-if="mainStore.showCursorCoords && mouseCoords.visible" :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }">
+      <div
+        class="bg-elevated rounded-lg cursor-coord-label"
+        v-if="mainStore.showCursorCoords && mouseCoords.visible"
+        :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }"
+      >
         {{ mouseCoords.lat?.toFixed(5) }}, {{ mouseCoords.lng?.toFixed(5) }}
       </div>
     </div>
@@ -185,18 +189,42 @@
                      "pill" a uniform-height toggle group can animate. -->
         <div class="footer-rail flex flex-col shrink-0">
           <div class="footer-rail-track">
-            <UButton variant="ghost" class="footer-rail-item" block leading-icon="i-mdi-chart-line" :class="{ 'footer-rail-item--active': activeTab === 'explore' }" @click="activeTab = 'explore'">
+            <UButton
+              variant="ghost"
+              class="footer-rail-item"
+              block
+              :class="{ 'footer-rail-item--active': activeTab === 'explore' }"
+              @click="activeTab = 'explore'"
+            >
               Explore
             </UButton>
             <div v-if="activeTab === 'explore'" class="footer-rail-sublist">
-              <UButton variant="ghost" class="footer-rail-subitem" block v-for="sv in exploreSubViews" :key="sv.value" :class="{ 'footer-rail-subitem--active': mainStore.exploreView === sv.value, }" @click="mainStore.setExploreView(sv.value)">
+              <UButton
+                variant="ghost"
+                class="footer-rail-subitem"
+                block
+                v-for="sv in exploreSubViews"
+                :key="sv.value"
+                :class="{
+                  'footer-rail-subitem--active': mainStore.exploreView === sv.value,
+                }"
+                @click="mainStore.setExploreView(sv.value)"
+              >
                 {{ sv.label }}
               </UButton>
             </div>
 
             <USeparator v-if="remainingFooterTabs.length > 0" />
 
-            <UButton variant="ghost" class="footer-rail-item" block v-for="t in remainingFooterTabs" :key="t.value" :leading-icon="'i-' + t.icon" :class="{ 'footer-rail-item--active': activeTab === t.value }" @click="activeTab = t.value">
+            <UButton
+              variant="ghost"
+              class="footer-rail-item"
+              block
+              v-for="t in remainingFooterTabs"
+              :key="t.value"
+              :class="{ 'footer-rail-item--active': activeTab === t.value }"
+              @click="activeTab = t.value"
+            >
               {{ t.label }}
             </UButton>
 
@@ -208,14 +236,28 @@
                              top-level row only expands the sub-list (rather than opening
                              straight away, as Explore's does) since opening immediately
                              would cover the rail before the sub-list was ever clickable. -->
-            <UButton variant="ghost" class="footer-rail-item" block leading-icon="i-mdi-poll" :class="{ 'footer-rail-item--active': activeTab === 'analysis' }">
+            <UButton
+              variant="ghost"
+              class="footer-rail-item"
+              block
+              :class="{ 'footer-rail-item--active': activeTab === 'analysis' }"
+            >
               Analysis
             </UButton>
             <div class="footer-rail-sublist">
-              <UButton variant="ghost" class="footer-rail-subitem" block v-for="sv in analysisSubViews" :key="sv.value" :disabled="sv.disabled" :title="sv.title" @click="
+              <UButton
+                variant="ghost"
+                class="footer-rail-subitem"
+                block
+                v-for="sv in analysisSubViews"
+                :key="sv.value"
+                :disabled="sv.disabled"
+                :title="sv.title"
+                @click="
                   mainStore.setAnalysisSource(sv.value);
                   activeTab = 'analysis';
-                ">
+                "
+              >
                 {{ sv.label }}
               </UButton>
             </div>
@@ -1736,7 +1778,7 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
 }
 
 .footer-rail {
-  width: 136px;
+  width: 150px;
   background: rgba(255, 255, 255, 0.03);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -1871,7 +1913,6 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
 </style>
 
 <style scoped>
-
 .h-screen {
   height: calc(100vh - 48px);
 }
