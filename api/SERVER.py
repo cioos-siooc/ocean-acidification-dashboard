@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from typing import List, Literal, Optional, Tuple
 from functools import partial
@@ -16,7 +16,7 @@ import json
 from starlette.concurrency import run_in_threadpool
 import numpy as np
 
-from modules.extractTimeseries import extract_timeseries
+from modules.extractTimeseries import extract_timeseries, OutsideDomainError
 from modules.extract_profile import extract_profile
 from modules.extract_climate_timeseries import extract_climate_timeseries
 from modules.extractMinMax import extract_minmax
@@ -57,6 +57,24 @@ def _require_ssc(source: str) -> None:
     if source != "SalishSeaCast":
         logger.error(f"Unsupported source: {source}")
         raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
+
+
+def _outside_domain_response(exc: OutsideDomainError) -> JSONResponse:
+    """Turn an OutsideDomainError into a 400 the frontend can act on.
+
+    Built by hand rather than raised as an HTTPException because we need a
+    second top-level key beside `detail`: clicking a deep-ocean buoy outside
+    the model domain is a normal thing to do, and the UI shows it as an
+    informational note ("sensor data only") instead of a red error — but only
+    if it can tell this case apart from a genuine failure. `detail` stays a
+    plain sentence so the several call sites that just print
+    `response.data.detail` keep working unchanged.
+    """
+    logger.info("Out-of-domain coordinate: %s", exc.message)
+    return JSONResponse(
+        status_code=400,
+        content={"detail": exc.message, "error": exc.to_payload()},
+    )
 
 
 
@@ -364,11 +382,14 @@ async def get_depth_profile(request: depthProfileRequest, http_request: Request)
             return result
         except HTTPException:
             raise
+        except OutsideDomainError as exc:
+            return _outside_domain_response(exc)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except RuntimeError as exc:
-            # Out-of-domain coordinates, grid issues, or an empty window are client errors.
-            if ("km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc)
+            # Grid issues or an empty window are client errors. (Out-of-domain
+            # coordinates are a RuntimeError subclass, already handled above.)
+            if ("Grid table is empty" in str(exc)
                     or "No depth levels found" in str(exc) or "No model data found" in str(exc)):
                 logger.warning(f"Depth profile request error: {exc}")
                 raise HTTPException(status_code=400, detail=str(exc))
@@ -652,12 +673,15 @@ async def fn_extract_timeseries(request: timeseriesRequest, http_request: Reques
                 "fromDate": request.fromDate, "toDate": request.toDate,
             })
             return payload
+        except OutsideDomainError as exc:
+            return _outside_domain_response(exc)
         except RuntimeError as exc:
-            # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
-            if ("km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc)
+            # Grid issues are client errors (400), not server errors (500).
+            # (Out-of-domain coordinates are handled above.)
+            if ("Grid table is empty" in str(exc)
                     or "does not cover any active marine grid cells" in str(exc)
                     or "No data available at depth" in str(exc)):
-                logger.warning(f"Out-of-domain or invalid coordinates: {exc}")
+                logger.warning(f"Invalid coordinates: {exc}")
                 raise HTTPException(status_code=400, detail=str(exc))
             # Other RuntimeErrors are unexpected, treat as 500
             logger.exception("extract_timeseries failed with RuntimeError")
@@ -708,6 +732,8 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_
         return result
     except HTTPException:
         raise
+    except OutsideDomainError as exc:
+        return _outside_domain_response(exc)
     except Exception as exc:
         logger.exception("extract_climate_timeseries failed")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -833,10 +859,13 @@ async def fn_get_profile(request: profileRequest, http_request: Request):
             return profile
         except HTTPException:
             raise
+        except OutsideDomainError as exc:
+            return _outside_domain_response(exc)
         except RuntimeError as exc:
-            # Out-of-domain coordinates, empty grid, or unmatched time are client errors (400), not server errors (500)
-            if "km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc) or "No data available" in str(exc):
-                logger.warning(f"Out-of-domain or invalid coordinates/time: {exc}")
+            # Empty grid or unmatched time are client errors (400), not server
+            # errors (500). (Out-of-domain coordinates are handled above.)
+            if "Grid table is empty" in str(exc) or "No data available" in str(exc):
+                logger.warning(f"Invalid coordinates/time: {exc}")
                 raise HTTPException(status_code=400, detail=str(exc))
             # Other RuntimeErrors are unexpected, treat as 500
             logger.exception("extract_profile failed with RuntimeError")

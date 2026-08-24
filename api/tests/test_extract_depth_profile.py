@@ -3,6 +3,7 @@ from datetime import date, datetime
 import pytest
 
 from extract_depth_profile import extract_depth_profile
+from modules.extractTimeseries import OutsideDomainError  # same module object the code under test raises from
 
 
 class FakeResult:
@@ -146,7 +147,7 @@ def test_out_of_domain_raises(monkeypatch):
     fake = FakeClient(grid_row=(10, 20, 60.0, -130.0, 50_000.0), depths=DEPTHS)
     _patch(monkeypatch, fake)
 
-    with pytest.raises(RuntimeError, match="km from the nearest grid point"):
+    with pytest.raises(OutsideDomainError):
         extract_depth_profile(
             source='SalishSeaCast', var='temperature', sensor_id='abc',
             lat=0.0, lon=0.0, from_date='2026-01-01T00:00:00', to_date='2026-01-01T01:59:59',

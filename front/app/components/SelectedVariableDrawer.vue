@@ -33,6 +33,7 @@ import moment, { type MomentInput } from 'moment-timezone';
 import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 import { utc2pst } from '~~/composables/useUTC2PST';
 import { useMainStore } from '../stores/main';
+import { asOutsideDomainError, type OutsideDomainError } from '~~/composables/useDepthProfileFetch';
 
 type SelectedPoint = {
     lat: number;
@@ -112,6 +113,11 @@ const chartContainer = ref<HTMLDivElement | null>(null);
 let profileChart: echarts.ECharts | null = null;
 const loading = ref(false);
 const errorMessage = ref<string | null>(null);
+
+// Kept apart from `errorMessage` so it does not get the red `.error` styling.
+// A point outside the model domain has no profile to draw, but that is the
+// user having clicked open water past the grid — not a failure of the request.
+const outOfDomain = ref<OutsideDomainError | null>(null);
 const profilePoints = ref<ProfilePoint[]>([]);
 let currentController: AbortController | null = null;
 let requestSequence = 0;
@@ -150,6 +156,7 @@ const requestParams = computed<ProfileRequest | null>(() => {
 const statusMessage = computed(() => {
     if (!requestParams.value) return 'Click anywhere on the map to load a profile';
     if (loading.value) return 'Loading profile...';
+    if (outOfDomain.value) return `Outside the model domain — no profile here (nearest model cell is ${outOfDomain.value.distanceKm.toFixed(0)} km away)`;
     if (errorMessage.value) return errorMessage.value;
     if (!profilePoints.value.length) return 'No profile data returned for this location';
     return '';
@@ -324,6 +331,7 @@ function toNumber(value: any): number | null {
 async function fetchProfile(params: ProfileRequest) {
     loading.value = true;
     errorMessage.value = null;
+    outOfDomain.value = null;
     cancelRequest();
     currentController = new AbortController();
     const currentRequest = ++requestSequence;
@@ -341,7 +349,12 @@ async function fetchProfile(params: ProfileRequest) {
     } catch (error: any) {
         const isCanceled = axios.isCancel(error) || error?.name === 'CanceledError';
         if (isCanceled) return;
-        errorMessage.value = error?.message ? `Unable to load profile: ${error.message}` : 'Unable to load profile';
+        const domain = asOutsideDomainError(error);
+        if (domain) {
+            outOfDomain.value = domain;
+        } else {
+            errorMessage.value = error?.message ? `Unable to load profile: ${error.message}` : 'Unable to load profile';
+        }
         updateChart([]);
     } finally {
         loading.value = false;
@@ -357,6 +370,7 @@ function clearChart() {
     cancelRequest();
     loading.value = false;
     errorMessage.value = null;
+    outOfDomain.value = null;
     profilePoints.value = [];
     renderChart([]);
 }

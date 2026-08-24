@@ -125,11 +125,15 @@ def extract_depth_profile(
       "sensor" — 2D list [depth][time] of float | None — None where no cast
                  landed in that (depth level, time bin) cell; never
                  interpolated. None (not a grid) when `sensor_id` is omitted.
+      "grid"   — {"lat", "lon", "distanceKm"} for the model cell that answered,
+                 so callers can show how far the point snapped
 
     Raises
     ------
     ValueError   — unknown source/var, or unsupported bin_hours/bin_mode
-    RuntimeError — no grid cell near (lat, lon), or no model data in the window
+    RuntimeError — no model data in the window
+    OutsideDomainError — (a RuntimeError) no grid cell within MAX_GRID_DIST_KM
+                 of (lat, lon)
     """
     if source not in DATA_TABLE_BY_SOURCE:
         raise ValueError(f"Source '{source}' is not yet available via ClickHouse.")
@@ -150,7 +154,9 @@ def extract_depth_profile(
 
     client = get_ch_client()
     try:
-        grid_x, grid_y, _, _ = _find_nearest_grid_point(client, grid_table, lat, lon)
+        grid_x, grid_y, cell_lat, cell_lon, cell_dist_km = _find_nearest_grid_point(
+            client, grid_table, lat, lon, source=source
+        )
 
         levels = _get_depth_levels(client, table)
         if not levels:
@@ -242,6 +248,14 @@ def extract_depth_profile(
             "depths": levels,
             "model": model_grid,
             "coverage": coverage,
+            # Which cell actually answered, and how far it is from the point the
+            # user clicked. A click near the edge of the domain can snap several
+            # km without failing, and the chart has no other way to say so.
+            "grid": {
+                "lat": cell_lat,
+                "lon": cell_lon,
+                "distanceKm": round(cell_dist_km, 2),
+            },
         }
         if sensor_id is None:
             # Model-only caller (Depth tab): no second grid to build.

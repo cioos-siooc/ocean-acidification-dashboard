@@ -62,6 +62,21 @@ function createInitialState() {
 
         lastClickedMapPoint: null as { lat: number, lng: number } | null,
 
+        /**
+         * Whether the currently selected point has any model coverage, as last
+         * reported by the API (ExplorePanel owns the write; see
+         * `setModelDomainStatus`). Lives here rather than in the panel because
+         * selectedInfo.vue — the map-corner box, a sibling of the panel, not a
+         * child — has to say "no model data here" too: it describes the raster
+         * layer, and the raster layer is just as empty at a deep-ocean point
+         * as the chart is.
+         *
+         * `null` means "not established yet" (nothing fetched, or a failure
+         * for some unrelated reason), which reads as in-domain everywhere —
+         * absence of evidence must not paint the normal case as broken.
+         */
+        modelDomain: null as { inDomain: boolean, distanceKm: number | null } | null,
+
         mapCenter: null as { lat: number, lng: number } | null,
 
         snackMessages: [] as Array<{ color: string, text: string }>,
@@ -223,7 +238,19 @@ export const useMainStore = defineStore('main', {
                     const newDepthNc = closestDepth[0] ?? null;
                     const newDepth = newDepthNc !== null ? formatDepthLabel(newDepthNc) : null;
                     if (newDepth && newDepth !== this.selected_variable.depth) {
-                        this.snackMessages.push({ color: 'warning', text: `Switched to closest available depth: ${newDepth}m` });
+                        // Name both numbers and what moved. "Switched to closest
+                        // available depth: 441.5m" left the user staring at a
+                        // sensor card reading 1257 m and a map box reading
+                        // 441.5 m with nothing connecting them — and never said
+                        // it was the *map layer* that moved, not the sensor.
+                        this.snackMessages.push({
+                            color: 'warning',
+                            // Rounded as sensorInfo.vue's `depth2txt` rounds it:
+                            // this line exists to be compared against the sensor
+                            // card, and the raw float (1256.830810546875) reads
+                            // as a third, unrelated number.
+                            text: `Map layer moved to ${newDepth} m — the nearest model level to this sensor's ${depth.toFixed(0)} m`,
+                        });
                         this.updateSelectedVariable({ depth: newDepth, depth_nc: newDepthNc });
                     }
                 }
@@ -237,6 +264,14 @@ export const useMainStore = defineStore('main', {
 
         setLastClickedMapPoint(point: { lat: number, lng: number } | null) {
             this.lastClickedMapPoint = point;
+            // A new point knows nothing about its coverage until something
+            // fetches for it; leaving the old verdict up would label the new
+            // click with the previous one's domain status.
+            this.modelDomain = null;
+        },
+
+        setModelDomainStatus(status: { inDomain: boolean, distanceKm: number | null } | null) {
+            this.modelDomain = status;
         },
 
         setCrossSectionLine(line: { lat: number, lng: number }[] | null) {

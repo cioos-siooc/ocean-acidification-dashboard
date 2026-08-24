@@ -50,9 +50,26 @@
         <DownloadButton :datasets="csvDatasets" size="xs" class="shrink-0" />
       </div>
 
-      <UAlert color="error" variant="subtle" class="mb-2" v-if="loadError">
+      <UAlert color="error" variant="subtle" class="mb-2 shrink-0" v-if="loadError">
         {{ loadError }}
       </UAlert>
+
+      <!-- Not an error: the user clicked somewhere the model does not reach.
+           Informational tone, and it says what *is* on screen rather than only
+           what is missing. -->
+      <UAlert
+        v-else-if="showOutOfDomainAlert"
+        color="info"
+        variant="subtle"
+        icon="i-mdi-map-marker-off-outline"
+        class="mb-2 shrink-0"
+        close
+        @update:open="outOfDomainDismissed = true"
+        :title="`Outside the SalishSeaCast model domain (nearest model cell is ${outOfDomain.distanceKm.toFixed(0)} km away)`"
+        :description="sensorMeta
+          ? `No model values here — the chart shows ${sensorMeta.name} only, at its own depth of ${sensorMeta.depthLabel}.`
+          : 'No model values here. Pick a point inside the Salish Sea, or select a sensor at this location.'"
+      />
 
       <ChartContextBar :items="contextItems" />
 
@@ -89,7 +106,9 @@
         <div v-if="!showSection" class="line-slot" :style="{ height: chartH + 'px' }">
           <TimeseriesChart ref="lineChart" :window-start="windowStart" :window-end="chartWindowEnd"
             :grid-left="AXIS_LEFT_PX" :grid-right="DATAZOOM_RIGHT_PX" legend-layout="top" />
-          <div v-if="!depthHasData && !loading" class="line-empty">No model data at {{ depthLabel }} here</div>
+          <!-- Out-of-domain already has the alert above; repeating it across the
+               plot labels a chart that is drawing real sensor data as empty. -->
+          <div v-if="!depthHasData && !loading && !outOfDomain" class="line-empty">{{ emptyLineMessage }}</div>
         </div>
 
         <div v-if="loading" class="loading-overlay">
@@ -104,7 +123,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import moment from 'moment'
 import { useMainStore, formatDepthLabel } from '../stores/main'
-import { fetchDepthProfile, parseCoverageBound, type DepthProfileResponse } from '~~/composables/useDepthProfileFetch'
+import { fetchDepthProfile, parseCoverageBound, asOutsideDomainError, type DepthProfileResponse, type OutsideDomainError } from '~~/composables/useDepthProfileFetch'
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, floorToBin, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { fetchClimateTimeseries } from '~~/composables/useClimateTimeseries'
@@ -115,7 +134,7 @@ import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import TimeDepthHeatmap from './depth/TimeDepthHeatmap.vue'
 import TimeseriesChart from './TimeseriesChart.vue'
 import TimeControls from './TimeControls.vue'
-import ChartContextBar from './ChartContextBar.vue'
+import ChartContextBar, { type ContextItem } from './ChartContextBar.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import { toCalendarDate, fromCalendarDate } from '~~/composables/useCalendarDate'
 
@@ -278,6 +297,36 @@ const loading = ref(false)
 const loadError = ref<string | null>(null)
 
 /**
+ * Set when the API reports this point has no model cell within range — a
+ * separate ref from `loadError` on purpose. Clicking a deep-ocean mooring
+ * outside the SalishSeaCast domain is a normal, deliberate thing to do, and a
+ * red "failed to load" alert framed the user's own valid sensor data as a
+ * malfunction. This drives an informational note instead, and lets the context
+ * bar say *why* the model line is missing rather than leaving a model depth
+ * sitting unexplained next to a sensor-only chart.
+ */
+const outOfDomain = ref<OutsideDomainError | null>(null)
+
+/** Which model cell answered, and how far it snapped. From the last success. */
+const gridCell = ref<{ lat: number, lon: number, distanceKm: number } | null>(null)
+
+/**
+ * The out-of-domain banner explains a situation once; the context bar's
+ * `MODEL outside domain (N km)` item is the durable readout, so dismissing the
+ * banner loses nothing. Scoped to the coordinate rather than to the fetch:
+ * paging the window or switching bin mode refetches the same out-of-domain
+ * point and must not resurrect a banner the user just closed, while a click on
+ * a *different* point is a new thing to explain and earns the banner back.
+ */
+const outOfDomainDismissed = ref(false)
+watch(point, () => { outOfDomainDismissed.value = false })
+const showOutOfDomainAlert = computed(() => !!outOfDomain.value && !outOfDomainDismissed.value)
+
+// Far enough that the point the chart describes is not the point that was
+// clicked. Below this a snap is just grid resolution and not worth a word.
+const FAR_SNAP_KM = 3
+
+/**
  * Only a *profiler* sensor (`sensors.depth === -1`) casts through the whole
  * water column, so only it has something to put beside a model section. A
  * fixed-depth sensor is a single row and belongs in the Comparison pane's
@@ -287,6 +336,26 @@ const loadError = ref<string | null>(null)
  */
 const sensorId = computed(() => mainStore.selectedProfilerSensorId)
 const hasSensorGrid = computed(() => !!sensorGrid.value)
+
+/**
+ * The selected sensor's own identity and deployment depth — the number the
+ * user just read off the sensor card, which the chart and the map box both
+ * need to name explicitly so it is never confused with a model level. Any
+ * selected sensor, not just a profiler: a fixed-depth mooring is exactly the
+ * case that made the two depths collide.
+ */
+const sensorMeta = computed(() => {
+  const sel = mainStore.selectedSensor
+  if (!sel?.id) return null
+  const rec = mainStore.sensors.find(s => s.id === sel.id)
+  // Rounded exactly as sensorInfo.vue's `depth2txt` rounds it. The user is
+  // being asked to compare this number against the one on the sensor card;
+  // the raw stored float (1256.830810546875) reads as a different figure.
+  const depthLabel = sel.depth === -1
+    ? 'full column'
+    : sel.depth === 0 ? 'surface' : `${sel.depth.toFixed(0)} m`
+  return { name: rec?.name ?? 'Sensor', depth: sel.depth, depthLabel }
+})
 
 const viewMode = computed(() => mainStore.exploreView)
 // Losing the profiler strands sensor-depth with nothing to draw.
@@ -329,6 +398,9 @@ function applyResponse(resp: DepthProfileResponse) {
   grid.value = next
   sensorGrid.value = nextSensor
   snapDepthToData(next)
+
+  gridCell.value = resp.grid ?? null
+  mainStore.setModelDomainStatus({ inDomain: true, distanceKm: resp.grid?.distanceKm ?? null })
 
   if (resp.coverage) {
     coverage.value = {
@@ -406,6 +478,7 @@ async function fetchWindow() {
   const reqId = ++fetchSeq
   loading.value = true
   loadError.value = null
+  outOfDomain.value = null
   try {
     const resp = await fetchDepthProfile({
       source: src,
@@ -421,7 +494,15 @@ async function fetchWindow() {
     applyResponse(resp)
   } catch (err: any) {
     if (reqId !== fetchSeq) return
-    loadError.value = err?.response?.data?.detail || err?.message || 'Failed to load depth section.'
+    const domain = asOutsideDomainError(err)
+    if (domain) {
+      outOfDomain.value = domain
+      mainStore.setModelDomainStatus({ inDomain: false, distanceKm: domain.distanceKm })
+    } else {
+      loadError.value = err?.response?.data?.detail || err?.message || 'Failed to load depth section.'
+      mainStore.setModelDomainStatus(null)
+    }
+    gridCell.value = null
     grid.value = depths.value.map(() => Array(binCount.value).fill(null))
     sensorGrid.value = null
   } finally {
@@ -538,15 +619,87 @@ const depthLabel = computed(() => {
 })
 const depthHasData = computed(() => (grid.value[selectedDepthIdx.value] ?? []).some(v => v != null))
 
+/**
+ * True when `snapDepthToData` has pulled the chart off the map's own depth
+ * because that level is below the seabed at this cell. The map layer keeps its
+ * depth (deliberately — see snapDepthToData), so the two readouts legitimately
+ * differ and the bar has to account for the gap.
+ */
+const depthSnappedFromMap = computed(() => {
+  const mapDepth = mainStore.selected_variable.depth_nc
+  if (mapDepth == null || mapDepth < 0) return false
+  const shown = depths.value[selectedDepthIdx.value]
+  return shown != null && Math.abs(shown - mapDepth) > 0.01
+})
+
+// The old wording ("No model data at 442 m here") blamed the depth for what is
+// usually a location problem. In-domain that is the right diagnosis — the level
+// sits below the seabed at this cell — so name the seabed rather than leaving
+// the user to guess. The out-of-domain case never reaches here: it has its own
+// alert above the chart.
+const emptyLineMessage = computed(() =>
+  `No model data at ${depthLabel.value} here — the seabed is shallower than this level`)
+
 // ── CHART CONTEXT — what the chart below is actually plotting, as opposed to
 // selectedInfo.vue's map-corner box (map layer only). Depth is omitted for
 // the heatmap sections: they plot every depth against time, so a single
 // selected depth would misleadingly suggest the chart is scoped to it.
-const contextItems = computed(() => {
-  const items: { label: string; value: string }[] = [{ label: 'Field', value: varName.value }]
-  if (!showSection.value) items.push({ label: 'Depth', value: depthLabel.value })
+//
+// Depths are labelled per source rather than as one bare "Depth". The two
+// genuinely differ — a mooring at 1257 m overlaid on the nearest model level
+// at 442 m — and the unattributed number read as a claim about whichever line
+// the user happened to be looking at. Each source appears only when it is
+// actually on screen, and carries its own reason when it has nothing to draw.
+const contextItems = computed<ContextItem[]>(() => {
+  const items: ContextItem[] = [{ label: 'Field', value: varName.value }]
+
+  // Model — the sections plot every depth, so only the series view names one.
+  if (outOfDomain.value) {
+    items.push({
+      label: 'Model',
+      value: `outside domain (${outOfDomain.value.distanceKm.toFixed(0)} km)`,
+      tone: 'warn',
+      title: outOfDomain.value.message,
+    })
+  } else if (!showSection.value) {
+    if (!depthHasData.value) {
+      items.push({ label: 'Model', value: `${depthLabel.value} — no data`, tone: 'muted', title: `The model has no values at ${depthLabel.value} here.` })
+    } else if (depthSnappedFromMap.value) {
+      // The one remaining way the chart's depth and the map box's depth can
+      // disagree, now that both are labelled. Say why rather than leaving two
+      // different numbers on screen with nothing joining them.
+      items.push({
+        label: 'Model',
+        value: `${depthLabel.value} — seabed`,
+        title: `The map layer is at ${mainStore.selected_variable.depth} m, which is below the seabed here. The chart shows the deepest level with data.`,
+      })
+    } else {
+      items.push({ label: 'Model', value: depthLabel.value })
+    }
+  }
+
+  // Sensor — named whenever its series is the one on screen, or overlaid on it.
+  if (sensorMeta.value && viewMode.value !== 'model-depth') {
+    items.push({
+      label: 'Sensor',
+      value: sensorMeta.value.depthLabel,
+      title: sensorMeta.value.name,
+    })
+  }
+
   items.push({ label: 'Range', value: rangeLabel.value })
   if (point.value) items.push({ label: 'Point', value: `${point.value.lat.toFixed(4)}, ${point.value.lng.toFixed(4)}` })
+
+  // Only worth saying when the answering cell is not effectively the point
+  // clicked — otherwise every reading carries a distracting "0.1 km away".
+  if (gridCell.value && gridCell.value.distanceKm > FAR_SNAP_KM) {
+    items.push({
+      label: 'Model cell',
+      value: `${gridCell.value.distanceKm.toFixed(1)} km away`,
+      tone: 'muted',
+      title: `Nearest model grid cell: ${gridCell.value.lat.toFixed(4)}, ${gridCell.value.lon.toFixed(4)}`,
+    })
+  }
   return items
 })
 
@@ -828,7 +981,19 @@ watch(() => props.active, async (isActive) => {
   resizeAll()
 })
 
-watch([loadError, point, showSection], () => nextTick().then(() => { computeLayout(); resizeAll() }))
+// Two ticks, not one: `computeLayout` only *assigns* `chartH`/`sectionH`, and
+// the `:style` binding that turns those into real pixels is applied on the
+// following tick — so resizing ECharts in the same turn measures the old box
+// and paints a chart shorter than its container. onMounted already sequences
+// it this way; this watcher did not, which showed up the moment the
+// out-of-domain banner became dismissible (the ResizeObserver watches the
+// panel root, whose own size never changes, so nothing corrected it after).
+watch([loadError, showOutOfDomainAlert, point, showSection], async () => {
+  await nextTick()
+  computeLayout()
+  await nextTick()
+  resizeAll()
+})
 
 onBeforeUnmount(() => {
   resizeObs?.disconnect()

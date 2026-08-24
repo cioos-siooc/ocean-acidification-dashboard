@@ -40,16 +40,17 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, bi
     view's own coarse bins instead of overlaying a much finer day-of-year
     cycle stretched across the 20-year window.
     """
-    from modules.ocean_analysis import lookup_nearest_grid_cell
-
-    # Nearest grid cell
-    grid_points = lookup_nearest_grid_cell(lat, lon)
-    if not grid_points:
-        logger.error("No grid cell found near lat=%s lon=%s", lat, lon)
-        return None
-    grid_x, grid_y = grid_points[0]
+    from modules.extractTimeseries import _find_nearest_grid_point
 
     client = _get_ch_client()
+
+    # Nearest grid cell. Routed through extractTimeseries's shared lookup rather
+    # than ocean_analysis's `lookup_nearest_grid_cell`, which has no distance
+    # guard: past its 0.5-degree prefilter box it simply returned no rows, which
+    # became "returned None" and a 500 for a user who had merely clicked outside
+    # the model. The shared helper raises OutsideDomainError instead, which
+    # SERVER.py renders as the same structured 400 every other endpoint sends.
+    grid_x, grid_y, _, _, _ = _find_nearest_grid_point(client, "grid_SSC", lat, lon)
 
     # Resolve nearest available depth
     depth_float = float(depth)

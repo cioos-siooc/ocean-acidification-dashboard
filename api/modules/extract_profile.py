@@ -106,7 +106,7 @@ def extract_profile(
 
     client = get_ch_client()
     try:
-        grid_x, grid_y, grid_lat, grid_lon = _find_nearest_grid_point(client, grid_table, lat, lon)
+        grid_x, grid_y, grid_lat, grid_lon, _ = _find_nearest_grid_point(client, grid_table, lat, lon, source=source)
         if verbose:
             print(f"Nearest grid point: gridX={grid_x} gridY={grid_y} lat={grid_lat} lon={grid_lon}", flush=True)
 

@@ -275,7 +275,14 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     // display unit — every fetch composable behind these (useModelTimeseries,
     // useDepthProfileFetch, useClimateTimeseries, useSensorTimeseries)
     // converts at the source, so no per-chart conversion happens here.
-    const hasModelData = modelData && Array.isArray(modelData.time) && modelData.time.length > 0;
+    // A non-empty timestamp list is not enough. ExplorePanel builds the model
+    // series locally from its depth-section grid, so it always hands over a
+    // full clock — every value null when the point is outside the model domain
+    // or the level is below the seabed. Counting that as data drew no line but
+    // still put "Model" in the legend, which is the same false claim the depth
+    // readouts used to make: something is here, it just isn't showing.
+    const hasModelData = modelData && Array.isArray(modelData.time) && modelData.time.length > 0
+        && Array.isArray(modelData.value) && modelData.value.some((v: any) => v != null);
     let __series_model: any[] = [];
     if (hasModelData) {
         model_timestamps = modelData.time.map((t: any) => moment.utc(t).valueOf());
@@ -604,7 +611,9 @@ if (csv) csv.register((): CsvDataset[] => {
     // Absent from the map means "never toggled", which ECharts treats as shown.
     const shown = (name: string) => !CSV_EXCLUDED_SERIES.includes(name) && legendSelected.value[name] !== false;
 
-    const withModel = !!p.model?.time?.length && shown('Model');
+    // Same all-null guard as the chart's own `hasModelData` — an export whose
+    // model column is blank on every row is worse than no column at all.
+    const withModel = !!p.model?.time?.length && p.model.value?.some((v: any) => v != null) && shown('Model');
     const withSensor = !!p.sensor?.time?.length && shown('Sensor');
     const withClimate = Array.isArray(p.climate) && p.climate.length > 0 && shown('Climatology');
     if (!withModel && !withSensor && !withClimate) return [];

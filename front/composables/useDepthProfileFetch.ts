@@ -16,7 +16,33 @@ export type DepthProfileResponse = {
     // apart, so paging bounds can't be derived client-side. Either end is null
     // when the cell has no rows at all.
     coverage?: { from: string | null; to: string | null };
+    // The model cell that actually answered, and how far it sits from the
+    // requested point. A click near the edge of the domain snaps several km
+    // without failing, and nothing else in the response says so.
+    grid?: { lat: number; lon: number; distanceKm: number };
 };
+
+/**
+ * The structured half of the API's 400 for a coordinate with no model cell
+ * within range (SERVER.py's `_outside_domain_response`). Clicking a deep-ocean
+ * mooring outside the SalishSeaCast domain is a normal thing to do, so callers
+ * check for this shape and show it as an informational state — "sensor data
+ * only" — rather than the red error alert every other failure gets.
+ */
+export type OutsideDomainError = {
+    code: 'outside_model_domain';
+    message: string;
+    distanceKm: number;
+    maxDistanceKm: number;
+    requested: { lat: number; lon: number };
+    nearest: { lat: number; lon: number } | null;
+};
+
+/** Returns the out-of-domain payload if `err` is that 400, else null. */
+export function asOutsideDomainError(err: any): OutsideDomainError | null {
+    const e = err?.response?.data?.error;
+    return e?.code === 'outside_model_domain' ? (e as OutsideDomainError) : null;
+}
 
 /**
  * Parse a `coverage` bound. The backend emits `datetime.isoformat()`, which

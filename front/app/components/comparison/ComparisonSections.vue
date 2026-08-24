@@ -14,9 +14,24 @@
       <UButton variant="ghost" size="xs" icon="i-mdi-chevron-right" class="shrink-0" :disabled="!canPageForward || loading" @click="page(1)" />
     </div>
 
-    <UAlert color="error" variant="subtle" class="mb-2" v-if="loadError">
+    <UAlert color="error" variant="subtle" class="mb-2 shrink-0" v-if="loadError">
       {{ loadError }}
     </UAlert>
+
+    <!-- Same distinction Explore draws: a sensor moored outside the model
+         domain has nothing to compare against, which is a fact about the
+         location, not a failed request. -->
+    <UAlert
+      v-else-if="outOfDomain && !outOfDomainDismissed"
+      color="info"
+      variant="subtle"
+      icon="i-mdi-map-marker-off-outline"
+      class="mb-2 shrink-0"
+      close
+      @update:open="outOfDomainDismissed = true"
+      title="Outside the SalishSeaCast model domain"
+      :description="`This sensor sits ${outOfDomain.distanceKm.toFixed(0)} km from the nearest model cell, so there is no model section to compare against.`"
+    />
 
     <div class="grow" style="min-height:0;" @mouseleave="hoverCell = null">
       <div class="hm-slot" :style="{ height: panelH + 'px' }">
@@ -51,7 +66,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useMainStore, formatDepthLabel } from '../../stores/main'
-import { fetchDepthProfile, parseCoverageBound, type DepthProfileResponse } from '~~/composables/useDepthProfileFetch'
+import { fetchDepthProfile, parseCoverageBound, asOutsideDomainError, type DepthProfileResponse, type OutsideDomainError } from '~~/composables/useDepthProfileFetch'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, useTimeDepthWindow, toApiIso, type BinMode } from '~~/composables/useTimeDepthWindow'
@@ -105,6 +120,16 @@ const sensorGrid = ref<(number | null)[][]>([])
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 
+// Kept out of `loadError` so it renders informationally rather than as a
+// failure — see the alert in the template.
+const outOfDomain = ref<OutsideDomainError | null>(null)
+
+// Dismissible like Explore's copy of this banner, and scoped the same way: to
+// the thing being explained (here the sensor) rather than to the fetch, so
+// paging the window does not bring back a banner the user just closed.
+const outOfDomainDismissed = ref(false)
+watch(() => mainStore.selectedSensor?.id, () => { outOfDomainDismissed.value = false })
+
 function nearestLevelIdx(depth: number, levels: number[]) {
   let best = 0, bestDist = Infinity
   levels.forEach((d, i) => { const dist = Math.abs(d - depth); if (dist < bestDist) { bestDist = dist; best = i } })
@@ -141,6 +166,7 @@ async function fetchWindow() {
   const reqId = ++fetchSeq
   loading.value = true
   loadError.value = null
+  outOfDomain.value = null
   try {
     const resp = await fetchDepthProfile({
       source: modelSource.value,
@@ -156,7 +182,9 @@ async function fetchWindow() {
     applyResponse(resp)
   } catch (err: any) {
     if (reqId !== fetchSeq) return
-    loadError.value = err?.response?.data?.detail || err?.message || 'Failed to load depth sections.'
+    const domain = asOutsideDomainError(err)
+    if (domain) outOfDomain.value = domain
+    else loadError.value = err?.response?.data?.detail || err?.message || 'Failed to load depth sections.'
     modelGrid.value = depths.value.map(() => Array(binCount.value).fill(null))
     sensorGrid.value = depths.value.map(() => Array(binCount.value).fill(null))
   } finally {

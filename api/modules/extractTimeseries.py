@@ -55,6 +55,73 @@ ALLOWED_VARIABLES = {
 
 MAX_GRID_DIST_KM = 25.0
 
+# Human name for the model domain, used in the out-of-domain message below.
+DOMAIN_LABEL_BY_SOURCE = {
+    "SalishSeaCast": "SalishSeaCast model domain",
+}
+
+
+class OutsideDomainError(RuntimeError):
+    """Raised when a coordinate has no model grid cell within `max_distance_km`.
+
+    Carries the numbers rather than only a sentence so callers can present
+    "you clicked outside the model" as its own UI state instead of a generic
+    failure: SERVER.py turns it into a structured 400 body and the frontend
+    reads `code` to swap a red error alert for an informational note.
+
+    Every field is passed through to `super().__init__` on purpose. Exceptions
+    pickle via `Exception.__reduce__`, which rebuilds them as `cls(*args)` and
+    so drops any attribute assigned outside the constructor — and
+    `extract_timeseries` runs in a `ProcessPoolExecutor`, so this instance
+    makes that round trip before SERVER.py ever sees it.
+    """
+
+    code = "outside_model_domain"
+
+    def __init__(
+        self,
+        lat: float,
+        lon: float,
+        distance_km: float,
+        max_distance_km: float,
+        nearest_lat: Optional[float] = None,
+        nearest_lon: Optional[float] = None,
+        domain_label: str = "model domain",
+    ):
+        super().__init__(lat, lon, distance_km, max_distance_km, nearest_lat, nearest_lon, domain_label)
+        self.lat = float(lat)
+        self.lon = float(lon)
+        self.distance_km = float(distance_km)
+        self.max_distance_km = float(max_distance_km)
+        self.nearest_lat = None if nearest_lat is None else float(nearest_lat)
+        self.nearest_lon = None if nearest_lon is None else float(nearest_lon)
+        self.domain_label = domain_label
+
+    @property
+    def message(self) -> str:
+        return (
+            f"({self.lat:.4f}, {self.lon:.4f}) is outside the {self.domain_label} \u2014 "
+            f"the nearest model grid cell is {self.distance_km:.1f} km away "
+            f"(limit {self.max_distance_km:.0f} km)."
+        )
+
+    def __str__(self) -> str:  # default would render the raw args tuple
+        return self.message
+
+    def to_payload(self) -> dict:
+        """The `error` object SERVER.py puts alongside the plain-string `detail`."""
+        return {
+            "code": self.code,
+            "message": self.message,
+            "distanceKm": round(self.distance_km, 1),
+            "maxDistanceKm": self.max_distance_km,
+            "requested": {"lat": self.lat, "lon": self.lon},
+            "nearest": (
+                None if self.nearest_lat is None
+                else {"lat": self.nearest_lat, "lon": self.nearest_lon}
+            ),
+        }
+
 # Maximum allowed gap (meters) between a requested depth and the nearest
 # depth actually present at a grid cell. Native sigma levels are discrete and
 # bathymetry-truncated per cell, so without this a request for e.g. 400m at a
@@ -75,41 +142,73 @@ def _get_depth_levels(client, table: str) -> list[float]:
     return _CACHED_DEPTHS[table]
 
 
-def _find_nearest_grid_point(client, grid_table: str, lat: float, lon: float, max_dist_km: float = MAX_GRID_DIST_KM) -> Tuple[int, int, float, float]:
+def _find_nearest_grid_point(client, grid_table: str, lat: float, lon: float, max_dist_km: float = MAX_GRID_DIST_KM, source: str = "SalishSeaCast") -> Tuple[int, int, float, float, float]:
     """Find the (gridX, gridY) cell nearest to (lat, lon) in `grid_table`.
 
-    Raises RuntimeError if the grid table is empty or the nearest cell is
-    farther than `max_dist_km` away.
+    Returns (gridX, gridY, lat, lon, distance_km) — the distance is part of the
+    result, not just the failure path, so callers can tell a click that landed
+    on a cell from one that snapped several km to the edge of the domain.
+
+    Raises RuntimeError if the grid table is empty, or OutsideDomainError if
+    the nearest cell is farther than `max_dist_km` away.
+    """
+    select = f"""
+        SELECT gridX, gridY, longitude, latitude,
+               geoDistance(longitude, latitude, %(lon)s, %(lat)s) AS dist_m
+        FROM {grid_table}
     """
     # 0.5-degree bounding box (~55 km at Salish Sea latitudes) pre-filters the
     # full-table scan before the geoDistance sort. Safe: max_dist_km (25 km) is
     # well inside 55 km, so the true nearest cell is always inside the box.
-    query = f"""
-        SELECT gridX, gridY, longitude, latitude,
-               geoDistance(longitude, latitude, %(lon)s, %(lat)s) AS dist_m
-        FROM {grid_table}
+    result = client.query(
+        select + """
         WHERE latitude BETWEEN %(lat_min)s AND %(lat_max)s
           AND longitude BETWEEN %(lon_min)s AND %(lon_max)s
         ORDER BY dist_m ASC
         LIMIT 1
-    """
-    result = client.query(query, parameters={
-        "lon": lon, "lat": lat,
-        "lat_min": lat - 0.5, "lat_max": lat + 0.5,
-        "lon_min": lon - 0.5, "lon_max": lon + 0.5,
-    })
+        """,
+        parameters={
+            "lon": lon, "lat": lat,
+            "lat_min": lat - 0.5, "lat_max": lat + 0.5,
+            "lon_min": lon - 0.5, "lon_max": lon + 0.5,
+        },
+    )
     if not result.result_rows:
-        raise RuntimeError(f"Grid table '{grid_table}' is empty or not found")
+        # Nothing in the box means the point is more than ~55 km out, not that
+        # the table is empty — the two used to share one misleading message.
+        # Re-run unfiltered (a full scan, but only on this rare path) so the
+        # error can name a real distance instead of guessing: the UI puts that
+        # number in front of the user, and ">0.5 degrees" is not an answer.
+        result = client.query(
+            select + " ORDER BY dist_m ASC LIMIT 1",
+            parameters={"lon": lon, "lat": lat},
+        )
+        if not result.result_rows:
+            raise RuntimeError(f"Grid table '{grid_table}' is empty or not found")
+        _, _, far_lon, far_lat, far_dist_m = result.result_rows[0]
+        raise OutsideDomainError(
+            lat=lat,
+            lon=lon,
+            distance_km=far_dist_m / 1000.0,
+            max_distance_km=max_dist_km,
+            nearest_lat=float(far_lat),
+            nearest_lon=float(far_lon),
+            domain_label=DOMAIN_LABEL_BY_SOURCE.get(source, "model domain"),
+        )
 
     grid_x, grid_y, grid_lon, grid_lat, dist_m = result.result_rows[0]
     dist_km = dist_m / 1000.0
     if dist_km > max_dist_km:
-        raise RuntimeError(
-            f"Requested coordinate ({lat}, {lon}) is {dist_km:.1f} km from the nearest grid point. "
-            f"Maximum allowed distance is {max_dist_km} km. "
-            f"Please verify your coordinates are within the model domain (Salish Sea / BC coast region)."
+        raise OutsideDomainError(
+            lat=lat,
+            lon=lon,
+            distance_km=dist_km,
+            max_distance_km=max_dist_km,
+            nearest_lat=float(grid_lat),
+            nearest_lon=float(grid_lon),
+            domain_label=DOMAIN_LABEL_BY_SOURCE.get(source, "model domain"),
         )
-    return int(grid_x), int(grid_y), float(grid_lat), float(grid_lon)
+    return int(grid_x), int(grid_y), float(grid_lat), float(grid_lon), float(dist_km)
 
 
 def _find_grid_points_in_polygon(client, grid_table: str, polygon: List[Tuple[float, float]]) -> List[Tuple[int, int]]:
@@ -230,7 +329,7 @@ def extract_timeseries(
                 print(f"Grid points in polygon: {len(grid_points)}", flush=True)
         else:
             assert lat is not None and lon is not None
-            grid_x, grid_y, grid_lat, grid_lon = _find_nearest_grid_point(client, grid_table, lat, lon)
+            grid_x, grid_y, grid_lat, grid_lon, _ = _find_nearest_grid_point(client, grid_table, lat, lon, source=source)
             if verbose:
                 print(f"Nearest grid point in ClickHouse: gridX={grid_x} gridY={grid_y} lat={grid_lat} lon={grid_lon}", flush=True)
             grid_points = [(grid_x, grid_y)]
