@@ -35,9 +35,7 @@
           <div class="text-warning">{{ loadingStep }}</div>
         </div>
 
-        <UAlert color="error" variant="subtle" class="m-3" v-else-if="!hasData && errorMessage">
-          {{ errorMessage }}
-        </UAlert>
+        <UAlert color="error" variant="subtle" class="m-3" v-else-if="!hasData && errorMessage" :description="errorMessage" />
 
         <div v-else-if="isVariableDepth && sensorInfo && !hasData"
           class="flex flex-col items-center justify-center h-full text-center px-6">

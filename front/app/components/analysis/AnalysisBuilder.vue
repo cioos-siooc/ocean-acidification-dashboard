@@ -49,9 +49,7 @@
           <span>Updating…</span>
         </div>
 
-        <UAlert color="error" variant="subtle" class="m-3" v-else-if="!hasActivePlot && plotErrorMessage">
-          {{ plotErrorMessage }}
-        </UAlert>
+        <UAlert color="error" variant="subtle" class="m-3" v-else-if="!hasActivePlot && plotErrorMessage" :description="plotErrorMessage" />
 
         <div v-else-if="!hasActivePlot && !isGenerating && !plotErrorMessage"
           class="flex flex-col items-center justify-center h-full text-center px-6">

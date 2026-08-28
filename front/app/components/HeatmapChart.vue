@@ -2,9 +2,7 @@
     <div class="bg-elevated rounded-lg p-4" style="width: 100%; height: 100%;">
         <div class="flex flex-wrap -m-3">
             <div class="p-3 w-full" v-if="showDateWarning">
-                <UAlert color="warning" variant="subtle">
-                    {{ dateWarning }}
-                </UAlert>
+                <UAlert color="warning" variant="subtle" :description="dateWarning" />
             </div>
 
             <div class="p-3 w-auto" style="align-content: center;">

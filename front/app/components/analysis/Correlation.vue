@@ -5,9 +5,7 @@
       <USelectMenu v-model="selectedVariables" :items="selectableVariables" label-key="name" value-key="id" class="mb-3 w-full" :return-object="false" multiple />
 
       <template v-for="id in selectedVariables" :key="id">
-        <UAlert color="error" variant="subtle" class="mb-2" v-if="errorByVar[id]">
-          {{ varName(id) }}: {{ errorByVar[id] }}
-        </UAlert>
+        <UAlert color="error" variant="subtle" class="mb-2" v-if="errorByVar[id]" :description="`${varName(id)}: ${errorByVar[id]}`" />
       </template>
 
       <div class="text-gray-500 mt-2">

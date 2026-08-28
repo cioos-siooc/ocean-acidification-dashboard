@@ -9,11 +9,14 @@
         warmer/cooler, more/less acidic, etc. relative to the long-term average for that calendar day.
       </div>
 
-      <UAlert color="warning" variant="subtle" icon="i-mdi-alert-outline" class="mt-3" v-if="isShortHistory">
-        Only {{ yearSpan }} year{{ yearSpan === 1 ? '' : 's' }} of data available. The "mean" here isn't a true
-        multi-year climatology — it's a local ±{{ windowDays }}-day rolling average of this same record, so
-        anomalies reflect short-term swings rather than deviation from a stable long-term normal.
-      </UAlert>
+      <UAlert
+        color="warning"
+        variant="subtle"
+        icon="i-mdi-alert-outline"
+        class="mt-3"
+        v-if="isShortHistory"
+        :description="shortHistoryWarning"
+      />
     </div>
 
     <div class="grow" style="min-width:0;">
@@ -43,6 +46,10 @@ const windowDays = ref(5)
 const climatology = computed(() => computeClimatologyBaseline(props.series, windowDays.value))
 const yearSpan = computed(() => distinctYearSpan(props.series))
 const isShortHistory = computed(() => yearSpan.value < 2)
+const shortHistoryWarning = computed(() =>
+  `Only ${yearSpan.value} year${yearSpan.value === 1 ? '' : 's'} of data available. The "mean" here isn't a true `
+  + `multi-year climatology — it's a local ±${windowDays.value}-day rolling average of this same record, so `
+  + `anomalies reflect short-term swings rather than deviation from a stable long-term normal.`)
 const seasonalSeries = computed(() => filterBySeason(props.series, props.season))
 
 // Same synthetic-year-axis trick as the basic tab's overlay chart, so partial years

@@ -27,7 +27,7 @@
             <SegmentedControl v-model="selectedSeason" :items="seasonItems" size="xs" aria-label="Season" />
           </div>
 
-          <UAlert color="error" variant="subtle" class="m-4" v-if="primaryError">{{ primaryError }}</UAlert>
+          <UAlert color="error" variant="subtle" class="m-4" v-if="primaryError" :description="primaryError" />
 
           <div v-else-if="!location || !variable || depth == null"
             class="flex flex-col items-center justify-center text-center px-6" style="height:60vh;">

@@ -17,7 +17,7 @@
   <template #trailing><span class="text-xs text-muted">{{ displayUnit(secondaryVariable) }}</span></template>
 </UInput>
 
-      <UAlert color="error" variant="subtle" class="mt-2" v-if="secondaryError">{{ secondaryError }}</UAlert>
+      <UAlert color="error" variant="subtle" class="mt-2" v-if="secondaryError" :description="secondaryError" />
     </div>
 
     <div class="grow flex flex-col" style="min-width:0; position:relative;">

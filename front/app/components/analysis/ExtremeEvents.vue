@@ -36,11 +36,14 @@
         </template>
       </div>
 
-      <UAlert color="warning" variant="subtle" icon="i-mdi-alert-outline" class="mt-3" v-if="thresholdMode === 'percentile' && isShortHistory">
-        Only {{ yearSpan }} year{{ yearSpan === 1 ? '' : 's' }} of data available. The dashed threshold isn't a
-        true multi-year climatology here — it's a local ±{{ windowDays }}-day rolling percentile of this same
-        record, so it will track short-term swings rather than a stable "normal for this time of year."
-      </UAlert>
+      <UAlert
+        color="warning"
+        variant="subtle"
+        icon="i-mdi-alert-outline"
+        class="mt-3"
+        v-if="thresholdMode === 'percentile' && isShortHistory"
+        :description="shortHistoryWarning"
+      />
     </div>
 
     <div class="grow flex flex-col" style="min-width:0;">
@@ -84,6 +87,10 @@ const unitSuffix = computed(() => unit.value ? ` (${unit.value})` : '')
 
 const yearSpan = computed(() => distinctYearSpan(props.series))
 const isShortHistory = computed(() => yearSpan.value < 2)
+const shortHistoryWarning = computed(() =>
+  `Only ${yearSpan.value} year${yearSpan.value === 1 ? '' : 's'} of data available. The dashed threshold isn't a `
+  + `true multi-year climatology here — it's a local ±${windowDays.value}-day rolling percentile of this same `
+  + `record, so it will track short-term swings rather than a stable "normal for this time of year."`)
 
 // Direction defaults: low extremes matter for OA-relevant variables, high extremes for temperature.
 const LOW_EXTREME_VARS = new Set(['ph_total', 'omega_arag', 'omega_cal', 'dissolved_oxygen'])

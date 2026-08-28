@@ -25,9 +25,7 @@
         <DownloadButton :datasets="csvDatasets" size="xs" class="shrink-0" />
       </div>
 
-      <UAlert color="error" variant="subtle" class="mb-2" v-if="loadError">
-        {{ loadError }}
-      </UAlert>
+      <UAlert color="error" variant="subtle" class="mb-2" v-if="loadError" :description="loadError" />
 
       <ChartContextBar :items="contextItems" />
 

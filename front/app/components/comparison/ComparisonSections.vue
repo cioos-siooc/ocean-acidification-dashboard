@@ -14,9 +14,7 @@
       <UButton variant="ghost" size="xs" icon="i-mdi-chevron-right" class="shrink-0" :disabled="!canPageForward || loading" @click="page(1)" />
     </div>
 
-    <UAlert color="error" variant="subtle" class="mb-2 shrink-0" v-if="loadError">
-      {{ loadError }}
-    </UAlert>
+    <UAlert color="error" variant="subtle" class="mb-2 shrink-0" v-if="loadError" :description="loadError" />
 
     <!-- Same distinction Explore draws: a sensor moored outside the model
          domain has nothing to compare against, which is a fact about the

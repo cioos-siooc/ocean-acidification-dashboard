@@ -50,9 +50,13 @@
         <DownloadButton :datasets="csvDatasets" size="xs" class="shrink-0" />
       </div>
 
-      <UAlert color="error" variant="subtle" class="mb-2 shrink-0" v-if="loadError">
-        {{ loadError }}
-      </UAlert>
+      <UAlert
+        v-if="loadError"
+        color="error"
+        variant="subtle"
+        class="mb-2 shrink-0"
+        :description="loadError"
+      />
 
       <!-- Not an error: the user clicked somewhere the model does not reach.
            Informational tone, and it says what *is* on screen rather than only
