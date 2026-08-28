@@ -57,6 +57,7 @@ def _get_ssc_variables() -> List[Dict]:
     return [
         {
             "var": var,
+            "name": meta.get('name', var),
             "dts": dts,
             "colormapMin": meta['colormapMin'],
             "colormapMax": meta['colormapMax'],
@@ -66,6 +67,7 @@ def _get_ssc_variables() -> List[Dict]:
             "bounds": bounds,
             "source": config['source'],
             "unit": meta['unit'],
+            "alt_units": meta.get('alt_units', []),
         }
         for var, meta in config['variables'].items()
     ]

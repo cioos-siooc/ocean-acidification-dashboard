@@ -1,75 +1,66 @@
 <template>
-  <div class="comparison-panel d-flex flex-column h-100" style="overflow:hidden;">
+  <div class="comparison-panel flex flex-col h-full" style="overflow:hidden;">
 
     <!-- HEADER STRIP -->
-    <div class="d-flex align-center px-3 flex-shrink-0"
+    <div class="flex items-center px-3 shrink-0"
       style="height:30px; border-bottom:1px solid rgba(255,255,255,0.08); gap:8px;">
-      <span class="text-caption font-weight-medium text-truncate" style="min-width:0;">
+      <span class="font-medium truncate" style="min-width:0;">
         {{ sensorInfo?.name || '—' }}
-        <span class="text-grey"> · {{ varName }} · {{ variableDepthLabel }}</span>
+        <span class="text-gray-500"> · {{ varName }} · {{ variableDepthLabel }}</span>
       </span>
-      <v-spacer />
-      <v-progress-circular v-if="isLoading" indeterminate color="warning" size="14" width="2" class="flex-shrink-0" />
-      <span v-if="isLoading" class="text-caption text-grey flex-shrink-0">{{ loadingStep }}</span>
-      <v-chip v-if="!isLoading && stats && stats.n > 0" size="x-small" color="teal" variant="tonal" class="flex-shrink-0">
+      <div class="grow" />
+      <!-- Daily spans the whole record; hourly trades that reach for a fortnight
+           at native cadence, where tidal and diurnal structure is visible. -->
+      <SegmentedControl v-model="resolution" :items="resolutionItems" size="xs" :disabled="isLoading"
+        class="shrink-0 mr-2" aria-label="Time resolution" />
+      <UIcon name="i-mdi-loading" class="animate-spin size-[14px] text-warning shrink-0" v-if="isLoading" />
+      <span v-if="isLoading" class="text-gray-500 shrink-0">{{ loadingStep }}</span>
+      <UBadge v-if="stats && stats.n > 0" variant="subtle" class="rounded-full shrink-0">
         {{ stats.n }} days
-      </v-chip>
-      <v-btn icon="mdi-fullscreen" size="x-small" variant="text" :disabled="!hasData && !isVariableDepth"
-        title="Advanced Analysis" @click="openAdvanced('icon')" />
+      </UBadge>
     </div>
 
     <!-- MAIN ROW: chart + stats -->
-    <div class="d-flex flex-grow-1" style="min-height:0; overflow:hidden;">
+    <div class="flex grow" style="min-height:0; overflow:hidden;">
 
       <!-- TIME SERIES CHART -->
-      <div class="flex-grow-1 d-flex flex-column" style="min-width:0; overflow:hidden; position:relative;">
+      <div class="grow flex flex-col" style="min-width:0; overflow:hidden; position:relative;">
 
-        <div v-show="hasData" ref="timeseriesContainerRef" class="w-100 h-100"
+        <div v-show="hasData" ref="timeseriesContainerRef" class="w-full h-full"
           :class="{ 'chart-loading': isLoading && hasData }" />
 
         <div v-if="isLoading && !hasData"
-          class="d-flex flex-column align-center justify-center fill-height">
-          <v-progress-circular indeterminate color="warning" size="36" class="mb-2" />
-          <div class="text-caption text-warning">{{ loadingStep }}</div>
+          class="flex flex-col items-center justify-center h-full">
+          <UIcon name="i-mdi-loading" class="animate-spin size-[36px] text-warning mb-2" />
+          <div class="text-warning">{{ loadingStep }}</div>
         </div>
 
-        <v-alert v-else-if="!hasData && errorMessage" type="error" variant="tonal" border="start"
-          class="ma-3">
-          {{ errorMessage }}
-        </v-alert>
+        <UAlert color="error" variant="subtle" class="m-3" v-else-if="!hasData && errorMessage" :description="errorMessage" />
 
         <div v-else-if="isVariableDepth && sensorInfo && !hasData"
-          class="d-flex flex-column align-center justify-center h-100 text-center px-6">
-          <v-icon size="48" color="teal-lighten-1">mdi-chart-timeline-variant</v-icon>
-          <div class="text-caption text-grey-lighten-1 mt-2" style="max-width:260px;">
-            This sensor profiles the water column instead of sitting at one depth — pick a depth
-            via the map's depth control or the Depth Profile view below to compare it.
+          class="flex flex-col items-center justify-center h-full text-center px-6">
+          <UIcon name="i-mdi-chart-timeline-variant" class="size-[48px] text-teal-400" />
+          <div class="text-gray-400 mt-2" style="max-width:280px;">
+            This sensor profiles the water column instead of sitting at one depth. Pick a depth
+            via the map's depth control to compare it here, or open the Depth sections tab
+            above to see its casts against the model at every depth.
           </div>
-          <v-btn size="small" variant="tonal" color="teal" class="mt-3" prepend-icon="mdi-fullscreen"
-            @click="openAdvanced('depth_profile_prompt')">
-            Open Depth Profile
-          </v-btn>
         </div>
 
         <div v-else-if="!hasData && !isLoading"
-          class="d-flex flex-column align-center justify-center h-100 text-center px-6">
-          <v-icon size="48" color="grey-darken-1">mdi-compare-horizontal</v-icon>
-          <div class="text-caption text-grey-darken-1 mt-2">Select a sensor to load the comparison</div>
+          class="flex flex-col items-center justify-center h-full text-center px-6">
+          <UIcon name="i-mdi-compare-horizontal" class="size-[48px] text-gray-500" />
+          <div class="text-gray-500 mt-2">Select a sensor to load the comparison</div>
         </div>
       </div>
 
       <!-- RIGHT: Season filter + Stats -->
-      <div class="comparison-stats pa-2 d-flex flex-column"
+      <div class="comparison-stats p-2 flex flex-col"
         style="width:210px; min-width:210px; border-left:1px solid rgba(255,255,255,0.08); overflow:hidden;">
 
         <div class="ctrl-label mb-1">Season</div>
-        <v-btn-toggle v-model="selectedSeason" mandatory variant="tonal" class="w-100 mb-3 flex-wrap">
-          <v-btn value="all" size="x-small">All</v-btn>
-          <v-btn value="djf" size="x-small">DJF</v-btn>
-          <v-btn value="mam" size="x-small">MAM</v-btn>
-          <v-btn value="jja" size="x-small">JJA</v-btn>
-          <v-btn value="son" size="x-small">SON</v-btn>
-        </v-btn-toggle>
+        <SegmentedControl v-model="selectedSeason" :items="seasonItems" size="xs" block
+          item-class="px-1 min-w-0" class="mb-3" aria-label="Season" />
 
         <template v-if="stats && stats.n > 0">
           <div class="ctrl-label mb-2">Summary Stats</div>
@@ -95,11 +86,11 @@
         </template>
 
         <div v-else-if="!hasData && !isLoading"
-          class="d-flex align-center justify-center flex-grow-1">
-          <div class="text-caption text-grey text-center">Stats appear<br>after loading</div>
+          class="flex items-center justify-center grow">
+          <div class="text-gray-500 text-center">Stats appear<br>after loading</div>
         </div>
 
-        <div v-else-if="hasData && stats?.n === 0" class="text-caption text-grey mt-2">
+        <div v-else-if="hasData && stats?.n === 0" class="text-gray-500 mt-2">
           No matched pairs for this season.
         </div>
       </div>
@@ -107,17 +98,6 @@
 
   </div>
 
-  <AdvancedComparisonDialog
-    v-model="advancedOpen"
-    :data="rawComparisonData"
-    :sensor-name="sensorInfo?.name || ''"
-    :var-name="varName"
-    :depth-label="depthLabel"
-    :initial-season="selectedSeason"
-    :variable-depth="isVariableDepth"
-    :initial-tab="isVariableDepth ? 'depth' : 'scatter'"
-    @depth-selected="onDepthPicked"
-  />
 </template>
 
 
@@ -125,24 +105,34 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import moment from 'moment-timezone'
-import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme'
-import { trackEvent } from '../../composables/useAnalytics'
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
+import { trackEvent } from '~~/composables/useAnalytics'
 import { useMainStore, formatDepthLabel } from '../stores/main'
-import { fetchAnalysisSeries } from '../../composables/useAnalysisFetch'
-import { getSensorTimeseries } from '../../composables/useSensorTimeseries'
-import { availableVariables } from '../../composables/useAnalysisStatistics'
+import { fetchAnalysisSeries } from '~~/composables/useAnalysisFetch'
+import { getSensorTimeseries } from '~~/composables/useSensorTimeseries'
+import { fetchModelTimeseries } from '~~/composables/useModelTimeseries'
+import { availableVariables } from '~~/composables/useAnalysisStatistics'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
+import SegmentedControl from './ui/SegmentedControl.vue'
 import {
+
   aggregateSensorToDaily,
   buildComparisonSeries,
   filterBySeason,
   computeComparisonStats,
   type ComparisonPoint,
   type Season,
-} from '../../composables/useComparisonFetch'
-import AdvancedComparisonDialog from './comparison/AdvancedComparisonDialog.vue'
+} from '~~/composables/useComparisonFetch'
+
+const resolutionItems = [{ value: 'hourly', label: '1H', title: 'Hourly · 14-day window' }, { value: 'daily', label: '1D', title: 'Daily · full record' }]
+const seasonItems = [{ value: 'all', label: 'All' }, { value: 'djf', label: 'DJF' }, { value: 'mam', label: 'MAM' }, { value: 'jja', label: 'JJA' }, { value: 'son', label: 'SON' }]
 
 const props = defineProps<{ active?: boolean }>()
+// The workspace's Scatter/Residuals/Seasonal tabs are derived from exactly these
+// pairs — emitting them keeps this component the single fetch owner.
+const emit = defineEmits<{ data: [ComparisonPoint[]] }>()
 const mainStore = useMainStore()
+const { displayUnit } = useVariableRegistry()
 
 // --- STORE-DERIVED STATE ---
 const variable = computed(() => mainStore.selected_variable.var)
@@ -158,13 +148,6 @@ const sensorInfo = computed(() => {
 // sensor profiles the water column instead of sitting at one fixed depth. The daily
 // single-depth chart below can't represent that — see the Depth Profile tab instead.
 const isVariableDepth = computed(() => sensorInfo.value?.depth === -1)
-
-// Picking a depth in the Depth Profile heatmap writes into the same shared depth
-// the map layer / TimeControls / Timeseries tab already use — one source of truth,
-// so a pick here is immediately reflected everywhere else without reopening anything.
-function onDepthPicked(d: number) {
-  mainStore.updateSelectedVariable({ depth: formatDepthLabel(d), depth_nc: d })
-}
 
 const variableDepthLabel = computed(() => {
   if (!isVariableDepth.value) return depthLabel.value
@@ -199,14 +182,92 @@ const isLoading = ref(false)
 const loadingStep = ref('')
 const hasData = ref(false)
 const errorMessage = ref<string | null>(null)
-const advancedOpen = ref(false)
 
-function openAdvanced(trigger: 'icon' | 'depth_profile_prompt') {
-  trackEvent('advanced_analysis_opened', { dialog_type: 'sensor_comparison', trigger })
-  advancedOpen.value = true
-}
 
 const rawComparisonData = ref<ComparisonPoint[]>([])
+
+// ── RESOLUTION ────────────────────────────────────────────────────────────────
+// `rawComparisonData` stays daily and full-record no matter what: the stats
+// sidebar and the Advanced dialog's scatter/residuals/seasonal views are all
+// defined on matched *daily* pairs, and re-basing them on a fortnight of hourly
+// samples would quietly change what those numbers mean. Hourly is a second,
+// display-only series that only the chart reads.
+const resolution = ref<'hourly' | 'daily'>('daily')
+const hourlyData = ref<ComparisonPoint[]>([])
+const chartData = computed(() => resolution.value === 'hourly' ? hourlyData.value : rawComparisonData.value)
+
+const HOURLY_WINDOW_DAYS = 14
+
+/** Model and sensor at native cadence over the most recent window with data. */
+async function loadHourly() {
+  if (!sensorInfo.value || !selectedSensor.value || depth.value == null) return
+  hourlyData.value = []
+
+  const latest = sensorInfo.value.latest_data_at ? moment.utc(sensorInfo.value.latest_data_at) : moment.utc()
+  const from = latest.clone().subtract(HOURLY_WINDOW_DAYS, 'days')
+  const fromStr = from.format('YYYY-MM-DDTHHmmss')
+  const toStr = latest.format('YYYY-MM-DDTHHmmss')
+
+  const [modelResp, sensorResp] = await Promise.all([
+    fetchModelTimeseries({
+      source: mainStore.selected_variable.source,
+      variable: variable.value,
+      depth: depth.value,
+      lat: sensorInfo.value.latitude,
+      lon: sensorInfo.value.longitude,
+      fromDate: fromStr,
+      toDate: toStr,
+    }),
+    getSensorTimeseries(
+      selectedSensor.value.id, variable.value, fromStr, toStr, depth.value,
+      isVariableDepth.value ? mainStore.selected_variable.source : null,
+    ),
+  ])
+
+  // Key both series by timestamp so the chart's two lines share an x-axis even
+  // where one has samples the other lacks (a gappy sensor, an unmodelled hour).
+  const byTime = new Map<string, ComparisonPoint>()
+  const touch = (t: string) => {
+    let p = byTime.get(t)
+    if (!p) { p = { date: t, model: null, modelMin: null, modelMax: null, sensor: null }; byTime.set(t, p) }
+    return p
+  }
+  modelResp.time.forEach((t, i) => { touch(t).model = modelResp.value[i] ?? null })
+  const sTimes: string[] = sensorResp?.data?.time ?? []
+  const sValues: (number | null)[] = sensorResp?.data?.value ?? []
+  sTimes.forEach((t, i) => { touch(t).sensor = sValues[i] ?? null })
+
+  hourlyData.value = Array.from(byTime.values()).sort((a, b) => a.date.localeCompare(b.date))
+}
+
+async function refreshHourlyIfNeeded() {
+  if (resolution.value === 'hourly' && !hourlyData.value.length) {
+    isLoading.value = true
+    loadingStep.value = 'Fetching hourly data…'
+    try {
+      await loadHourly()
+    } catch (err: any) {
+      errorMessage.value = err?.response?.data?.detail || err?.message || 'Failed to load hourly data.'
+    } finally {
+      isLoading.value = false
+      loadingStep.value = ''
+    }
+  }
+  await nextTick()
+  renderTimeseriesChart()
+}
+
+watch(resolution, refreshHourlyIfNeeded)
+
+// A different sensor/variable/depth invalidates the cached hourly window.
+// mainStore.unitPreference is included so toggling the display unit
+// invalidates it too and, if hourly is the active resolution, re-fetches
+// (a cheap cache hit — see useModelTimeseries.ts/useSensorTimeseries.ts)
+// rather than leaving the chart showing stale numbers under the old unit.
+watch([selectedSensor, variable, depth, () => mainStore.unitPreference[variable.value]], () => {
+  hourlyData.value = []
+  refreshHourlyIfNeeded()
+})
 
 // --- CHART REFS ---
 const timeseriesContainerRef = ref<HTMLDivElement | null>(null)
@@ -227,9 +288,9 @@ function initChart() {
 }
 
 function renderTimeseriesChart() {
-  if (!tsChart || !rawComparisonData.value.length) return
+  if (!tsChart || !chartData.value.length) return
 
-  const data = rawComparisonData.value
+  const data = chartData.value
   const modelMean = data.map(p => [p.date, p.model])
   const modelMin  = data.map(p => [p.date, p.modelMin])
   const modelMax  = data.map(p => [p.date, p.modelMax])
@@ -261,7 +322,7 @@ function renderTimeseriesChart() {
     },
     yAxis: {
       type: 'value',
-      name: varName.value,
+      name: displayUnit(variable.value) ? `${varName.value} (${displayUnit(variable.value)})` : varName.value,
       nameLocation: 'middle',
       nameGap: 50,
       axisLabel: { fontSize: 10, color: '#ccc' },
@@ -304,7 +365,14 @@ function renderTimeseriesChart() {
         name: 'Sensor',
         type: 'line',
         data: sensor,
-        symbol: 'none',
+        // Daily pairs are dense enough to read as a line, but hourly casts are
+        // sparse and land on their own timestamps — with no neighbour to draw a
+        // segment to, a symbol-less point renders as nothing at all. Show the
+        // markers at hourly resolution so isolated casts are actually visible.
+        symbol: resolution.value === 'hourly' ? 'circle' : 'none',
+        symbolSize: 3,
+        showSymbol: resolution.value === 'hourly',
+        connectNulls: false,
         lineStyle: { color: '#a5d6a7', width: 1.5 },
         itemStyle: { color: '#a5d6a7' },
       },
@@ -357,6 +425,7 @@ async function loadData() {
     loadingStep.value = 'Processing…'
     const sensorDaily = aggregateSensorToDaily(sensorTimes, sensorValues)
     rawComparisonData.value = buildComparisonSeries(meanData, minData, maxData, sensorDaily)
+    emit('data', rawComparisonData.value)
     hasData.value = true
     lastLoadedSig = sig
 
@@ -375,12 +444,13 @@ async function loadData() {
 }
 
 // --- WATCHERS ---
-watch([selectedSensor, variable, depth], () => {
-  // While the Advanced dialog is open, this outer panel is hidden behind it and depth
-  // picks in the Depth Profile heatmap fire this watcher on every single click — reload
-  // once when the dialog closes instead (see the advancedOpen watcher below).
-  if (advancedOpen.value) return
-
+// mainStore.unitPreference is included so toggling the display unit
+// re-fetches (a cheap cache hit — see useAnalysisFetch.ts/useSensorTimeseries.ts)
+// rather than leaving the chart/stats showing stale numbers under the old unit.
+watch([selectedSensor, variable, depth, () => mainStore.unitPreference[variable.value]], () => {
+  // The old guard against reloading while the Advanced dialog was open is gone
+  // with the dialog: `props.active` now covers it, since the workspace only
+  // marks this tab active while it is the visible one.
   hasData.value = false
   rawComparisonData.value = []
   errorMessage.value = null
@@ -391,19 +461,15 @@ watch([selectedSensor, variable, depth], () => {
   }
 })
 
+// immediate: true also covers first mount — the dialog only creates this component once
+// opened, so `active` is already true by then and a plain watch would never see it change.
 watch(() => props.active, (active) => {
   if (!active) return
   if (!sensorInfo.value || depth.value == null) return
   const sig = currentSignature()
   if (sig !== lastLoadedSig && !isLoading.value) loadData()
-})
+}, { immediate: true })
 
-watch(advancedOpen, (open) => {
-  if (open) return
-  if (!sensorInfo.value || depth.value == null) return
-  const sig = currentSignature()
-  if (sig !== lastLoadedSig && !isLoading.value) loadData()
-})
 
 let resizeObserver: ResizeObserver | null = null
 watch(timeseriesContainerRef, (el) => {
@@ -442,7 +508,7 @@ onBeforeUnmount(() => {
   color: rgba(255, 255, 255, 0.38);
 }
 
-.comparison-stats :deep(.v-btn) {
+.comparison-stats :deep(button) {
   font-size: 0.65rem !important;
   letter-spacing: 0.01em !important;
   min-width: 0 !important;

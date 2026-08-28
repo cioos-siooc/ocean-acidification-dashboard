@@ -14,9 +14,27 @@
 # 2026-06 incident where a hardcoded copy in config.py fell out of sync
 # with Postgres fields.precision).
 #
+# name: the variable's display label, and the single source of truth for it.
+# The frontend renders this verbatim everywhere a variable is named — map
+# picker, sensor list, analysis tabs — so there are no hardcoded label tables
+# in the UI to drift out of sync. The `variables:` keys below are also the
+# canonical variable IDs shared with `sensors.variables` in ClickHouse, so
+# this list doubles as the definition of "a variable the app shows".
+#
 # colormapMin / colormapMax: display range used to normalize a value onto
 # the colormap (see colormaps.json) before coloring a tile — independent of
 # `precision`, which only controls storage/transport quantization.
+#
+# alt_units: optional list of alternate *display-only* units a variable can
+# be toggled to in the frontend (see colorbarSettings.vue). `unit` above
+# stays the one canonical unit everything is stored/queried in — nothing
+# here changes ClickHouse, ingestion, or tile rendering. Each entry is a
+# linear map from the canonical unit: `display = canonical * scale + offset`
+# (offset defaults to 0, so a pure scalar factor just omits it). Only add an
+# entry here if the conversion truly is linear — e.g. salinity (PSU vs g/kg)
+# and pH scale are deliberately absent because they need TEOS-10-style
+# lon/lat/pressure-dependent conversion, not a fixed scale/offset (same gap
+# as sensors.variables' conversion_factor, see shared/variable_config.py).
 #
 # LiveOcean is intentionally not covered here — support for it was removed
 # entirely (not yet being implemented), so there's nothing to migrate.
@@ -80,48 +98,67 @@ depths:
 
 variables:
   temperature:
+    name: "Temperature"
     unit: "°C"
     colormap: thermal
     colormapMin: 0.01
     colormapMax: 25
     precision: 0.01
+    alt_units:
+      - unit: "°F"
+        scale: 1.8
+        offset: 32
   salinity:
+    name: "Salinity"
     unit: "g/kg"
     colormap: haline
     colormapMin: 0.01
     colormapMax: 35
     precision: 0.01
   total_alkalinity:
+    name: "Total Alkalinity"
     unit: "mmol/m³"
     colormap: thermal
     colormapMin: 500
     colormapMax: 2500
     precision: 0.1
   dissolved_oxygen:
+    name: "Dissolved Oxygen"
     unit: "mmol/m³"
     colormap: oxy
     colormapMin: 0.1
     colormapMax: 450
     precision: 0.1
+    # Inverse of sensors.variables' conversion_factor for the same units
+    # (mg/L x31.25, mL/L x44.66 -> mmol/m3), see project-sensor-unit-conversions.
+    alt_units:
+      - unit: "mg/L"
+        scale: 0.032
+      - unit: "mL/L"
+        scale: 0.022392
   dissolved_inorganic_carbon:
+    name: "Dissolved Inorganic Carbon"
     unit: "mmol/m³"
     colormap: thermal
     colormapMin: 500
     colormapMax: 2500
     precision: 0.1
   ph_total:
+    name: "pH (Total Scale)"
     unit: ""
     colormap: matter
     colormapMin: 7
     colormapMax: 8.6
     precision: 0.001
   omega_arag:
+    name: "Omega Aragonite"
     unit: ""
     colormap: thermal
     colormapMin: 0.0001
     colormapMax: 4
     precision: 0.0001
   omega_cal:
+    name: "Omega Calcite"
     unit: ""
     colormap: thermal
     colormapMin: 0.0001

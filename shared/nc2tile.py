@@ -164,6 +164,41 @@ def get_grid_from_db(table: str = 'grid_SSC') -> Tuple[np.ndarray, np.ndarray]:
     return GRID_CACHE
 
 
+# module-level cache for the gridX/gridY -> row/col index mapping used to
+# align ClickHouse-sourced value rows onto the same (nrows, ncols) shape as
+# get_grid_from_db's lon/lat arrays. Kept separate from GRID_CACHE since the
+# latter may be satisfied from the on-disk .npz cache without ever re-running
+# the query these positions are derived from.
+GRID_INDEX_CACHE = None
+
+
+def get_grid_index_maps(table: str = 'grid_SSC') -> Tuple[dict, dict, int, int]:
+    """Return (row_pos, col_pos, nrows, ncols) mapping gridX/gridY -> row/col index.
+
+    Uses the same "sorted unique gridX/gridY" convention as get_grid_from_db,
+    so a values array built with these positions aligns cell-for-cell with
+    that function's lon/lat arrays.
+    """
+    global GRID_INDEX_CACHE
+    if GRID_INDEX_CACHE is not None:
+        return GRID_INDEX_CACHE
+
+    client = _get_ch_client()
+    try:
+        row_idxs = [r[0] for r in client.query(f"SELECT DISTINCT gridX FROM {table} ORDER BY gridX").result_rows]
+        col_idxs = [r[0] for r in client.query(f"SELECT DISTINCT gridY FROM {table} ORDER BY gridY").result_rows]
+    finally:
+        client.close()
+
+    if not row_idxs or not col_idxs:
+        raise ValueError(f"Grid table '{table}' is empty or missing")
+
+    row_pos = {v: i for i, v in enumerate(row_idxs)}
+    col_pos = {v: j for j, v in enumerate(col_idxs)}
+    GRID_INDEX_CACHE = (row_pos, col_pos, len(row_idxs), len(col_idxs))
+    return GRID_INDEX_CACHE
+
+
 class _PrecomputedLinearInterpolator:
     def __init__(self, pts_src: np.ndarray, tgt_pts: np.ndarray):
         self.tri = Delaunay(pts_src)
@@ -294,6 +329,127 @@ def build_target_grid(minx: float, miny: float, maxx: float, maxy: float, max_di
     return xx, yy, w, h
 
 
+def _render_tile_core(
+    lon_src: np.ndarray,
+    lat_src: np.ndarray,
+    values: np.ndarray,
+    valid_mask: np.ndarray,
+    xx_merc: np.ndarray,
+    yy_merc: np.ndarray,
+    w: int,
+    h: int,
+    vmin: Optional[float],
+    vmax: Optional[float],
+    erddap_min: Optional[float],
+    erddap_max: Optional[float],
+    method: str,
+    clip: Optional[Tuple[float, float]],
+    pack_precision: float,
+    out_png: str,
+) -> None:
+    """Interpolate a source-grid `values`/`valid_mask` pair onto the target
+    Web-Mercator grid and write the packed WebP. Shared by the NC-sourced
+    (`_process_task`) and ClickHouse-sourced (`render_tile_from_db`) paths —
+    both just differ in how they build `values`/`valid_mask`."""
+    valid_count = int(np.sum(valid_mask))
+    if valid_count == 0:
+        interp = np.full_like(xx_merc, np.nan, dtype=float)
+        mask_tgt_bool = np.zeros_like(interp, dtype=bool)
+    else:
+        # Build source coordinate mask to exclude NaN lon/lats
+        coord_valid = np.isfinite(lon_src.ravel()) & np.isfinite(lat_src.ravel())
+        pts_src_full = np.column_stack((lon_src.ravel(), lat_src.ravel()))[coord_valid]
+
+        # Align source-valid flags with coord_valid entries
+        src_valid_flat = valid_mask.ravel()[coord_valid]
+
+        # Transform target mercator grid to lon/lat for interpolation
+        if Transformer is None:
+            raise RuntimeError("pyproj is required")
+        transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+        tgt_lon, tgt_lat = transformer.transform(xx_merc.ravel(), yy_merc.ravel())
+        tgt_pts = np.column_stack((tgt_lon, tgt_lat))
+
+        grid_sig = (
+            lon_src.shape,
+            float(np.nanmin(lon_src)),
+            float(np.nanmax(lon_src)),
+            float(np.nanmin(lat_src)),
+            float(np.nanmax(lat_src)),
+            int(w),
+            int(h),
+        )
+        interp_engine = _get_interpolator(method, pts_src_full, tgt_pts, grid_sig)
+
+        # Interpolate mask using nearest-neighbor to avoid blurry boundaries that create black borders
+        # (even though data is interpolated with linear/cubic, the mask must be discrete to maintain crisp alpha edges)
+        # Use the cached nearest interpolator (same cache key as data but method='nearest') so the
+        # KD-tree + precomputed query indices are only built once and reused on every subsequent call.
+        mask_src_f = src_valid_flat.astype(float)
+        try:
+            mask_engine = _get_interpolator('nearest', pts_src_full, tgt_pts, grid_sig)
+            if mask_engine is not None:
+                mask_tgt_flat = mask_engine.apply(mask_src_f)
+            else:
+                mask_tgt_flat = griddata(pts_src_full, mask_src_f, tgt_pts, method='nearest', fill_value=0.0)
+            mask_tgt_flat = np.nan_to_num(mask_tgt_flat, nan=0.0)
+            mask_tgt_bool = (mask_tgt_flat.reshape(xx_merc.shape) >= 0.5)
+        except Exception:
+            mask_tgt_bool = np.zeros_like(xx_merc, dtype=bool)
+
+        # Interpolate data using only valid source points (and coords that are finite)
+        vals_full = values.ravel()[coord_valid].astype(float)
+        vals_full[~src_valid_flat] = np.nan
+        vals_valid = vals_full[src_valid_flat]
+        try:
+            if interp_engine is not None:
+                interp_flat = interp_engine.apply(vals_full)
+            else:
+                pts_valid = pts_src_full[src_valid_flat]
+                interp_flat = griddata(pts_valid, vals_valid, tgt_pts, method=method, fill_value=np.nan)
+            interp = interp_flat.reshape(xx_merc.shape)
+        except Exception:
+            interp = np.full_like(xx_merc, np.nan, dtype=float)
+
+        # If mask interpolation produced nothing, fallback to marking finite interpolated values as valid
+        if not mask_tgt_bool.any():
+            mask_tgt_bool = np.isfinite(interp)
+
+        # Apply interpolated mask: mark anything coming from invalid source as NaN
+        interp[~mask_tgt_bool] = np.nan
+
+    # compute vmin/vmax if not provided
+    if vmin is None or vmax is None:
+        fin = np.isfinite(interp)
+        if fin.sum() == 0:
+            vmin_local, vmax_local = 0.0, 1.0
+        else:
+            nonzero = fin & (interp != 0)
+            if nonzero.sum() > 0:
+                vmin_local = float(np.nanmin(interp[nonzero]))
+            else:
+                vmin_local = float(np.nanmin(interp[fin]))
+            vmax_local = float(np.nanmax(interp[fin]))
+    else:
+        vmin_local, vmax_local = vmin, vmax
+
+    gray = scale_to_uint8(interp, vmin_local, vmax_local, clip_percentile=clip)
+    # Derive alpha directly from interpolated data to avoid boundary artifacts
+    alpha = np.where(np.isnan(interp) | (interp == 0), 0, 255).astype(np.uint8)
+
+    # Apply erddap-provided absolute min/max caps to the interpolated values before packing to RGB.
+    # Leave NaNs untouched (they will remain transparent in alpha).
+    if erddap_min is not None or erddap_max is not None:
+        interp_capped = cap_to_range(interp, erddap_min, erddap_max)
+    else:
+        interp_capped = interp
+
+    os.makedirs(os.path.dirname(out_png), exist_ok=True)
+    # Pack values into RGB channels at fixed precision using base=0.0.
+    # Use the capped array (if applicable) so values outside absolute bounds are clipped prior to packing.
+    write_png_packed(interp_capped, alpha, out_png, precision=pack_precision, base=0.0)
+
+
 def _process_task(task: Tuple) -> Tuple[str, str]:
     """Worker function executed in a separate process.
 
@@ -391,110 +547,16 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
             # treat extreme sentinel values as invalid (defensive)
             src_valid = np.isfinite(tslice_vals) & (np.abs(tslice_vals) < 1e29) & (tslice_vals != 0)
 
-    # If no valid source points, produce entirely transparent output
+    # If no valid source points, produce entirely transparent output.
+    # Handle pathological case: fill==0 marking nearly all points invalid -> relax to finite-only
     total_points = tslice_vals.size
     valid_count = int(np.sum(src_valid))
-    # Handle pathological case: fill==0 marking nearly all points invalid -> relax to finite-only
-    if valid_count == 0:
-        interp = np.full_like(xx_merc, np.nan, dtype=float)
-        mask_tgt_bool = np.zeros_like(interp, dtype=bool)
-    else:
-        # Build source coordinate mask to exclude NaN lon/lats
-        coord_valid = np.isfinite(lon_src.ravel()) & np.isfinite(lat_src.ravel())
-        pts_src_full = np.column_stack((lon_src.ravel(), lat_src.ravel()))[coord_valid]
-
-        # Align source-valid flags with coord_valid entries
-        src_valid_flat = src_valid.ravel()[coord_valid]
-
-        # If src_valid_flat has very few true points (e.g., fill==0 case), fallback to finite-only (excluding zero)
-        if src_valid_flat.sum() < max(1, int(0.01 * total_points)):
-            src_valid_flat = (np.isfinite(tslice_vals.ravel()) & (tslice_vals.ravel() != 0))[coord_valid]
-
-        # Transform target mercator grid to lon/lat for interpolation
-        if Transformer is None:
-            raise RuntimeError("pyproj is required")
-        transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-        tgt_lon, tgt_lat = transformer.transform(xx_merc.ravel(), yy_merc.ravel())
-        tgt_pts = np.column_stack((tgt_lon, tgt_lat))
-
-        grid_sig = (
-            lon_src.shape,
-            float(np.nanmin(lon_src)),
-            float(np.nanmax(lon_src)),
-            float(np.nanmin(lat_src)),
-            float(np.nanmax(lat_src)),
-            int(w),
-            int(h),
-        )
-        interp_engine = _get_interpolator(method, pts_src_full, tgt_pts, grid_sig)
-
-        # Interpolate mask using nearest-neighbor to avoid blurry boundaries that create black borders
-        # (even though data is interpolated with linear/cubic, the mask must be discrete to maintain crisp alpha edges)
-        # Use the cached nearest interpolator (same cache key as data but method='nearest') so the
-        # KD-tree + precomputed query indices are only built once and reused on every subsequent call.
-        mask_src_f = src_valid_flat.astype(float)
-        try:
-            mask_engine = _get_interpolator('nearest', pts_src_full, tgt_pts, grid_sig)
-            if mask_engine is not None:
-                mask_tgt_flat = mask_engine.apply(mask_src_f)
-            else:
-                mask_tgt_flat = griddata(pts_src_full, mask_src_f, tgt_pts, method='nearest', fill_value=0.0)
-            mask_tgt_flat = np.nan_to_num(mask_tgt_flat, nan=0.0)
-            mask_tgt_bool = (mask_tgt_flat.reshape(xx_merc.shape) >= 0.5)
-        except Exception:
-            mask_tgt_bool = np.zeros_like(xx_merc, dtype=bool)
-
-        # Interpolate data using only valid source points (and coords that are finite)
-        vals_full = tslice_vals.ravel()[coord_valid].astype(float)
-        vals_full[~src_valid_flat] = np.nan
-        vals_valid = vals_full[src_valid_flat]
-        try:
-            if interp_engine is not None:
-                interp_flat = interp_engine.apply(vals_full)
-            else:
-                pts_valid = pts_src_full[src_valid_flat]
-                interp_flat = griddata(pts_valid, vals_valid, tgt_pts, method=method, fill_value=np.nan)
-            interp = interp_flat.reshape(xx_merc.shape)
-        except Exception:
-            interp = np.full_like(xx_merc, np.nan, dtype=float)
-
-        # If mask interpolation produced nothing, fallback to marking finite interpolated values as valid
-        if not mask_tgt_bool.any():
-            mask_tgt_bool = np.isfinite(interp)
-
-        # Apply interpolated mask: mark anything coming from invalid source as NaN
-        interp[~mask_tgt_bool] = np.nan
-
-    # compute vmin/vmax if not provided
-    if vmin is None or vmax is None:
-        fin = np.isfinite(interp)
-        if fin.sum() == 0:
-            vmin_local, vmax_local = 0.0, 1.0
-        else:
-            nonzero = fin & (interp != 0)
-            if nonzero.sum() > 0:
-                vmin_local = float(np.nanmin(interp[nonzero]))
-            else:
-                vmin_local = float(np.nanmin(interp[fin]))
-            vmax_local = float(np.nanmax(interp[fin]))
-    else:
-        vmin_local, vmax_local = vmin, vmax
-
-    gray = scale_to_uint8(interp, vmin_local, vmax_local, clip_percentile=clip)
-    # Derive alpha directly from interpolated data to avoid boundary artifacts
-    alpha = np.where(np.isnan(interp) | (interp == 0), 0, 255).astype(np.uint8)
-
-    # Apply erddap-provided absolute min/max caps to the interpolated values before packing to RGB.
-    # Leave NaNs untouched (they will remain transparent in alpha).
-    if erddap_min is not None or erddap_max is not None:
-        interp_capped = cap_to_range(interp, erddap_min, erddap_max)
-    else:
-        interp_capped = interp
+    if valid_count > 0 and src_valid.sum() < max(1, int(0.01 * total_points)):
+        src_valid = np.isfinite(tslice_vals) & (tslice_vals != 0)
 
     # filename and folder per user request: /opt/data/png/{var}/{datetime}/{depth}.png
     image_root = image_root_override or os.getenv('IMAGE_ROOT', '/opt/data/image')
     png_dir = os.path.join(image_root, varname, t_str)
-    os.makedirs(png_dir, exist_ok=True)
 
     if d_val is None:
         fname = 'time.webp'
@@ -510,9 +572,10 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
 
     out_png = os.path.join(png_dir, fname)
 
-    # Pack values into RGB channels at fixed precision using base=0.0.
-    # Use the capped array (if applicable) so values outside absolute bounds are clipped prior to packing.
-    write_png_packed(interp_capped, alpha, out_png, precision=pack_precision, base=0.0)
+    _render_tile_core(
+        lon_src, lat_src, tslice_vals, src_valid, xx_merc, yy_merc, w, h,
+        vmin, vmax, erddap_min, erddap_max, method, clip, pack_precision, out_png,
+    )
     # per-datetime sidecar files are not written anymore; we use the per-variable meta.json
     # for bounds and packing metadata instead (fixed vmin/vmax and fixed bounds apply).
     if verbose:
@@ -524,6 +587,111 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
     ds_data.close()
 
     return out_png, t_str
+
+
+# ---- ClickHouse-sourced tile generation (on-demand, no NC file involved) -----
+
+def _value_query_for_bin_mode(variable: str, bin_mode: str) -> Tuple[str, dict]:
+    """Return (sql, base_params) selecting (gridX, gridY, value) for one date/depth.
+
+    Caller fills in the `depth` param and whichever of `t`/`day`/`month` the
+    bin_mode needs. A 0.05 tolerance on depth avoids float32 storage
+    round-trip mismatches against the exact sigma-level values in
+    shared/variable_config.yml's `depths` list (levels are spaced >=1.0m
+    apart, so this can't collide between levels).
+    """
+    if bin_mode == 'hourly':
+        sql = (
+            f"SELECT gridX, gridY, {variable} AS value FROM SalishSeaCast_hourly "
+            f"WHERE time = %(t)s AND abs(depth - %(depth)s) < 0.05"
+        )
+    elif bin_mode == 'daily':
+        sql = (
+            f"SELECT gridX, gridY, {variable}_mean AS value FROM SalishSeaCast_daily "
+            f"WHERE time = toDate(%(day)s) AND abs(depth - %(depth)s) < 0.05"
+        )
+    elif bin_mode == 'monthly':
+        sql = (
+            f"SELECT gridX, gridY, avg({variable}_mean) AS value FROM SalishSeaCast_daily "
+            f"WHERE toStartOfMonth(time) = toDate(%(month)s) AND abs(depth - %(depth)s) < 0.05 "
+            f"GROUP BY gridX, gridY"
+        )
+    else:
+        raise ValueError(f"Unsupported bin_mode '{bin_mode}'. Supported: hourly, daily, monthly.")
+    return sql, {}
+
+
+def render_tile_from_db(
+    *,
+    variable: str,
+    bin_mode: str,
+    time_param,
+    depth: float,
+    depth_label: str,
+    dt_folder: str,
+    image_root: Optional[str] = None,
+    max_dim: int = 2048,
+    method: str = "linear",
+    clip_percentile: Optional[Tuple[float, float]] = None,
+) -> Optional[str]:
+    """Render one variable/depth/date WebP tile straight from ClickHouse (no NC
+    file involved) — the on-demand counterpart to process_variable/_process_task
+    for dates the pipeline hasn't (or will never) pre-render.
+
+    `time_param` is a `datetime.date`/`datetime.datetime` for hourly/daily and
+    the first-of-month `date` for monthly, matching `_value_query_for_bin_mode`'s
+    param names. Returns the written path, or None if there's no data at all
+    for this variable/date/depth (caller should treat that as a 404, not an
+    error).
+    """
+    lon_src, lat_src = get_grid_from_db('grid_SSC')
+    row_pos, col_pos, nrows, ncols = get_grid_index_maps('grid_SSC')
+
+    sql, _ = _value_query_for_bin_mode(variable, bin_mode)
+    params = {'depth': float(depth)}
+    if bin_mode == 'hourly':
+        params['t'] = time_param
+    elif bin_mode == 'daily':
+        params['day'] = time_param.isoformat() if hasattr(time_param, 'isoformat') else str(time_param)
+    else:
+        params['month'] = time_param.isoformat() if hasattr(time_param, 'isoformat') else str(time_param)
+
+    client = _get_ch_client()
+    try:
+        rows = client.query(sql, parameters=params).result_rows
+    finally:
+        client.close()
+
+    values = np.full((nrows, ncols), np.nan, dtype=float)
+    for grid_x, grid_y, value in rows:
+        if value is None:
+            continue
+        i = row_pos.get(grid_x)
+        j = col_pos.get(grid_y)
+        if i is not None and j is not None:
+            values[i, j] = float(value)
+    valid_mask = np.isfinite(values)
+
+    if not valid_mask.any():
+        return None
+
+    minx, miny, maxx, maxy = compute_mercator_grid_bounds(lon_src, lat_src)
+    xx_merc, yy_merc, w, h = build_target_grid(minx, miny, maxx, maxy, max_dim=max_dim)
+
+    var_cfg = load_variable_config().get('variables', {}).get(variable) or {}
+    erddap_min = var_cfg.get('colormapMin')
+    erddap_max = var_cfg.get('colormapMax')
+    pack_precision = var_cfg.get('precision', 0.1)
+
+    image_root = image_root or os.getenv('IMAGE_ROOT', '/opt/data/image')
+    out_png = os.path.join(image_root, variable, dt_folder, f"{depth_label}.webp")
+
+    _render_tile_core(
+        lon_src, lat_src, values, valid_mask, xx_merc, yy_merc, w, h,
+        erddap_min, erddap_max, erddap_min, erddap_max, method, clip_percentile,
+        pack_precision, out_png,
+    )
+    return out_png
 
 
 def scale_to_uint8(arr: np.ndarray, vmin: float, vmax: float, clip_percentile: Optional[Tuple[float, float]] = None) -> np.ndarray:
@@ -618,30 +786,6 @@ def write_png_packed(float_arr: np.ndarray, alpha_mask: np.ndarray, outpath: str
 
     img = Image.fromarray(rgba, mode="RGBA")
     img.save(outpath, 'WEBP', lossless=True)
-
-
-
-
-def compute_global_minmax_exclude_zero(ds_data: xr.Dataset, varname: str) -> Tuple[float, float]:
-    arr = ds_data[varname].values
-    # Flatten and consider finite values only
-    fin = np.isfinite(arr)
-    if fin.sum() == 0:
-        return 0.0, 1.0
-
-    # Prefer min over non-zero values (exclude exact zeros)
-    nonzero = fin & (arr != 0)
-    if nonzero.sum() > 0:
-        mn = float(np.min(arr[nonzero]))
-    else:
-        mn = float(np.min(arr[fin]))
-
-    mx = float(np.max(arr[fin]))
-    return mn, mx
-
-# Backwards-compatible alias if other modules call compute_global_minmax
-def compute_global_minmax(ds_data: xr.Dataset, varname: str) -> Tuple[float, float]:
-    return compute_global_minmax_exclude_zero(ds_data, varname)
 
 
 def process_variable(

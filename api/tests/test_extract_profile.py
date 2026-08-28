@@ -3,6 +3,7 @@ from datetime import datetime
 import pytest
 
 from extract_profile import extract_profile
+from modules.extractTimeseries import OutsideDomainError  # same module object the code under test raises from
 
 
 class FakeResult:
@@ -51,7 +52,7 @@ def test_extract_profile_out_of_domain_raises(monkeypatch):
     fake = FakeClient(grid_row=(10, 20, 60.0, -130.0, 50_000.0))
     monkeypatch.setattr('extract_profile.get_ch_client', lambda: fake)
 
-    with pytest.raises(RuntimeError, match="km from the nearest grid point"):
+    with pytest.raises(OutsideDomainError):
         extract_profile(source='SalishSeaCast', var='temperature', lat=0.0, lon=0.0, dt='2026-01-01T12:00:00')
 
 
@@ -86,3 +87,59 @@ def test_extract_profile_unsupported_source_raises(monkeypatch):
 
     with pytest.raises(RuntimeError, match="not yet available via ClickHouse"):
         extract_profile(source='Live Ocean', var='temperature', lat=49.0, lon=-123.0, dt='2026-01-01T12:00:00')
+
+
+def test_extract_profile_unsupported_bin_mode_raises(monkeypatch):
+    monkeypatch.setattr('extract_profile.get_ch_client', lambda: FakeClient(grid_row=(0, 0, 0.0, 0.0, 0.0)))
+
+    with pytest.raises(ValueError, match="Unsupported bin_mode"):
+        extract_profile(source='SalishSeaCast', var='temperature', lat=49.0, lon=-123.0, dt='2026-01-01T12:00:00', bin_mode='weekly')
+
+
+def test_extract_profile_daily_reads_daily_table(monkeypatch):
+    # Daily/monthly never hit the `datediff` nearest-time lookup at all — the
+    # target day/month is derived straight from `dt`, so a fake with no
+    # `time_row` still succeeds (unlike the hourly-mode tests above).
+    fake = FakeClient(
+        grid_row=(10, 20, 49.0, -123.0, 500.0),
+        profile_rows=[(0.0, 8.2), (5.0, 7.6)],
+    )
+    monkeypatch.setattr('extract_profile.get_ch_client', lambda: fake)
+
+    profile = extract_profile(
+        source='SalishSeaCast', var='temperature', lat=49.0, lon=-123.0,
+        dt='2026-01-15T12:00:00', bin_mode='daily',
+    )
+
+    assert profile == [{"depth": 0.0, "value": 8.2}, {"depth": 5.0, "value": 7.6}]
+    assert fake.closed
+
+
+def test_extract_profile_monthly_reads_daily_table_grouped(monkeypatch):
+    fake = FakeClient(
+        grid_row=(10, 20, 49.0, -123.0, 500.0),
+        profile_rows=[(0.0, 8.0), (5.0, 7.5)],
+    )
+    monkeypatch.setattr('extract_profile.get_ch_client', lambda: fake)
+
+    profile = extract_profile(
+        source='SalishSeaCast', var='temperature', lat=49.0, lon=-123.0,
+        dt='2026-01-15T12:00:00', bin_mode='monthly',
+    )
+
+    assert profile == [{"depth": 0.0, "value": 8.0}, {"depth": 5.0, "value": 7.5}]
+
+
+def test_extract_profile_daily_filters_null_values(monkeypatch):
+    fake = FakeClient(
+        grid_row=(10, 20, 49.0, -123.0, 500.0),
+        profile_rows=[(0.0, 8.2), (5.0, None)],
+    )
+    monkeypatch.setattr('extract_profile.get_ch_client', lambda: fake)
+
+    profile = extract_profile(
+        source='SalishSeaCast', var='temperature', lat=49.0, lon=-123.0,
+        dt='2026-01-15T12:00:00', bin_mode='daily',
+    )
+
+    assert profile == [{"depth": 0.0, "value": 8.2}]

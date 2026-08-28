@@ -1,5 +1,3 @@
-import vuetify, { transformAssetUrls } from 'vite-plugin-vuetify'
-import { fileURLToPath } from 'node:url'
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -8,15 +6,21 @@ export default defineNuxtConfig({
   app: {
     head: {
       link: [
-        { rel: 'icon', type: 'image/png', href: '/OA_logo.png' },
-        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
-        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap' }
+        { rel: 'icon', type: 'image/png', href: '/OA_logo.png' }
       ]
     }
   },
-  build: {
-    transpile: ['vuetify'],
+  css: ['~/assets/css/main.css'],
+  // Inter is self-hosted by @nuxt/fonts (registered by @nuxt/ui) instead of
+  // render-blocking on fonts.googleapis.com. Weights match what the old
+  // stylesheet requested.
+  fonts: {
+    families: [
+      { name: 'Inter', provider: 'google', weights: [300, 400, 500, 600, 700] },
+      // index.vue's monospace UI labels — this was a raw @import of a Google
+      // Fonts stylesheet inside a <style> block, which self-hosting never saw.
+      { name: 'Roboto Mono', provider: 'google', weights: [400, 500, 700] },
+    ],
   },
   nitro: {
     externals: {
@@ -25,25 +29,15 @@ export default defineNuxtConfig({
   },
   modules: [
     '@nuxt/eslint',
+    '@nuxt/ui',
     ['@pinia/nuxt'],
-    (_options, nuxt) => {
-      nuxt.hooks.hook('vite:extendConfig', (config) => {
-        // @ts-expect-error
-        config.plugins.push(vuetify({
-          autoImport: { labs: true },
-          styles: {
-            configFile: fileURLToPath(new URL('./app/assets/vuetify-settings.scss', import.meta.url)),
-          },
-        }))
-      })
-    },
   ],
-  vite: {
-    vue: {
-      template: {
-        transformAssetUrls,
-      },
-    },
+  // The app has always been dark-only; @nuxt/ui pulls in @nuxtjs/color-mode,
+  // which follows the system preference unless pinned. Flip this to 'system'
+  // (and verify both themes) if light mode is ever wanted.
+  colorMode: {
+    preference: 'dark',
+    fallback: 'dark',
   },
   runtimeConfig: {
     public: {

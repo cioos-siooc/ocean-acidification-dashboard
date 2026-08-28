@@ -2,33 +2,39 @@
     <div class="global-chart-wrapper" style="width: 100%; height: 100%;">
         <div ref="chartContainer" style="width: 100%; height: 100%;"></div>
         <div v-if="loading" class="global-chart-overlay">
-            <v-progress-circular indeterminate color="warning" :size="64" :width="12" class="progress" />
+            <UIcon name="i-mdi-loading" class="animate-spin text-warning progress" :style="{ fontSize: 64 + 'px' }" />
         </div>
 
-        <!-- <v-btn icon variant="text" flat size="18px" class="chart-info" @click="showChartInfo = true">
-            <v-icon color="yellow" size="14px">mdi-information-variant</v-icon>
-        </v-btn> -->
+        <!-- <UButton variant="ghost" class="size-[18px] p-0 justify-center shrink-0 chart-info" @click="showChartInfo = true">
+            <UIcon name="i-mdi-information-variant" class="size-[14px] text-yellow-400" />
+        </UButton> -->
 
         <!-- CHART USAGE AND PLOTS HELP DIALOG -->
-        <v-dialog v-model="showChartInfo" max-width="75%">
-            <v-card class="pa-5">
-                <v-img :src="timeseriesChartHelpImg" alt="Timeseries Chart Help" ></v-img>
-            </v-card>
-        </v-dialog>
+        <UModal v-model:open="showChartInfo" :ui="{ content: 'max-w-[75vw]' }">
+            <template #content>
+            <div class="p-5 bg-elevated rounded-lg">
+                <img :src="timeseriesChartHelpImg" alt="Timeseries Chart Help" class="block w-full h-auto">
+            </div>
+            </template>
+        </UModal>
     </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import * as echarts from 'echarts';
-import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
-import { computeNightRanges } from '../../composables/useSunCalc';
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme';
+import { computeNightRanges } from '~~/composables/useSunCalc';
 import moment from 'moment-timezone';
-import colors from 'vuetify/util/colors';
+import { APP_TIMEZONE } from '@/config/app';
+import colors from '@/config/palette';
 import timeseriesChartHelpImg from '../../public/timeseriesChartHelp.png';
 
 import { useMainStore } from '../stores/main';
+import { useVariableRegistry } from '~~/composables/useVariableRegistry';
+import { csvMeta, csvTimestamp, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport';
 const mainStore = useMainStore();
+const { displayUnit } = useVariableRegistry();
 
 const chartContainer = ref<HTMLDivElement | null>(null);
 let chart: echarts.ECharts | null = null;
@@ -37,9 +43,74 @@ let _statsLegendHandler: ((params: any) => void) | null = null;
 let zrClickHandler: ((evt: any) => void) | null = null;
 
 const loading = ref(false);
+// Last data handed to `plot()`, kept for CSV export (see the export block below).
+type PlotSeries = { time?: (string | number)[]; value?: (number | null)[]; depth?: number | null } | null;
+type ClimateRow = { requested_date: string; mean: number | null; min: number | null; max: number | null };
+const lastPlot = ref<{ model: PlotSeries; climate: ClimateRow[] | null; sensor: PlotSeries } | null>(null);
+// Which legend entries are currently switched on. Read by the CSV export so a
+// download mirrors what's actually drawn. `setOption(…, true)` on every re-plot
+// resets ECharts' own legend state, so this is re-seeded there rather than kept
+// across plots.
+const legendSelected = ref<Record<string, boolean>>({});
+type LegendSelectChanged = { name: string; selected: Record<string, boolean> };
+let _legendSelectionHandler: ((params: LegendSelectChanged) => void) | null = null;
+
+/**
+ * Time domain. By default the chart spans `midDate ± dfnDays` — the map clock's
+ * neighbourhood, which is what this chart showed when it was the Timeseries
+ * tab's whole reason to exist. Hosts that own their own window (the Depth tab
+ * pages through 14-day / 1-year / 20-year spans) pass it explicitly instead, so
+ * the line chart lines up with the section above it.
+ *
+ * `dayNight` is a tri-state string, not a boolean, on purpose: Vue coerces an
+ * absent Boolean-typed prop to `false` rather than leaving it undefined, so a
+ * `props.flag ?? autoRule` default silently never reaches the auto rule and the
+ * bands vanish for every host that doesn't pass the prop. 'auto' follows window
+ * length — dusk/dawn bands read well across a fortnight and turn into an
+ * unreadable moiré across a year.
+ */
+const props = defineProps<{
+    windowStart?: Date | null
+    windowEnd?: Date | null
+    dayNight?: 'auto' | 'on' | 'off'
+    /**
+     * Plot-area gutters. The default 160px left gutter makes room for the
+     * vertical legend. A host stacking this chart beneath a time-depth section
+     * overrides both to the section's own fixed margins, since two panels
+     * sharing an x-axis have to share a plot area or the eye can't read across
+     * them — and pairs it with `legendLayout: 'top'` so nothing needs the space.
+     */
+    gridLeft?: number
+    gridRight?: number
+    legendLayout?: 'left' | 'top'
+}>();
+
+const gridConfig = computed(() => ({
+    left: props.gridLeft ?? 160,
+    right: props.gridRight ?? 30,
+    top: props.legendLayout === 'top' ? 34 : 30,
+    bottom: 30,
+}));
+
+const legendConfig = computed(() => props.legendLayout === 'top'
+    ? { show: true, orient: 'horizontal' as const, left: 'center', top: 0, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 9 } }
+    : { show: true, orient: 'vertical' as const, left: 'left', top: 'center', itemWidth: 15, itemHeight: 10, textStyle: { fontSize: 10 } });
 
 const DFN = computed(() => mainStore.dfnDays);
 const midDate = computed(() => mainStore.midDate ?? moment.utc());
+
+const TZ = APP_TIMEZONE;
+const windowStartLocal = computed(() => props.windowStart
+    ? moment(props.windowStart).tz(TZ)
+    : midDate.value.clone().tz(TZ).subtract(DFN.value, 'days'));
+const windowEndLocal = computed(() => props.windowEnd
+    ? moment(props.windowEnd).tz(TZ)
+    : midDate.value.clone().tz(TZ).add(DFN.value, 'days'));
+const dayNightVisible = computed(() => {
+    const mode = props.dayNight ?? 'auto';
+    if (mode !== 'auto') return mode === 'on';
+    return windowEndLocal.value.diff(windowStartLocal.value, 'days') <= 40;
+});
 
 const showChartInfo = ref(false);
 
@@ -77,18 +148,10 @@ function initChart() {
                 saveAsImage: {}
             }
         },
-        legend: {
-            show: true,
-            orient: 'vertical',
-            left: 'left',
-            top: 'center',
-            itemWidth: 15,
-            itemHeight: 10,
-            textStyle: { fontSize: 10 }
-        },
+        legend: legendConfig.value,
         xAxis: { type: 'time', axisLabel: { color: '#e0e0e0' } },
         yAxis: { type: 'value', min: 'dataMin', max: 'dataMax', axisLabel: { color: '#e0e0e0' } },
-        grid: { left: 160, right: 30, top: 30, bottom: 30 },
+        grid: gridConfig.value,
         series: []
     });
     chart.resize();
@@ -121,7 +184,35 @@ function initChart() {
                 else break;
             }
 
-            const finalX = model_timestamps[bestIdx] as number;
+            let finalX = model_timestamps[bestIdx] as number;
+
+            // `model_timestamps` isn't always a real model instant — ExplorePanel's
+            // depth-section line chart feeds this component hour-floored bin starts
+            // (its own aggregation grid, not SalishSeaCast's actual :30-past-the-hour
+            // output times), which would otherwise send the map's clock to an hour
+            // with no matching raster tile. Snap to the nearest timestamp the raster
+            // layer actually has, when we know what those are.
+            //
+            // Hourly-only: `rasterDts` (mainStore.variables[].dts) is synthesized from
+            // the pipeline's own sync log, which only covers the recent hourly-tile
+            // window — SalishSeaCast_daily's archive reaches back ~two decades further
+            // (see extract_profile.py). In daily/monthly bin mode the raster layer's tile
+            // is keyed by calendar day/month, not one of these hourly instants, so
+            // snapping to `rasterDts` here would drag every pre-2026 click up to the
+            // first hourly-covered date instead of the day/month actually clicked.
+            if (mainStore.exploreBinMode === 'hourly') {
+                const rasterDts = mainStore.variables.find(
+                    v => v.source === mainStore.selected_variable.source && v.var === mainStore.selected_variable.var
+                )?.dts;
+                if (rasterDts?.length) {
+                    let best = 0;
+                    for (let i = 1; i < rasterDts.length; i++) {
+                        if (Math.abs(rasterDts[i] - finalX) < Math.abs(rasterDts[best] - finalX)) best = i;
+                    }
+                    finalX = rasterDts[best];
+                }
+            }
+
             if (finalX !== lastClickedX) {
                 lastClickedX = finalX;
                 mainStore.updateSelectedVariable({ dt: moment.utc(finalX) });
@@ -169,12 +260,29 @@ async function fetchAndPlot(
 
 function plot(modelData: any, climateData: any, sensorData: any | null) {
     if (!chart) return;
-    const tz = 'America/Vancouver';
+    // Kept for CSV export: both callers (this component's own fetchAndPlot and
+    // ExplorePanel) funnel through here, so this is the one place that always
+    // sees what actually got drawn.
+    lastPlot.value = { model: modelData, climate: climateData, sensor: sensorData };
+    const tz = APP_TIMEZONE;
 
     const lat = mainStore.lastClickedMapPoint?.lat;
     const lng = mainStore.lastClickedMapPoint?.lng;
 
-    const hasModelData = modelData && Array.isArray(modelData.time) && modelData.time.length > 0;
+    const varId = mainStore.selected_variable.var;
+
+    // model/climate/sensor values arrive already converted to the current
+    // display unit — every fetch composable behind these (useModelTimeseries,
+    // useDepthProfileFetch, useClimateTimeseries, useSensorTimeseries)
+    // converts at the source, so no per-chart conversion happens here.
+    // A non-empty timestamp list is not enough. ExplorePanel builds the model
+    // series locally from its depth-section grid, so it always hands over a
+    // full clock — every value null when the point is outside the model domain
+    // or the level is below the seabed. Counting that as data drew no line but
+    // still put "Model" in the legend, which is the same false claim the depth
+    // readouts used to make: something is here, it just isn't showing.
+    const hasModelData = modelData && Array.isArray(modelData.time) && modelData.time.length > 0
+        && Array.isArray(modelData.value) && modelData.value.some((v: any) => v != null);
     let __series_model: any[] = [];
     if (hasModelData) {
         model_timestamps = modelData.time.map((t: any) => moment.utc(t).valueOf());
@@ -184,12 +292,14 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         ]);
     }
 
-    const startLocal = midDate.value.clone().tz(tz).subtract(DFN.value, 'days');
-    const endLocal = midDate.value.clone().tz(tz).add(DFN.value, 'days');
+    const startLocal = windowStartLocal.value.clone();
+    const endLocal = windowEndLocal.value.clone();
 
     // Night mark areas
     let markAreaData: any[] = [];
-    if (typeof lat === 'number' && typeof lng === 'number') {
+    if (!dayNightVisible.value) {
+        // Left empty: across a multi-year window the bands collapse into noise.
+    } else if (typeof lat === 'number' && typeof lng === 'number') {
         const nights = computeNightRanges({ lat, lng, tz, startLocalIso: startLocal.format(), endLocalIso: endLocal.format() });
         for (let i = 0; i < nights.length - 1; i++) {
             const nightEnd = nights[i]?.[1];
@@ -275,7 +385,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
                 ? { text: `No sensor cast near ${sensorData.depth != null ? sensorData.depth.toFixed(1) + 'm' : 'this depth'} in this window`, fill: 'rgba(255,255,255,0.4)', fontSize: 11 }
                 : { text: '' }
         }],
-        legend: { show: true, orient: 'vertical', left: 'left', top: 'center', itemWidth: 15, itemHeight: 10, textStyle: { fontSize: 10 }, icon: 'rect' },
+        legend: { ...legendConfig.value, icon: 'rect' },
         tooltip: {
             trigger: 'none',
             axisPointer: {
@@ -303,7 +413,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
             // }
         },
         toolbox: { feature: { saveAsImage: {} } },
-        grid: { left: 160, right: 30, top: 30, bottom: 30 },
+        grid: gridConfig.value,
         xAxis: {
             type: 'time',
             min: startLocal.format(),
@@ -315,7 +425,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
             min: 'dataMin',
             max: 'dataMax',
             splitLine: { show: false },
-            name: (mainStore.variables as any[]).find((v: any) => v.var === mainStore.selected_variable.var)?.unit ?? '',
+            name: displayUnit(varId),
             nameLocation: 'center',
             nameTextStyle: { color: '#e0e0e0' },
             axisLabel: { color: '#e0e0e0', formatter: (v: any) => Number(v).toFixed(axisDecimals) }
@@ -357,6 +467,9 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         const climate_ts = climateData.map((row: any) => moment.utc(row.requested_date).valueOf());
         const mean = climateData.map((row: any) => row.mean);
         const min = climateData.map((row: any) => row.min);
+        // useClimateTimeseries.ts converts mean/min/max independently (not
+        // `max - min` as a lump sum), so subtracting the already-converted
+        // fields here is safe even under an affine unit like temperature's °F.
         const maxDiff = climateData.map((row: any) => row.max - row.min);
 
         // endLabel renders at each series' own last (for _stats_mean) or stacked-cumulative
@@ -402,8 +515,13 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     option.legend.data = seriesArr.filter((s: any) => s.name && !s.name.startsWith('_')).map((s: any) => s.name);
 
     chart.setOption(option, true);
-    console.log(option);
     chart.resize();
+
+    // Everything starts shown; the handler below keeps this in step with clicks.
+    legendSelected.value = Object.fromEntries((option.legend.data as string[]).map((n: string) => [n, true]));
+    if (_legendSelectionHandler) chart.off('legendselectchanged', _legendSelectionHandler);
+    _legendSelectionHandler = (params: LegendSelectChanged) => { legendSelected.value = { ...params.selected }; };
+    chart.on('legendselectchanged', _legendSelectionHandler);
 
     // Stats legend toggle — clicking 'Climatology' shows/hides internal series.
     // Use setOption rather than legendSelect/legendUnSelect: those dispatch actions
@@ -431,7 +549,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
 // Update only the vertical "Map" marker when selected dt changes (no full re-plot)
 watch(() => mainStore.selected_variable.dt, (newDt) => {
     if (!chart) return;
-    const tz = 'America/Vancouver';
+    const tz = APP_TIMEZONE;
     const sel = newDt ? moment.utc(newDt).tz(tz).format() : null;
     try {
         chart.setOption({
@@ -461,6 +579,109 @@ watch(() => mainStore.selected_variable.dt, (newDt) => {
 function resize() {
     chart?.resize();
 }
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// One file for the whole chart, and its contents follow the legend: hide
+// Climatology and the climatology columns leave the file too. That keeps the
+// download honest about what was being looked at, rather than always dumping
+// everything that happened to be fetched.
+//
+// Day/Night is the one series never exported regardless of its legend state —
+// it carries no data of its own, only the dusk/dawn shading and the NOW and MAP
+// marker lines, which are chart furniture rather than measurements.
+//
+// The three sources keep their own x-grids (model/sensor at their reporting
+// cadence, climatology once per calendar day at noon UTC), so the table is a
+// union of timestamps with blanks rather than anything interpolated onto a
+// shared clock — inventing values to square the grid would be worse than a
+// sparse file.
+const csv = useCsvExport();
+
+/** Legend entries never offered for download, whatever their toggle state. */
+const CSV_EXCLUDED_SERIES = ['Day/Night'];
+
+if (csv) csv.register((): CsvDataset[] => {
+    const p = lastPlot.value;
+    if (!p) return [];
+
+    const varId = mainStore.selected_variable.var;
+    const u = displayUnit(varId) ? ` (${displayUnit(varId)})` : '';
+    const sensorName = mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id)?.name;
+
+    // Absent from the map means "never toggled", which ECharts treats as shown.
+    const shown = (name: string) => !CSV_EXCLUDED_SERIES.includes(name) && legendSelected.value[name] !== false;
+
+    // Same all-null guard as the chart's own `hasModelData` — an export whose
+    // model column is blank on every row is worse than no column at all.
+    const withModel = !!p.model?.time?.length && p.model.value?.some((v: any) => v != null) && shown('Model');
+    const withSensor = !!p.sensor?.time?.length && shown('Sensor');
+    const withClimate = Array.isArray(p.climate) && p.climate.length > 0 && shown('Climatology');
+    if (!withModel && !withSensor && !withClimate) return [];
+
+    const byTime = new Map<string, Record<string, unknown>>();
+    const row = (iso: string) => {
+        let r = byTime.get(iso);
+        if (!r) { r = { time: iso }; byTime.set(iso, r); }
+        return r;
+    };
+    const put = (times: (string | number)[], values: (number | null)[] | undefined, key: string) => {
+        times.forEach((t, i) => {
+            const iso = csvTimestamp(t);
+            if (iso) row(iso)[key] = values?.[i] ?? null;
+        });
+    };
+
+    const columns = [{ header: 'time', accessorKey: 'time' }];
+    if (withModel) {
+        put(p.model!.time!, p.model!.value, 'model');
+        columns.push({ header: `model${u}`, accessorKey: 'model' });
+    }
+    if (withSensor) {
+        put(p.sensor!.time!, p.sensor!.value, 'sensor');
+        columns.push({ header: `sensor${u}`, accessorKey: 'sensor' });
+    }
+    if (withClimate) {
+        for (const c of p.climate!) {
+            const iso = csvTimestamp(c.requested_date);
+            if (!iso) continue;
+            const r = row(iso);
+            r.climMean = c.mean;
+            r.climMin = c.min;
+            r.climMax = c.max;
+        }
+        columns.push(
+            { header: `climatology_mean${u}`, accessorKey: 'climMean' },
+            { header: `climatology_min${u}`, accessorKey: 'climMin' },
+            { header: `climatology_max${u}`, accessorKey: 'climMax' },
+        );
+    }
+
+    // Clipped to the axis window: the climatology fetch covers whole calendar
+    // days, so its first point can sit before the window start, where the chart
+    // never draws it. "What's visible" has to mean the x-range too, not just
+    // which series are switched on.
+    const from = windowStartLocal.value.valueOf();
+    const to = windowEndLocal.value.valueOf();
+
+    return [{
+        label: 'Timeseries',
+        slug: 'timeseries',
+        columns,
+        rows: Array.from(byTime.values())
+            .filter(r => {
+                const t = moment.parseZone(String(r.time)).valueOf();
+                return t >= from && t <= to;
+            })
+            .sort((a, b) => String(a.time).localeCompare(String(b.time))),
+        omitDatasetLine: true,
+        meta: csvMeta(csv.context.value, [
+            ...(withSensor && sensorName ? [['sensor', sensorName] as [string, unknown]] : []),
+            ...(withClimate ? [
+                ['note', 'climatology is one row per calendar day at noon UTC, so its rows sit on their own timestamps rather than the model/sensor ones'] as [string, unknown],
+            ] : []),
+        ]),
+    }];
+});
 
 defineExpose({ plot, fetchAndPlot, resize, loading });
 </script>

@@ -49,9 +49,9 @@ def test_get_ssc_variables_expands_24_hourly_dts(monkeypatch):
     assert temp['unit'] == '°C'
     assert temp['colormap'] == 'thermal'
     assert temp['source'] == 'SalishSeaCast'
-    assert len(temp['depths']) == 41  # 40 native sigma levels + bottom
+    assert len(temp['depths']) == 40  # native sigma levels (bottom layer dropped for now)
     assert temp['depths'][0] == 0.5
-    assert temp['depths'][-1] == -1  # bottom sentinel
+    assert temp['depths'][-1] == 441.5  # deepest native sigma level
     assert temp['bounds'][0] < temp['bounds'][2]  # min_lon < max_lon
 
     # All 8 variables share the exact same dts/depths/bounds, since they move

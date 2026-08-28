@@ -19,12 +19,14 @@ PyCO2SYS choices
 Files produced
 - Output files follow the same daily/hourly convention and naming pattern as the input NetCDF files. They are stored under `/opt/data/nc/ph_omega/` by default, with the same time coverage filename.
 
-CLI
-- `python process/calc_carbon.py --date 2026-01-05 [--use-sigma]`
-- If `--use-sigma` is passed, script tries to locate sigma_theta files and use them for density conversion; otherwise uses 1025 kg/m3.
+CLI (standalone, DB-free)
+- `python scripts/compute_standalone.py --date 2026-01-05 [--mode sharedmem --workers N]`
+- This drives `process/calc_carbon_grid_shm_memmap_year_aware.py` for ad-hoc runs without touching ClickHouse.
 
-Integration
-- `process/dl2.py compute` calls the calc script (per-dataset or globally) and can be called from the pipeline. 
+Integration (live pipeline)
+- The live pipeline computes these fields via PyCO2SYS directly in `process/SSC/compute.py`,
+  invoked by `python -m SSC.cli compute` as part of the `pending_compute → computing → success_compute`
+  stage. The standalone CLI above mirrors that logic for manual runs.
 
 Notes
 - PyCO2SYS API may have several call patterns; the script tries common interfaces and will fail clearly if the installed version uses an incompatible API.

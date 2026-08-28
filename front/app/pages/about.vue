@@ -1,21 +1,21 @@
 <template>
-    <v-main class="bg-background">
+    <main class="grow min-h-0 bg-default">
         <!-- Hero Banner -->
-        <v-sheet color="primary" class="hero-banner text-white text-center py-16 px-4" elevation="0">
-            <v-container maxWidth="900" class="py-10">
-                <h1 class="text-display-large font-weight-bold mb-6">Ocean Environmental Conditions Observer</h1>
-                <!-- <p class="text-h6 font-weight-regular opacity-90 mb-0">
+        <div class="hero-banner text-white text-center py-16 px-4">
+            <div class="mx-auto w-full max-w-screen-xl py-10">
+                <h1 class="text-[57px] font-bold mb-6">Ocean Environmental Conditions Observer</h1>
+                <!-- <p class="font-normal opacity-90 mb-0">
                     The Coastal Hypoxia, Ocean acidification, and 'Klimate' variables Evaluator.
                 </p> -->
-            </v-container>
-        </v-sheet>
+            </div>
+        </div>
 
-        <v-container class="mt-n10 content-container pb-12">
-            <v-row>
+        <div class="mx-auto w-full max-w-screen-xl mt-n10 content-container pb-12">
+            <div class="flex flex-wrap -m-3">
                 <!-- Overview Card -->
-                <v-col cols="12">
-                    <v-card elevation="3" class="rounded-xl pa-2 mb-2">
-                        <v-card-text class="text-body-1 text-medium-emphasis pa-6" style="line-height: 1.8;">
+                <div class="p-3 w-full">
+                    <div class="bg-elevated rounded-lg rounded-xl p-2 mb-2">
+                        <div class="text-muted p-6" style="line-height: 1.8;">
                             The coastal waters of British Columbia are becoming warmer, more acidic, and less oxygenated
                             as global and provincial emissions continue to rise. These shifts in the marine environment
                             directly affect coastal Canadian communities and industry.
@@ -28,171 +28,162 @@
                             <br><br>
                             To learn more, visit <a href="https://www.oceanacidification.ca/" target="_blank"
                                 rel="noopener noreferrer"
-                                class="text-primary font-weight-bold text-decoration-none">Canada's Ocean Acidification
+                                class="text-primary font-bold text-decoration-none">Canada's Ocean Acidification
                                 Community of Practice</a> to discover our species impacts, action plans, Canada's expert
                             database and more.
-                        </v-card-text>
-                    </v-card>
-                </v-col>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Two Column Layout: Who We Are & User Guide -->
-                <v-col cols="12" md="6">
-                    <v-card elevation="2" class="rounded-xl h-100 pa-2">
-                        <v-card-title class="text-h5 font-weight-bold d-flex align-center pb-4 pl-4 pt-4">
-                            <!-- <v-icon color="success" size="32" class="mr-4">mdi-account-multiple</v-icon> -->
+                <div class="p-3 w-full md:w-1/2">
+                    <div class="bg-elevated rounded-lg rounded-xl h-full p-2">
+                        <div class="text-lg font-bold flex items-center pb-4 pl-4 pt-4">
+                            <!-- <UIcon name="i-mdi-account-multiple" class="size-[32px] text-success mr-4" /> -->
                             Who We Are
-                        </v-card-title>
-                        <v-card-text class="text-body-1 text-medium-emphasis pl-4 pr-4" style="line-height: 1.6;">
+                        </div>
+                        <div class="text-muted pl-4 pr-4" style="line-height: 1.6;">
                             The Ocean Environmental Conditions Observer app is developed and maintained by the Canadian Integrated Ocean Observing System 
                             (<a href="https://www.cioospacific.ca/" target="_blank" rel="noopener noreferrer"
-                                class="text-primary text-decoration-none font-weight-bold">CIOOS</a>)
+                                class="text-primary text-decoration-none font-bold">CIOOS</a>)
                             Pacific regional association. OceanECO is designed to be a supporting tool for the "British Columbia Ocean Acidification and Hypoxia Action Plan" and "MEOPAR Ocean Acidification Community of Practice" partners. Data access is made possible by our data partners, which include Ocean Networks Canada, Hakai Institute, Fisheries and Oceans Canada, the University of British Columbia, and the University of Washington.
-                        </v-card-text>
-                    </v-card>
-                </v-col>
+                        </div>
+                    </div>
+                </div>
 
-                <v-col cols="12" md="6">
-                    <v-card elevation="2" class="rounded-xl h-100 pa-2">
-                        <v-card-title class="text-h5 font-weight-bold d-flex align-center pb-4 pl-4 pt-4">
-                            <!-- <v-icon color="warning" size="32" class="mr-4">mdi-book-open-page-variant</v-icon> -->
+                <div class="p-3 w-full md:w-1/2">
+                    <div class="bg-elevated rounded-lg rounded-xl h-full p-2">
+                        <div class="text-lg font-bold flex items-center pb-4 pl-4 pt-4">
+                            <!-- <UIcon name="i-mdi-book-open-page-variant" class="size-[32px] text-warning mr-4" /> -->
                             User Guide
-                        </v-card-title>
-                        <v-card-text
-                            class="text-body-1 text-medium-emphasis d-flex flex-column align-center justify-center pt-8">
-                            <v-icon color="disabled" size="48" class="mb-4">mdi-hammer-wrench</v-icon>
-                            <span class="text-h6 font-weight-light">Under construction - coming soon!</span>
-                        </v-card-text>
-                    </v-card>
-                </v-col>
+                        </div>
+                        <div class="text-muted flex flex-col items-center justify-center pt-8">
+                            <UIcon name="i-mdi-hammer-wrench" class="size-[48px] text-dimmed mb-4" />
+                            <span class="font-light">Under construction - coming soon!</span>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Data Sources Card -->
-                <v-col cols="12" class="mt-4">
-                    <v-card elevation="2" class="rounded-xl pa-6">
-                        <v-card-title class="text-h4 font-weight-bold d-flex align-center pb-6">
-                            <!-- <v-icon color="info" size="36" class="mr-4">mdi-database-search</v-icon> -->
+                <div class="p-3 w-full mt-4">
+                    <div class="bg-elevated rounded-lg rounded-xl p-6">
+                        <div class="text-lg font-bold flex items-center pb-6">
+                            <!-- <UIcon name="i-mdi-database-search" class="size-[36px] text-info mr-4" /> -->
                             Data Sources
-                        </v-card-title>
-                        <v-card-text class="pt-0">
+                        </div>
+                        <div class="pt-0">
                             <!-- External Data Sources -->
-                            <v-row class="mb-8">
-                                <v-col cols="12">
-                                    <div class="d-flex flex-column gap-6">
+                            <div class="flex flex-wrap mb-8">
+                                <div class="p-3 w-full">
+                                    <div class="flex flex-col gap-6">
                                         <about-ssc />
                                         <about-nonna />
                                     </div>
-                                </v-col>
-                            </v-row>
+                                </div>
+                            </div>
 
                             <!-- Sensor Network -->
-                            <v-divider class="mb-8"></v-divider>
-                            <h3 class="text-h5 font-weight-bold d-flex align-center mb-6 text-primary">
-                                <v-icon class="mr-3">mdi-access-point-network</v-icon>
+                            <USeparator class="mb-8" />
+                            <h3 class="font-bold flex items-center mb-6 text-primary">
+                                <UIcon name="i-mdi-access-point-network" class="mr-3" />
                                 Sensor Network
                             </h3>
 
-                            <div class="border rounded-lg overflow-hidden">
-                                <v-table hover>
-                                    <thead class="bg-surface-light">
+                            <div class="border border-default rounded-lg overflow-hidden">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-elevated">
                                         <tr>
-                                            <th class="text-subtitle-2 font-weight-bold py-3">Sensor Details</th>
-                                            <th class="text-subtitle-2 font-weight-bold py-3">Data Source</th>
-                                            <th class="text-subtitle-2 font-weight-bold py-3">Location & Depth</th>
-                                            <th class="text-subtitle-2 font-weight-bold py-3">Variables</th>
+                                            <th class="text-subtitle-2 font-bold py-3">Sensor Details</th>
+                                            <th class="text-subtitle-2 font-bold py-3">Data Source</th>
+                                            <th class="text-subtitle-2 font-bold py-3">Location & Depth</th>
+                                            <th class="text-subtitle-2 font-bold py-3">Variables</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <tr v-for="sensor in sensors" :key="sensor.id">
                                             <td class="py-3">
-                                                <div class="font-weight-bold text-subtitle-1">{{ sensor.id }}</div>
-                                                <div v-if="sensor.note" class="text-caption text-medium-emphasis mt-1">
+                                                <div class="font-bold text-subtitle-1">{{ sensor.id }}</div>
+                                                <div v-if="sensor.note" class="text-muted mt-1">
                                                     {{ sensor.note }}</div>
-                                                <v-chip v-if="sensor.decommissioned" size="small" color="error"
-                                                    variant="flat" class="mt-2 text-caption font-weight-bold">
-                                                    <v-icon start size="14">mdi-alert-circle</v-icon>
+                                                <UBadge size="sm" color="error" variant="solid" class="mt-2 font-bold rounded-full" v-if="sensor.decommissioned">
+                                                    <UIcon name="i-mdi-alert-circle" class="size-[14px]" start />
                                                     Decommissioned
-                                                </v-chip>
+                                                </UBadge>
                                             </td>
                                             <td class="py-3">
-                                                <div class="font-weight-medium">{{ sensor.organization }}</div>
+                                                <div class="font-medium">{{ sensor.organization }}</div>
                                             </td>
                                             <td class="py-3">
-                                                <div class="d-flex align-center mb-1">
-                                                    <v-icon size="16" class="mr-2"
-                                                        color="medium-emphasis">mdi-map-marker</v-icon>
-                                                    <span class="text-body-2">{{ sensor.coordinates }}</span>
+                                                <div class="flex items-center mb-1">
+                                                    <UIcon name="i-mdi-map-marker" class="size-[16px] text-muted mr-2" />
+                                                    <span class="">{{ sensor.coordinates }}</span>
                                                 </div>
-                                                <div class="d-flex align-center">
-                                                    <v-icon size="16" class="mr-2"
-                                                        color="medium-emphasis">mdi-arrow-down-box</v-icon>
-                                                    <span class="text-body-2">{{ sensor.depth }}</span>
+                                                <div class="flex items-center">
+                                                    <UIcon name="i-mdi-arrow-down-box" class="size-[16px] text-muted mr-2" />
+                                                    <span class="">{{ sensor.depth }}</span>
                                                 </div>
                                             </td>
                                             <td class="py-3">
-                                                <div class="text-body-2" style="max-width: 300px; line-height: 1.4;">{{
+                                                <div class="" style="max-width: 300px; line-height: 1.4;">{{
                                                     sensor.variables }}</div>
                                             </td>
                                         </tr>
                                     </tbody>
-                                </v-table>
+                                </table>
                             </div>
-                        </v-card-text>
-                    </v-card>
-                </v-col>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Sponsors Array -->
-                <v-col cols="12" class="mt-12 mb-6">
+                <div class="p-3 w-full mt-12 mb-6">
                     <div class="text-center">
-                        <h2 class="text-h5 font-weight-medium text-medium-emphasis mb-8">Supported By</h2>
-                        <v-row justify="center" align="center" class="mx-auto" style="max-width: 600px;">
-                            <v-col cols="12" sm="6" class="d-flex justify-center">
-                                <!-- <v-card elevation="0" class="d-flex flex-column align-center justify-center rounded-lg h-100 w-100 pa-4" style="background-color: transparent;"> -->
-                                <v-img src="/logos/MEOPAR.webp" alt="MEOPAR Logo" max-height="80" contain></v-img>
-                                <!-- </v-card> -->
-                            </v-col>
-                            <v-col cols="12" sm="6" class="d-flex justify-center">
-                                <!-- <v-card elevation="0" class="d-flex flex-column align-center justify-center rounded-lg h-100 w-100 pa-4" style="background-color: transparent;"> -->
-                                <v-img src="/logos/DFO.png" alt="DFO Logo" max-height="80" contain></v-img>
-                                <!-- </v-card> -->
-                            </v-col>
-                        </v-row>
+                        <h2 class="font-medium text-muted mb-8">Supported By</h2>
+                        <div class="flex flex-wrap justify-center items-center mx-auto" style="max-width: 600px;">
+                            <div class="p-3 w-full sm:w-1/2 flex justify-center">
+                                <!-- <div class="bg-elevated rounded-lg flex flex-col items-center justify-center rounded-lg h-full w-full p-4" style="background-color: transparent;"> -->
+                                <img src="/logos/MEOPAR.webp" alt="MEOPAR Logo" class="max-h-[80px] w-auto object-contain">
+                                <!-- </div> -->
+                            </div>
+                            <div class="p-3 w-full sm:w-1/2 flex justify-center">
+                                <!-- <div class="bg-elevated rounded-lg flex flex-col items-center justify-center rounded-lg h-full w-full p-4" style="background-color: transparent;"> -->
+                                <img src="/logos/DFO.png" alt="DFO Logo" class="max-h-[80px] w-auto object-contain">
+                                <!-- </div> -->
+                            </div>
+                        </div>
                     </div>
-                </v-col>
+                </div>
 
                 <!-- Contact Us -->
-                <v-col cols="12">
-                    <v-card elevation="3" class="rounded-xl pa-2 bg-surface contact-box">
-                        <v-card-text
-                            class="d-flex flex-column flex-md-row align-center justify-space-between py-8 px-6">
+                <div class="p-3 w-full">
+                    <div class="bg-elevated rounded-lg rounded-xl p-2 bg-elevated contact-box">
+                        <div class="flex flex-col md:flex-row items-center justify-between py-8 px-6">
                             <div class="mb-6 mb-md-0 text-center text-md-left">
                                 <h3
-                                    class="text-h4 font-weight-bold mb-3 d-flex align-center justify-center justify-md-start">
-                                    <!-- <v-icon color="secondary" size="36" class="mr-3">mdi-email-fast</v-icon> -->
+                                    class="font-bold mb-3 flex items-center justify-center md:justify-start">
+                                    <!-- <UIcon name="i-mdi-email-fast" class="size-[36px] text-secondary mr-3" /> -->
                                     Get in Touch
                                 </h3>
-                                <p class="text-body-1 text-medium-emphasis mb-0" style="max-width: 600px;">
+                                <p class="text-muted mb-0" style="max-width: 600px;">
                                     Have feedback or datasets you'd like to see incorporated into the OceanECO app? We'd
                                     love to hear from you.
                                 </p>
                             </div>
-                            <div class="d-flex flex-column flex-sm-row gap-4">
-                                <v-btn prepend-icon="mdi-email" color="secondary" variant="flat" size="large"
-                                    class="text-none font-weight-bold rounded-lg mx-2 my-2 my-sm-0"
-                                    href="mailto:yayla.sezginer@cioospacific.ca">
+                            <div class="flex flex-col sm:flex-row gap-4">
+                                <UButton variant="solid" size="lg" color="secondary" href="mailto:yayla.sezginer@cioospacific.ca" class="text-none font-bold rounded-lg mx-2 my-2 my-sm-0" leading-icon="i-mdi-email">
                                     Yayla Sezginer
-                                </v-btn>
-                                <v-btn prepend-icon="mdi-email" color="secondary" variant="flat" size="large"
-                                    class="text-none font-weight-bold rounded-lg mx-2 my-2 my-sm-0"
-                                    href="mailto:taimazb@oceannetworks.ca">
+                                </UButton>
+                                <UButton variant="solid" size="lg" color="secondary" href="mailto:taimazb@oceannetworks.ca" class="text-none font-bold rounded-lg mx-2 my-2 my-sm-0" leading-icon="i-mdi-email">
                                     Taimaz Bahadory
-                                </v-btn>
+                                </UButton>
                             </div>
-                        </v-card-text>
-                    </v-card>
-                </v-col>
+                        </div>
+                    </div>
+                </div>
 
-            </v-row>
-        </v-container>
-    </v-main>
+            </div>
+        </div>
+    </main>
 </template>
 
 <script setup lang="ts">
@@ -572,35 +563,35 @@ const sensors: Sensor[] = [
         orgClass: 'org-onc'
     },
     {
-        id: 'ORCA2-Hoodsport',
+        id: 'ORCA - Hoodsport',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.4218, -122.6126',
-        variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',
         depth: 'Profile',
         dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/orca2_L3_depthgridded_025',
         orgClass: 'org-onc'
     },
     {
-        id: 'ORCA4-DabobBay',
+        id: 'ORCA - Dabob Bay',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.8034, -122.8029',
-        variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',
         depth: 'Profile',
         dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/orca4_L3_depthgridded_025',
         orgClass: 'org-onc'
     },
     {
-        id: 'NPBY1-Pt Wells',
+        id: 'ORCA - Point Wells',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.7612, -122.3972',
-        variables: 'Chlorophyll (ug/L), Salinity (PSU), Temp (degC)',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',
         depth: 'Profile',
         dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/npby1_L3_depthgridded_025',
         orgClass: 'org-onc'
     },
     {
         id: 'PISCES1-South (Surface Hydrological Station)',
-        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        organization: 'University of Washington, Applied Physics Laboratory',
         coordinates: '47.6651, -122.8733',
         variables: 'Chlorophyll (ug/L), pH, Salinity (PSU), Temp (degC), Dissolved O2 (mg/L)',
         depth: 'Surface',
@@ -609,7 +600,7 @@ const sensors: Sensor[] = [
     },
     {
         id: 'PISCES2-North (Depth-Gridded Profile)',
-        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        organization: 'University of Washington, Applied Physics Laboratory',
         coordinates: '47.6923, -122.8651',
         variables: 'Chlorophyll (ug/L), Salinity (PSU), Temp (degC), Dissolved O2 (mg/L)',
         depth: 'Profile',
@@ -618,7 +609,7 @@ const sensors: Sensor[] = [
     },
     {
         id: 'PISCES2-North (Surface Hydrological Station)',
-        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        organization: 'University of Washington, Applied Physics Laboratory',
         coordinates: '47.6923, -122.8651',
         variables: 'Chlorophyll (ug/L), pH, Salinity (PSU), Temp (degC), Dissolved O2 (mg/L)',
         depth: 'Surface',
@@ -626,26 +617,26 @@ const sensors: Sensor[] = [
         orgClass: 'org-onc'
     },
     {
-        id: 'ORCA3-Hansville',
+        id: 'ORCA - Hansville',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.9075, -122.6274',
-        variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',
         depth: 'Profile',
         dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/orca3_L3_depthgridded_025',
         orgClass: 'org-onc'
     },
     {
-        id: 'NPBY2-Carr Inlet',
+        id: 'ORCA - Carr Inlet',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.2800, -122.7300',
-        variables: 'Chlorophyll (ug/L), Salinity (PSU), Temp (degC)',
+        variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',
         depth: 'Profile',
         dataUrl: 'https://nwem.apl.uw.edu/erddap/griddap/npby2_L3_depthgridded_025',
         orgClass: 'org-onc'
     },
     {
         id: 'PISCES1-South (Depth-Gridded Profile)',
-        organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
+        organization: 'University of Washington, Applied Physics Laboratory',
         coordinates: '47.6651, -122.8733',
         variables: 'Salinity (PSU), Temp (degC), Chlorophyll (ug/L), Dissolved O2 (mg/L)',
         depth: 'Profile',
@@ -653,7 +644,7 @@ const sensors: Sensor[] = [
         orgClass: 'org-onc'
     },
     {
-        id: 'ORCA1-Twanoh',
+        id: 'ORCA - Twanoh',
         organization: 'University of Washington, NANOOS-IOOS, Washington Ocean Acidification Center',
         coordinates: '47.3750, -123.0083',
         variables: 'Chlorophyll (ug/L), Dissolved O2 (mg/L), Salinity (PSU), Temp (degC)',

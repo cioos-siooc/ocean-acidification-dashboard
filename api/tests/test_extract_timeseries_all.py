@@ -3,7 +3,7 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
-from extractTimeseries import extract_timeseries
+from extractTimeseries import extract_timeseries, OutsideDomainError
 
 
 class FakeResult:
@@ -113,8 +113,63 @@ def test_extract_timeseries_out_of_domain_raises(monkeypatch):
     fake = FakeClient(grid_row=(10, 20, 60.0, -130.0, 50_000.0))
     monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: fake)
 
-    with pytest.raises(RuntimeError, match="km from the nearest grid point"):
+    with pytest.raises(OutsideDomainError) as excinfo:
         extract_timeseries(source='SalishSeaCast', var='temperature', lat=0.0, lon=0.0, depth=5.0)
+
+    # The numbers, not just the sentence: SERVER.py forwards them to the
+    # frontend, which renders the out-of-domain state from `code`/`distanceKm`
+    # rather than by matching on the message text.
+    exc = excinfo.value
+    assert exc.code == 'outside_model_domain'
+    assert exc.distance_km == pytest.approx(50.0)
+    assert exc.max_distance_km == 25.0
+    assert exc.to_payload()['nearest'] == {'lat': -130.0, 'lon': 60.0}
+
+
+class BoundingBoxMissClient(FakeClient):
+    """A grid table whose nearest cell lies outside the 0.5-degree prefilter box.
+
+    The bounded lookup finds nothing; only the unfiltered fallback does. Before
+    that fallback existed, this case surfaced as "Grid table is empty or not
+    found" — blaming the database for a point the user deliberately clicked far
+    offshore, and giving the UI no distance to report.
+    """
+
+    def query(self, query, parameters=None):
+        q = " ".join(query.lower().split())
+        if "from grid_ssc" in q:
+            bounded = "latitude between" in q
+            return FakeResult([] if bounded else [self.grid_row])
+        return super().query(query, parameters)
+
+
+def test_extract_timeseries_beyond_bounding_box_reports_real_distance(monkeypatch):
+    fake = BoundingBoxMissClient(grid_row=(10, 20, -125.4, 49.2, 122_900.0))
+    monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: fake)
+
+    with pytest.raises(OutsideDomainError) as excinfo:
+        extract_timeseries(source='SalishSeaCast', var='temperature', lat=48.67, lon=-126.85, depth=441.5)
+
+    exc = excinfo.value
+    assert exc.code == 'outside_model_domain'
+    assert exc.distance_km == pytest.approx(122.9)
+    assert 'outside the SalishSeaCast model domain' in str(exc)
+
+
+def test_extract_timeseries_empty_grid_table_still_raises_plain_error(monkeypatch):
+    """An actually-empty grid table must stay distinguishable from a far point."""
+
+    class EmptyGridClient(FakeClient):
+        def query(self, query, parameters=None):
+            if "from grid_ssc" in " ".join(query.lower().split()):
+                return FakeResult([])
+            return super().query(query, parameters)
+
+    monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: EmptyGridClient())
+
+    with pytest.raises(RuntimeError, match="is empty or not found") as excinfo:
+        extract_timeseries(source='SalishSeaCast', var='temperature', lat=49.0, lon=-123.0, depth=5.0)
+    assert not isinstance(excinfo.value, OutsideDomainError)
 
 
 def test_extract_timeseries_unsupported_source(monkeypatch):

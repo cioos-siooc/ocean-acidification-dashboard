@@ -1,4 +1,17 @@
+import pytest
+
+import ocean_analysis
 from ocean_analysis import _resolve_nearest_depth
+
+
+@pytest.fixture(autouse=True)
+def _reset_depth_cache():
+    """_get_depth_levels() memoizes into a module-global, so without a reset the
+    first test's fake depths leak into later tests (e.g. the empty-depths case
+    would otherwise see a stale non-empty cache and return a match)."""
+    ocean_analysis._CACHED_DEPTH_LEVELS = None
+    yield
+    ocean_analysis._CACHED_DEPTH_LEVELS = None
 
 
 class FakeResult:

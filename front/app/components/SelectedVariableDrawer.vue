@@ -1,22 +1,25 @@
 <template>
-    <v-navigation-drawer v-model="isOpen" location="right" width="300" class="pa-2" absolute persistent mobile
-        :scrim="false" style="height:100%; z-index:9999; top:0;">
-        <v-row class="ma-0 pa-0" style="height: 20px;">
-            <v-btn icon size="20px" color="error" flat @click="isOpen = false">
-                <v-icon size="16px">mdi-close</v-icon>
-            </v-btn>
-        </v-row>
+    <aside v-show="isOpen" class="p-2 absolute right-0 top-0 h-full w-[300px] overflow-y-auto bg-default border-l border-default"
+        style="z-index:999;">
+        <div class="flex flex-wrap m-0 p-0 items-center" style="height: 38px;">
+            <div class="drawer-header grow" style="min-width:0;">
+                <div class="title-text truncate">{{ title }}</div>
+                <div class="subtitle-text truncate">{{ timestamp }}</div>
+            </div>
+            <UButton variant="solid" color="error" class="size-[20px] p-0 justify-center shrink-0" @click="isOpen = false">
+                <UIcon name="i-mdi-close" class="size-[16px]" />
+            </UButton>
+        </div>
 
         <div class="profile-chart-wrapper">
             <div ref="chartContainer" class="profile-chart"></div>
             <div v-if="statusMessage" class="profile-chart-overlay"
                 :class="{ loading: loading, error: !!errorMessage }">
-                <v-progress-circular v-if="loading" indeterminate color="warning" :size="64" :width="12"
-                    class="progress" />
+                <UIcon name="i-mdi-loading" class="animate-spin text-warning progress" :style="{ fontSize: 64 + 'px' }" v-if="loading" />
                 <span v-else>{{ statusMessage }}</span>
             </div>
         </div>
-    </v-navigation-drawer>
+    </aside>
 </template>
 
 <script setup lang="ts">
@@ -24,12 +27,13 @@ import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRuntimeConfig } from '#app';
 import axios from 'axios';
 import * as echarts from 'echarts';
-import { registerEchartsDarkTheme } from '../../composables/useEchartsTheme';
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme';
 import type { PropType } from 'vue';
 import moment, { type MomentInput } from 'moment-timezone';
-import { var2name } from '../../composables/useVar2Name';
-import { utc2pst } from '../../composables/useUTC2PST';
+import { useVariableRegistry } from '~~/composables/useVariableRegistry';
+import { utc2pst } from '~~/composables/useUTC2PST';
 import { useMainStore } from '../stores/main';
+import { asOutsideDomainError, type OutsideDomainError } from '~~/composables/useDepthProfileFetch';
 
 type SelectedPoint = {
     lat: number;
@@ -42,6 +46,7 @@ interface ProfileRequest {
     lat: number;
     lng: number;
     dt: string;
+    binMode: 'hourly' | 'daily' | 'monthly';
 }
 
 interface ProfilePoint {
@@ -73,17 +78,31 @@ const isOpen = computed({
 
 const mainStore = useMainStore();
 
+const { variableLabel, displayUnit, toDisplayValue } = useVariableRegistry();
+
 const title = computed(() => {
     const varId = mainStore.selected_variable?.var;
     if (!varId) return 'No variable selected';
-    return `${var2name(varId)} Profile`;
+    return `${variableLabel(varId)} Profile`;
 });
 
+// The instant this profile represents — the same universal selected instant
+// every other view reads (`selected_variable.dt`), so this drawer stays in
+// sync with the time controls, a depth-section cell click, or a timeseries
+// chart click alike.
+const profileDt = computed<MomentInput>(() => mainStore.selected_variable?.dt);
+
+// The same chart looks identical whether it's an instantaneous reading or a
+// daily/monthly mean — this is the only visible cue for which one it is, so
+// it has to say the aggregation, not just the moment.
 const timestamp = computed(() => {
-    const dt = mainStore.selected_variable?.dt;
+    const dt = profileDt.value;
     if (!dt) return 'Data timestamp: –';
-    const parsed = moment(dt);
+    const parsed = moment.utc(dt);
     if (!parsed.isValid()) return 'Data timestamp: –';
+    const mode = mainStore.exploreBinMode;
+    if (mode === 'monthly') return `Monthly mean · ${parsed.format('MMMM YYYY')}`;
+    if (mode === 'daily') return `Daily mean · ${parsed.format('MMM D, YYYY')}`;
     return `Data timestamp: ${utc2pst(parsed)}`;
 });
 
@@ -94,16 +113,25 @@ const chartContainer = ref<HTMLDivElement | null>(null);
 let profileChart: echarts.ECharts | null = null;
 const loading = ref(false);
 const errorMessage = ref<string | null>(null);
+
+// Kept apart from `errorMessage` so it does not get the red `.error` styling.
+// A point outside the model domain has no profile to draw, but that is the
+// user having clicked open water past the grid — not a failure of the request.
+const outOfDomain = ref<OutsideDomainError | null>(null);
 const profilePoints = ref<ProfilePoint[]>([]);
 let currentController: AbortController | null = null;
 let requestSequence = 0;
 
-const variableLabel = computed(() => var2name(mainStore.selected_variable.var ?? 'Value'));
+const selectedVariableLabel = computed(() => variableLabel(mainStore.selected_variable.var ?? 'Value'));
+const selectedVariableUnit = computed(() => displayUnit(mainStore.selected_variable.var ?? ''));
+const selectedVariableAxisName = computed(() =>
+    selectedVariableUnit.value ? `${selectedVariableLabel.value} (${selectedVariableUnit.value})` : selectedVariableLabel.value
+);
 
 const requestParams = computed<ProfileRequest | null>(() => {
     const lat = props.selectedPoint?.lat;
     const lng = props.selectedPoint?.lng;
-    const dt = mainStore.selected_variable?.dt;
+    const dt = profileDt.value;
     const variable = mainStore.selected_variable?.var;
     const source = mainStore.selected_variable?.source;
     if (typeof lat !== 'number' || typeof lng !== 'number' || !dt || !variable || !source) {
@@ -116,13 +144,19 @@ const requestParams = computed<ProfileRequest | null>(() => {
         var: variable,
         lat,
         lng,
-        dt: parsed.utc().format('YYYY-MM-DDTHHmmss')
+        dt: parsed.utc().format('YYYY-MM-DDTHHmmss'),
+        // The Depth tab's own bin-mode toggle, mirrored via the store — daily/
+        // monthly resolve to that calendar day/month's mean at the backend
+        // regardless of the exact hour in `dt`, so this only needs to be part
+        // of the request, not folded into `dt` itself.
+        binMode: mainStore.exploreBinMode,
     };
 });
 
 const statusMessage = computed(() => {
     if (!requestParams.value) return 'Click anywhere on the map to load a profile';
     if (loading.value) return 'Loading profile...';
+    if (outOfDomain.value) return `Outside the model domain — no profile here (nearest model cell is ${outOfDomain.value.distanceKm.toFixed(0)} km away)`;
     if (errorMessage.value) return errorMessage.value;
     if (!profilePoints.value.length) return 'No profile data returned for this location';
     return '';
@@ -154,6 +188,12 @@ watch([requestParams, isOpen], ([params, open]) => {
     }
 }, { immediate: true, flush: 'post' });
 
+// Re-render off the already-fetched (canonical) points when the display unit
+// changes — no refetch needed, only the conversion applied at render time.
+watch(() => mainStore.unitPreference[mainStore.selected_variable.var], () => {
+    renderChart(profilePoints.value);
+});
+
 function ensureChart() {
     if (profileChart || !chartContainer.value) return;
     profileChart = echarts.init(chartContainer.value, 'dark', { renderer: 'canvas' });
@@ -164,8 +204,9 @@ function renderChart(points: ProfilePoint[]) {
     ensureChart();
     if (!profileChart) return;
 
+    const varId = mainStore.selected_variable.var;
     const sorted = [...points].sort((a, b) => a.depth - b.depth);
-    const data = sorted.map((point) => [point.value, point.depth]);
+    const data = sorted.map((point) => [toDisplayValue(varId, point.value), point.depth]);
 
     const option = {
         tooltip: {
@@ -175,7 +216,7 @@ function renderChart(points: ProfilePoint[]) {
                 const entry = params?.[0];
                 if (!entry) return '';
                 const [value, depth] = entry.value ?? [];
-                return `${variableLabel.value}<br/>Value: ${value ?? '–'}<br/>Depth: ${depth ?? '–'} m`;
+                return `${selectedVariableLabel.value}<br/>Value: ${value ?? '–'} ${selectedVariableUnit.value}<br/>Depth: ${depth ?? '–'} m`;
             }
         },
         grid: { left: 32, right: 20, top: 12, bottom: 12 },
@@ -186,7 +227,7 @@ function renderChart(points: ProfilePoint[]) {
         },
         xAxis: {
             type: 'value',
-            name: variableLabel.value,
+            name: selectedVariableAxisName.value,
             nameLocation: 'middle',
             nameGap: 24,
             axisLine: { show: true },
@@ -204,7 +245,7 @@ function renderChart(points: ProfilePoint[]) {
         },
         series: [
             {
-                name: variableLabel.value,
+                name: selectedVariableLabel.value,
                 type: 'line',
                 // type: "scatter",
                 // showSymbol: false,
@@ -290,12 +331,13 @@ function toNumber(value: any): number | null {
 async function fetchProfile(params: ProfileRequest) {
     loading.value = true;
     errorMessage.value = null;
+    outOfDomain.value = null;
     cancelRequest();
     currentController = new AbortController();
     const currentRequest = ++requestSequence;
 
     try {
-        const payload: Record<string, any> = { source: params.source, var: params.var, lat: params.lat, lng: params.lng, dt: params.dt };
+        const payload: Record<string, any> = { source: params.source, var: params.var, lat: params.lat, lng: params.lng, dt: params.dt, bin_mode: params.binMode };
         const response = await axios.post(`${apiBaseUrl}/getProfile`, payload, { signal: currentController.signal });
 
         if (currentRequest !== requestSequence) return;
@@ -307,7 +349,12 @@ async function fetchProfile(params: ProfileRequest) {
     } catch (error: any) {
         const isCanceled = axios.isCancel(error) || error?.name === 'CanceledError';
         if (isCanceled) return;
-        errorMessage.value = error?.message ? `Unable to load profile: ${error.message}` : 'Unable to load profile';
+        const domain = asOutsideDomainError(error);
+        if (domain) {
+            outOfDomain.value = domain;
+        } else {
+            errorMessage.value = error?.message ? `Unable to load profile: ${error.message}` : 'Unable to load profile';
+        }
         updateChart([]);
     } finally {
         loading.value = false;
@@ -323,6 +370,7 @@ function clearChart() {
     cancelRequest();
     loading.value = false;
     errorMessage.value = null;
+    outOfDomain.value = null;
     profilePoints.value = [];
     renderChart([]);
 }
@@ -337,25 +385,25 @@ function cancelRequest() {
 
 <style scoped>
 .drawer-header {
-    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-    padding-bottom: 8px;
+    line-height: 1.25;
 }
 
 .title-text {
     font-weight: 600;
-    font-size: 0.95rem;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.9);
 }
 
 .subtitle-text {
-    font-size: 0.8rem;
-    color: rgba(0, 0, 0, 0.6);
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.55);
 }
 
 .profile-chart-wrapper {
     flex: 1;
     position: relative;
     /* min-height: 200px; */
-    height: calc(100% - 20px);
+    height: calc(100% - 38px);
     /* margin-top: 6px; */
     /* background:red; */
 }

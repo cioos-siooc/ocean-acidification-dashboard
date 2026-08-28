@@ -5,23 +5,23 @@
     :style="{ left: x + 'px', top: y + 'px' }"
   >
     <div class="sensor-picker__title">Select sensor</div>
-    <v-list class="sensor-picker__list pa-0">
-      <v-list-item
+    <div class="sensor-picker__list p-0">
+      <div role="button" tabindex="0"
         v-for="sensor in sortedSensors"
         :key="sensor.id"
         class="sensor-picker__item"
         @click="pick(sensor)"
       >
-        <v-list-item-title class="text-body-2">{{ sensor.name }}</v-list-item-title>
-        <v-list-item-subtitle class="text-caption">{{ depthTxt(sensor) }}</v-list-item-subtitle>
-      </v-list-item>
-    </v-list>
+        <div role="button" tabindex="0"-title class="">{{ sensor.name }}</div>
+        <div role="button" tabindex="0"-subtitle class="">{{ depthTxt(sensor) }}</div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { MultiSensorCandidate } from '../../../composables/useBuoyLayer';
+import type { MultiSensorCandidate } from '~~/composables/useBuoyLayer';
 
 const props = defineProps<{
   visible: boolean;

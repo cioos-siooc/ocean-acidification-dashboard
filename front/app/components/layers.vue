@@ -1,19 +1,17 @@
 <template>
     <div class="layers-control">
-        <v-menu v-model:opened="menu" location="left-start" :close-on-content-click="false">
-            <template #activator="{ props }">
-                <v-btn v-bind="props" icon elevation="2" aria-label="Layers">
-                    <v-icon>mdi-layers</v-icon>
-                </v-btn>
-            </template>
-
-            <div class="pa-2 d-flex flex-column menu-content">
-                <v-btn v-for="variable in variables" :key="variable.var" size="small" @click="clickIcon(variable.var)"
-                    class="mb-1 noCap" aria-label="Toggle layer 1">
-                    {{ var2name(variable.var) }}
-                </v-btn>
-            </div>
-        </v-menu>
+        <UPopover v-model:open="menu" arrow :content="{ side: 'left-start' }">
+  <UButton variant="ghost" class="shrink-0" aria-label="Layers">
+                      <UIcon name="i-mdi-layers" />
+                  </UButton>
+  <template #content>
+    <div class="p-2 flex flex-col menu-content">
+                    <UButton size="sm" class="mb-1 noCap" v-for="variable in variables" :key="variable.var" @click="clickIcon(variable.var)" aria-label="Toggle layer 1">
+                        {{ variableLabel(variable.var) }}
+                    </UButton>
+                </div>
+  </template>
+</UPopover>
     </div>
 </template>
 
@@ -21,11 +19,12 @@
 import { ref, computed } from 'vue'
 import { useMainStore } from '../stores/main'
 
-import { var2name } from '../../composables/useVar2Name'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 const mainStore = useMainStore()
+const { variableLabel } = useVariableRegistry()
 
 const menu = ref(false)
 const emit = defineEmits(['toggleLayer'])

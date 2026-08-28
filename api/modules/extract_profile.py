@@ -66,9 +66,21 @@ def extract_profile(
     lat: float,
     lon: float,
     dt: str,
+    bin_mode: str = "hourly",
     verbose: bool = False,
 ) -> List[dict]:
     """Extract a vertical profile for `var` at (lat, lon, dt) from ClickHouse.
+
+    `bin_mode` picks what the profile represents at each depth:
+      "hourly"  — the actual model value at the nearest available hour to `dt`
+                  (original behaviour).
+      "daily"   — the pre-aggregated mean for `dt`'s calendar day, off the same
+                  `SalishSeaCast_daily` table the Depth tab's daily section reads.
+      "monthly" — the mean of that table's daily rows across `dt`'s calendar
+                  month.
+    Matches the Depth tab's own bin-mode semantics, so a profile requested at
+    whatever resolution the heatmap is currently showing reads as "this is
+    what that heatmap column represents" rather than always the raw instant.
 
     Returns a list of {"depth": float, "value": float} dicts, sorted
     ascending by depth. Raises RuntimeError/ValueError on bad input or
@@ -81,6 +93,8 @@ def extract_profile(
         )
     if var not in ALLOWED_VARIABLES:
         raise ValueError(f"Unknown variable '{var}'. Supported variables: {sorted(ALLOWED_VARIABLES)}")
+    if bin_mode not in ("hourly", "daily", "monthly"):
+        raise ValueError(f"Unsupported bin_mode '{bin_mode}'. Supported: hourly, daily, monthly.")
 
     try:
         target_dt = pd.to_datetime(dt)
@@ -92,24 +106,45 @@ def extract_profile(
 
     client = get_ch_client()
     try:
-        grid_x, grid_y, grid_lat, grid_lon = _find_nearest_grid_point(client, grid_table, lat, lon)
+        grid_x, grid_y, grid_lat, grid_lon, _ = _find_nearest_grid_point(client, grid_table, lat, lon, source=source)
         if verbose:
             print(f"Nearest grid point: gridX={grid_x} gridY={grid_y} lat={grid_lat} lon={grid_lon}", flush=True)
 
-        resolved_time = _find_nearest_time(client, table, grid_x, grid_y, target_dt)
-        if verbose:
-            print(f"Resolved time: requested={target_dt} -> nearest={resolved_time}", flush=True)
+        if bin_mode == "hourly":
+            resolved_time = _find_nearest_time(client, table, grid_x, grid_y, target_dt)
+            if verbose:
+                print(f"Resolved time: requested={target_dt} -> nearest={resolved_time}", flush=True)
+            query = f"""
+                SELECT depth, {var} AS value
+                FROM {table}
+                WHERE gridX = %(gx)s AND gridY = %(gy)s AND time = %(t)s
+                ORDER BY depth ASC
+            """
+            rows = client.query(query, parameters={"gx": grid_x, "gy": grid_y, "t": resolved_time}).result_rows
+        elif bin_mode == "daily":
+            day = target_dt.date().isoformat()
+            query = f"""
+                SELECT depth, {var}_mean AS value
+                FROM SalishSeaCast_daily
+                WHERE gridX = %(gx)s AND gridY = %(gy)s AND time = toDate(%(day)s)
+                ORDER BY depth ASC
+            """
+            rows = client.query(query, parameters={"gx": grid_x, "gy": grid_y, "day": day}).result_rows
+        else:  # monthly — same source table as "daily", rolled up a second time
+            month_start = target_dt.replace(day=1).date().isoformat()
+            query = f"""
+                SELECT depth, avg({var}_mean) AS value
+                FROM SalishSeaCast_daily
+                WHERE gridX = %(gx)s AND gridY = %(gy)s AND toStartOfMonth(time) = toDate(%(month)s)
+                GROUP BY depth
+                ORDER BY depth ASC
+            """
+            rows = client.query(query, parameters={"gx": grid_x, "gy": grid_y, "month": month_start}).result_rows
 
-        query = f"""
-            SELECT depth, {var} AS value
-            FROM {table}
-            WHERE gridX = %(gx)s AND gridY = %(gy)s AND time = %(t)s
-            ORDER BY depth ASC
-        """
-        result = client.query(query, parameters={"gx": grid_x, "gy": grid_y, "t": resolved_time})
-        # ingest.py already filters NaN/0/land rows out of the table, so no
-        # client-side value filtering is needed here (unlike the old NetCDF path).
-        return [{"depth": float(d), "value": float(v)} for d, v in result.result_rows]
+        # ingest.py already filters NaN/0/land rows out of the hourly table; the
+        # daily/monthly aggregates can still average down to NULL if every
+        # contributing row was NULL, so filter those here too.
+        return [{"depth": float(d), "value": float(v)} for d, v in rows if v is not None]
     finally:
         client.close()
 
@@ -121,6 +156,7 @@ def main(argv: Optional[list] = None) -> int:
     p.add_argument("--lat", "-a", type=float, required=True, help="Latitude (required)")
     p.add_argument("--lon", "-o", type=float, required=True, help="Longitude (required)")
     p.add_argument("--dt", required=True, help="Target datetime (ISO-8601-ish string)")
+    p.add_argument("--bin-mode", default="hourly", choices=["hourly", "daily", "monthly"], help="Aggregation resolution")
     p.add_argument("--verbose", "-V", action="store_true", help="Verbose output")
 
     args = p.parse_args(argv)
@@ -131,6 +167,7 @@ def main(argv: Optional[list] = None) -> int:
         lat=args.lat,
         lon=args.lon,
         dt=args.dt,
+        bin_mode=args.bin_mode,
         verbose=args.verbose,
     )
     print("depth,value")

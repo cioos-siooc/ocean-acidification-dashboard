@@ -2,11 +2,10 @@ import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Literal, Optional, Tuple
 from functools import partial
-import contextvars
+from contextlib import asynccontextmanager
 import os
 import logging
 import asyncio
@@ -14,25 +13,68 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 import json
-from functools import partial
-import contextvars
 from starlette.concurrency import run_in_threadpool
 import numpy as np
 
-from modules.extractTimeseries import extract_timeseries
+from modules.extractTimeseries import extract_timeseries, OutsideDomainError
 from modules.extract_profile import extract_profile
-from modules.eval_extractor import extract_eval_data
 from modules.extract_climate_timeseries import extract_climate_timeseries
 from modules.extractMinMax import extract_minmax
 from modules.extractSensorTimeseries import extract_sensor_timeseries
 from modules.extract_depth_profile import extract_depth_profile
+from modules.extract_cross_section import extract_cross_section
+from modules.extract_image import generate_image
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
 from modules.sync_hourly import import_native_file, import_daily_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
 from modules.posthog_helpers import capture_event
+from modules import response_cache
 
 async def run_in_process(func, *args, **kwargs):
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(_extract_executor, partial(func, *args, **kwargs))
+
+
+@asynccontextmanager
+async def extract_slot(label: str):
+    """Acquire one concurrency slot for a blocking extract, releasing it on exit.
+
+    Raises 429 if a slot isn't free within 10s; the slot is only released when
+    it was actually acquired, so a timeout never over-releases the semaphore.
+    """
+    try:
+        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
+    except (asyncio.TimeoutError, Exception):
+        logger.warning("Semaphore timeout in %s", label)
+        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
+    try:
+        yield
+    finally:
+        _extract_semaphore.release()
+
+
+def _require_ssc(source: str) -> None:
+    """SalishSeaCast is the only supported source; reject anything else as 400."""
+    if source != "SalishSeaCast":
+        logger.error(f"Unsupported source: {source}")
+        raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
+
+
+def _outside_domain_response(exc: OutsideDomainError) -> JSONResponse:
+    """Turn an OutsideDomainError into a 400 the frontend can act on.
+
+    Built by hand rather than raised as an HTTPException because we need a
+    second top-level key beside `detail`: clicking a deep-ocean buoy outside
+    the model domain is a normal thing to do, and the UI shows it as an
+    informational note ("sensor data only") instead of a red error — but only
+    if it can tell this case apart from a genuine failure. `detail` stays a
+    plain sentence so the several call sites that just print
+    `response.data.detail` keep working unchanged.
+    """
+    logger.info("Out-of-domain coordinate: %s", exc.message)
+    return JSONResponse(
+        status_code=400,
+        content={"detail": exc.message, "error": exc.to_payload()},
+    )
 
 
 
@@ -83,9 +125,6 @@ async def _stamp_request_start_time(request: Request, call_next):
     request.state.start_time = time.perf_counter()
     request.state.distinct_id = request.headers.get("x-posthog-distinct-id", "").strip() or None
     return await call_next(request)
-
-# Mount static files directory for convenience (still add explicit endpoint below to control headers)
-# app.mount("/png", StaticFiles(directory="/opt/data/png"), name="png")
 
 # Explicit PNG route that sets cache-control for compatibility with Mapbox and browsers
 SSC_IMAGE_DIR = os.environ.get("SSC_IMAGE_DIR", "/opt/data/SalishSeaCast/images")
@@ -234,131 +273,234 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: 
     Response: { time: [iso...], value: [float|null,...] }
               or with depth axis: { time: [...], depth: [...], value: [...] }
     """
-    try:
-        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
-    except (asyncio.TimeoutError, Exception):
-        logger.warning("Semaphore timeout in sensorTimeseries")
-        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
-
-    try:
-        result = await asyncio.wait_for(
-            run_in_threadpool(
-                extract_sensor_timeseries,
-                request.sensorId,
-                request.modelVariable,
-                request.fromDate,
-                request.toDate,
-                request.depth,
-                request.source,
-            ),
-            timeout=THREADPOOL_TIMEOUT,
-        )
+    key = response_cache.make_key("sensorTimeseries", request)
+    cached = response_cache.get_sensor(key)
+    if cached is not None:
         capture_event(http_request, "sensor_timeseries", {
             "sensorId": request.sensorId, "modelVariable": request.modelVariable,
             "fromDate": request.fromDate, "toDate": request.toDate, "depth": request.depth,
         })
-        return result
-    except HTTPException:
-        raise
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        logger.exception("get_sensor_timeseries failed")
-        raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        _extract_semaphore.release()
+        return cached
+    async with extract_slot("sensorTimeseries"):
+        try:
+            result = await asyncio.wait_for(
+                run_in_threadpool(
+                    extract_sensor_timeseries,
+                    request.sensorId,
+                    request.modelVariable,
+                    request.fromDate,
+                    request.toDate,
+                    request.depth,
+                    request.source,
+                ),
+                timeout=THREADPOOL_TIMEOUT,
+            )
+            response_cache.set_sensor(key, result)
+            capture_event(http_request, "sensor_timeseries", {
+                "sensorId": request.sensorId, "modelVariable": request.modelVariable,
+                "fromDate": request.fromDate, "toDate": request.toDate, "depth": request.depth,
+            })
+            return result
+        except HTTPException:
+            raise
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            logger.exception("get_sensor_timeseries failed")
+            raise HTTPException(status_code=500, detail=str(exc))
 
 #######################################
 
 class depthProfileRequest(BaseModel):
     source: str
     var: str
-    sensorId: str  # UUID
     lat: float
     lon: float
     fromDate: str
     toDate: str
+    # Omit for a model-only grid (Depth tab); pass a sensor UUID to also get
+    # that profiler's casts binned onto the same grid (Comparison tab).
+    sensorId: Optional[str] = None
+    # binHours is the legacy form, still accepted so an already-deployed
+    # frontend keeps working against a newer API — the two deploy separately.
+    # binMode supersedes it and is the only way to ask for monthly.
     binHours: Literal[1, 24] = 1
+    binMode: Optional[Literal["hourly", "daily", "monthly"]] = None
 
 @app.post("/depthProfile")
 async def get_depth_profile(request: depthProfileRequest, http_request: Request):
-    """Bin a variable-depth sensor's raw casts onto the model's depth levels
-    and time buckets at the requested resolution, alongside the model's own
-    values at that grid — the Comparison tab's Depth Profile (Hovmöller) view.
+    """Build the model's time-depth (Hovmöller) grid at the cell nearest
+    (lat, lon), optionally alongside a variable-depth sensor's casts binned
+    onto that same grid — the Depth tab's model view and the Comparison tab's
+    Depth Profile view respectively.
 
     Response: { time: [iso...], depths: [float...], model: [[float,...],...],
-                sensor: [[float|null,...],...] }  — both grids depths x time.
+                sensor: [[float|null,...],...] | null }  — grids are depths x time;
+                `sensor` is null when no sensorId was requested.
     """
-    logger.info(f"START depthProfile: {request.source}, {request.var}, sensor={request.sensorId}, from={request.fromDate}, to={request.toDate}, binHours={request.binHours}")
-    try:
-        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
-    except (asyncio.TimeoutError, Exception):
-        logger.warning("Semaphore timeout in depthProfile")
-        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
-
-    try:
-        result = await asyncio.wait_for(
-            run_in_threadpool(
-                extract_depth_profile,
-                source=request.source,
-                var=request.var,
-                sensor_id=request.sensorId,
-                lat=request.lat,
-                lon=request.lon,
-                from_date=request.fromDate,
-                to_date=request.toDate,
-                bin_hours=request.binHours,
-            ),
-            timeout=THREADPOOL_TIMEOUT,
-        )
-        logger.info(f"FINISH depthProfile: {request.var}, sensor={request.sensorId} - returned {len(result.get('depths', []))} depths x {len(result.get('time', []))} bins")
+    resolution = request.binMode or f"{request.binHours}h"
+    logger.info(f"START depthProfile: {request.source}, {request.var}, sensor={request.sensorId}, lat={request.lat}, lon={request.lon}, from={request.fromDate}, to={request.toDate}, resolution={resolution}")
+    is_sensor = request.sensorId is not None
+    key = response_cache.make_key("depthProfile", request)
+    cached = response_cache.get_sensor(key) if is_sensor else response_cache.get_model(key)
+    if cached is not None:
         capture_event(http_request, "depth_profile", {
+            "mode": "sensor" if request.sensorId else "model",
             "sensorId": request.sensorId, "source": request.source, "var": request.var,
-            "fromDate": request.fromDate, "toDate": request.toDate, "binHours": request.binHours,
+            "fromDate": request.fromDate, "toDate": request.toDate, "resolution": resolution,
         })
-        return result
-    except HTTPException:
-        raise
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except RuntimeError as exc:
-        # Out-of-domain coordinates, grid issues, or an empty window are client errors.
-        if ("km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc)
-                or "No depth levels found" in str(exc) or "No model data found" in str(exc)):
-            logger.warning(f"Depth profile request error: {exc}")
+        return cached
+    async with extract_slot("depthProfile"):
+        try:
+            result = await asyncio.wait_for(
+                run_in_threadpool(
+                    extract_depth_profile,
+                    source=request.source,
+                    var=request.var,
+                    sensor_id=request.sensorId,
+                    lat=request.lat,
+                    lon=request.lon,
+                    from_date=request.fromDate,
+                    to_date=request.toDate,
+                    bin_hours=request.binHours,
+                    bin_mode=request.binMode,
+                ),
+                timeout=THREADPOOL_TIMEOUT,
+            )
+            if is_sensor:
+                response_cache.set_sensor(key, result)
+            else:
+                response_cache.set_model(key, result)
+            logger.info(f"FINISH depthProfile: {request.var}, sensor={request.sensorId} - returned {len(result.get('depths', []))} depths x {len(result.get('time', []))} bins")
+            capture_event(http_request, "depth_profile", {
+                "mode": "sensor" if request.sensorId else "model",
+                "sensorId": request.sensorId, "source": request.source, "var": request.var,
+                "fromDate": request.fromDate, "toDate": request.toDate, "resolution": resolution,
+            })
+            return result
+        except HTTPException:
+            raise
+        except OutsideDomainError as exc:
+            return _outside_domain_response(exc)
+        except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        logger.exception("extract_depth_profile failed with RuntimeError")
-        raise HTTPException(status_code=500, detail=str(exc))
-    except Exception as exc:
-        logger.exception("get_depth_profile failed")
-        raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        _extract_semaphore.release()
+        except RuntimeError as exc:
+            # Grid issues or an empty window are client errors. (Out-of-domain
+            # coordinates are a RuntimeError subclass, already handled above.)
+            if ("Grid table is empty" in str(exc)
+                    or "No depth levels found" in str(exc) or "No model data found" in str(exc)):
+                logger.warning(f"Depth profile request error: {exc}")
+                raise HTTPException(status_code=400, detail=str(exc))
+            logger.exception("extract_depth_profile failed with RuntimeError")
+            raise HTTPException(status_code=500, detail=str(exc))
+        except Exception as exc:
+            logger.exception("get_depth_profile failed")
+            raise HTTPException(status_code=500, detail=str(exc))
 
 #######################################
 
-# @app.get("/metadata/{var}")
-# async def get_metadata(var: str):
-#     safe_var = os.path.basename(var)
-#     path = os.path.join(IMAGE_ROOT, safe_var, "meta.json")
-#     if not os.path.isfile(path):
-#         raise HTTPException(status_code=404, detail="Metadata not found")
-    
-#     def _read():
-#         with open(path) as f:
-#             return f.read()
-            
-#     content = await run_in_threadpool(_read)
-#     return JSONResponse(content=content)
+class crossSectionRequest(BaseModel):
+    source: str
+    var: str
+    # Polyline vertices as [(lat, lon), ...], >= 2 points.
+    vertices: List[Tuple[float, float]]
+    # A full timestamp for "hourly", "YYYY-MM-DD" for "daily", or "YYYY-MM"
+    # for "monthly" — matching binMode.
+    dt: str
+    binMode: Literal["hourly", "daily", "monthly"]
+
+@app.post("/crossSection")
+async def get_cross_section(request: crossSectionRequest, http_request: Request):
+    """Build the model's depth-vs-distance grid along an arbitrary drawn
+    polyline, at one time snapshot — the Cross-Section tab's spatial
+    counterpart to the Depth tab's time-depth view.
+
+    Response: { distances_km: [float...], depths: [float...],
+                model: [[float,...],...], vertex_distances_km: [float...] }
+                — model is depths x distance samples.
+    """
+    logger.info(
+        f"START crossSection: {request.source}, {request.var}, vertices={len(request.vertices)}, "
+        f"dt={request.dt}, binMode={request.binMode}"
+    )
+    key = response_cache.make_key("crossSection", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
+        capture_event(http_request, "cross_section_queried", {
+            "source": request.source, "var": request.var, "dt": request.dt,
+            "binMode": request.binMode, "vertex_count": len(request.vertices),
+        })
+        return cached
+    async with extract_slot("crossSection"):
+        try:
+            result = await asyncio.wait_for(
+                run_in_threadpool(
+                    extract_cross_section,
+                    source=request.source,
+                    var=request.var,
+                    vertices=request.vertices,
+                    dt=request.dt,
+                    bin_mode=request.binMode,
+                ),
+                timeout=THREADPOOL_TIMEOUT,
+            )
+            response_cache.set_model(key, result)
+            logger.info(
+                f"FINISH crossSection: {request.var} - returned {len(result.get('depths', []))} depths "
+                f"x {len(result.get('distances_km', []))} samples"
+            )
+            capture_event(http_request, "cross_section_queried", {
+                "source": request.source, "var": request.var, "dt": request.dt,
+                "binMode": request.binMode, "vertex_count": len(request.vertices),
+                "distance_km": result["distances_km"][-1] if result.get("distances_km") else None,
+            })
+            return result
+        except HTTPException:
+            raise
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except RuntimeError as exc:
+            # Out-of-domain/empty line-time combinations are client errors.
+            if "No model data found" in str(exc):
+                logger.warning(f"Cross section request error: {exc}")
+                raise HTTPException(status_code=400, detail=str(exc))
+            logger.exception("extract_cross_section failed with RuntimeError")
+            raise HTTPException(status_code=500, detail=str(exc))
+        except Exception as exc:
+            logger.exception("get_cross_section failed")
+            raise HTTPException(status_code=500, detail=str(exc))
+
+#######################################
+
+def _png_file_response(full_path: str) -> FileResponse:
+    ext = os.path.splitext(full_path)[1]
+    headers = {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Vary": "Origin",
+        "ETag": f'"{full_path}-v1"',
+    }
+    media_type = "image/webp" if ext == '.webp' else "image/png"
+    return FileResponse(full_path, media_type=media_type, headers=headers)
+
 
 @app.get("/png/{source}/{var}/{dt}/{depth}")
 async def get_png(source: str, var: str, dt: str, depth: str):
-    """Serve a preprocessed PNG/WebP tile for variable/datetime/depth.
+    """Serve a WebP/PNG tile for variable/datetime/depth.
 
-    All depths are preprocessed ahead of time (see process/SSC's `image` step) —
-    this route only ever serves an existing file, never generates one."""
+    Most tiles are preprocessed ahead of time (see process/SSC's `image`
+    step) and served directly below. For anything that step hasn't covered —
+    historical dates it never ran for, and daily/monthly bin modes, which it
+    never pre-renders at all (see CLAUDE.md) — this route falls back to
+    rendering the tile on demand straight from ClickHouse (modules/
+    extract_image.py) and caches it to disk at the same path, so only the
+    first request for a given source/var/dt/depth pays the generation cost.
+    `dt`'s shape alone decides hourly vs. daily vs. monthly (see
+    extract_image.resolve_bin_mode) — no separate bin_mode param."""
     # Serve the PNG file for a specific variable, datetime, and depth
     safe_source = os.path.basename(source)
     safe_var = os.path.basename(var)
@@ -368,24 +510,39 @@ async def get_png(source: str, var: str, dt: str, depth: str):
     if safe_source != "SalishSeaCast":
         raise HTTPException(status_code=400, detail=f"Unsupported source: {safe_source}")
 
-    for image_root in _get_image_roots(safe_source):
+    image_roots = _get_image_roots(safe_source)
+    for image_root in image_roots:
         path = os.path.join(image_root, safe_var, safe_dt)
         for ext in ['.webp', '.png']:
             filename = f"{safe_depth}{ext}"
             full_path = os.path.join(path, filename)
+            logger.debug(f"Checking for PNG/WebP file: {full_path}")
 
             exists = await run_in_threadpool(os.path.isfile, full_path)
             if exists:
-                headers = {
-                    "Cache-Control": "public, max-age=31536000, immutable",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, OPTIONS",
-                    "Access-Control-Allow-Headers": "*",
-                    "Vary": "Origin",
-                    "ETag": f'"{full_path}-v1"',
-                }
-                media_type = "image/webp" if ext == '.webp' else "image/png"
-                return FileResponse(full_path, media_type=media_type, headers=headers)
+                return _png_file_response(full_path)
+
+    # Not pre-generated — try rendering it on demand from ClickHouse. Writes
+    # into the first (primary, non-archive) image root so it's found by the
+    # fast path above on every later request.
+    generated_path = None
+    async with extract_slot("get_png"):
+        try:
+            generated_path = await asyncio.wait_for(
+                run_in_process(
+                    generate_image, safe_source, safe_var, safe_dt, safe_depth,
+                    image_roots[0] if image_roots else None,
+                ),
+                timeout=THREADPOOL_TIMEOUT,
+            )
+        except Exception:
+            logger.exception(
+                "On-demand image generation failed for %s/%s/%s/%s",
+                safe_source, safe_var, safe_dt, safe_depth,
+            )
+
+    if generated_path:
+        return _png_file_response(generated_path)
 
     raise HTTPException(status_code=404, detail=f"PNG not found for {var}/{dt}/{depth}")
 
@@ -469,62 +626,69 @@ async def fn_extract_timeseries(request: timeseriesRequest, http_request: Reques
 
     # Reject requests if we are already at concurrency limit
     logger.info(f"START extractTimeseries: {request.source}, {request.var}, {location_desc}, depth={request.depth}, from={request.fromDate}, to={request.toDate}")
-    try:
-        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
-    except (asyncio.TimeoutError, Exception):
-        logger.warning("Semaphore timeout in extractTimeseries")
-        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
-
-    try:
-        # use provided depth exactly (float value passed from frontend); None means all depths
-        depth = float(request.depth) if request.depth is not None else None
-
-        result = await asyncio.wait_for(
-            run_in_process(
-                extract_timeseries,
-                source=request.source,
-                var=request.var,
-                lat=request.lat,
-                lon=request.lon,
-                polygon=request.polygon,
-                depth=depth,
-                from_date=request.fromDate,
-                to_date=request.toDate,
-            ),
-            timeout=THREADPOOL_TIMEOUT,
-        )
-        payload = _format_timeseries_result(result)
-        logger.info(
-            "FINISH extractTimeseries: %s, %s, depth=%s, from=%s, to=%s - returned %s points",
-            request.var,
-            location_desc,
-            request.depth if request.depth is not None else "all",
-            request.fromDate,
-            request.toDate,
-            len(payload.get("time", [])),
-        )
+    key = response_cache.make_key("extractTimeseries", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
         capture_event(http_request, "extract_timeseries", {
             "source": request.source, "var": request.var,
             "lat": request.lat, "lon": request.lon,
             "polygon": has_polygon, "depth": request.depth,
             "fromDate": request.fromDate, "toDate": request.toDate,
         })
-        return payload
-    except RuntimeError as exc:
-        # Out-of-domain coordinates or grid issues are client errors (400), not server errors (500)
-        if ("km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc)
-                or "does not cover any active marine grid cells" in str(exc)
-                or "No data available at depth" in str(exc)):
-            logger.warning(f"Out-of-domain or invalid coordinates: {exc}")
-            raise HTTPException(status_code=400, detail=str(exc))
-        # Other RuntimeErrors are unexpected, treat as 500
-        logger.exception("extract_timeseries failed with RuntimeError")
-        raise HTTPException(status_code=500, detail=str(exc))
-    except Exception as exc:
-        logger.exception("extract_timeseries failed")
-        raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        _extract_semaphore.release()
+        return cached
+    async with extract_slot("extractTimeseries"):
+        try:
+            # use provided depth exactly (float value passed from frontend); None means all depths
+            depth = float(request.depth) if request.depth is not None else None
+
+            result = await asyncio.wait_for(
+                run_in_process(
+                    extract_timeseries,
+                    source=request.source,
+                    var=request.var,
+                    lat=request.lat,
+                    lon=request.lon,
+                    polygon=request.polygon,
+                    depth=depth,
+                    from_date=request.fromDate,
+                    to_date=request.toDate,
+                ),
+                timeout=THREADPOOL_TIMEOUT,
+            )
+            payload = _format_timeseries_result(result)
+            response_cache.set_model(key, payload)
+            logger.info(
+                "FINISH extractTimeseries: %s, %s, depth=%s, from=%s, to=%s - returned %s points",
+                request.var,
+                location_desc,
+                request.depth if request.depth is not None else "all",
+                request.fromDate,
+                request.toDate,
+                len(payload.get("time", [])),
+            )
+            capture_event(http_request, "extract_timeseries", {
+                "source": request.source, "var": request.var,
+                "lat": request.lat, "lon": request.lon,
+                "polygon": has_polygon, "depth": request.depth,
+                "fromDate": request.fromDate, "toDate": request.toDate,
+            })
+            return payload
+        except OutsideDomainError as exc:
+            return _outside_domain_response(exc)
+        except RuntimeError as exc:
+            # Grid issues are client errors (400), not server errors (500).
+            # (Out-of-domain coordinates are handled above.)
+            if ("Grid table is empty" in str(exc)
+                    or "does not cover any active marine grid cells" in str(exc)
+                    or "No data available at depth" in str(exc)):
+                logger.warning(f"Invalid coordinates: {exc}")
+                raise HTTPException(status_code=400, detail=str(exc))
+            # Other RuntimeErrors are unexpected, treat as 500
+            logger.exception("extract_timeseries failed with RuntimeError")
+            raise HTTPException(status_code=500, detail=str(exc))
+        except Exception as exc:
+            logger.exception("extract_timeseries failed")
+            raise HTTPException(status_code=500, detail=str(exc))
 
 #######################################
 
@@ -535,20 +699,31 @@ class climate_timeseriesRequest(BaseModel):
     depth: float
     fromDate: str
     toDate: str
+    bin_mode: str = 'daily'
 
 @app.post("/extract_climateTimeseries")
 async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_request: Request):
-    logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
+    logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}, bin_mode={request.bin_mode}")
+    key = response_cache.make_key("extract_climateTimeseries", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
+        capture_event(http_request, "extract_climate_timeseries", {
+            "var": request.var, "lat": request.lat, "lon": request.lon,
+            "depth": request.depth, "fromDate": request.fromDate, "toDate": request.toDate,
+        })
+        return cached
     try:
         result = await run_in_threadpool(
             extract_climate_timeseries,
             lat=request.lat, lon=request.lon, variable=request.var,
             depth=request.depth, from_date=request.fromDate, to_date=request.toDate,
+            bin_mode=request.bin_mode,
         )
         if result is None:
             logger.error("extract_climate_timeseries returned None")
             raise HTTPException(status_code=500, detail="Climatology extraction failed")
 
+        response_cache.set_model(key, result)
         logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
         capture_event(http_request, "extract_climate_timeseries", {
             "var": request.var, "lat": request.lat, "lon": request.lon,
@@ -557,6 +732,8 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_
         return result
     except HTTPException:
         raise
+    except OutsideDomainError as exc:
+        return _outside_domain_response(exc)
     except Exception as exc:
         logger.exception("extract_climate_timeseries failed")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -568,6 +745,7 @@ class minmaxRequest(BaseModel):
     var: str
     dt: str
     depth: Optional[float] = None
+    bin_mode: str = "hourly"
     north: Optional[float] = None
     south: Optional[float] = None
     east: Optional[float] = None
@@ -577,57 +755,57 @@ class minmaxRequest(BaseModel):
 async def fn_get_minmax(request: minmaxRequest, http_request: Request):
     """Extract min and max values for a variable at a specific datetime and depth."""
     logger.info(f"START getMinMax: source={request.source}, var={request.var}, dt={request.dt}, depth={request.depth}")
-    try:
-        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
-    except (asyncio.TimeoutError, Exception):
-        logger.warning("Semaphore timeout in getMinMax")
-        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
-
-    try:
-        from datetime import datetime
-
-        source = request.source
-        var = request.var
-
-        if source != "SalishSeaCast":
-            logger.error(f"Unsupported source: {source}")
-            raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
-
-        # Parse datetime string (ISO format: YYYY-MM-DDTHH:mm:ss)
-        dt = datetime.fromisoformat(request.dt.replace('Z', '+00:00'))
-
-        min_val, max_val = await asyncio.wait_for(
-            run_in_process(extract_minmax,
-                source=source,
-                var=var,
-                dt=dt,
-                depth=request.depth,
-                north=request.north,
-                south=request.south,
-                east=request.east,
-                west=request.west),
-            timeout=THREADPOOL_TIMEOUT,
-        )
-
-        logger.info(f"FINISH getMinMax: source={request.source}, var={request.var}, range=[{min_val}, {max_val}]")
+    key = response_cache.make_key("getMinMax", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
         capture_event(http_request, "get_minmax", {
             "source": request.source, "var": request.var,
-            "dt": request.dt, "depth": request.depth,
+            "dt": request.dt, "depth": request.depth, "bin_mode": request.bin_mode,
         })
-        return {"min": min_val, "max": max_val}
-    except HTTPException:
-        raise
-    except RuntimeError as exc:
-        if "No data available for" in str(exc):
-            logger.warning(f"No data for getMinMax: {exc}")
-            raise HTTPException(status_code=400, detail=str(exc))
-        logger.exception("getMinMax failed with RuntimeError")
-        raise HTTPException(status_code=500, detail=str(exc))
-    except Exception as exc:
-        logger.exception("getMinMax failed")
-        raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        _extract_semaphore.release()
+        return cached
+    async with extract_slot("getMinMax"):
+        try:
+            source = request.source
+            var = request.var
+
+            _require_ssc(source)
+
+            # Parse datetime string (ISO format: YYYY-MM-DDTHH:mm:ss)
+            dt = datetime.fromisoformat(request.dt.replace('Z', '+00:00'))
+
+            min_val, max_val = await asyncio.wait_for(
+                run_in_process(extract_minmax,
+                    source=source,
+                    var=var,
+                    dt=dt,
+                    depth=request.depth,
+                    bin_mode=request.bin_mode,
+                    north=request.north,
+                    south=request.south,
+                    east=request.east,
+                    west=request.west),
+                timeout=THREADPOOL_TIMEOUT,
+            )
+
+            result = {"min": min_val, "max": max_val}
+            response_cache.set_model(key, result)
+            logger.info(f"FINISH getMinMax: source={request.source}, var={request.var}, range=[{min_val}, {max_val}]")
+            capture_event(http_request, "get_minmax", {
+                "source": request.source, "var": request.var,
+                "dt": request.dt, "depth": request.depth, "bin_mode": request.bin_mode,
+            })
+            return result
+        except HTTPException:
+            raise
+        except RuntimeError as exc:
+            if "No data available for" in str(exc):
+                logger.warning(f"No data for getMinMax: {exc}")
+                raise HTTPException(status_code=400, detail=str(exc))
+            logger.exception("getMinMax failed with RuntimeError")
+            raise HTTPException(status_code=500, detail=str(exc))
+        except Exception as exc:
+            logger.exception("getMinMax failed")
+            raise HTTPException(status_code=500, detail=str(exc))
 
 #######################################
 
@@ -637,99 +815,64 @@ class profileRequest(BaseModel):
     dt: str
     lat: float
     lng: float
+    bin_mode: str = "hourly"
 
 @app.post("/getProfile")
 async def fn_get_profile(request: profileRequest, http_request: Request):
-    logger.info(f"START getProfile: source={request.source}, var={request.var}, lat={request.lat}, lng={request.lng}, dt={request.dt}")
-    try:
-        await asyncio.wait_for(_extract_semaphore.acquire(), timeout=10.0)
-    except (asyncio.TimeoutError, Exception):
-        logger.warning("Semaphore timeout in getProfile")
-        raise HTTPException(status_code=429, detail="Too many concurrent extract requests, try again later")
-
-    try:
-        source = request.source
-        var = request.var or "temperature"  # Default to temperature if not specified
-        lat = request.lat
-        lng = request.lng
-        dt = request.dt
-
-        if source != "SalishSeaCast":
-            logger.error(f"Unsupported source: {source}")
-            raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
-
-        profile = await asyncio.wait_for(
-            run_in_process(
-                extract_profile,
-                source=source,
-                var=var,
-                lat=lat,
-                lon=lng,
-                dt=dt,
-            ),
-            timeout=THREADPOOL_TIMEOUT,
-        )
-        logger.info(f"FINISH getProfile: source={source}, var={var}, lat={lat}, lng={lng}, dt={dt} - returned {len(profile)} points")
+    logger.info(f"START getProfile: source={request.source}, var={request.var}, lat={request.lat}, lng={request.lng}, dt={request.dt}, bin_mode={request.bin_mode}")
+    key = response_cache.make_key("getProfile", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
         capture_event(http_request, "get_profile", {
-            "source": source, "var": var, "lat": lat, "lng": lng, "dt": dt,
+            "source": request.source, "var": request.var or "temperature", "lat": request.lat,
+            "lng": request.lng, "dt": request.dt, "bin_mode": request.bin_mode,
         })
-        return profile
-    except RuntimeError as exc:
-        # Out-of-domain coordinates, empty grid, or unmatched time are client errors (400), not server errors (500)
-        if "km from the nearest grid point" in str(exc) or "Grid table is empty" in str(exc) or "No data available" in str(exc):
-            logger.warning(f"Out-of-domain or invalid coordinates/time: {exc}")
-            raise HTTPException(status_code=400, detail=str(exc))
-        # Other RuntimeErrors are unexpected, treat as 500
-        logger.exception("extract_profile failed with RuntimeError")
-        raise HTTPException(status_code=500, detail=str(exc))
-    except Exception as exc:
-        logger.exception("extract_profile failed")
-        raise HTTPException(status_code=500, detail=str(exc))
-    finally:
-        _extract_semaphore.release()
+        return cached
+    async with extract_slot("getProfile"):
+        try:
+            source = request.source
+            var = request.var or "temperature"  # Default to temperature if not specified
+            lat = request.lat
+            lng = request.lng
+            dt = request.dt
+            bin_mode = request.bin_mode
 
-#######################################
+            _require_ssc(source)
 
-class evalRequest(BaseModel):
-    sensor: str
-    variable: str
-    model: str
-
-@app.post("/getEval")
-async def fn_get_eval(request: evalRequest, http_request: Request):
-    logger.info(f"START getEval: sensor={request.sensor}, variable={request.variable}, model={request.model}")
-    
-    eval_data_dir = os.getenv("EVAL_DATA_DIR", "/opt/data/eval")
-    eval_nc_path = os.path.join(eval_data_dir, f"{request.sensor}.nc")
-    
-    # Validate model parameter
-    valid_models = ["SSC"]
-    model = request.model.strip()  # Remove leading/trailing whitespace
-    if model not in valid_models:
-        raise HTTPException(status_code=400, detail=f"Invalid model: {model}. Must be one of {valid_models}")
-    
-    try:
-        result = await run_in_threadpool(
-            extract_eval_data,
-            nc_path=eval_nc_path,
-            variable=request.variable,
-            model=model
-        )
-        
-        logger.info(f"FINISH getEval: {request.variable} - returned {len(result['time'])} timesteps for model={model}")
-        capture_event(http_request, "get_eval", {
-            "sensor": request.sensor, "variable": request.variable, "model": model,
-        })
-        return result
-    except FileNotFoundError as e:
-        logger.error(f"Evaluation file not found: {e}")
-        raise HTTPException(status_code=404, detail=str(e))
-    except (KeyError, ValueError) as e:
-        logger.error(f"Invalid request for getEval: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as exc:
-        logger.exception("extract_eval_data failed")
-        raise HTTPException(status_code=500, detail=str(exc))
+            profile = await asyncio.wait_for(
+                run_in_process(
+                    extract_profile,
+                    source=source,
+                    var=var,
+                    lat=lat,
+                    lon=lng,
+                    dt=dt,
+                    bin_mode=bin_mode,
+                ),
+                timeout=THREADPOOL_TIMEOUT,
+            )
+            response_cache.set_model(key, profile)
+            logger.info(f"FINISH getProfile: source={source}, var={var}, lat={lat}, lng={lng}, dt={dt}, bin_mode={bin_mode} - returned {len(profile)} points")
+            capture_event(http_request, "get_profile", {
+                "source": source, "var": var, "lat": lat, "lng": lng, "dt": dt, "bin_mode": bin_mode,
+            })
+            return profile
+        except HTTPException:
+            raise
+        except OutsideDomainError as exc:
+            return _outside_domain_response(exc)
+        except RuntimeError as exc:
+            # Empty grid or unmatched time are client errors (400), not server
+            # errors (500). (Out-of-domain coordinates are handled above.)
+            if "Grid table is empty" in str(exc) or "No data available" in str(exc):
+                logger.warning(f"Invalid coordinates/time: {exc}")
+                raise HTTPException(status_code=400, detail=str(exc))
+            # Other RuntimeErrors are unexpected, treat as 500
+            logger.exception("extract_profile failed with RuntimeError")
+            raise HTTPException(status_code=500, detail=str(exc))
+        except Exception as exc:
+            logger.exception("extract_profile failed")
+            raise HTTPException(status_code=500, detail=str(exc))
 
 #######################################
 
@@ -765,6 +908,15 @@ async def analysis_timeseries(request: AnalysisRequest, http_request: Request):
 
     Returns a flat daily {time, value} series.
     """
+    key = response_cache.make_key("analysis_timeseries", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
+        capture_event(http_request, "analysis_timeseries", {
+            "variable": request.primaryMetric.variable, "stat": request.primaryMetric.stat,
+            "depth": request.depth, "mode": "polygon" if (request.polygon and len(request.polygon) >= 3) else "point",
+            "yearRange": request.temporal.get("yearRange"),
+        })
+        return cached
     try:
         has_polygon = request.polygon and len(request.polygon) >= 3
         has_point = request.lat is not None and request.lon is not None
@@ -805,6 +957,7 @@ async def analysis_timeseries(request: AnalysisRequest, http_request: Request):
             stat=request.primaryMetric.stat,
             year_range=request.temporal["yearRange"],
         )
+        response_cache.set_model(key, result)
         capture_event(http_request, "analysis_timeseries", {
             "variable": request.primaryMetric.variable, "stat": request.primaryMetric.stat,
             "depth": request.depth, "mode": "polygon" if has_polygon else "point",
@@ -842,7 +995,9 @@ async def sync_hourly(request: SyncHourlyRequest, authorization: Optional[str] =
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        return await run_in_threadpool(import_native_file, request.date, request.expected_rows)
+        result = await run_in_threadpool(import_native_file, request.date, request.expected_rows)
+        response_cache.invalidate_all()
+        return result
     except SyncConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except SyncError as exc:
@@ -865,7 +1020,9 @@ async def sync_daily(request: SyncHourlyRequest, authorization: Optional[str] = 
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
-        return await run_in_threadpool(import_daily_native_file, request.date, request.expected_rows)
+        result = await run_in_threadpool(import_daily_native_file, request.date, request.expected_rows)
+        response_cache.invalidate_all()
+        return result
     except SyncConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except SyncError as exc:

@@ -1,42 +1,38 @@
 <template>
-  <div class="d-flex h-100" style="overflow:hidden;">
-    <div class="pa-2 d-flex flex-column flex-shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
+  <div class="flex h-full" style="overflow:hidden;">
+    <div class="p-2 flex flex-col shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Variables (2-4)</div>
-      <v-select v-model="selectedVariables" :items="selectableVariables" item-title="name" item-value="id" multiple
-        chips closable-chips hide-details class="mb-3"
-        :return-object="false" @update:model-value="onSelectionChange" />
+      <USelectMenu v-model="selectedVariables" :items="selectableVariables" label-key="name" value-key="id" class="mb-3 w-full" :return-object="false" multiple />
 
       <template v-for="id in selectedVariables" :key="id">
-        <v-alert v-if="errorByVar[id]" type="error" variant="tonal" class="mb-2">
-          {{ varName(id) }}: {{ errorByVar[id] }}
-        </v-alert>
+        <UAlert color="error" variant="subtle" class="mb-2" v-if="errorByVar[id]" :description="`${varName(id)}: ${errorByVar[id]}`" />
       </template>
 
-      <div class="text-caption text-grey mt-2">
+      <div class="text-gray-500 mt-2">
         Pearson correlation across the date-aligned overlap of each variable pair, at the selected point/depth.
         Click a matrix cell to see the underlying scatter.
       </div>
     </div>
 
-    <div class="flex-grow-1 d-flex" style="min-width:0;">
-      <div style="width:50%; min-width:0; position:relative;" class="d-flex flex-column">
-        <div v-if="anyLoading" class="d-flex align-center justify-center"
+    <div class="grow flex" style="min-width:0;">
+      <div style="width:50%; min-width:0; position:relative;" class="flex flex-col">
+        <div v-if="anyLoading" class="flex items-center justify-center"
           style="position:absolute; inset:0; z-index:1; background:rgba(0,0,0,0.45);">
-          <v-progress-circular indeterminate color="warning" size="40" />
+          <UIcon name="i-mdi-loading" class="animate-spin size-[40px] text-warning" />
         </div>
-        <div v-else-if="readyVariables.length < 2" class="d-flex align-center justify-center h-100 text-caption text-grey">
+        <div v-else-if="readyVariables.length < 2" class="flex items-center justify-center h-full text-gray-500">
           Select at least one more variable to compare
         </div>
         <!-- Container stays mounted across loading toggles — destroying/recreating it would
              orphan the ECharts instance, which keeps a reference to the old DOM node and
              silently stops updating (see Correlation matrix-frozen-at-one-cell bug). -->
-        <div v-show="!anyLoading && readyVariables.length >= 2" ref="matrixContainerRef" class="w-100 h-100" />
+        <div v-show="!anyLoading && readyVariables.length >= 2" ref="matrixContainerRef" class="w-full h-full" />
       </div>
       <div style="width:50%; min-width:0; border-left:1px solid rgba(255,255,255,0.08);">
-        <div v-if="!selectedPair" class="d-flex align-center justify-center h-100 text-caption text-grey">
+        <div v-if="!selectedPair" class="flex items-center justify-center h-full text-gray-500">
           Click a matrix cell to inspect a pair
         </div>
-        <div v-show="selectedPair" ref="scatterContainerRef" class="w-100 h-100" />
+        <div v-show="selectedPair" ref="scatterContainerRef" class="w-full h-full" />
       </div>
     </div>
   </div>
@@ -45,9 +41,11 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { registerEchartsDarkTheme } from '../../../composables/useEchartsTheme'
-import type { SeriesPoint, AnalysisLocation } from '../../../composables/useAnalysisFetch'
-import { availableVariables, filterBySeason, pearsonCorrelation, joinSeriesByDate, linearRegression } from '../../../composables/useAnalysisStatistics'
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
+import type { SeriesPoint, AnalysisLocation } from '~~/composables/useAnalysisFetch'
+import { availableVariables, filterBySeason, pearsonCorrelation, joinSeriesByDate, linearRegression } from '~~/composables/useAnalysisStatistics'
+import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
 
 const props = defineProps<{
   primarySeries: SeriesPoint[]
@@ -60,6 +58,8 @@ const props = defineProps<{
 }>()
 
 function varName(id: string) { return availableVariables.find(v => v.id === id)?.name || id }
+const { displayUnit } = useVariableRegistry()
+function axisName(id: string) { const u = displayUnit(id); return u ? `${varName(id)} (${u})` : varName(id) }
 
 const selectableVariables = availableVariables
 const MAX_VARS = 4
@@ -115,6 +115,74 @@ const matrix = computed(() => {
 })
 
 const selectedPair = ref<[string, string] | null>(null)
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// The matrix goes out long (one row per pair) rather than as a grid — a square
+// of r values is awkward to join against anything, and this way the pair count
+// behind each coefficient can travel with it. The joined series is the scatter's
+// data, widened so every selected variable is one column against a shared date.
+const csv = useCsvExport()
+
+const csvMatrixRows = computed(() => {
+  const vars = readyVariables.value
+  const out: Record<string, unknown>[] = []
+  for (let i = 0; i < vars.length; i++) {
+    for (let j = 0; j < vars.length; j++) {
+      if (i === j) { out.push({ x: vars[i], y: vars[j], r: 1, n: null }); continue }
+      const { a, b } = joinSeriesByDate(seasonalByVar.value[vars[i]], seasonalByVar.value[vars[j]])
+      out.push({ x: vars[i], y: vars[j], r: a.length >= 2 ? pearsonCorrelation(a, b) : null, n: a.length })
+    }
+  }
+  return out
+})
+
+/** Union of dates across the selected variables, one column each. */
+const csvJoinedRows = computed(() => {
+  const vars = readyVariables.value
+  const byDate = new Map<string, Record<string, unknown>>()
+  for (const id of vars) {
+    for (const d of seasonalByVar.value[id] ?? []) {
+      if (d.value == null) continue
+      let row = byDate.get(d.time)
+      if (!row) { row = { time: d.time }; byDate.set(d.time, row) }
+      row[id] = d.value
+    }
+  }
+  return Array.from(byDate.values()).sort((a, b) => String(a.time).localeCompare(String(b.time)))
+})
+
+if (csv) csv.register((): CsvDataset[] => {
+  const vars = readyVariables.value
+  if (!vars.length) return []
+  const meta = csvMeta(csv.context.value, [
+    ['variables', vars.map(id => varName(id)).join(', ')],
+    ['method', 'Pearson correlation over dates where both variables have a value'],
+  ])
+  return [
+    {
+      label: 'Correlation matrix',
+      slug: 'correlation-matrix',
+      columns: [
+        { header: 'variable_x', accessorKey: 'x' },
+        { header: 'variable_y', accessorKey: 'y' },
+        { header: 'pearson_r', accessorKey: 'r' },
+        { header: 'n_days', accessorKey: 'n' },
+      ],
+      rows: csvMatrixRows.value,
+      meta,
+    },
+    {
+      label: 'Joined daily series',
+      slug: 'correlation-series',
+      columns: [
+        { header: 'time', accessorKey: 'time' },
+        ...vars.map(id => ({ header: axisName(id), accessorKey: id })),
+      ],
+      rows: csvJoinedRows.value,
+      meta,
+    },
+  ]
+})
 
 // --- MATRIX HEATMAP ---
 const matrixContainerRef = ref<HTMLDivElement | null>(null)
@@ -182,8 +250,8 @@ function renderScatter() {
   scatterInstance.setOption({
     tooltip: { formatter: (p: any) => Array.isArray(p.value) ? `${varName(xVar)}: ${p.value[0]}<br/>${varName(yVar)}: ${p.value[1]}<br/>Year: ${p.value[2]}` : '' },
     grid: { left: '10%', right: '5%', bottom: '12%', top: '8%', containLabel: true },
-    xAxis: { type: 'value', name: varName(xVar), nameLocation: 'middle', nameGap: 28, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
-    yAxis: { type: 'value', name: varName(yVar), nameLocation: 'middle', nameGap: 40, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
+    xAxis: { type: 'value', name: axisName(xVar), nameLocation: 'middle', nameGap: 28, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
+    yAxis: { type: 'value', name: axisName(yVar), nameLocation: 'middle', nameGap: 40, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
     series: [
       { type: 'scatter', symbolSize: 4, data: points, itemStyle: { color: '#58d9f9', opacity: 0.5 } },
       { type: 'line', data: trendLine, showSymbol: false, lineStyle: { color: '#ff9800', width: 1.5, type: 'dashed' } },

@@ -1,0 +1,28 @@
+/*
+ * Tailwind v4 + Nuxt UI entry point.
+ *
+ * MIGRATION NOTE: while Vuetify and Nuxt UI coexist on this branch, Tailwind's
+ * preflight is active and does reset bare elements (button, h1-h6, ul, table...).
+ * Vuetify styles almost everything through .v-* classes, so its components are
+ * largely unaffected, but hand-written scoped CSS that leaned on browser
+ * defaults will shift. That breakage is intentional and useful: it marks what
+ * still needs converting. Delete this note once Vuetify is gone.
+ */
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/*
+ * Dark-only, matching the app's long-standing behaviour (Vuetify was hardcoded
+ * to its dark theme). `colorMode` is pinned in nuxt.config.ts; this keeps the
+ * page background painted even before the color-mode class lands, so there is
+ * no light flash on first paint.
+ */
+html {
+  color-scheme: dark;
+}
+
+/* Make Inter the default sans stack so Nuxt UI's own components inherit it
+   rather than Tailwind's ui-sans-serif default. */
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}

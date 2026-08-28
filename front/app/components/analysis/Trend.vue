@@ -1,34 +1,34 @@
 <template>
-  <div class="d-flex h-100" style="overflow:hidden;">
-    <div class="pa-3 d-flex flex-column flex-shrink-0" style="width:240px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
+  <div class="flex h-full" style="overflow:hidden;">
+    <div class="p-3 flex flex-col shrink-0" style="width:240px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Theil-Sen slope</div>
-      <div class="text-h6 mb-3">{{ result ? result.theilSen.slope.toFixed(4) : '—' }} <span class="text-caption text-grey">/ year</span></div>
+      <div class="mb-3">{{ result ? result.theilSen.slope.toFixed(4) : '—' }} <span class="text-gray-500">{{ unit ? `${unit} / year` : '/ year' }}</span></div>
 
       <div class="ctrl-label">Mann-Kendall significance</div>
-      <div class="text-body-2 mb-1">
-        <v-chip size="small" :color="trendColor" variant="tonal">{{ result?.mk.trend ?? '—' }}</v-chip>
+      <div class="mb-1">
+        <UBadge size="sm" :color="trendColor" variant="subtle" class="rounded-full">{{ result?.mk.trend ?? '—' }}</UBadge>
       </div>
-      <div class="text-caption text-grey mb-3">p = {{ result ? result.mk.p.toFixed(4) : '—' }} (α = 0.05)</div>
+      <div class="text-gray-500 mb-3">p = {{ result ? result.mk.p.toFixed(4) : '—' }} (α = 0.05)</div>
 
       <div class="ctrl-label">Detail</div>
-      <div class="text-caption text-grey">S = {{ result?.mk.S ?? '—' }}</div>
-      <div class="text-caption text-grey">Z = {{ result ? result.mk.Z.toFixed(3) : '—' }}</div>
-      <div class="text-caption text-grey mb-3">n (years) = {{ annualMeans.length }}</div>
+      <div class="text-gray-500">S = {{ result?.mk.S ?? '—' }}</div>
+      <div class="text-gray-500">Z = {{ result ? result.mk.Z.toFixed(3) : '—' }}</div>
+      <div class="text-gray-500 mb-3">n (years) = {{ annualMeans.length }}</div>
 
-      <div class="text-caption text-grey mt-2">
+      <div class="text-gray-500 mt-2">
         Computed on season-filtered annual means (not raw daily values) — Mann-Kendall tests for a
         monotonic trend, Theil-Sen estimates its robust magnitude.
       </div>
     </div>
 
-    <div class="flex-grow-1" style="min-width:0;">
-      <div v-if="annualMeans.length < 3" class="d-flex align-center justify-center h-100 text-caption text-grey">
+    <div class="grow" style="min-width:0;">
+      <div v-if="annualMeans.length < 3" class="flex items-center justify-center h-full text-gray-500">
         Not enough years of data to compute a trend.
       </div>
       <!-- Stays mounted via v-show (not v-else) once shown once, so the ECharts instance
            never gets orphaned by a destroyed/recreated container — see the same bug fixed
            in CompoundStress.vue and Correlation.vue. -->
-      <div v-show="annualMeans.length >= 3" ref="chartContainerRef" class="w-100 h-100" />
+      <div v-show="annualMeans.length >= 3" ref="chartContainerRef" class="w-full h-full" />
     </div>
   </div>
 </template>
@@ -36,11 +36,16 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { registerEchartsDarkTheme } from '../../../composables/useEchartsTheme'
-import type { SeriesPoint } from '../../../composables/useAnalysisFetch'
-import { filterBySeason, groupByYear, mannKendallTest, theilSenSlope } from '../../../composables/useAnalysisStatistics'
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
+import type { SeriesPoint } from '~~/composables/useAnalysisFetch'
+import { filterBySeason, groupByYear, mannKendallTest, theilSenSlope } from '~~/composables/useAnalysisStatistics'
+import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
 
-const props = defineProps<{ series: SeriesPoint[]; season: string }>()
+const props = defineProps<{ series: SeriesPoint[]; season: string; variable?: string }>()
+
+const { displayUnit } = useVariableRegistry()
+const unit = computed(() => props.variable ? displayUnit(props.variable) : '')
 
 const annualMeans = computed(() => {
   const seasonal = filterBySeason(props.series, props.season)
@@ -55,6 +60,47 @@ const result = computed(() => {
   const mk = mannKendallTest(annualMeans.value.map(r => r.mean))
   const theilSen = theilSenSlope(annualMeans.value.map(r => ({ x: r.year, y: r.mean })))
   return { mk, theilSen }
+})
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// The annual means are the chart's points; the fitted Theil-Sen value per year
+// rides along as a second column so the trend line is reproducible from the file
+// rather than only visible on screen. The test statistics go in the preamble —
+// they're one result for the whole series, not a per-row value.
+const csv = useCsvExport()
+
+const csvRows = computed(() => annualMeans.value.map(r => ({
+  year: r.year,
+  mean: r.mean,
+  theil_sen_fit: result.value
+    ? result.value.theilSen.intercept + result.value.theilSen.slope * r.year
+    : null,
+})))
+
+if (csv) csv.register((): CsvDataset[] => {
+  if (!csvRows.value.length) return []
+  const u = unit.value ? ` (${unit.value})` : ''
+  const r = result.value
+  return [{
+    label: 'Annual means & trend',
+    slug: 'trend-annual-means',
+    columns: [
+      { header: 'year', accessorKey: 'year' },
+      { header: `annual_mean${u}`, accessorKey: 'mean' },
+      { header: `theil_sen_fit${u}`, accessorKey: 'theil_sen_fit' },
+    ],
+    rows: csvRows.value,
+    meta: csvMeta(csv.context.value, r ? [
+      ['trend', r.mk.trend],
+      ['theil_sen_slope_per_year', r.theilSen.slope],
+      ['theil_sen_slope_per_decade', r.theilSen.slope * 10],
+      ['theil_sen_intercept', r.theilSen.intercept],
+      ['mann_kendall_S', r.mk.S],
+      ['mann_kendall_Z', r.mk.Z],
+      ['mann_kendall_p', r.mk.p],
+      ['n_years', csvRows.value.length],
+    ] : [['note', 'fewer than 3 years — no trend test was run']]),
+  }]
 })
 
 const trendColor = computed(() => {
@@ -82,8 +128,11 @@ function render() {
     tooltip: { trigger: 'axis' },
     legend: { data: ['Annual Mean', 'Theil-Sen Trend'], top: 4, textStyle: { fontSize: 10 } },
     grid: { left: '4%', right: '3%', bottom: '8%', top: '18%', containLabel: true },
-    xAxis: { type: 'category', data: years, axisLabel: { fontSize: 9, color: '#ccc' } },
-    yAxis: { type: 'value', axisLabel: { fontSize: 10, color: '#ccc' }, scale: true },
+    xAxis: { type: 'category', data: years, name: 'Year', nameLocation: 'middle', nameGap: 22, nameTextStyle: { fontSize: 9, color: '#ccc' }, axisLabel: { fontSize: 9, color: '#ccc' } },
+    yAxis: {
+      type: 'value', name: unit.value, nameLocation: 'middle', nameGap: 38,
+      axisLabel: { fontSize: 10, color: '#ccc' }, scale: true,
+    },
     series: [
       { name: 'Annual Mean', type: 'line', data: means, symbol: 'circle', symbolSize: 6, itemStyle: { color: '#58d9f9' }, lineStyle: { color: '#58d9f9' } },
       { name: 'Theil-Sen Trend', type: 'line', data: trendLine, symbol: 'none', lineStyle: { color: '#ff9800', type: 'dashed', width: 1.5 } },

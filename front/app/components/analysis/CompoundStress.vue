@@ -1,39 +1,37 @@
 <template>
-  <div class="d-flex h-100" style="overflow:hidden;">
-    <div class="pa-2 d-flex flex-column flex-shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
+  <div class="flex h-full" style="overflow:hidden;">
+    <div class="p-2 flex flex-col shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Primary variable</div>
-      <div class="text-caption mb-3">{{ varName(primaryVariable) }} {{ primaryDirection === '>' ? '>' : '<' }} {{ primaryThreshold }}</div>
-      <v-btn-toggle v-model="primaryDirection" mandatory direction="vertical" variant="tonal" class="mb-1">
-        <v-btn value=">" size="x-small">Above</v-btn>
-        <v-btn value="<" size="x-small">Below</v-btn>
-      </v-btn-toggle>
-      <v-text-field v-model.number="primaryThreshold" type="number" hide-details class="mb-3" />
+      <div class="mb-3">{{ varName(primaryVariable) }} {{ primaryDirection === '>' ? '>' : '<' }} {{ primaryThreshold }}{{ displayUnit(primaryVariable) ? ` ${displayUnit(primaryVariable)}` : '' }}</div>
+      <SegmentedControl v-model="primaryDirection" :items="directionItems" size="xs" block
+        class="mb-1" aria-label="Primary threshold direction" />
+      <UInput v-model.number="primaryThreshold" type="number" class="mb-3">
+  <template #trailing><span class="text-xs text-muted">{{ displayUnit(primaryVariable) }}</span></template>
+</UInput>
 
       <div class="ctrl-label">Compare against</div>
-      <v-select v-model="secondaryVariable" :items="otherVariables" item-title="name" item-value="id"
-        hide-details class="mb-3" />
-      <v-btn-toggle v-model="secondaryDirection" mandatory direction="vertical" variant="tonal" class="mb-1">
-        <v-btn value=">" size="x-small">Above</v-btn>
-        <v-btn value="<" size="x-small">Below</v-btn>
-      </v-btn-toggle>
-      <v-text-field v-model.number="secondaryThreshold" type="number" hide-details class="mb-3" />
+      <USelectMenu v-model="secondaryVariable" :items="otherVariables" label-key="name" value-key="id" class="mb-3 w-full" />
+      <SegmentedControl v-model="secondaryDirection" :items="directionItems" size="xs" block
+        class="mb-1" aria-label="Secondary threshold direction" />
+      <UInput v-model.number="secondaryThreshold" type="number" class="mb-3">
+  <template #trailing><span class="text-xs text-muted">{{ displayUnit(secondaryVariable) }}</span></template>
+</UInput>
 
-      <v-alert v-if="secondaryError" type="error" variant="tonal" class="mt-2">{{ secondaryError }}</v-alert>
+      <UAlert color="error" variant="subtle" class="mt-2" v-if="secondaryError" :description="secondaryError" />
     </div>
 
-    <div class="flex-grow-1 d-flex flex-column" style="min-width:0; position:relative;">
-      <div v-if="secondaryLoading" class="d-flex align-center justify-center"
+    <div class="grow flex flex-col" style="min-width:0; position:relative;">
+      <div v-if="secondaryLoading" class="flex items-center justify-center"
         style="position:absolute; inset:0; z-index:1; background:rgba(0,0,0,0.45);">
-        <v-progress-circular indeterminate color="warning" size="40" />
+        <UIcon name="i-mdi-loading" class="animate-spin size-[40px] text-warning" />
       </div>
       <!-- Chart container stays mounted across loading toggles — destroying/recreating it
            would orphan the ECharts instance, which keeps a reference to the old DOM node
            and silently stops updating (see CompoundStress chart-disappears bug). -->
-      <div ref="chartContainerRef" class="w-100" style="height:55%; flex-shrink:0;" />
-      <div class="flex-grow-1 pa-2" style="overflow-y:auto;">
+      <div ref="chartContainerRef" class="w-full" style="height:55%; flex-shrink:0;" />
+      <div class="grow p-2" style="overflow-y:auto;">
         <div class="ctrl-label mb-1">Per-year days both conditions hold</div>
-        <v-data-table :headers="yearHeaders" :items="yearRows" hide-default-footer
-          :items-per-page="-1" :sort-by="[{ key: 'year', order: 'desc' as const }]" class="stats-table" />
+        <UTable v-model:sorting="sorting" :columns="yearHeaders" :data="yearRows" class="stats-table" />
       </div>
     </div>
   </div>
@@ -42,9 +40,16 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import * as echarts from 'echarts'
-import { registerEchartsDarkTheme } from '../../../composables/useEchartsTheme'
-import type { SeriesPoint, AnalysisLocation } from '../../../composables/useAnalysisFetch'
-import { availableVariables, filterBySeason, maskBySeason, breakDataGaps, groupByYear } from '../../../composables/useAnalysisStatistics'
+import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
+import type { SeriesPoint, AnalysisLocation } from '~~/composables/useAnalysisFetch'
+import { availableVariables, filterBySeason, maskBySeason, breakDataGaps, groupByYear } from '~~/composables/useAnalysisStatistics'
+import { useMainStore } from '../../stores/main'
+import SegmentedControl from '../ui/SegmentedControl.vue'
+import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
+const directionItems = [{ value: '>', label: 'Above' }, { value: '<', label: 'Below' }]
+
+const mainStore = useMainStore()
 
 const props = defineProps<{
   primarySeries: SeriesPoint[]
@@ -57,6 +62,8 @@ const props = defineProps<{
 }>()
 
 function varName(id: string) { return availableVariables.find(v => v.id === id)?.name || id }
+const { displayUnit } = useVariableRegistry()
+function axisName(id: string) { const u = displayUnit(id); return u ? `${varName(id)} (${u})` : varName(id) }
 
 const otherVariables = computed(() => availableVariables.filter(v => v.id !== props.primaryVariable))
 const secondaryVariable = ref(otherVariables.value[0]?.id || '')
@@ -82,7 +89,10 @@ async function loadSecondary() {
     secondaryLoading.value = false
   }
 }
-watch(secondaryVariable, loadSecondary)
+// mainStore.unitPreference is included so toggling the secondary variable's
+// display unit re-fetches it too (a cheap cache hit — see useAnalysisFetch.ts) —
+// the primary series already reacts via AnalysisWorkspace.vue's own trigger.
+watch([secondaryVariable, () => mainStore.unitPreference[secondaryVariable.value]], loadSecondary)
 onMounted(loadSecondary)
 
 const seasonalPrimary = computed(() => filterBySeason(props.primarySeries, props.season))
@@ -123,11 +133,56 @@ const yearRows = computed(() => {
   })
 })
 
+// v-data-table sorted by default; TanStack's table needs the initial state given explicitly.
+const sorting = ref([{ id: 'year', desc: true }])
+
 const yearHeaders = [
-  { title: 'Year', key: 'year' },
-  { title: 'Days', key: 'days' },
-  { title: 'Streak', key: 'streak' },
+  { header: 'Year', accessorKey: 'year' },
+  { header: 'Days', accessorKey: 'days' },
+  { header: 'Streak', accessorKey: 'streak' },
 ]
+
+// ── CSV EXPORT ──────────────────────────────────────────────────────────────
+// The per-year rollup answers "how often", the compound days answer "which
+// days" — the second is the one people take away to cross-reference against
+// their own records, and it only exists in the chart's shading on screen.
+const csv = useCsvExport()
+
+const csvConditionMeta = computed(() => [
+  ['condition_primary', `${varName(props.primaryVariable)} ${primaryDirection.value} ${primaryThreshold.value}${displayUnit(props.primaryVariable) ? ` ${displayUnit(props.primaryVariable)}` : ''}`] as [string, unknown],
+  ['condition_secondary', `${varName(secondaryVariable.value)} ${secondaryDirection.value} ${secondaryThreshold.value}${displayUnit(secondaryVariable.value) ? ` ${displayUnit(secondaryVariable.value)}` : ''}`] as [string, unknown],
+  ['note', 'only days where both variables have a value are considered'] as [string, unknown],
+])
+
+if (csv) csv.register((): CsvDataset[] => [
+  {
+    label: 'Per-year compound days',
+    slug: 'compound-stress-by-year',
+    columns: [
+      { header: 'year', accessorKey: 'year' },
+      { header: 'compound_days', accessorKey: 'days' },
+      { header: 'longest_streak_days', accessorKey: 'streak' },
+    ],
+    rows: yearRows.value as unknown as Record<string, unknown>[],
+    meta: csvMeta(csv.context.value, csvConditionMeta.value),
+  },
+  {
+    label: 'Compound days (daily)',
+    slug: 'compound-stress-days',
+    columns: [
+      { header: 'time', accessorKey: 'time' },
+      { header: csvValueHeader(props.primaryVariable), accessorKey: 'a' },
+      { header: csvValueHeader(secondaryVariable.value), accessorKey: 'b' },
+    ],
+    rows: compoundDays.value as unknown as Record<string, unknown>[],
+    meta: csvMeta(csv.context.value, csvConditionMeta.value),
+  },
+])
+
+function csvValueHeader(id: string) {
+  const u = displayUnit(id)
+  return u ? `${id} (${u})` : id
+}
 
 // --- CHART ---
 const chartContainerRef = ref<HTMLDivElement | null>(null)
@@ -148,8 +203,8 @@ function render() {
     grid: { left: '4%', right: '3%', bottom: '12%', top: '18%', containLabel: true },
     xAxis: { type: 'time', axisLabel: { fontSize: 9, color: '#ccc' } },
     yAxis: [
-      { type: 'value', name: varName(props.primaryVariable), nameTextStyle: { fontSize: 9 }, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
-      { type: 'value', name: varName(secondaryVariable.value), nameTextStyle: { fontSize: 9 }, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
+      { type: 'value', name: axisName(props.primaryVariable), nameTextStyle: { fontSize: 9 }, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
+      { type: 'value', name: axisName(secondaryVariable.value), nameTextStyle: { fontSize: 9 }, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
     ],
     dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 14 }],
     series: [
@@ -216,8 +271,8 @@ onBeforeUnmount(() => {
   margin-bottom: 4px;
 }
 
-.stats-table :deep(.v-data-table__td),
-.stats-table :deep(.v-data-table__th) {
+.stats-table :deep(td),
+.stats-table :deep(th) {
   font-size: 0.72rem !important;
   padding: 2px 6px !important;
 }

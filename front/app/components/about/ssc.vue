@@ -1,10 +1,10 @@
 <template>
     <!-- SALISH SEA CAST -->
-    <v-card elevation="5" class="rounded-xl ma-2 pa-6">
-        <v-card-title class="text-title-large mt-4 mb-2">
+    <div class="bg-elevated rounded-lg rounded-xl m-2 p-6">
+        <div class="px-4 pt-4 pb-2 text-lg text-[22px] mt-4 mb-2">
             <a href="https://salishsea.eos.ubc.ca/nemo/" target="_blank" rel="noopener noreferrer">SalishSeaCast NEMO
                 Model</a>
-        </v-card-title>
+        </div>
         <p>Operated by the SalishSeaCast Project Team at the University of British Columbia. (Point of
             Contact:
             <a href="https://www.eoas.ubc.ca/people/susanallen" target="_blank" rel="noopener noreferrer">Dr.
@@ -31,5 +31,5 @@
             <a href="https://github.com/SalishSeaCast/docs/blob/main/CITATION.rst" target="_blank"
                 rel="noopener noreferrer">more</a>
         </p>
-    </v-card>
+    </div>
 </template>

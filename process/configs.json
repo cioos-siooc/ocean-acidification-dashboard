@@ -1,8 +1,0 @@
-{
-  "compression": {
-    "zlib": true,
-    "complevel": 4,
-    "shuffle": true,
-    "apply_to_downloads": true
-  }
-}

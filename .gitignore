@@ -72,9 +72,6 @@ docker-compose.override.yml
 # keep package lock files (optionally) - do not ignore package-lock.json
 # package-lock.json
 
-clickhouse_test/clickhouse_data/
-clickhouse_test/clickhouse_logs/
-clickhouse_test/data/
 clickhouse/logs/
 
 /secrets

@@ -50,5 +50,6 @@ Sensor ingestion (ONC/ERDDAP → ClickHouse) is a separate service — see the t
 directory, not part of `process/`. An older, Postgres-backed `process/sensors/` existed before
 that migration; it's been removed entirely.
 
-- `process/calc_carbon_grid_shm_memmap*.py`, `process/extract_bottom.py` — standalone
-  biogeochemical/bottom-layer calculation scripts, independent of the `SSC/` pipeline above.
+- `process/calc_carbon_grid_shm_memmap_year_aware.py`, `process/extract_bottom.py` — standalone
+  biogeochemical/bottom-layer calculation scripts, independent of the `SSC/` pipeline above (the
+  live pipeline computes pH/Ω via PyCO2SYS in `SSC/compute.py`; these are for ad-hoc, DB-free runs).

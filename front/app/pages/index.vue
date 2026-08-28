@@ -1,162 +1,298 @@
 <template>
-    <!-- <v-navigation-drawer expand-on-hover permanent rail>
-        <v-list>
-            <v-list-item prepend-avatar="https://randomuser.me/api/portraits/women/85.jpg"
-                subtitle="sandra_a88@gmailcom" title="Sandra Adams"></v-list-item>
-        </v-list>
+  <main class="grow min-h-0">
+    <BetaDisclaimerDialog />
+    <howTo v-model="showHow" />
+    <!-- <div class="flex flex-col h-screen overflow-hidden"> -->
+    <!-- Top: Map -->
+    <div
+      ref="mapContainer"
+      class="grow"
+      :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }"
+    >
+      <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
-        <v-divider></v-divider>
+      <Overlays
+        @show-how="showHow = true"
+        @autorange="autorange"
+        class="overlay"
+        :style="{
+          top: `${overlayGap}px`,
+          left:
+            (mainStore.isControlPanelOpen
+              ? mainStore.controlPanel_width + overlayGap
+              : overlayGap) + 'px',
+        }"
+      />
 
-        <v-list nav>
-            <v-list-item prepend-icon="mdi-folder" title="My Files" value="myfiles"></v-list-item>
-            <v-list-item prepend-icon="mdi-account-multiple" title="Shared with me" value="shared"></v-list-item>
-            <v-list-item prepend-icon="mdi-star" title="Starred" value="starred"></v-list-item>
-        </v-list>
-    </v-navigation-drawer> -->
+      <ColorbarSettings
+        v-if="showColorbarSettings"
+        class="overlay"
+        :style="{
+          left:
+            (mainStore.isControlPanelOpen
+              ? mainStore.controlPanel_width + overlayGap + 50
+              : overlayGap + 50) + 'px',
+          transition: 'left 0.3s ease',
+        }"
+      />
 
-    <v-main>
-        <BetaDisclaimerDialog />
-        <howTo v-model="showHow" />
-        <!-- <div class="d-flex flex-column h-screen overflow-hidden"> -->
-        <!-- Top: Map -->
-        <div ref="mapContainer" class="flex-grow-1"
-            :style="{ position: 'relative', height: `calc(100% - ${footerHeight})` }">
-            <!-- <Layers @toggleLayer="onToggleLayer" /> -->
+      <selectedInfo
+        class="overlay"
+        :style="{
+          bottom: `${overlayGap}px`,
+          left:
+            (mainStore.isControlPanelOpen
+              ? mainStore.controlPanel_width + overlayGap
+              : overlayGap) + 'px',
+        }"
+      />
 
-            <Overlays @toggle-vertical-profile="drawerOpen = !drawerOpen" @show-how="showHow = true"
-                @autorange="autorange" class="overlay"
-                :style="{ top: `${overlayGap}px`, left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap : overlayGap) + 'px' }" />
+      <controlPanel />
 
-            <ColorbarSettings v-if="showColorbarSettings" class="overlay"
-                :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap + 50 : overlayGap + 50) + 'px', transition: 'left 0.3s ease' }" />
-
-            <selectedInfo class="overlay"
-                :style="{ bottom: `${overlayGap}px`, left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap : overlayGap) + 'px' }" />
-
-            <controlPanel />
-
-            <!-- <div class="map-drawer-toggle" :style="{ right: drawerOpen ? '312px' : '12px' }">
-                <v-btn size="24px" color="warning" class="ma-0 pa-0" @click="drawerOpen = !drawerOpen"
-                    title="Vertical Profile">
-                    <v-icon size="20px">mdi-chart-line</v-icon>
-                </v-btn>
+      <!-- <div class="map-drawer-toggle" :style="{ right: drawerOpen ? '312px' : '12px' }">
+                <UButton color="warning" class="size-[24px] p-0 justify-center m-0 p-0" @click="drawerOpen = !drawerOpen" title="Vertical Profile">
+                    <UIcon name="i-mdi-chart-line" class="size-[20px]" />
+                </UButton>
             </div> -->
 
-            <SelectedVariableDrawer v-model="drawerOpen" :selected-point="lastClicked" :footer-height="footerHeight" />
+      <SelectedVariableDrawer
+        v-model="drawerOpen"
+        :selected-point="lastClicked"
+        :footer-height="footerHeight"
+      />
 
-            <!-- Query mode toggle -->
-            <div style="position:absolute; top:10px; right:10px; z-index:10;">
-                <v-btn-toggle :model-value="mainStore.queryMode" mandatory variant="tonal"
-                    @update:model-value="(v) => mainStore.setQueryMode(v)">
-                    <v-btn value="point" size="small" title="Point query">
-                        <v-icon size="16">mdi-map-marker</v-icon>
-                        <span class="ml-1" style="font-size:0.7rem;">Point</span>
-                    </v-btn>
-                    <v-btn value="area" size="small" title="Area query">
-                        <v-icon size="16">mdi-vector-square</v-icon>
-                        <span class="ml-1" style="font-size:0.7rem;">Area</span>
-                    </v-btn>
-                </v-btn-toggle>
+      <!-- Query mode toggle -->
+      <!-- <div style="position: absolute; top: 10px; right: 10px; z-index: 10">
+        <SegmentedControl
+          :model-value="mainStore.queryMode"
+          :items="queryModeItems"
+          size="sm"
+          aria-label="Map query mode"
+          @update:model-value="(v) => mainStore.setQueryMode(v as string)"
+        />
+      </div> -->
+
+      <!-- Multi-sensor location picker (exact same coordinate) -->
+      <SensorPickerPopover
+        :visible="sensorPicker.visible"
+        :x="sensorPicker.x"
+        :y="sensorPicker.y"
+        :sensors="sensorPicker.sensors"
+        @pick="(s) => clickSensor(s.id, s.depth)"
+        @close="sensorPicker.visible = false"
+      />
+
+      <!-- Spiderfy overlay (nearby sensors at different coordinates) -->
+      <div
+        v-if="spiderfy.visible"
+        style="position: absolute; inset: 0; z-index: 5000; pointer-events: all"
+        @click.self="spiderfy.visible = false"
+      >
+        <svg
+          style="
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+          "
+        >
+          <line
+            v-for="(spoke, i) in spiderfy.spokes"
+            :key="`sl-${i}`"
+            :x1="spiderfy.centerX"
+            :y1="spiderfy.centerY"
+            :x2="spoke.x"
+            :y2="spoke.y"
+            :stroke="
+              spoke.sensor.isRealtime ? 'rgba(102,187,106,0.75)' : 'rgba(255,167,38,0.75)'
+            "
+            stroke-width="1.5"
+          />
+          <circle
+            :cx="spiderfy.centerX"
+            :cy="spiderfy.centerY"
+            r="5"
+            fill="#aaaaaa"
+            stroke="#333"
+            stroke-width="1.5"
+          />
+        </svg>
+        <div
+          v-for="(spoke, i) in spiderfy.spokes"
+          :key="`sn-${i}`"
+          class="spiderfy-node"
+          :style="{ left: spoke.x + 'px', top: spoke.y + 'px' }"
+          @click.stop="clickSensorFromSpiderfy(spoke.sensor)"
+        >
+          <div
+            class="spiderfy-dot"
+            :style="{ background: spoke.sensor.isRealtime ? '#66BB6A' : '#FFA726' }"
+          />
+          <div class="spiderfy-label">{{ spoke.sensor.name }}</div>
+        </div>
+      </div>
+
+      <div
+        class="px-2 pt-2"
+        style="
+          width: 250px;
+          position: absolute;
+          bottom: 0;
+          z-index: 999;
+          background-color: #11111199;
+          border-top-left-radius: 20px;
+          border-top-right-radius: 20px;
+          margin: auto;
+          right: 0;
+        "
+        :style="{
+          left:
+            (mainStore.isControlPanelOpen
+              ? mainStore.controlPanel_width + overlayGap + 50
+              : overlayGap + 50) + 'px',
+          transition: 'left 0.3s ease',
+        }"
+      >
+        <ColormapBar class="m-2" />
+      </div>
+
+      <!-- Cursor coordinate readout, follows the mouse over the map -->
+      <div
+        class="bg-elevated rounded-lg cursor-coord-label"
+        v-if="mainStore.showCursorCoords && mouseCoords.visible"
+        :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }"
+      >
+        {{ mouseCoords.lat?.toFixed(5) }}, {{ mouseCoords.lng?.toFixed(5) }}
+      </div>
+    </div>
+
+    <!-- Bottom: Global Chart Footer -->
+    <footer
+      class="m-0 p-0 footer-resizable"
+      :style="{ height: footerHeight, maxHeight: footerHeight }"
+    >
+      <!-- Drag handle: resize the bottom sheet by dragging this top edge up/down -->
+      <div
+        class="footer-resize-handle"
+        :class="{ 'is-resizing': isResizingFooter }"
+        title="Drag to resize"
+        @pointerdown="startFooterResize"
+      >
+        <div class="footer-resize-grip"></div>
+      </div>
+      <div class="flex footer-content" style="width: 100%">
+        <!-- Vertical tab rail. Plain buttons with explicit active classes
+                     rather than v-btn-toggle: Explore's sub-list is nested directly
+                     beneath it and only shown while Explore is active, which makes
+                     the rail's item heights variable — incompatible with the sliding
+                     "pill" a uniform-height toggle group can animate. -->
+        <div class="footer-rail flex flex-col shrink-0">
+          <div class="footer-rail-track">
+            <UButton
+              variant="ghost"
+              class="footer-rail-item"
+              block
+              :class="{ 'footer-rail-item--active': activeTab === 'explore' }"
+              @click="activeTab = 'explore'"
+            >
+              Explore
+            </UButton>
+            <div v-if="activeTab === 'explore'" class="footer-rail-sublist">
+              <UButton
+                variant="ghost"
+                class="footer-rail-subitem"
+                block
+                v-for="sv in exploreSubViews"
+                :key="sv.value"
+                :class="{
+                  'footer-rail-subitem--active': mainStore.exploreView === sv.value,
+                }"
+                @click="mainStore.setExploreView(sv.value)"
+              >
+                {{ sv.label }}
+              </UButton>
             </div>
 
-            <!-- Multi-sensor location picker (exact same coordinate) -->
-            <SensorPickerPopover :visible="sensorPicker.visible" :x="sensorPicker.x" :y="sensorPicker.y"
-                :sensors="sensorPicker.sensors" @pick="(s) => clickSensor(s.id, s.depth)"
-                @close="sensorPicker.visible = false" />
+            <USeparator v-if="remainingFooterTabs.length > 0" />
 
-            <!-- Spiderfy overlay (nearby sensors at different coordinates) -->
-            <div v-if="spiderfy.visible"
-                style="position: absolute; inset: 0; z-index: 5000; pointer-events: all;"
-                @click.self="spiderfy.visible = false">
-                <svg style="position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;">
-                    <line v-for="(spoke, i) in spiderfy.spokes" :key="`sl-${i}`"
-                        :x1="spiderfy.centerX" :y1="spiderfy.centerY"
-                        :x2="spoke.x" :y2="spoke.y"
-                        :stroke="spoke.sensor.isRealtime ? 'rgba(102,187,106,0.75)' : 'rgba(255,167,38,0.75)'"
-                        stroke-width="1.5" />
-                    <circle :cx="spiderfy.centerX" :cy="spiderfy.centerY" r="5"
-                        fill="#aaaaaa" stroke="#333" stroke-width="1.5" />
-                </svg>
-                <div v-for="(spoke, i) in spiderfy.spokes" :key="`sn-${i}`"
-                    class="spiderfy-node"
-                    :style="{ left: spoke.x + 'px', top: spoke.y + 'px' }"
-                    @click.stop="clickSensorFromSpiderfy(spoke.sensor)">
-                    <div class="spiderfy-dot"
-                        :style="{ background: spoke.sensor.isRealtime ? '#66BB6A' : '#FFA726' }" />
-                    <div class="spiderfy-label">{{ spoke.sensor.name }}</div>
-                </div>
+            <UButton
+              variant="ghost"
+              class="footer-rail-item"
+              block
+              v-for="t in remainingFooterTabs"
+              :key="t.value"
+              :class="{ 'footer-rail-item--active': activeTab === t.value }"
+              @click="activeTab = t.value"
+            >
+              {{ t.label }}
+            </UButton>
+
+            <USeparator />
+
+            <!-- Analysis is a fullscreen dialog with no rail of its own once
+                             open, so Model/Sensor is picked here rather than inside it —
+                             a sub-item both sets the source and opens the workspace. The
+                             top-level row only expands the sub-list (rather than opening
+                             straight away, as Explore's does) since opening immediately
+                             would cover the rail before the sub-list was ever clickable. -->
+            <UButton
+              variant="ghost"
+              class="footer-rail-item"
+              block
+              :class="{ 'footer-rail-item--active': activeTab === 'analysis' }"
+            >
+              Analysis
+            </UButton>
+            <div class="footer-rail-sublist">
+              <UButton
+                variant="ghost"
+                class="footer-rail-subitem"
+                block
+                v-for="sv in analysisSubViews"
+                :key="sv.value"
+                :disabled="sv.disabled"
+                :title="sv.title"
+                @click="
+                  mainStore.setAnalysisSource(sv.value);
+                  activeTab = 'analysis';
+                "
+              >
+                {{ sv.label }}
+              </UButton>
             </div>
-
-            <v-snackbar-queue ref="snackbarQueue" v-model="snackMessages" :total-visible="3" closable
-                contained></v-snackbar-queue>
-
-            <div class="px-2 pt-2"
-                style="width:250px; position: absolute; bottom:0; z-index: 999; background-color: #11111199; border-top-left-radius: 20px; border-top-right-radius: 20px; margin:auto; right:0; "
-                :style="{ left: (mainStore.isControlPanelOpen ? mainStore.controlPanel_width + overlayGap + 50 : overlayGap + 50) + 'px', transition: 'left 0.3s ease' }">
-                <ColormapBar class="ma-2" />
-            </div>
-
-            <!-- Cursor coordinate readout, follows the mouse over the map -->
-            <v-card v-if="mainStore.showCursorCoords && mouseCoords.visible" class="cursor-coord-label"
-                :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }">
-                {{ mouseCoords.lat?.toFixed(5) }}, {{ mouseCoords.lng?.toFixed(5) }}
-            </v-card>
-
+          </div>
         </div>
 
-        <!-- Bottom: Global Chart Footer -->
-        <v-footer class="ma-0 pa-0" :style="{ height: footerHeight, maxHeight: footerHeight }">
-            <div class="d-flex" :style="{ width: '100%', height: footerHeight }">
+        <!-- Content area. Both panes stay mounted (like the fullscreen
+                     workspaces below) so switching tabs doesn't refetch or reset
+                     whatever each pane had already loaded. -->
+        <div class="grow" style="min-width: 0; height: 100%; overflow: hidden">
+          <!-- Timeseries tab -->
+          <!-- The one map-synced pane: the clicked point's data at the
+                         map's depth, over a paged window. -->
+          <div v-show="activeTab === 'explore'" style="height: 100%">
+            <ExplorePanel :active="activeTab === 'explore'" />
+          </div>
+          <!-- Cross-Section tab: reads a drawn line instead of a clicked
+                         point, so it gets its own pane rather than living inside
+                         ExplorePanel's point-shaped view. -->
+          <div v-show="activeTab === 'crossSection'" style="height: 100%">
+            <CrossSectionPanel :active="activeTab === 'crossSection'" />
+          </div>
+        </div>
+      </div>
+    </footer>
 
-                <!-- Vertical tab rail -->
-                <v-sheet class="footer-rail d-flex flex-column flex-shrink-0">
-                    <v-btn-toggle v-model="activeTab" mandatory direction="vertical" variant="text"
-                        class="footer-rail-track">
-                        <div class="footer-rail-pill" :style="{ transform: `translateY(${railIndex * 100}%)` }"></div>
-                        <v-btn v-for="t in footerTabs" :key="t.value" :value="t.value" :prepend-icon="t.icon" block
-                            class="footer-rail-item">
-                            {{ t.label }}
-                        </v-btn>
-                    </v-btn-toggle>
-                </v-sheet>
-
-                <!-- Content area -->
-                <div class="flex-grow-1" style="min-width:0; height:100%; overflow:hidden;">
-                    <!-- Timeseries tab -->
-                    <div v-show="activeTab === 'timeseries'" style="height:100%; position:relative;">
-                        <TimeControls
-                            :timestamps="mainStore.variables.find(v => v.var === mainStore.selected_variable.var)?.dts || []"
-                            :currentDt="mainStore.selected_variable.dt"
-                            @update:dt="(newDt) => mainStore.updateSelectedVariable({ dt: newDt })" />
-                        <TimeseriesChart ref="timeseriesChart" style="width:100%; height:calc(100% - 32px);" />
-                    </div>
-
-                    <!-- Model Analysis tab -->
-                    <div v-show="activeTab === 'analysis'" style="height:100%;">
-                        <Analytics :active="activeTab === 'analysis'" />
-                    </div>
-
-                    <!-- Comparison tab (visible only when a sensor is selected) -->
-                    <div v-show="activeTab === 'comparison'" style="height:100%;">
-                        <SensorComparison :active="activeTab === 'comparison'" />
-                    </div>
-
-                    <!-- Sensor Analysis tab (visible only when a sensor is selected) -->
-                    <div v-show="activeTab === 'sensorAnalysis'" style="height:100%;">
-                        <SensorAnalytics :active="activeTab === 'sensorAnalysis'" />
-                    </div>
-                </div>
-
-            </div>
-
-        </v-footer>
-        <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
-            <div ref="globalChartContainer" class="w-100 h-100"></div>
+    <!-- Fullscreen workspaces. Kept mounted so closing and reopening one
+             doesn't refetch everything it had already loaded. -->
+    <AnalysisWorkspace v-model="analysisOpen" />
+    <ComparisonWorkspace v-model="comparisonOpen" />
+    <!-- <div class="footer-chart" style="height: 260px; border-top: 1px solid rgba(0,0,0,0.12);">
+            <div ref="globalChartContainer" class="w-full h-full"></div>
         </div> -->
-        <!-- </div> -->
-
-
-    </v-main>
+    <!-- </div> -->
+  </main>
 </template>
 
 <script setup lang="ts">
@@ -164,27 +300,35 @@ import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import { useRuntimeConfig } from '#app';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import MapboxDraw from '@mapbox/mapbox-gl-draw';
+import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import axios from 'axios'
 import moment from 'moment-timezone'
-import TimeControls from '../components/TimeControls.vue'
 import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
-import type { FeatureCollection, Geometry, GeoJsonProperties, Feature, Polygon } from 'geojson';
-import { var2name } from '../../composables/useVar2Name'
-import { resolveColormap } from '../../composables/useColormapResolver'
-import { utc2pst } from '../../composables/useUTC2PST'
-import useStationsInteraction from '../../composables/useStationsInteraction';
-import { addBuoyLayer, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '../../composables/useBuoyLayer';
-import getSensorTimeseries from '../../composables/useSensorTimeseries';
-import TimeseriesChart from '../components/TimeseriesChart.vue';
-import Analytics from '../components/analytics.vue'
-import SensorComparison from '../components/sensorComparison.vue'
-import SensorAnalytics from '../components/sensorAnalytics.vue'
+import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
+import { resolveColormap } from '~~/composables/useColormapResolver'
+import { MAP_BOUNDS, MAP_MIN_ZOOM, MAP_MAX_ZOOM, MAP_STYLE } from '@/config/app'
+import { utc2pst } from '~~/composables/useUTC2PST'
+import useStationsInteraction from '~~/composables/useStationsInteraction';
+import { addBuoyLayer, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '~~/composables/useBuoyLayer';
+import getSensorTimeseries from '~~/composables/useSensorTimeseries';
+import AnalysisWorkspace from '../components/AnalysisWorkspace.vue'
+import ExplorePanel from '../components/ExplorePanel.vue'
+import ComparisonWorkspace from '../components/ComparisonWorkspace.vue'
+import CrossSectionPanel from '../components/crossSection/CrossSectionPanel.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
 
 import { useMainStore } from '../stores/main'
-import { trackEvent } from '../../composables/useAnalytics'
+import { trackEvent } from '~~/composables/useAnalytics'
+
+const queryModeItems = [
+    { value: 'point', label: 'Point', icon: 'i-mdi-map-marker', title: 'Point query' },
+    { value: 'area', label: 'Area', icon: 'i-mdi-vector-square', title: 'Area query' },
+]
+
 const mainStore = useMainStore();
 
 const config = useRuntimeConfig();
@@ -196,36 +340,129 @@ const apiBaseUrl = config.public.apiBaseUrl
 
 
 const mapContainer = ref<HTMLDivElement | null>(null);
-const timeseriesChart = ref<InstanceType<typeof TimeseriesChart> | null>(null);
 let map: mapboxgl.Map | null = null;
+let crossSectionDraw: MapboxDraw | null = null;
 const meta = ref<any>(null);
-const drawerOpen = ref(false);
+const drawerOpen = computed({
+    get: () => mainStore.isVerticalProfileOpen,
+    set: (v: boolean) => mainStore.setIsVerticalProfileOpen(v),
+});
+
+// Auto-open the vertical profile drawer on switching into either depth
+// section — the section is a time-depth slice at one instant per column, the
+// drawer is that same coordinate's full water column at one instant, so the
+// two naturally belong side by side. One-directional on purpose: leaving a
+// depth view never force-closes a drawer the user opened deliberately.
+watch(() => mainStore.exploreView, (view) => {
+    if (view === 'model-depth' || view === 'sensor-depth') mainStore.setIsVerticalProfileOpen(true);
+});
+
 const activeTab = computed({
     get: () => mainStore.activeBottomTab,
-    set: (v: 'timeseries' | 'analysis' | 'comparison' | 'sensorAnalysis') => mainStore.setActiveBottomTab(v),
+    set: (v: 'explore' | 'analysis' | 'comparison' | 'crossSection') => mainStore.setActiveBottomTab(v),
 });
 const footerTabs = computed(() => [
-    { value: 'timeseries' as const, icon: 'mdi-chart-line', label: 'Timeseries' },
-    { value: 'analysis' as const, icon: 'mdi-poll', label: 'Model Analysis' },
+    { value: 'explore' as const, icon: 'mdi-chart-line', label: 'Explore' },
+    { value: 'crossSection' as const, icon: 'mdi-vector-polyline', label: 'Cross-Section' },
+    { value: 'analysis' as const, icon: 'mdi-poll', label: 'Analysis' },
     ...(mainStore.selectedSensor?.id
-        ? [
-            { value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison' },
-            { value: 'sensorAnalysis' as const, icon: 'mdi-chart-bell-curve-cumulative', label: 'Sensor Analysis' },
-        ]
+        ? [{ value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison' }]
         : []),
 ]);
-const railIndex = computed(() => footerTabs.value.findIndex(t => t.value === activeTab.value));
+// Explore and Analysis are rendered separately (each has its own sub-list
+// nested directly beneath it), so the rail's trailing loop only needs the rest
+// — just Comparison, when a sensor is selected.
+const remainingFooterTabs = computed(() => footerTabs.value.filter(t => t.value !== 'explore' && t.value !== 'analysis'));
 
-// Drop back to timeseries when the active sensor is cleared
+// Explore's own sub-views. Sensor depth only exists once a profiler sensor is
+// selected — `selectedProfilerSensorId` is the same store getter ExplorePanel
+// itself uses to decide whether there's a section to fetch, so the rail and
+// the panel never disagree about whether the option should be offered.
+const exploreSubViews = computed(() => [
+    { value: 'series' as const, label: 'Timeseries' },
+    { value: 'model-depth' as const, label: 'Model depth' },
+    ...(mainStore.selectedProfilerSensorId
+        ? [{ value: 'sensor-depth' as const, label: 'Sensor depth' }]
+        : []),
+]);
+
+// Analysis's own sub-views. Sensor stays visible but disabled with no sensor
+// selected (rather than disappearing like Explore's Sensor depth) — Model vs
+// Sensor is a binary choice worth always showing, not a capability that only
+// exists once something else happens to be selected.
+const analysisSubViews = computed(() => {
+    const hasSensor = !!mainStore.selectedSensor?.id;
+    return [
+        { value: 'model' as const, label: 'Model', disabled: false, title: '' },
+        {
+            value: 'sensor' as const, label: 'Sensor', disabled: !hasSensor,
+            title: hasSensor ? "Analyse the sensor's own record" : 'Select a sensor first',
+        },
+    ];
+});
+
+// Analysis and Comparison are fullscreen workspaces rather than footer panes.
+// Picking them in the rail opens the workspace; closing it drops back to Explore,
+// the only tab whose content is tied to the map behind it.
+const analysisOpen = computed({
+    get: () => activeTab.value === 'analysis',
+    set: (open: boolean) => { if (!open) activeTab.value = 'explore'; },
+});
+const comparisonOpen = computed({
+    get: () => activeTab.value === 'comparison',
+    set: (open: boolean) => { if (!open) activeTab.value = 'explore'; },
+});
+
+// Comparison has nothing to show without a sensor — close it if one is cleared.
 watch(() => mainStore.selectedSensor, (sensor) => {
-    if (!sensor?.id && (activeTab.value === 'comparison' || activeTab.value === 'sensorAnalysis')) {
-        activeTab.value = 'timeseries';
+    if (!sensor?.id && activeTab.value === 'comparison') {
+        activeTab.value = 'explore';
     }
 });
 
-const isRectangleDrawing = ref(false);
-const drawnRectangle = ref<Feature<Polygon> | null>(null);
-const footerHeight = ref<string>('440px');
+// Bottom-sheet height is user-resizable via the drag handle on the footer's top edge.
+const MIN_FOOTER_PX = 160;
+const footerHeightPx = ref<number>(440);
+const footerHeight = computed<string>(() => `${footerHeightPx.value}px`);
+const isResizingFooter = ref<boolean>(false);
+
+/** Largest the footer may grow to, always leaving room for the map above it. */
+function maxFooterPx(): number {
+    return Math.max(MIN_FOOTER_PX, window.innerHeight - 160);
+}
+
+/** Drag handle on the footer's top edge: dragging up grows the sheet, down shrinks it. */
+function startFooterResize(e: PointerEvent) {
+    e.preventDefault();
+    isResizingFooter.value = true;
+    const startY = e.clientY;
+    const startH = footerHeightPx.value;
+    let rafId = 0;
+
+    const onMove = (ev: PointerEvent) => {
+        // Dragging upward (smaller clientY) increases the footer height.
+        const next = startH + (startY - ev.clientY);
+        footerHeightPx.value = Math.min(maxFooterPx(), Math.max(MIN_FOOTER_PX, next));
+        if (!rafId) {
+            rafId = requestAnimationFrame(() => {
+                rafId = 0;
+                map?.resize();
+            });
+        }
+    };
+    const onUp = () => {
+        isResizingFooter.value = false;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        if (rafId) cancelAnimationFrame(rafId);
+        // Final sync so map/charts settle exactly on the released size.
+        // The footer panes carry their own ResizeObservers, so only the map
+        // needs telling explicitly.
+        map?.resize();
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+}
 
 const sensorPicker = ref<{ visible: boolean; x: number; y: number; sensors: MultiSensorCandidate[] }>({
     visible: false,
@@ -242,7 +479,7 @@ const spiderfy = ref<{
 }>({ visible: false, centerX: 0, centerY: 0, spokes: [] });
 
 // [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
-const bounds = [[-126.4, 46.85], [-121.3, 51.1]] as [[number, number], [number, number]];
+const bounds = MAP_BOUNDS;
 
 const mouseCoords = ref<{ lng: number | null, lat: number | null, x: number, y: number, visible: boolean }>({ lng: null, lat: null, x: 0, y: 0, visible: false });
 
@@ -257,11 +494,22 @@ const mapLoaded = ref(false);
 const selectedReady = ref(false);
 let didInitClick = false;
 
-/** 
+/**
  * Number of days from now to fetch for climate timeseries. This is used both for the API request parameter and for computing the x-axis range of the chart (now +/- DFN days). The API will return all available data within that range, which may be less than DFN if the model run does not extend that far into the future.
 */
 
 const zoom = ref('');
+
+// Nuxt UI has no queue component: UApp renders a single Toaster and `toast.add`
+// pushes into it. Drain the store's queue as messages arrive so every existing
+// `pushSnack` caller keeps working unchanged.
+const toast = useToast();
+watch(() => mainStore.snackMessages.length, (n) => {
+    if (!n) return;
+    for (const m of mainStore.snackMessages.splice(0)) {
+        toast.add({ title: m.text, color: (m.color as never) ?? 'info' });
+    }
+});
 
 const snackMessages = computed({
     get: () => mainStore.snackMessages,
@@ -307,13 +555,13 @@ onMounted(async () => {
         container: mapContainer.value,
         // style: 'mapbox://styles/taimazb/cmk1jwu8o005101sv1j41cj6j?optimize=true&fresh=true',
         // style: 'mapbox://styles/taimazb/cmkcsejwe005m01ssgtdz3tgd?optimize=true&fresh=true',
-        style: 'mapbox://styles/taimazb/cmkfvuotu00mw01svbld48v7y?optimize=true&fresh=true',
+        style: MAP_STYLE,
         // center: [-123.2, 48.8],
         bounds,
         // zoom: 9.5,
         // pitch: 45,
-        minZoom: 5,
-        maxZoom: 14,
+        minZoom: MAP_MIN_ZOOM,
+        maxZoom: MAP_MAX_ZOOM,
         antialias: true,
         preserveDrawingBuffer: true, // needed for exporting canvas
     });
@@ -321,6 +569,14 @@ onMounted(async () => {
 
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
+        // Every other layer added below/elsewhere on this page (PNG overlay,
+        // bathymetry, stations, analysis box, cross-section...) can land
+        // above the style's built-in "water names" labels depending on add
+        // order. Re-raising on 'idle' (fires once per settled render, not
+        // per frame) keeps it on top of whatever's underneath without every
+        // layer-adding function here needing to know it exists.
+        map?.on('idle', raiseWaterNamesLayer);
+
         map?.on('mousemove', (e) => {
             mouseCoords.value.lng = e.lngLat.lng;
             mouseCoords.value.lat = e.lngLat.lat;
@@ -340,6 +596,18 @@ onMounted(async () => {
         });
 
         updateAnalysisBox();
+
+        // Cross-Section tab's line-drawing control. Added once and left on the
+        // map permanently (mode is toggled by the activeTab watcher below)
+        // rather than added/removed per tab switch — mapbox-gl-draw's own
+        // draw_line_string mode already handles double-click-zoom
+        // suspension and Enter/Escape-to-finish, so there's nothing else to
+        // hand-roll here.
+        crossSectionDraw = new MapboxDraw({ displayControlsDefault: false, controls: {} });
+        map?.addControl(crossSectionDraw);
+        map?.on('draw.create', onCrossSectionDrawChange);
+        map?.on('draw.update', onCrossSectionDrawChange);
+        map?.on('draw.delete', () => mainStore.setCrossSectionLine(null));
     });
 
 
@@ -347,6 +615,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
     if (map) {
+        map.off('idle', raiseWaterNamesLayer);
+
         const handlers = (map as any)?.__anchoredChartsHandlers;
         const refs = (map as any)?.__anchoredCharts as Array<any> | undefined;
         const svg = (map as any)?.__anchoredChartsSvg as SVGElement | undefined;
@@ -402,8 +672,15 @@ onBeforeUnmount(() => {
 
 ///////////////////////////////////  WATCH  ///////////////////////////////////
 
-// Watcher: add/update/remove overlay when selected variable or depth changes
-watch(() => [mainStore.selected_variable.source, mainStore.selected_variable.var, mainStore.selected_variable.depth, mainStore.midDate], async ([v, depth]) => {
+// Watcher: add/update/remove overlay when selected variable, depth or datetime
+// changes. `dt` shares this one watcher rather than getting its own — a depth
+// section cell click (or the variable picker's source switch) sets `depth`
+// and `dt` together in the same tick, and two separate watchers each calling
+// updatePngOverlay() would independently fire off the same request, doubling
+// the image fetch. One watcher covering every source that can move the
+// overlay collapses that to a single call no matter how many of them changed
+// at once.
+watch(() => [mainStore.selected_variable.source, mainStore.selected_variable.var, mainStore.selected_variable.depth, mainStore.selected_variable.dt, mainStore.midDate], async ([v, depth]: [string, string, string | null, moment.Moment | null, moment.Moment | null]) => {
     if (!map) return;
 
     if (!v) {
@@ -424,53 +701,24 @@ watch(() => [mainStore.selected_variable.source, mainStore.selected_variable.var
 
         mapLoaded.value = true;
 
-        // If the user previously clicked a point, refresh the timeseries chart for the new var/depth
-        // (only while the Timeseries tab is the one being viewed — Analysis Builder has its own fetch)
-        if (lastClicked.value && v !== 'bathymetry') {  // Skip API call for bathymetry
-            if (activeTab.value === 'timeseries') {
-                try {
-                    // debounce rapid var/depth changes to avoid hammering the API
-                    if (tsRefreshTimer) clearTimeout(tsRefreshTimer);
-                    // Skip if a sensor click is already handling the fetch via lastClickedMapPoint watcher
-                    if (_sensorClickPending) return;
-                    tsRefreshTimer = setTimeout(async () => {
-                        try {
-                            const lat = lastClicked.value!.lat;
-                            const lon = lastClicked.value!.lng;
-                            const varName = mainStore.selected_variable.var;
-
-                            // abort previous request if any
-                            try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-                            tsRequestController = new AbortController();
-
-                            getTimeseriesPromises(lat, lon);
-                        } catch (e) {
-                            if (e && e.code === 'ERR_CANCELED') return; // aborted
-                            console.warn('Failed to refresh timeseries after var/depth change', e);
-                        } finally {
-                            tsRequestController = null;
-                        }
-                    }, 300);
-                } catch (e) {
-                    console.warn('Failed to schedule timeseries refresh after var/depth change', e);
-                }
-            }
-        } else
-            maybeInitClick();
+        // Nothing to refetch here on a var/depth change any more: the footer
+        // panes watch `selected_variable` themselves. Only the "no point picked
+        // yet" bootstrap still belongs to the page.
+        if (!lastClicked.value || v === 'bathymetry') maybeInitClick();
     } catch (e) {
         console.error('Failed to load PNG for variable', v, e);
         removePngOverlay();
     }
 }, { immediate: true });
 
-// Watcher: when selected datetime changes (e.g. user clicks chart), update static overlay if not playing
-watch(() => mainStore.selected_variable.dt, async (newDt) => {
+// Watcher: Explore panel's bin-mode toggle changes which dt resolution the raster tile URL
+// requests (hourly/daily/monthly — see updatePngOverlay), so the map layer needs its own refresh.
+watch(() => mainStore.exploreBinMode, async () => {
     if (!map) return;
     try {
-        // only update overlay image for the current dt
         await updatePngOverlay();
     } catch (e) {
-        console.error('Failed to update PNG for dt change', e);
+        console.error('Failed to update PNG for bin mode change', e);
     }
 });
 
@@ -586,6 +834,14 @@ watch(() => mainStore.showBathymetryContours, (show) => {
     }
 }, { immediate: true });
 
+watch(() => mainStore.showMapLabels, (visible: boolean) => {
+    try {
+        setMapLabelsVisibility(visible);
+    } catch (e) {
+        console.warn('Failed to toggle map labels visibility:', e);
+    }
+});
+
 watch(() => mainStore.lastClickedMapPoint, (point) => {
     if (!point) return;
     trigger_mapClick(point.lat, point.lng);
@@ -665,67 +921,15 @@ function initClick(lat: number, lng: number) {
         query_mode: mainStore.queryMode,
     });
     mainStore.setLastClickedMapPoint({ lat, lng });
-
-    // Abort any in-flight timeseries requests and create a new controller
-    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-    tsRequestController = new AbortController();
-
-    // trigger map click to load initial timeseries
     map.fire('click', { lngLat: { lat, lng } });
-
-    // getTimeseriesFromApi(lat, lon);
 }
 
 
-async function getTimeseriesPromises(lat: number, lon: number) {
-    if (!timeseriesChart.value) return;
-    const fromDate = midDate.value.clone().subtract(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
-    const toDate = midDate.value.clone().add(DFN.value, 'days').format('YYYY-MM-DDTHHmmss');
-
-    await timeseriesChart.value.fetchAndPlot(
-        lat, lon,
-        () => getTimeseriesFromApi(lat, lon, fromDate, toDate),
-        () => getClimateTimeseries(lat, lon, fromDate, toDate),
-        // selectedSensor.depth === -1 means the sensor profiles the water column (see
-        // sensorComparison.vue's isVariableDepth). There's no fixed depth to snap to on
-        // the sensor's own record, so use the shared global depth (the same one driving
-        // the map layer) instead — this is what makes changing the map's depth control
-        // refetch the profiler's overlay too, no Depth Profile round-trip needed.
-        () => {
-            if (!mainStore.selectedSensor || !mainStore.selectedSensor.id) return Promise.resolve(null);
-            if (mainStore.selectedSensor.depth === -1) {
-                if (mainStore.selected_variable.depth_nc == null) return Promise.resolve(null);
-                return getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selected_variable.depth_nc, mainStore.selected_variable.source);
-            }
-            return getSensorTimeseries(mainStore.selectedSensor.id, mainStore.selected_variable.var, fromDate, toDate, mainStore.selectedSensor.depth);
-        }
-    );
-}
-
-async function getTimeseriesFromApi(lat: number, lon: number, fromDate: string, toDate: string) {
-    const base = { source: mainStore.selected_variable.source, var: mainStore.selected_variable.var, depth: mainStore.selected_variable.depth_nc, fromDate, toDate }
-    const h = 0.05
-    const payload = mainStore.queryMode === 'area'
-        ? { ...base, polygon: [[lon-h,lat-h],[lon+h,lat-h],[lon+h,lat+h],[lon-h,lat+h],[lon-h,lat-h]] }
-        : { ...base, lat, lon }
-    return axios.post(`${apiBaseUrl}/extractTimeseries`, payload, { signal: tsRequestController.signal });
-    // const r = await axios.post(`${apiBaseUrl}/extractTimeseries`, { var: mainStore.selected_variable.var, lat, lon, depth: mainStore.selected_variable.depth }, { signal: tsRequestController.signal });
-    // const json = r.data;
-    // if (json && Array.isArray(json.time) && Array.isArray(json.value)) {
-    //     plotTimeseriesFromApi(json.time, json.value, lat, lon);
-    // }
-}
-
-async function getClimateTimeseries(lat: number, lon: number, fromDate: string, toDate: string) {
-    return axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
-        var: mainStore.selected_variable.var,
-        lat,
-        lon,
-        depth: mainStore.selected_variable.depth_nc,
-        fromDate,
-        toDate
-    });
-};
+// The page no longer fetches timeseries itself. Each footer pane owns its own
+// data: the Depth tab pulls the model section (and slices the single-depth line
+// out of it) plus the climatology envelope, and the Comparison pane fetches its
+// own model/sensor pair. This page's remaining job around a click is to place
+// the marker and publish the coordinate on the store.
 
 const REALTIME_THRESHOLD_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 const PROXIMITY_M = 100; // sensors within 100 m share one map marker
@@ -790,7 +994,7 @@ function updateBuoyVarOpacity(selectedVar: string | null) {
     const expr: any = (!selectedVar || keysWithVar.length === _visibleSensorGroups.length)
         ? 0.95
         : ['case', ['in', ['get', 'coordKey'], ['literal', keysWithVar]], 0.95, 0.2];
-    try { (map as any).setPaintProperty(STATIONS_LAYER_ID, 'icon-opacity', expr); } catch (_) {}
+    try { (map as any).setPaintProperty(STATIONS_LAYER_ID, 'icon-opacity', expr); } catch (_) { }
 }
 
 // Recomputes which station groups are visible on the map from mainStore.filteredSensors
@@ -876,21 +1080,14 @@ function clickSensorFromSpiderfy(sensor: MultiSensorCandidate) {
 function clickSensor(sensor_id: string, depth: number) {
     trackEvent('sensor_selected', { sensor_id, source: 'map' });
     sensorPicker.value.visible = false;
-    // Set flag BEFORE selectSensor so the var/depth watcher skips its own fetch.
-    // The lastClickedMapPoint watcher (via setLastClickedMapPoint below) will
-    // trigger the single authoritative fetch.
-    _sensorClickPending = true;
     mainStore.selectSensor(sensor_id, depth);
+    // Publishing the coordinate is the whole job — the panes fetch off the store.
+    // (No fetch to de-duplicate here any more, so the old _sensorClickPending
+    // guard against a double request from the var/depth watcher is gone too.)
     const sensor = mainStore.sensors.find((s: any) => s.id === sensor_id);
     if (sensor) {
         mainStore.setLastClickedMapPoint({ lat: sensor.latitude, lng: sensor.longitude });
-    } else {
-        // Sensor not in store — fall back to current point
-        const pt = lastClicked.value;
-        if (pt && activeTab.value === 'timeseries') getTimeseriesPromises(pt.lat, pt.lng);
     }
-    // Clear after this tick — the var/depth watcher has already seen the flag.
-    nextTick(() => { _sensorClickPending = false; });
 }
 
 
@@ -913,7 +1110,13 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
     const source = mainStore.selected_variable.source.replace(/\s+/g, ''); // Remove spaces from source name for URL
     const varName = mainStore.selected_variable.var;
-    const dt = mainStore.selected_variable.dt?.format('YYYY-MM-DDTHHmmss') || '';
+    // dt's shape tells the API which bin mode to render (see extract_image.resolve_bin_mode):
+    // full timestamp -> hourly, YYYY-MM-DD -> daily, YYYY-MM -> monthly. Keeps the map layer's
+    // resolution in sync with the Explore panel's bin-mode toggle used by the timeseries/depth charts.
+    const dtFormat = mainStore.exploreBinMode === 'daily' ? 'YYYY-MM-DD'
+        : mainStore.exploreBinMode === 'monthly' ? 'YYYY-MM'
+            : 'YYYY-MM-DDTHHmmss';
+    const dt = mainStore.selected_variable.dt?.format(dtFormat) || '';
     const depth = mainStore.selected_variable.depth
     const pngPath = `${apiBaseUrl}/png/${source}/${varName}/${dt}/${depth}`;
 
@@ -1027,6 +1230,11 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
     // register a click handler that queries the API for a timeseries at the clicked coordinate
     const onMapClick = async (evt: any) => {
+        // While drawing a cross-section line, clicks add vertices via
+        // crossSectionDraw (see onCrossSectionDrawChange) — they aren't a
+        // point query, and must not clear the sensor selection mid-draw.
+        if (mainStore.activeBottomTab === 'crossSection') return;
+
         const { lng, lat } = evt.lngLat;
 
         // Check if click landed on a sensor feature (layer may not exist yet)
@@ -1051,10 +1259,10 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
     map.on('click', onMapClick);
 }
 
-async function trigger_mapClick(lat: number, lng: number) {
+/** Drops the click marker at a coordinate. Data fetching is the panes' job. */
+function trigger_mapClick(lat: number, lng: number) {
     const overlay = (map as any).__activePngOverlay;
     if (!overlay) return;
-    // show a marker at clicked position
     try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
     if (mainStore.queryMode === 'point') {
         const el = document.createElement('div');
@@ -1062,32 +1270,76 @@ async function trigger_mapClick(lat: number, lng: number) {
         const marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(map);
         (map as any).__clickMarker = marker;
     }
-
-    // Only the Timeseries tab needs hourly data fetched on point/area change.
-    if (activeTab.value !== 'timeseries') return;
-
-    // Abort any in-flight timeseries requests and create a new controller
-    try { if (tsRequestController) tsRequestController.abort(); } catch (e) { }
-    tsRequestController = new AbortController();
-
-    // POST to the API and expect {time: [...], value: [...]} in response
-    try {
-        await getTimeseriesPromises(lat, lng);
-    } catch (err) {
-        if (err && err.code === 'ERR_CANCELED') {
-            // request was aborted; ignore
-        } else {
-            console.error('Failed to fetch timeseries:', err);
-        }
-    } finally {
-        tsRequestController = null;
-    }
 }
 
 // NOTE: stopping animator on every change to `mainStore.selected_variable` caused the animator to stop
 // immediately after it updated the selected timestamp (dt). That logic is already handled by the
 // var/depth watcher above. Removed the blanket watcher to avoid stopping playback when the animator
 // updates the selected datetime.
+
+// Cached id of the style's built-in water-name-labels layer (added directly
+// in Mapbox Studio, e.g. "Puget Sound", "Strait of Georgia" — not something
+// this app adds itself). Studio slugifies a layer's display name into its
+// id, so resolve by fuzzy match rather than hardcoding a guess at the id.
+let waterNamesLayerId: string | null = null;
+let warnedMissingWaterNamesLayer = false;
+
+function resolveWaterNamesLayer(): string | null {
+    if (!map) return null;
+    if (waterNamesLayerId && map.getLayer(waterNamesLayerId)) return waterNamesLayerId;
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const layers = map.getStyle()?.layers ?? [];
+    const match = layers.find((l: { id: string }) => normalize(l.id) === normalize('water names'));
+    waterNamesLayerId = match ? match.id : null;
+    if (!waterNamesLayerId && !warnedMissingWaterNamesLayer) {
+        warnedMissingWaterNamesLayer = true;
+        console.warn('Could not find a "water names" layer in the map style; labels will not be forced on top.');
+    }
+    return waterNamesLayerId;
+}
+
+// Re-raise the water-name labels to the very top of the style's layer stack.
+// Bound to the map's 'idle' event so every current and future layer-adding
+// function on this page stays below it without each needing to know this
+// layer exists. Skips the move when already topmost so it can't loop.
+function raiseWaterNamesLayer() {
+    if (!map) return;
+    const layerId = resolveWaterNamesLayer();
+    if (!layerId) return;
+    try {
+        const layers = map.getStyle()?.layers;
+        if (!layers || !layers.length) return;
+        if (layers[layers.length - 1].id !== layerId) {
+            map.moveLayer(layerId);
+        }
+    } catch (e) { /* map may be mid-teardown */ }
+}
+
+// Base style's "Place labels" group (settlement/state/country/continent
+// names) — a fixed, standard set of Mapbox Streets layer ids, unlike the
+// water-names layer which is custom and has to be resolved by name.
+const PLACE_LABEL_LAYER_IDS = [
+    'settlement-subdivision-label',
+    'settlement-minor-label',
+    'settlement-major-label',
+    'state-label',
+    'country-label',
+    'continent-label',
+];
+
+// Drives the "Map Labels" overlay button: shows/hides the water-name labels
+// together with the place-name labels as one group.
+function setMapLabelsVisibility(visible: boolean) {
+    if (!map) return;
+    const visibility = visible ? 'visible' : 'none';
+    const waterLayerId = resolveWaterNamesLayer();
+    const targetIds = waterLayerId ? [waterLayerId, ...PLACE_LABEL_LAYER_IDS] : PLACE_LABEL_LAYER_IDS;
+    for (const id of targetIds) {
+        try {
+            if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility);
+        } catch (e) { /* layer not present in this style version */ }
+    }
+}
 
 function removePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
     if (!map) return;
@@ -1289,6 +1541,7 @@ async function autorange() {
             var: selectedVar,
             dt: dtStr,
             depth: selectedDepth,
+            bin_mode: mainStore.exploreBinMode,
             north: north,
             south: south,
             east: east,
@@ -1324,37 +1577,45 @@ async function autorange() {
 
 // --- ANALYSIS REGION BOX ---
 const ABOX_SOURCE = 'analysis-region'
-const ABOX_FILL   = 'analysis-region-fill'
-const ABOX_LINE   = 'analysis-region-line'
+const ABOX_FILL = 'analysis-region-fill'
+const ABOX_LINE = 'analysis-region-line'
 
 function updateAnalysisBox() {
-  if (!map || !map.isStyleLoaded()) return
-  const pt  = lastClicked.value
-  const show = mainStore.queryMode === 'area' && !!pt
+    if (!map || !map.isStyleLoaded()) return
+    const pt = lastClicked.value
+    const show = mainStore.queryMode === 'area' && !!pt
 
-  const data: GeoJSON.Feature<GeoJSON.Polygon> = show
-    ? { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[
-          [pt!.lng - 0.05, pt!.lat - 0.05],
-          [pt!.lng + 0.05, pt!.lat - 0.05],
-          [pt!.lng + 0.05, pt!.lat + 0.05],
-          [pt!.lng - 0.05, pt!.lat + 0.05],
-          [pt!.lng - 0.05, pt!.lat - 0.05],
-        ]] } }
-    : { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[]] } }
+    const data: GeoJSON.Feature<GeoJSON.Polygon> = show
+        ? {
+            type: 'Feature', properties: {}, geometry: {
+                type: 'Polygon', coordinates: [[
+                    [pt!.lng - 0.05, pt!.lat - 0.05],
+                    [pt!.lng + 0.05, pt!.lat - 0.05],
+                    [pt!.lng + 0.05, pt!.lat + 0.05],
+                    [pt!.lng - 0.05, pt!.lat + 0.05],
+                    [pt!.lng - 0.05, pt!.lat - 0.05],
+                ]]
+            }
+        }
+        : { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[]] } }
 
-  if (map.getSource(ABOX_SOURCE)) {
-    (map.getSource(ABOX_SOURCE) as mapboxgl.GeoJSONSource).setData(data)
-    map.setLayoutProperty(ABOX_FILL, 'visibility', show ? 'visible' : 'none')
-    map.setLayoutProperty(ABOX_LINE, 'visibility', show ? 'visible' : 'none')
-  } else {
-    map.addSource(ABOX_SOURCE, { type: 'geojson', data })
-    map.addLayer({ id: ABOX_FILL, type: 'fill', source: ABOX_SOURCE,
-      paint: { 'fill-color': 'rgba(255,193,7,0.08)' },
-      layout: { visibility: show ? 'visible' : 'none' } })
-    map.addLayer({ id: ABOX_LINE, type: 'line', source: ABOX_SOURCE,
-      paint: { 'line-color': '#ff5722', 'line-width': 1.5, 'line-dasharray': [4, 2] },
-      layout: { visibility: show ? 'visible' : 'none' } })
-  }
+    if (map.getSource(ABOX_SOURCE)) {
+        (map.getSource(ABOX_SOURCE) as mapboxgl.GeoJSONSource).setData(data)
+        map.setLayoutProperty(ABOX_FILL, 'visibility', show ? 'visible' : 'none')
+        map.setLayoutProperty(ABOX_LINE, 'visibility', show ? 'visible' : 'none')
+    } else {
+        map.addSource(ABOX_SOURCE, { type: 'geojson', data })
+        map.addLayer({
+            id: ABOX_FILL, type: 'fill', source: ABOX_SOURCE,
+            paint: { 'fill-color': 'rgba(255,193,7,0.08)' },
+            layout: { visibility: show ? 'visible' : 'none' }
+        })
+        map.addLayer({
+            id: ABOX_LINE, type: 'line', source: ABOX_SOURCE,
+            paint: { 'line-color': '#ff5722', 'line-width': 1.5, 'line-dasharray': [4, 2] },
+            layout: { visibility: show ? 'visible' : 'none' }
+        })
+    }
 }
 
 watch([lastClicked, activeTab], updateAnalysisBox)
@@ -1363,187 +1624,334 @@ watch(() => mainStore.queryMode, () => {
     if (lastClicked.value) trigger_mapClick(lastClicked.value.lat, lastClicked.value.lng)
 })
 
-// Switching into the Timeseries tab fetches fresh data for the current point/var/depth,
-// since updates while that tab was hidden are never fetched (see activeTab gating above).
-watch(activeTab, (tab) => {
-    if (tab === 'timeseries' && lastClicked.value) {
-        trigger_mapClick(lastClicked.value.lat, lastClicked.value.lng)
+// No activeTab watcher any more: panes that were hidden used to miss updates
+// because this page fetched on their behalf and gated on which tab was showing.
+// Each pane now watches the store itself and re-measures when it becomes active.
+
+// --- CROSS-SECTION LINE DRAWING ---
+// This one *is* an activeTab watcher, unlike the panes above — it isn't data
+// fetching done on a pane's behalf, it's map-control-mode plumbing that has to
+// live here because `crossSectionDraw`/`map` are page-scoped, not reachable
+// from CrossSectionPanel.vue.
+function onCrossSectionDrawChange() {
+    const line = crossSectionDraw?.getAll().features
+        .find((f) => f.geometry?.type === 'LineString') as GeoJSON.Feature<GeoJSON.LineString> | undefined;
+    if (!line) { mainStore.setCrossSectionLine(null); return; }
+    // GeoJSON coordinates are [lng, lat]; the store (like lastClickedMapPoint) uses {lat, lng}.
+    mainStore.setCrossSectionLine(line.geometry.coordinates.map(([lng, lat]) => ({ lat: lat!, lng: lng! })));
+}
+
+// mapbox-gl-draw only renders vertex handles while the line is the *active*
+// selection (mid-draw, or selected in simple_select) — once you click away it
+// reverts to a plain line, so there's nothing on the map to tell "dashed line
+// #2 in the chart" apart from "dashed line #3". This numbered overlay stays
+// pinned to the vertices regardless of draw/selection state, matching the
+// 1-based numbering CrossSectionPanel.vue's own vertex markers use.
+const CS_VERTEX_SOURCE = 'cross-section-vertices'
+const CS_VERTEX_CIRCLES = 'cross-section-vertex-circles'
+const CS_VERTEX_LABELS = 'cross-section-vertex-labels'
+
+function updateCrossSectionVertexLabels() {
+    if (!map) return
+    const line = mainStore.crossSectionLine
+    const data: GeoJSON.FeatureCollection<GeoJSON.Point> = {
+        type: 'FeatureCollection',
+        features: (line ?? []).map((pt, i) => ({
+            type: 'Feature',
+            properties: { label: String(i + 1) },
+            geometry: { type: 'Point', coordinates: [pt.lng, pt.lat] },
+        })),
     }
-})
+    const existingSource = map.getSource(CS_VERTEX_SOURCE) as mapboxgl.GeoJSONSource | undefined;
+    if (existingSource) {
+        // Updating an existing source's data doesn't require the style to be
+        // fully loaded — only creating new sources/layers below does. Gating
+        // this on isStyleLoaded() left stale vertex markers on the map when a
+        // tab switch fired mid-style-update (e.g. right after deleteAll()).
+        existingSource.setData(data)
+    } else if (map.isStyleLoaded()) {
+        map.addSource(CS_VERTEX_SOURCE, { type: 'geojson', data })
+        map.addLayer({
+            id: CS_VERTEX_CIRCLES, type: 'circle', source: CS_VERTEX_SOURCE,
+            paint: {
+                'circle-radius': 8, 'circle-color': '#12181f',
+                'circle-stroke-width': 1.5, 'circle-stroke-color': '#eef3f7',
+            },
+        })
+        map.addLayer({
+            id: CS_VERTEX_LABELS, type: 'symbol', source: CS_VERTEX_SOURCE,
+            layout: {
+                'text-field': ['get', 'label'], 'text-size': 10, 'text-font': ['Open Sans Bold'],
+                'text-allow-overlap': true, 'text-ignore-placement': true,
+            },
+            paint: { 'text-color': '#eef3f7' },
+        })
+    }
+}
 
-// Abort controller for ongoing timeseries requests and debounce timer
-let tsRequestController: AbortController | null = null;
-let tsRefreshTimer: any = null;
-// Prevents the var/depth watcher from scheduling a duplicate fetch when a sensor
-// click already triggers one via the lastClickedMapPoint watcher path.
-let _sensorClickPending = false;
+watch(() => mainStore.crossSectionLine, updateCrossSectionVertexLabels, { deep: true })
 
+watch(activeTab, (tab) => {
+    if (!crossSectionDraw) return;
+    crossSectionDraw.deleteAll();
+    mainStore.setCrossSectionLine(null);
+    crossSectionDraw.changeMode(tab === 'crossSection' ? 'draw_line_string' : 'simple_select');
 
+    // The point-click marker and the cross-section line/vertices are mutually
+    // exclusive map decorations — only one mode's input should be visible at a time.
+    if (tab === 'crossSection') {
+        try { if ((map as any).__clickMarker) ((map as any).__clickMarker).remove(); } catch (e) { }
+    } else if (lastClicked.value) {
+        trigger_mapClick(lastClicked.value.lat, lastClicked.value.lng);
+    }
+});
+
+// A finished line leaves mapbox-gl-draw in simple_select mode (its own
+// draw_line_string mode exits there once you click back on the last vertex or
+// press Enter) — clicking the map again would just select/drag the existing
+// line, not start a new one. CrossSectionPanel's "New line" button bumps this
+// token to re-arm drawing without waiting for a tab round-trip.
+watch(() => mainStore.crossSectionRedrawToken, () => {
+    if (!crossSectionDraw) return;
+    crossSectionDraw.deleteAll();
+    crossSectionDraw.changeMode('draw_line_string');
+});
 </script>
 
 <style scoped>
+.footer-resizable {
+  position: relative;
+  /* `flex-direction`/`align-items` below always assumed a flex box — Vuetify's
+     v-footer supplied `display: flex` itself. A plain <footer> is block, which
+     left .footer-content unbounded and let the chart grow to its content height. */
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  align-items: stretch;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.35);
+}
+
+/* Handle sits in the layout flow as a reserved band above the content,
+   so it never overlaps the tab controls (playback buttons, etc.). */
+.footer-resize-handle {
+  flex: 0 0 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  touch-action: none;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.footer-content {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.footer-resize-handle:hover,
+.footer-resize-handle.is-resizing {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.footer-resize-grip {
+  width: 44px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.25);
+  transition: background 0.15s ease;
+}
+
+.footer-resize-handle:hover .footer-resize-grip,
+.footer-resize-handle.is-resizing .footer-resize-grip {
+  background: rgba(255, 255, 255, 0.55);
+}
+
 .map-drawer-toggle {
-    position: absolute;
-    top: 12px;
-    z-index: 2;
-    border-radius: 8px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  position: absolute;
+  top: 12px;
+  z-index: 2;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .footer-rail {
-    width: 136px;
-    background: rgba(255, 255, 255, 0.03);
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  width: 150px;
+  background: rgba(255, 255, 255, 0.03);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .footer-rail-track {
-    position: relative;
-    width: 100%;
-    gap: 2px;
-    padding: 6px;
-}
-
-.footer-rail-pill {
-    position: absolute;
-    left: 6px;
-    right: 6px;
-    top: 6px;
-    height: 32px;
-    border-radius: 8px;
-    background: rgba(var(--v-theme-primary), 0.16);
-    transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 2px;
+  padding: 6px;
 }
 
 .footer-rail-item {
-    position: relative;
-    z-index: 1;
-    height: 32px;
-    padding: 0 10px;
-    /* v-btn-group forces border-radius:0 on grouped buttons (fused segmented-control look) — we want independent rounded rows instead */
-    border-radius: 8px !important;
-    font-size: 0.75rem;
-    letter-spacing: 0;
-    opacity: 0.65;
-    transition: opacity 150ms ease, color 150ms ease;
-    /* v-btn centers its prepend-icon + content as a group by default; override so all rows share a left edge regardless of label length */
-    justify-content: flex-start;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px !important;
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  opacity: 0.65;
+  transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
+  /* UButton centres its leading icon + label as a group by default; override so all rows share a left edge regardless of label length */
+  justify-content: flex-start;
 }
 
-.footer-rail-item :deep(.v-btn__content) {
-    justify-content: flex-start;
+.footer-rail-item {
+  justify-content: flex-start;
 }
 
 .footer-rail-item:hover {
-    opacity: 0.9;
+  opacity: 0.9;
 }
 
-.footer-rail-item.active {
-    opacity: 1;
-    font-weight: 600;
-    color: rgb(var(--v-theme-primary));
+.footer-rail-item--active {
+  opacity: 1;
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.16);
+}
+
+/* Explore's sub-views, nested directly beneath the Explore row while it's active. */
+.footer-rail-sublist {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 14px;
+  margin: 1px 0 3px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.footer-rail-subitem {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px !important;
+  font-size: 0.7rem;
+  letter-spacing: 0;
+  opacity: 0.55;
+  transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
+  justify-content: flex-start;
+}
+
+.footer-rail-subitem {
+  justify-content: flex-start;
+}
+
+.footer-rail-subitem:hover {
+  opacity: 0.85;
+}
+
+.footer-rail-subitem--active {
+  opacity: 1;
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.12);
 }
 
 .cursor-coord-label {
-    position: absolute;
-    z-index: 998;
-    pointer-events: none;
-    transform: translate(-14px, 14px);
-    width: fit-content;
-    padding: 3px 6px;
-    border-radius: 6px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    font-family: monospace;
-    font-size: 11px;
-    color: #ccc;
-    white-space: nowrap;
+  position: absolute;
+  z-index: 998;
+  pointer-events: none;
+  transform: translate(-14px, 14px);
+  width: fit-content;
+  padding: 3px 6px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  font-family: monospace;
+  font-size: 11px;
+  color: #ccc;
+  white-space: nowrap;
 }
 </style>
 
 /* Shrink Mapbox bottom-left controls (logo + attribution) to reduce visual footprint */
 <style>
 .mapboxgl-ctrl-bottom-left .mapboxgl-ctrl-logo {
-    transform: scale(0.5) translateY(1px) !important;
-    transform-origin: left center !important;
+  transform: scale(0.5) translateY(1px) !important;
+  transform-origin: left center !important;
 }
 
 /* make sure the controls remain clickable when scaled */
 .mapboxgl-ctrl-bottom-left a {
-    pointer-events: auto;
+  pointer-events: auto;
 }
 
 .footer-text {
-    font-family: "Roboto Mono", monospace;
-    font-size: 0.75rem;
-    vertical-align: text-bottom;
+  font-family: "Roboto Mono", monospace;
+  font-size: 0.75rem;
+  vertical-align: text-bottom;
 }
 
 @keyframes map-click-pulse {
-    0% {
-        box-shadow: 0 0 0 0 rgba(255, 87, 34, 0.7);
-    }
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 87, 34, 0.7);
+  }
 
-    70% {
-        box-shadow: 0 0 0 14px rgba(255, 87, 34, 0);
-    }
+  70% {
+    box-shadow: 0 0 0 14px rgba(255, 87, 34, 0);
+  }
 
-    100% {
-        box-shadow: 0 0 0 0 rgba(255, 87, 34, 0);
-    }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 87, 34, 0);
+  }
 }
 
 .map-click-marker {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #ff5722;
-    border: 2px solid white;
-    animation: map-click-pulse 1.5s ease-out infinite;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff5722;
+  border: 2px solid white;
+  animation: map-click-pulse 1.5s ease-out infinite;
 }
 </style>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap');
-
 .h-screen {
-    height: calc(100vh - 48px);
+  height: calc(100vh - 48px);
 }
 
 .overlay {
-    position: absolute;
-    z-index: 998;
+  position: absolute;
+  z-index: 998;
 }
 
 .spiderfy-node {
-    position: absolute;
-    transform: translate(-50%, -50%);
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
 }
 
 .spiderfy-dot {
-    width: 13px;
-    height: 13px;
-    border: 2px solid #333;
-    border-radius: 50%;
-    transition: transform 0.12s ease;
+  width: 13px;
+  height: 13px;
+  border: 2px solid #333;
+  border-radius: 50%;
+  transition: transform 0.12s ease;
 }
 
 .spiderfy-node:hover .spiderfy-dot {
-    transform: scale(1.35);
+  transform: scale(1.35);
 }
 
 .spiderfy-label {
-    color: #fff;
-    font-size: 10px;
-    white-space: nowrap;
-    max-width: 110px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-shadow: 0 1px 3px #000, 0 0 5px #000;
-    pointer-events: none;
+  color: #fff;
+  font-size: 10px;
+  white-space: nowrap;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px #000, 0 0 5px #000;
+  pointer-events: none;
 }
 </style>
