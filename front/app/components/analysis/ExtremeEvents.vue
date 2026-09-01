@@ -70,6 +70,7 @@ import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint } from '~~/composables/useAnalysisFetch'
 import SegmentedControl from '../ui/SegmentedControl.vue'
 import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
+import { useViewState, useChartZoom } from '~~/composables/useViewState'
 import {
 
   filterBySeason, maskBySeason, breakDataGaps, computeClimatologyBaseline, detectExtremeEvents, summarizeEventsByYear,
@@ -78,6 +79,8 @@ import {
 
 const thresholdModeItems = [{ value: 'percentile', label: 'Percentile' }, { value: 'fixed', label: 'Fixed value' }]
 const directionItems = [{ value: 'above', label: 'Above (high)' }, { value: 'below', label: 'Below (low)' }]
+
+const VIEW_SCOPE = 'analysis.extremes'
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable: string }>()
 
@@ -92,15 +95,19 @@ const shortHistoryWarning = computed(() =>
   + `true multi-year climatology here — it's a local ±${windowDays.value}-day rolling percentile of this same `
   + `record, so it will track short-term swings rather than a stable "normal for this time of year."`)
 
+// Every control here is store-backed so a shared link reopens this tab with the
+// sender's parameters, not the defaults — see composables/useViewState.ts.
+const field = useViewState(VIEW_SCOPE)
+
 // Direction defaults: low extremes matter for OA-relevant variables, high extremes for temperature.
 const LOW_EXTREME_VARS = new Set(['ph_total', 'omega_arag', 'omega_cal', 'dissolved_oxygen'])
-const direction = ref<'above' | 'below'>(LOW_EXTREME_VARS.has(props.variable) ? 'below' : 'above')
+const direction = field<'above' | 'below'>('direction', LOW_EXTREME_VARS.has(props.variable) ? 'below' : 'above')
 
-const thresholdMode = ref<'percentile' | 'fixed'>('percentile')
-const fixedThreshold = ref(0)
-const windowDays = ref(5)
-const minDurationDays = ref(5)
-const maxGapDays = ref(2)
+const thresholdMode = field<'percentile' | 'fixed'>('thresholdMode', 'percentile')
+const fixedThreshold = field('fixedThreshold', 0)
+const windowDays = field('windowDays', 5)
+const minDurationDays = field('minDurationDays', 5)
+const maxGapDays = field('maxGapDays', 2)
 
 const climatology = computed(() => computeClimatologyBaseline(props.series, windowDays.value))
 const thresholdLookup = computed<ThresholdLookup>(() => thresholdMode.value === 'percentile'
@@ -111,9 +118,9 @@ const events = computed(() => detectExtremeEvents(seasonalSeries.value, threshol
 const yearlySummary = computed(() => summarizeEventsByYear(events.value))
 
 // v-data-table sorted by default; TanStack's table needs the initial state given explicitly.
-const sorting1 = ref([{ id: 'peakAnomaly', desc: true }])
+const sorting1 = field('sorting1', [{ id: 'peakAnomaly', desc: true }])
 // v-data-table sorted by default; TanStack's table needs the initial state given explicitly.
-const sorting2 = ref([{ id: 'year', desc: true }])
+const sorting2 = field('sorting2', [{ id: 'year', desc: true }])
 
 const eventHeaders = computed(() => [
   { header: 'Start', accessorKey: 'startTime' },
@@ -195,18 +202,16 @@ if (csv) csv.register((): CsvDataset[] => [
 const chartContainerRef = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
-// Preserved across re-renders so changing a param on the left doesn't reset the user's zoom.
-let zoomRange = { start: 0, end: 100 }
+// Preserved across re-renders so changing a param on the left doesn't reset the
+// user's zoom — and stored, so a shared link reopens at the same zoom.
+const zoom = useChartZoom(VIEW_SCOPE)
 
 function render() {
   if (!chartContainerRef.value) return
   registerEchartsDarkTheme()
   if (!chartInstance) {
     chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
-    chartInstance.on('datazoom', () => {
-      const dz = (chartInstance!.getOption().dataZoom as any[]) || []
-      if (dz[0]) zoomRange = { start: dz[0].start, end: dz[0].end }
-    })
+    zoom.track(chartInstance)
   }
 
   // Masked (not compacted) so off-season months render as a real gap in the line
@@ -233,8 +238,8 @@ function render() {
       axisLabel: { fontSize: 10, color: '#ccc' }, scale: true,
     },
     dataZoom: [
-      { type: 'inside', start: zoomRange.start, end: zoomRange.end },
-      { type: 'slider', bottom: 4, height: 14, start: zoomRange.start, end: zoomRange.end },
+      { type: 'inside', ...zoom.current() },
+      { type: 'slider', bottom: 4, height: 14, ...zoom.current() },
     ],
     series: [
       {

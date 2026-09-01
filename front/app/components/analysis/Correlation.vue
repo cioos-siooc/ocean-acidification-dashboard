@@ -46,6 +46,7 @@ import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint, AnalysisLocation } from '~~/composables/useAnalysisFetch'
 import { availableVariables, filterBySeason, pearsonCorrelation, joinSeriesByDate, linearRegression } from '~~/composables/useAnalysisStatistics'
 import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
+import { useViewState } from '~~/composables/useViewState'
 
 const props = defineProps<{
   primarySeries: SeriesPoint[]
@@ -63,7 +64,10 @@ function axisName(id: string) { const u = displayUnit(id); return u ? `${varName
 
 const selectableVariables = availableVariables
 const MAX_VARS = 4
-const selectedVariables = ref<string[]>([props.primaryVariable])
+// Store-backed so a shared link restores the chosen variables and the picked
+// matrix cell rather than reopening on the empty scatter placeholder.
+const field = useViewState('analysis.correlation')
+const selectedVariables = field<string[]>('selectedVariables', [props.primaryVariable])
 
 function onSelectionChange(vals: string[]) {
   if (vals.length > MAX_VARS) selectedVariables.value = vals.slice(0, MAX_VARS)
@@ -114,7 +118,7 @@ const matrix = computed(() => {
   return { vars, cells }
 })
 
-const selectedPair = ref<[string, string] | null>(null)
+const selectedPair = field<[string, string] | null>('selectedPair', null)
 
 // ── CSV EXPORT ──────────────────────────────────────────────────────────────
 // The matrix goes out long (one row per pair) rather than as a grid — a square

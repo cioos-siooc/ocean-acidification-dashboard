@@ -168,8 +168,11 @@ export function yearColor(idx: number, total: number): string {
  * instead baked directly into each series' own `lineStyle.opacity` via
  * `setOption`, independent of hover state.
  */
-export function attachStickyLegendHighlight(chart: ECharts): void {
-    let stickyName: string | null = null;
+export function attachStickyLegendHighlight(
+    chart: ECharts,
+    opts: { initial?: string | null, onChange?: (name: string | null) => void } = {},
+): () => void {
+    let stickyName: string | null = opts.initial ?? null;
 
     function applyStickyStyles(): void {
         const series = ((chart.getOption().series as any[]) || []);
@@ -195,9 +198,15 @@ export function attachStickyLegendHighlight(chart: ECharts): void {
             // Undo the default click-to-hide — legend selection is repurposed below.
             chart.dispatchAction({ type: 'legendAllSelect' });
             stickyName = params.name === stickyName ? null : params.name;
+            opts.onChange?.(stickyName);
             applyStickyStyles();
         }, 0);
     });
+
+    // Returned so the host can re-apply after a `setOption(..., true)` replace,
+    // which drops the per-series opacity this bakes in — a restored selection
+    // would otherwise vanish on the first re-render.
+    return applyStickyStyles;
 }
 
 // --- TREND SIGNIFICANCE (Mann-Kendall + Theil-Sen) ---

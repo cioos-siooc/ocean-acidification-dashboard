@@ -549,6 +549,12 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
 // Update only the vertical "Map" marker when selected dt changes (no full re-plot)
 watch(() => mainStore.selected_variable.dt, (newDt) => {
     if (!chart) return;
+    // The marker rides on the 'Day/Night' series, so there has to be one to
+    // merge into. A shared link sets `dt` before the first plot has run, and
+    // merging a typeless series into an empty chart only makes ECharts log
+    // "Unknown series undefined" — the plot itself draws the marker anyway.
+    const plotted = (chart.getOption()?.series as any[]) || [];
+    if (!plotted.some((s: any) => s?.name === 'Day/Night')) return;
     const tz = APP_TIMEZONE;
     const sel = newDt ? moment.utc(newDt).tz(tz).format() : null;
     try {

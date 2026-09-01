@@ -290,9 +290,24 @@ const chartWindowEnd = computed(() => {
 // fetch that produced this very coverage — a refetch loop that also pins
 // `loading` on, disabling the mode toggle.
 watch(coverage, () => {
+  // A shared link's window anchor is claimed here rather than on mount: the
+  // composable resets the window to "latest" immediately (and again on every
+  // resetOn change), so anything set earlier would be overwritten before the
+  // first render. One-shot — `take` nulls the slot — so paging afterwards
+  // behaves exactly as it does in a normal session.
+  const restored = mainStore.takePendingWindowEnd()
+  if (restored) {
+    pinnedToLatest.value = false
+    windowEnd.value = clampWindowEnd(new Date(restored))
+    return
+  }
   const next = pinnedToLatest.value ? clampWindowEnd(dataCeil.value) : clampWindowEnd(windowEnd.value)
   if (next.getTime() !== windowEnd.value.getTime()) windowEnd.value = next
 })
+
+// Mirrored onto the store for share capture only (the Share button lives in
+// the app header, outside this panel). This panel stays the sole writer.
+watch(windowEnd, (d) => mainStore.setExploreWindowEnd(d.getTime()), { immediate: true })
 
 // ── DATA ──────────────────────────────────────────────────────────────────────
 const grid = ref<(number | null)[][]>([])

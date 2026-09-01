@@ -103,6 +103,7 @@ import {
   availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor, computeYearBandStats,
 } from '~~/composables/useAnalysisStatistics'
 import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
+import { useViewState, useChartZoom } from '~~/composables/useViewState'
 
 const seasonItems = [{ value: 'full_year', label: 'All' }, { value: 'mam', label: 'MAM' }, { value: 'jja', label: 'JJA' }, { value: 'son', label: 'SON' }, { value: 'djf', label: 'DJF' }]
 const statItems = [{ value: 'min', label: 'Min' }, { value: 'mean', label: 'Mean' }, { value: 'max', label: 'Max' }]
@@ -147,8 +148,14 @@ const maxYear = computed(() => !isSensor.value ? MODEL_MAX_YEAR
   : (sensorInfo.value?.latest_data_at ? parseInt(sensorInfo.value.latest_data_at.slice(0, 4), 10) : currentYear))
 
 // --- REACTIVE STATE ---
-const selectedSeason = ref('full_year')
-const primaryStat = ref('mean')
+// Store-backed so a shared link reopens Overview with the sender's season and
+// statistic — see composables/useViewState.ts.
+const VIEW_SCOPE = 'analysis.builder'
+const field = useViewState(VIEW_SCOPE)
+const zoom = useChartZoom(VIEW_SCOPE)
+
+const selectedSeason = field('selectedSeason', 'full_year')
+const primaryStat = field('primaryStat', 'mean')
 
 const isGenerating = ref(false)
 const hasActivePlot = ref(false)
@@ -250,6 +257,7 @@ function initChart() {
   if (chartInstance) { chartInstance.dispose(); chartInstance = null }
   if (!chartContainerRef.value) return
   chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
+  zoom.track(chartInstance)
 }
 
 // ── CSV EXPORT ──────────────────────────────────────────────────────────────
@@ -475,7 +483,7 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
       name: `${varName.value} (${primaryStat.value})${varUnit.value ? ` [${varUnit.value}]` : ''}`,
       nameLocation: 'middle', nameGap: 50, axisLabel: { fontSize: 10, color: '#ccc' }, scale: true,
     },
-    dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 16 }],
+    dataZoom: [{ type: 'inside', ...zoom.current() }, { type: 'slider', bottom: 4, height: 16, ...zoom.current() }],
     series: [...statsSeries, ...yearSeries]
   }, true)
 

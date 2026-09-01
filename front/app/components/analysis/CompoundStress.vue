@@ -47,6 +47,7 @@ import { availableVariables, filterBySeason, maskBySeason, breakDataGaps, groupB
 import { useMainStore } from '../../stores/main'
 import SegmentedControl from '../ui/SegmentedControl.vue'
 import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
+import { useViewState, useChartZoom } from '~~/composables/useViewState'
 const directionItems = [{ value: '>', label: 'Above' }, { value: '<', label: 'Below' }]
 
 const mainStore = useMainStore()
@@ -66,12 +67,18 @@ const { displayUnit } = useVariableRegistry()
 function axisName(id: string) { const u = displayUnit(id); return u ? `${varName(id)} (${u})` : varName(id) }
 
 const otherVariables = computed(() => availableVariables.filter(v => v.id !== props.primaryVariable))
-const secondaryVariable = ref(otherVariables.value[0]?.id || '')
 
-const primaryThreshold = ref(0)
-const primaryDirection = ref<'>' | '<'>('>')
-const secondaryThreshold = ref(0)
-const secondaryDirection = ref<'>' | '<'>('>')
+// Store-backed so a shared link restores the pair and thresholds the sender set.
+const VIEW_SCOPE = 'analysis.compound'
+const field = useViewState(VIEW_SCOPE)
+const zoom = useChartZoom(VIEW_SCOPE)
+
+const secondaryVariable = field('secondaryVariable', otherVariables.value[0]?.id || '')
+
+const primaryThreshold = field('primaryThreshold', 0)
+const primaryDirection = field<'>' | '<'>('primaryDirection', '>')
+const secondaryThreshold = field('secondaryThreshold', 0)
+const secondaryDirection = field<'>' | '<'>('secondaryDirection', '>')
 
 const secondarySeries = ref<SeriesPoint[]>([])
 const secondaryLoading = ref(false)
@@ -134,7 +141,7 @@ const yearRows = computed(() => {
 })
 
 // v-data-table sorted by default; TanStack's table needs the initial state given explicitly.
-const sorting = ref([{ id: 'year', desc: true }])
+const sorting = field('sorting', [{ id: 'year', desc: true }])
 
 const yearHeaders = [
   { header: 'Year', accessorKey: 'year' },
@@ -192,7 +199,10 @@ let resizeObserver: ResizeObserver | null = null
 function render() {
   if (!chartContainerRef.value) return
   registerEchartsDarkTheme()
-  if (!chartInstance) chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
+  if (!chartInstance) {
+    chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
+    zoom.track(chartInstance)
+  }
 
   const compoundSet = new Set(compoundDays.value.map(d => d.time))
   const markAreaData = buildMarkAreas(Array.from(compoundSet).sort())
@@ -206,7 +216,7 @@ function render() {
       { type: 'value', name: axisName(props.primaryVariable), nameTextStyle: { fontSize: 9 }, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
       { type: 'value', name: axisName(secondaryVariable.value), nameTextStyle: { fontSize: 9 }, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
     ],
-    dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 14 }],
+    dataZoom: [{ type: 'inside', ...zoom.current() }, { type: 'slider', bottom: 4, height: 14, ...zoom.current() }],
     series: [
       {
         // Masked (not compacted) so off-season months render as a real gap instead

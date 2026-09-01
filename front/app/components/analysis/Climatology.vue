@@ -36,13 +36,20 @@ import {
   distinctYearSpan, attachStickyLegendHighlight,
 } from '~~/composables/useAnalysisStatistics'
 import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
+import { useViewState, useChartZoom } from '~~/composables/useViewState'
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable?: string }>()
 
 const { displayUnit } = useVariableRegistry()
 const unit = computed(() => props.variable ? displayUnit(props.variable) : '')
 
-const windowDays = ref(5)
+const VIEW_SCOPE = 'analysis.climatology'
+const field = useViewState(VIEW_SCOPE)
+const zoom = useChartZoom(VIEW_SCOPE)
+
+const windowDays = field('windowDays', 5)
+// Which year the user isolated by clicking the legend (see attachStickyLegendHighlight).
+const stickyYear = field<string | null>('stickyYear', null)
 const climatology = computed(() => computeClimatologyBaseline(props.series, windowDays.value))
 const yearSpan = computed(() => distinctYearSpan(props.series))
 const isShortHistory = computed(() => yearSpan.value < 2)
@@ -145,13 +152,18 @@ if (csv) csv.register((): CsvDataset[] => {
 const chartContainerRef = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
+let applySticky: (() => void) | null = null
 
 function render() {
   if (!chartContainerRef.value) return
   registerEchartsDarkTheme()
   if (!chartInstance) {
     chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
-    attachStickyLegendHighlight(chartInstance)
+    zoom.track(chartInstance)
+    applySticky = attachStickyLegendHighlight(chartInstance, {
+      initial: stickyYear.value,
+      onChange: (name) => { stickyYear.value = name },
+    })
   }
 
   const total = anomalySeries.value.length
@@ -180,9 +192,10 @@ function render() {
       type: 'value', name: unit.value ? `Anomaly (${unit.value})` : 'Anomaly',
       nameLocation: 'middle', nameGap: 40, axisLabel: { fontSize: 10, color: '#ccc' }, scale: true,
     },
-    dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 14 }],
+    dataZoom: [{ type: 'inside', ...zoom.current() }, { type: 'slider', bottom: 4, height: 14, ...zoom.current() }],
     series,
   }, true)
+  applySticky?.()
   chartInstance.resize()
 }
 

@@ -114,6 +114,7 @@ import { fetchModelTimeseries } from '~~/composables/useModelTimeseries'
 import { availableVariables } from '~~/composables/useAnalysisStatistics'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import SegmentedControl from './ui/SegmentedControl.vue'
+import { useViewState, useChartZoom } from '~~/composables/useViewState'
 import {
 
   aggregateSensorToDaily,
@@ -164,7 +165,13 @@ const depthLabel = computed(() => {
 })
 
 // --- SEASON FILTER ---
-const selectedSeason = ref<Season>('all')
+// Store-backed so a shared link reopens with the sender's season/resolution and
+// the same zoom on the timeseries — see composables/useViewState.ts.
+const VIEW_SCOPE = 'comparison.timeseries'
+const field = useViewState(VIEW_SCOPE)
+const zoom = useChartZoom(VIEW_SCOPE)
+
+const selectedSeason = field<Season>('selectedSeason', 'all')
 
 const seasonalData = computed(() => filterBySeason(rawComparisonData.value, selectedSeason.value))
 
@@ -192,7 +199,7 @@ const rawComparisonData = ref<ComparisonPoint[]>([])
 // defined on matched *daily* pairs, and re-basing them on a fortnight of hourly
 // samples would quietly change what those numbers mean. Hourly is a second,
 // display-only series that only the chart reads.
-const resolution = ref<'hourly' | 'daily'>('daily')
+const resolution = field<'hourly' | 'daily'>('resolution', 'daily')
 const hourlyData = ref<ComparisonPoint[]>([])
 const chartData = computed(() => resolution.value === 'hourly' ? hourlyData.value : rawComparisonData.value)
 
@@ -285,6 +292,7 @@ function initChart() {
   if (tsChart) { tsChart.dispose(); tsChart = null }
   if (timeseriesContainerRef.value)
     tsChart = echarts.init(timeseriesContainerRef.value, 'dark', { renderer: 'canvas' })
+    zoom.track(tsChart)
 }
 
 function renderTimeseriesChart() {
@@ -329,7 +337,7 @@ function renderTimeseriesChart() {
       min: 'dataMin',
       max: 'dataMax',
     },
-    dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 16 }],
+    dataZoom: [{ type: 'inside', ...zoom.current() }, { type: 'slider', bottom: 4, height: 16, ...zoom.current() }],
     series: [
       {
         name: 'Model min',

@@ -71,6 +71,7 @@ import { BIN_CONFIG, useTimeDepthWindow, toApiIso, type BinMode } from '~~/compo
 import TimeDepthHeatmap from '../depth/TimeDepthHeatmap.vue'
 import { csvFilename, csvMeta, csvTimestamp, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
 import SegmentedControl from '../ui/SegmentedControl.vue'
+import { useViewState } from '~~/composables/useViewState'
 const binModeItems = computed(() => AVAILABLE_MODES.map(m => ({ value: m, label: BIN_CONFIG[m].short, title: BIN_CONFIG[m].label })))
 
 /**
@@ -100,7 +101,9 @@ const depths = computed<number[]>(() => {
 
 // Monthly is omitted: no deployed profiler has anything like a 20-year cast record.
 const AVAILABLE_MODES: BinMode[] = ['hourly', 'daily']
-const binMode = ref<BinMode>('daily')
+// Store-backed so a shared link reopens this tab as the sender left it.
+const field = useViewState('comparison.sections')
+const binMode = field<BinMode>('binMode', 'daily')
 
 const dataFloor = computed(() => sensorInfo.value?.first_data_at ? new Date(sensorInfo.value.first_data_at) : null)
 const dataCeil = computed(() => sensorInfo.value?.latest_data_at ? new Date(sensorInfo.value.latest_data_at) : new Date())
@@ -235,7 +238,7 @@ const colorFn = computed(() => {
 })
 
 // ── DEPTH / HOVER / STATS ────────────────────────────────────────────────────
-const selectedDepthIdx = ref(0)
+const selectedDepthIdx = field('selectedDepthIdx', 0)
 const markDepth = computed(() => depths.value[selectedDepthIdx.value] ?? null)
 // ── CSV EXPORT ──────────────────────────────────────────────────────────────
 // One file, not two: the whole point of this tab is the two panels side by side,

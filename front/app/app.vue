@@ -26,6 +26,8 @@
         Feedback
       </UButton>
 
+      <ShareButton label="Share" />
+
       <NuxtLink to="/caseStudy" target="_blank">
         <UButton variant="ghost">Case Studies</UButton>
       </NuxtLink>
@@ -51,13 +53,36 @@ import axios from 'axios'
 
 import { useRuntimeConfig } from '#app'
 import { useMainStore, formatDepthLabel } from './stores/main'
+import { readShareHash, decodeShareState, applyShareState, applySharedVariable } from '~~/composables/useShareState'
+import ShareButton from './components/ShareButton.vue'
 const mainStore = useMainStore();
 const config = useRuntimeConfig();
 const apiBaseUrl = config.public.apiBaseUrl;
 
-onBeforeMount(() => {
-  getVariables();
+// A shared link's payload is decoded before anything is fetched, so
+// `getVariables()` below can honour it instead of the cold-start default.
+// `shareRestorePending` is flipped synchronously (the decode itself is async —
+// it goes through DecompressionStream) so index.vue, which mounts while the
+// decode is still in flight, knows to hold its bootstrap map click.
+onBeforeMount(async () => {
+  const payload = readShareHash();
+  if (payload) {
+    mainStore.shareRestorePending = true;
+    const shared = await decodeShareState(payload);
+    if (shared) {
+      mainStore.setPendingShare(shared);
+      applyShareState(shared);
+    } else {
+      mainStore.shareRestorePending = false;
+      mainStore.pushSnack({ color: 'warning', text: "This share link couldn't be read — showing the default view." });
+    }
+  }
   getColormaps();
+  // Awaited so the restore flag is only released once the shared variable has
+  // been resolved against `/variables` — index.vue's bootstrap map click waits
+  // on that flag (see `maybeInitClick`).
+  await getVariables();
+  mainStore.clearPendingShare();
 });
 
 // Block phones / small tablets: this map- and chart-heavy dashboard needs a large
@@ -93,6 +118,30 @@ async function getVariables() {
     });
 
     mainStore.setVariables(data);
+
+    // A shared link picks the variable; its selection is validated field by
+    // field against the list just fetched, so a retired variable or a depth
+    // level that no longer exists degrades to the nearest sensible thing
+    // rather than to a blank map.
+    const shared = mainStore.pendingShare;
+    if (shared) {
+      const resolved = applySharedVariable(shared, data);
+      // `dt` is the one field with no usable fallback — without an instant
+      // there is nothing to render — so a payload that can't resolve one drops
+      // through to the cold-start default below.
+      if (resolved && resolved.patch.var && resolved.patch.dt) {
+        mainStore.updateSelectedVariable(resolved.patch);
+        for (const issue of resolved.issues) {
+          mainStore.pushSnack({ color: 'warning', text: `Shared view: ${issue}.` });
+        }
+        return;
+      }
+      if (resolved?.issues.length) {
+        for (const issue of resolved.issues) {
+          mainStore.pushSnack({ color: 'warning', text: `Shared view: ${issue} — falling back to the default.` });
+        }
+      }
+    }
 
     if (data.length > 0) {
       const varId = 'temperature';

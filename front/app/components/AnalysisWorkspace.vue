@@ -8,6 +8,7 @@
           <UBadge size="xs" color="warning" variant="subtle" class="ml-2 rounded-full" v-if="contextLabel">{{ contextLabel }}</UBadge>
         </div>
         <div class="grow" />
+        <ShareButton />
         <DownloadButton :datasets="csvDatasets" class="shrink-0" />
         <UButton variant="ghost" icon="i-mdi-close" class="shrink-0" title="Close (Esc)" @click="isOpen = false" />
       </div>
@@ -69,6 +70,7 @@ import { availableVariables } from '~~/composables/useAnalysisStatistics'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { csvMeta, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
 import DownloadButton from './ui/DownloadButton.vue'
+import ShareButton from './ShareButton.vue'
 import AnalysisBuilder from './analysis/AnalysisBuilder.vue'
 import ExtremeEvents from './analysis/ExtremeEvents.vue'
 import CompoundStress from './analysis/CompoundStress.vue'
@@ -130,8 +132,18 @@ const yearRange = computed<[number, number]>(() => {
   return [from, to]
 })
 
-const activeTab = ref<'builder' | 'extremes' | 'compound' | 'trend' | 'climatology' | 'correlation'>('builder')
-const selectedSeason = ref('full_year')
+// Tab and season live on the store rather than in local refs so a share link
+// can restore which analysis the sender was looking at — same reasoning that
+// moved `exploreView`/`exploreBinMode` out of ExplorePanel.
+type AnalysisTab = 'builder' | 'extremes' | 'compound' | 'trend' | 'climatology' | 'correlation'
+const activeTab = computed<AnalysisTab>({
+  get: () => mainStore.analysisTab as AnalysisTab,
+  set: (t) => mainStore.setAnalysisTab(t),
+})
+const selectedSeason = computed<string>({
+  get: () => mainStore.analysisSeason,
+  set: (v) => mainStore.setAnalysisSeason(v),
+})
 
 // ── CSV EXPORT ──────────────────────────────────────────────────────────────
 // The workspace owns the query (point/sensor, variable, depth, window) so it

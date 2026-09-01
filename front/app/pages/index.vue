@@ -595,6 +595,15 @@ onMounted(async () => {
             if (map) zoom.value = map.getZoom().toFixed(2);
         });
 
+        // Publish the camera so the Share button — mounted in the app header,
+        // nowhere near this page's `map` instance — can capture it. `moveend`
+        // rather than `move`: one write per settled gesture, not per frame.
+        map?.on('moveend', publishMapView);
+        publishMapView();
+
+        applyPendingMapView();
+        restoreSharedCrossSection();
+
         updateAnalysisBox();
 
         // Cross-Section tab's line-drawing control. Added once and left on the
@@ -616,6 +625,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
     if (map) {
         map.off('idle', raiseWaterNamesLayer);
+        map.off('moveend', publishMapView);
 
         const handlers = (map as any)?.__anchoredChartsHandlers;
         const refs = (map as any)?.__anchoredCharts as Array<any> | undefined;
@@ -714,7 +724,11 @@ watch(() => [mainStore.selected_variable.source, mainStore.selected_variable.var
 // Watcher: Explore panel's bin-mode toggle changes which dt resolution the raster tile URL
 // requests (hourly/daily/monthly — see updatePngOverlay), so the map layer needs its own refresh.
 watch(() => mainStore.exploreBinMode, async () => {
-    if (!map) return;
+    // A shared link restores the bin mode before `/variables` has landed, so
+    // this can fire with no variable metadata (and therefore no bounds) to
+    // render against. Nothing is lost by skipping: the selected_variable
+    // watcher above is `immediate` and draws the overlay once the list arrives.
+    if (!map || !mainStore.variables.length) return;
     try {
         await updatePngOverlay();
     } catch (e) {
@@ -903,13 +917,86 @@ async function init() {
 }
 
 
-function maybeInitClick() {
-    // Call initClick only once both the map has finished loading and the selected variable has been initialized
-    if (mapLoaded.value && selectedReady.value && !didInitClick) {
-        didInitClick = true;
-        initClick(49.2, -123.5); // Center of the map
+function publishMapView() {
+    if (!map) return;
+    const c = map.getCenter();
+    mainStore.setMapView({
+        center: [c.lng, c.lat],
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+    });
+}
+
+/**
+ * A shared link's camera. Applied here rather than in the Map constructor
+ * because the payload is decoded asynchronously in app.vue and may still be in
+ * flight when this page mounts — hence the watcher below as well, which covers
+ * a decode that lands after the map is already up.
+ */
+function applyPendingMapView() {
+    const view = mainStore.takePendingMapView();
+    if (!map || !view) return;
+    map.jumpTo({ center: view.center, zoom: view.zoom, bearing: view.bearing, pitch: view.pitch });
+    publishMapView();
+}
+watch(() => mainStore.pendingMapView, () => { if (mapLoaded.value || map) applyPendingMapView(); });
+
+/**
+ * Put a shared cross-section line back on the map. `mainStore.crossSectionLine`
+ * alone only feeds the panel's fetch — the line itself lives in
+ * mapbox-gl-draw's own store, which starts empty on a fresh load, so the
+ * geometry has to be handed back to it explicitly.
+ */
+let crossSectionRestored = false;
+function restoreSharedCrossSection() {
+    if (!crossSectionDraw || crossSectionRestored) return;
+    const line = mainStore.crossSectionLine;
+    if (line?.length) {
+        crossSectionRestored = true;
+        crossSectionDraw.add({
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'LineString', coordinates: line.map(p => [p.lng, p.lat]) },
+        } as GeoJSON.Feature<GeoJSON.LineString>);
+        updateCrossSectionVertexLabels();
+    } else if (!mainStore.shareRestorePending) {
+        // No line to put back (and none still arriving). Arm drawing if the
+        // app opened straight into this tab — the activeTab watcher only fires
+        // on a *change* of tab, so a shared link that lands here never triggers it.
+        crossSectionRestored = true;
+        if (activeTab.value === 'crossSection') crossSectionDraw.changeMode('draw_line_string');
     }
 }
+// The payload finishes decoding after the map is built, so the line can arrive
+// later than `map.on('load')` — retry once it does (the flag above makes this
+// idempotent, and leaves the user's own subsequent drawing alone).
+watch([() => mainStore.shareRestorePending, () => mainStore.crossSectionLine], () => {
+    if (mapLoaded.value || map) restoreSharedCrossSection();
+});
+
+function maybeInitClick() {
+    // Call initClick only once both the map has finished loading and the selected variable has been initialized
+    // — and, for a shared link, once the payload has been decoded, so the
+    // shared coordinate isn't overwritten by the default bootstrap point.
+    if (mainStore.shareRestorePending) return;
+    if (mapLoaded.value && selectedReady.value && !didInitClick) {
+        didInitClick = true;
+        const shared = mainStore.lastClickedMapPoint;
+        if (shared) {
+            // Already the app's selected point (applyShareState set it); all
+            // that's missing is the marker. Deliberately not initClick(): that
+            // reports a `model_point_queried` the user never performed.
+            trigger_mapClick(shared.lat, shared.lng);
+        } else {
+            initClick(49.2, -123.5); // Center of the map
+        }
+    }
+}
+
+// A share payload finishes decoding after this page has mounted, so the
+// bootstrap click above has to be retried once the restore releases it.
+watch(() => mainStore.shareRestorePending, (pending) => { if (!pending) maybeInitClick(); });
 
 function initClick(lat: number, lng: number) {
     if (!map) return;

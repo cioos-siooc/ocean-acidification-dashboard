@@ -8,6 +8,7 @@
           <UBadge size="xs" color="warning" variant="subtle" class="ml-2 rounded-full" v-if="sensorName">{{ sensorName }}</UBadge>
         </div>
         <div class="grow" />
+        <ShareButton />
         <DownloadButton :datasets="csvDatasets" class="shrink-0" />
         <UButton variant="ghost" icon="i-mdi-close" class="shrink-0" title="Close (Esc)" @click="isOpen = false" />
       </div>
@@ -79,6 +80,7 @@ import SensorComparison from './sensorComparison.vue'
 import ComparisonSections from './comparison/ComparisonSections.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import DownloadButton from './ui/DownloadButton.vue'
+import ShareButton from './ShareButton.vue'
 import { csvMeta, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
 const seasonItems = [{ value: 'all', label: 'All' }, { value: 'mam', label: 'MAM' }, { value: 'jja', label: 'JJA' }, { value: 'son', label: 'SON' }, { value: 'djf', label: 'DJF' }]
 
@@ -111,7 +113,12 @@ const varName = computed(() =>
   availableVariables.find(v => v.id === mainStore.selected_variable.var)?.name || mainStore.selected_variable.var || 'Variable')
 
 type Tab = 'overview' | 'sections' | 'scatter' | 'residuals' | 'seasonal'
-const activeTab = ref<Tab>('overview')
+// On the store, not a local ref: a share link restores which comparison tab
+// was open (see useShareState.ts).
+const activeTab = computed<Tab>({
+  get: () => mainStore.comparisonTab as Tab,
+  set: (t) => mainStore.setComparisonTab(t),
+})
 const isStatsTab = computed(() => ['scatter', 'residuals', 'seasonal'].includes(activeTab.value))
 
 // A profiler losing its sections tab would strand the view on a blank pane.
@@ -122,7 +129,10 @@ watch(isVariableDepth, (v) => { if (!v && activeTab.value === 'sections') active
 const rawData = ref<ComparisonPoint[]>([])
 function onComparisonData(points: ComparisonPoint[]) { rawData.value = points }
 
-const selectedSeason = ref<Season>('all')
+const selectedSeason = computed<Season>({
+  get: () => mainStore.comparisonSeason as Season,
+  set: (v) => mainStore.setComparisonSeason(v),
+})
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 const filteredData = computed(() =>
