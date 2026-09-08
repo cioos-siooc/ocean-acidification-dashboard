@@ -133,6 +133,7 @@ import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, floorToBin, type B
 import { fetchClimateTimeseries } from '~~/composables/useClimateTimeseries'
 import { getSensorTimeseries } from '~~/composables/useSensorTimeseries'
 import { csvMeta, csvTimestamp, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
+import { sensorSourceUrl } from '~~/composables/useSensorDownloadLinks'
 import DownloadButton from './ui/DownloadButton.vue'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import TimeDepthHeatmap from './depth/TimeDepthHeatmap.vue'
@@ -165,7 +166,7 @@ import { toCalendarDate, fromCalendarDate } from '~~/composables/useCalendarDate
 const props = defineProps<{ active?: boolean }>()
 
 const mainStore = useMainStore()
-const { toDisplayValue, displayUnit } = useVariableRegistry()
+const { toDisplayValue, displayUnit, formatDisplayValue } = useVariableRegistry()
 
 const point = computed(() => mainStore.lastClickedMapPoint)
 const source = computed(() => mainStore.selected_variable.source)
@@ -625,7 +626,7 @@ function cellTooltip(binIdx: number, depthIdx: number, value: number | null): st
       : { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }
   const dtStr = dt ? dt.toLocaleString('en-US', dtOpts) : '—'
   const depthStr = depth != null ? `${depth.toFixed(depth < 10 ? 1 : 0)}m` : '—'
-  const valueStr = value == null ? 'no data' : `${value.toFixed(3)} ${displayUnit(varId.value)}`
+  const valueStr = value == null ? 'no data' : formatDisplayValue(varId.value, value, { unit: true })
   return `<div style="opacity:.7;margin-bottom:2px;">${dtStr} &middot; ${depthStr}</div><div>${varName.value}: <b>${valueStr}</b></div>`
 }
 
@@ -730,16 +731,19 @@ const contextItems = computed<ContextItem[]>(() => {
 // registrations with it.
 const csvContext = computed<CsvContext | null>(() => {
   if (!point.value || !varId.value) return null
-  const sensorName = mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id)?.name
+  const sensor = mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id)
   return {
     source: showingSensor.value ? 'sensor' : 'model',
-    sourceLabel: showingSensor.value ? `sensor — ${sensorName ?? ''}` : 'SalishSeaCast model',
+    sourceLabel: showingSensor.value ? `sensor — ${sensor?.name ?? ''}` : 'SalishSeaCast model',
+    sourceUrl: showingSensor.value ? sensorSourceUrl(sensor) : null,
     variable: varId.value,
     variableName: varName.value,
     unit: displayUnit(varId.value),
     // A section spans the whole water column, so no single depth describes it.
     depth: showSection.value ? null : (depths.value[selectedDepthIdx.value] ?? null),
     locationLabel: `${Math.abs(point.value.lat).toFixed(3)}${point.value.lat >= 0 ? 'N' : 'S'} ${Math.abs(point.value.lng).toFixed(3)}${point.value.lng >= 0 ? 'E' : 'W'}`,
+    latitude: point.value.lat,
+    longitude: point.value.lng,
     timeRange: [csvTimestamp(windowStart.value), csvTimestamp(chartWindowEnd.value)],
   }
 })
@@ -772,7 +776,7 @@ const csvSectionRows = computed(() => {
 
 csvExport.register((): CsvDataset[] => {
   if (!showSection.value || !csvSectionRows.value.length) return []
-  const u = displayUnit(varId.value) ? ` (${displayUnit(varId.value)})` : ''
+  const u = displayUnit(varId.value) || null
   return [{
     label: showingSensor.value ? 'Sensor depth section' : 'Model depth section',
     slug: showingSensor.value ? 'sensor-depth-section' : 'model-depth-section',
@@ -780,7 +784,7 @@ csvExport.register((): CsvDataset[] => {
     columns: [
       { header: 'time', accessorKey: 'time' },
       { header: 'depth_m', accessorKey: 'depth' },
-      { header: `value${u}`, accessorKey: 'value' },
+      { header: 'value', unit: u, accessorKey: 'value' },
     ],
     rows: csvSectionRows.value,
     meta: csvMeta(csvContext.value, [

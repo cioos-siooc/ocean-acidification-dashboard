@@ -63,7 +63,7 @@ const props = defineProps<{
 }>()
 
 function varName(id: string) { return availableVariables.find(v => v.id === id)?.name || id }
-const { displayUnit } = useVariableRegistry()
+const { displayUnit, formatDisplayValue } = useVariableRegistry()
 function axisName(id: string) { const u = displayUnit(id); return u ? `${varName(id)} (${u})` : varName(id) }
 
 const otherVariables = computed(() => availableVariables.filter(v => v.id !== props.primaryVariable))
@@ -178,18 +178,13 @@ if (csv) csv.register((): CsvDataset[] => [
     slug: 'compound-stress-days',
     columns: [
       { header: 'time', accessorKey: 'time' },
-      { header: csvValueHeader(props.primaryVariable), accessorKey: 'a' },
-      { header: csvValueHeader(secondaryVariable.value), accessorKey: 'b' },
+      { header: props.primaryVariable, unit: displayUnit(props.primaryVariable), accessorKey: 'a' },
+      { header: secondaryVariable.value, unit: displayUnit(secondaryVariable.value), accessorKey: 'b' },
     ],
     rows: compoundDays.value as unknown as Record<string, unknown>[],
     meta: csvMeta(csv.context.value, csvConditionMeta.value),
   },
 ])
-
-function csvValueHeader(id: string) {
-  const u = displayUnit(id)
-  return u ? `${id} (${u})` : id
-}
 
 // --- CHART ---
 const chartContainerRef = ref<HTMLDivElement | null>(null)
@@ -221,15 +216,25 @@ function render() {
       {
         // Masked (not compacted) so off-season months render as a real gap instead
         // of a straight diagonal connecting e.g. last August to next March.
-        name: varName(props.primaryVariable), type: 'line', showSymbol: false, yAxisIndex: 0, connectNulls: false,
+        // `symbol: 'none'` rather than `showSymbol: false` — the latter still leaves
+        // the point marker in the legend's line icon.
+        name: varName(props.primaryVariable), type: 'line', symbol: 'none', yAxisIndex: 0, connectNulls: false,
+        // Per-series rather than one tooltip-wide valueFormatter: the two series are
+        // different variables, so they round to different numbers of decimals.
+        tooltip: { valueFormatter: (v: any) => formatDisplayValue(props.primaryVariable, v) },
         data: maskBySeason(breakDataGaps(props.primarySeries), props.season).map(d => [d.time, d.value]),
         lineStyle: { width: 1.2, color: '#58d9f9' },
+        // itemStyle mirrors lineStyle: the legend swatch is drawn from itemStyle, so
+        // without it the entry takes a palette colour that doesn't match its line.
+        itemStyle: { color: '#58d9f9' },
         markArea: { itemStyle: { color: 'rgba(255,110,118,0.18)' }, data: markAreaData },
       },
       {
-        name: varName(secondaryVariable.value), type: 'line', showSymbol: false, yAxisIndex: 1, connectNulls: false,
+        name: varName(secondaryVariable.value), type: 'line', symbol: 'none', yAxisIndex: 1, connectNulls: false,
+        tooltip: { valueFormatter: (v: any) => formatDisplayValue(secondaryVariable.value, v) },
         data: maskBySeason(breakDataGaps(secondarySeries.value), props.season).map(d => [d.time, d.value]),
         lineStyle: { width: 1.2, color: '#ff9800' },
+        itemStyle: { color: '#ff9800' },
       },
     ],
   }, true)

@@ -40,7 +40,7 @@ import { useViewState, useChartZoom } from '~~/composables/useViewState'
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable?: string }>()
 
-const { displayUnit } = useVariableRegistry()
+const { displayUnit, formatDisplayValue } = useVariableRegistry()
 const unit = computed(() => props.variable ? displayUnit(props.variable) : '')
 
 const VIEW_SCOPE = 'analysis.climatology'
@@ -111,9 +111,9 @@ const csvAnomalyRows = computed(() => {
 
 if (csv) csv.register((): CsvDataset[] => {
   if (!csvAnomalyRows.value.length) return []
-  const u = unit.value ? ` (${unit.value})` : ''
+  const u = unit.value || null
   const meta = csvMeta(csv.context.value, [
-    ['baseline_window_days', `±${windowDays.value}`],
+    ['baseline_half_window_days', windowDays.value],
     ...(isShortHistory.value
       ? [['caveat', `only ${yearSpan.value} year(s) of data — the baseline is a local rolling mean, not a stable climatology`] as [string, unknown]]
       : []),
@@ -125,9 +125,9 @@ if (csv) csv.register((): CsvDataset[] => {
       columns: [
         { header: 'time', accessorKey: 'time' },
         { header: 'year', accessorKey: 'year' },
-        { header: `value${u}`, accessorKey: 'value' },
-        { header: `climatology_mean${u}`, accessorKey: 'climatology_mean' },
-        { header: `anomaly${u}`, accessorKey: 'anomaly' },
+        { header: 'value', unit: u, accessorKey: 'value' },
+        { header: 'climatology_mean', unit: u, accessorKey: 'climatology_mean' },
+        { header: 'anomaly', unit: u, accessorKey: 'anomaly' },
       ],
       rows: csvAnomalyRows.value,
       meta,
@@ -137,10 +137,10 @@ if (csv) csv.register((): CsvDataset[] => {
       slug: 'climatology-baseline',
       columns: [
         { header: 'day_of_year', accessorKey: 'doy' },
-        { header: `mean${u}`, accessorKey: 'mean' },
-        { header: `std${u}`, accessorKey: 'std' },
-        { header: `p10${u}`, accessorKey: 'p10' },
-        { header: `p90${u}`, accessorKey: 'p90' },
+        { header: 'mean', unit: u, accessorKey: 'mean' },
+        { header: 'std', unit: u, accessorKey: 'std' },
+        { header: 'p10', unit: u, accessorKey: 'p10' },
+        { header: 'p90', unit: u, accessorKey: 'p90' },
         { header: 'n_observations', accessorKey: 'n' },
       ],
       rows: climatology.value as unknown as Record<string, unknown>[],
@@ -154,12 +154,69 @@ let chartInstance: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
 let applySticky: (() => void) | null = null
 
+// Two things can single out a year: hovering its line (series `triggerLineEvent` makes the
+// polyline hit-testable, so ECharts fires mouseover/mouseout and applies `emphasis.focus`)
+// and clicking its legend entry (attachStickyLegendHighlight). Either way the axis tooltip
+// itself says nothing about which year that is, and with ~20 overlaid lines the highlighted
+// one can't be matched to a legend colour by eye — so the tooltip marks that row. Hover wins
+// over a sticky selection; with neither, no row is marked.
+const hoveredSeries = ref<string | null>(null)
+const focusedSeries = computed(() => hoveredSeries.value ?? stickyYear.value)
+let cursorPixel: [number, number] | null = null
+
+const DOY_FORMAT = new Intl.DateTimeFormat('en-CA', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+function formatDayOfYear(ts: number | string): string {
+  const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? String(ts ?? '') : DOY_FORMAT.format(d)
+}
+
+function tooltipFormatter(params: any): string {
+  const list: any[] = Array.isArray(params) ? params : [params]
+  if (!list.length) return ''
+  // The x axis is a synthetic reference year (see overlayTimestamp) — printing it would
+  // suggest the data is from 2000, so the header is day-of-year only.
+  const header = `<div style="margin-bottom:4px;font-weight:600;">${formatDayOfYear(list[0].axisValue)}</div>`
+  const rows = list.map((p) => {
+    const v = Array.isArray(p.value) ? p.value[1] : p.value
+    const text = v == null ? '-' : formatDisplayValue(props.variable ?? '', v)
+    const isFocused = focusedSeries.value != null && p.seriesName === focusedSeries.value
+    // The tooltip surface follows the ECharts theme, so the focused row is called out with a
+    // neutral translucent wash plus the series' own colour as a left rule (readable on either
+    // background). The other rows stay at full contrast — they're still there to be read.
+    const rowStyle = 'display:flex;align-items:center;gap:6px;padding:1px 6px;margin:0 -4px;'
+      + 'border-left:3px solid ' + (isFocused ? p.color : 'transparent') + ';'
+      + (isFocused ? 'background:rgba(127,127,127,0.25);border-radius:3px;font-weight:700;' : '')
+    return `<div style="${rowStyle}">${p.marker}<span>${p.seriesName}</span>`
+      + `<span style="margin-left:auto;">${text}</span></div>`
+  }).join('')
+  return header + rows
+}
+
+// The tooltip only re-renders when the axis value changes, so moving on/off a line without
+// moving along x would otherwise leave the previous row bolded.
+function refreshTooltip() {
+  if (!chartInstance || !cursorPixel) return
+  chartInstance.dispatchAction({ type: 'showTip', x: cursorPixel[0], y: cursorPixel[1] })
+}
+
 function render() {
   if (!chartContainerRef.value) return
   registerEchartsDarkTheme()
   if (!chartInstance) {
     chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
     zoom.track(chartInstance)
+    chartInstance.getZr().on('mousemove', (e: any) => { cursorPixel = [e.offsetX, e.offsetY] })
+    chartInstance.getZr().on('globalout', () => { cursorPixel = null; hoveredSeries.value = null })
+    chartInstance.on('mouseover', (p: any) => {
+      if (p.componentType !== 'series' || hoveredSeries.value === p.seriesName) return
+      hoveredSeries.value = p.seriesName
+      refreshTooltip()
+    })
+    chartInstance.on('mouseout', (p: any) => {
+      if (p.componentType !== 'series' || hoveredSeries.value == null) return
+      hoveredSeries.value = null
+      refreshTooltip()
+    })
     applySticky = attachStickyLegendHighlight(chartInstance, {
       initial: stickyYear.value,
       onChange: (name) => { stickyYear.value = name },
@@ -179,12 +236,15 @@ function render() {
     // Disables the legend's own mouseover/mouseout highlight so it doesn't fight with
     // attachStickyLegendHighlight's click-driven, persistent highlight below.
     legendHoverLink: false,
+    // Without this the polyline is silent, so hovering a line neither emphasises it nor
+    // fires the mouseover the tooltip's focus marker reads.
+    triggerLineEvent: true,
     emphasis: { focus: 'series' },
   }))
   if (series.length) (series[0] as any).markLine = { silent: true, symbol: 'none', lineStyle: { color: '#fff', opacity: 0.4, type: 'solid', width: 1 }, data: [{ yAxis: 0 }] }
 
   chartInstance.setOption({
-    tooltip: { trigger: 'axis' },
+    tooltip: { trigger: 'axis', formatter: tooltipFormatter },
     legend: { top: 4, type: 'scroll', textStyle: { fontSize: 10 } },
     grid: { left: '4%', right: '3%', bottom: '12%', top: '18%', containLabel: true },
     xAxis: { type: 'time', axisLabel: { fontSize: 9, color: '#ccc' } },

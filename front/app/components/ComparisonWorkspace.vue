@@ -82,6 +82,7 @@ import SegmentedControl from './ui/SegmentedControl.vue'
 import DownloadButton from './ui/DownloadButton.vue'
 import ShareButton from './ShareButton.vue'
 import { csvMeta, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
+import { sensorSourceUrl } from '~~/composables/useSensorDownloadLinks'
 const seasonItems = [{ value: 'all', label: 'All' }, { value: 'mam', label: 'MAM' }, { value: 'jja', label: 'JJA' }, { value: 'son', label: 'SON' }, { value: 'djf', label: 'DJF' }]
 
 /**
@@ -94,8 +95,11 @@ const seasonItems = [{ value: 'all', label: 'All' }, { value: 'mam', label: 'MAM
 const isOpen = defineModel<boolean>()
 
 const mainStore = useMainStore()
-const { displayUnit } = useVariableRegistry()
+const { displayUnit, formatDisplayValue } = useVariableRegistry()
 const varUnit = computed(() => displayUnit(mainStore.selected_variable.var))
+// Chart readouts (tooltips) round to the selected variable's own precision; the
+// stat cards below keep `fmt`'s 3 decimals, where the extra digits are the point.
+const fmtVar = (v: number | null | undefined) => formatDisplayValue(mainStore.selected_variable.var, v)
 
 const sensorInfo = computed(() => mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id) ?? null)
 const sensorName = computed(() => sensorInfo.value?.name ?? '')
@@ -209,11 +213,14 @@ const csvContext = computed<CsvContext | null>(() => {
   return {
     source: 'comparison',
     sourceLabel: `SalishSeaCast model vs sensor — ${sensorName.value}`,
+    sourceUrl: sensorSourceUrl(sensorInfo.value),
     variable: mainStore.selected_variable.var,
     variableName: varName.value,
     unit: varUnit.value,
     depth: isVariableDepth.value ? -1 : (mainStore.selectedSensor?.depth ?? null),
     locationLabel: sensorName.value,
+    latitude: sensorInfo.value?.latitude,
+    longitude: sensorInfo.value?.longitude,
     timeRange: dates.length ? [dates[0]!, dates[dates.length - 1]!] : null,
     season: isStatsTab.value ? selectedSeason.value : undefined,
   }
@@ -225,12 +232,12 @@ const csvDatasets = csvExport.datasets
 const statsMeta = computed(() => currentStats.value.map(s => [s.label, s.value] as [string, unknown]))
 
 csvExport.register((): CsvDataset[] => {
-  const u = varUnit.value ? ` (${varUnit.value})` : ''
+  const u = varUnit.value || null
   const pairColumns = [
     { header: 'date', accessorKey: 'date' },
-    { header: `model${u}`, accessorKey: 'model' },
-    { header: `sensor${u}`, accessorKey: 'sensor' },
-    { header: `difference${u}`, accessorKey: 'difference' },
+    { header: 'model', unit: u, accessorKey: 'model' },
+    { header: 'sensor', unit: u, accessorKey: 'sensor' },
+    { header: 'difference', unit: u, accessorKey: 'difference' },
   ]
   const withDifference = (points: typeof rawData.value) => points.map(p => ({
     date: p.date,
@@ -248,8 +255,8 @@ csvExport.register((): CsvDataset[] => {
       slug: 'comparison-daily',
       columns: [
         ...pairColumns.slice(0, 2),
-        { header: `model_min${u}`, accessorKey: 'modelMin' },
-        { header: `model_max${u}`, accessorKey: 'modelMax' },
+        { header: 'model_min', unit: u, accessorKey: 'modelMin' },
+        { header: 'model_max', unit: u, accessorKey: 'modelMax' },
         ...pairColumns.slice(2),
       ],
       rows: withDifference(rawData.value),
@@ -266,9 +273,9 @@ csvExport.register((): CsvDataset[] => {
       slug: 'comparison-monthly-climatology',
       columns: [
         { header: 'month', accessorKey: 'month' },
-        { header: `model${u}`, accessorKey: 'model' },
-        { header: `sensor${u}`, accessorKey: 'sensor' },
-        { header: `difference${u}`, accessorKey: 'difference' },
+        { header: 'model', unit: u, accessorKey: 'model' },
+        { header: 'sensor', unit: u, accessorKey: 'sensor' },
+        { header: 'difference', unit: u, accessorKey: 'difference' },
       ],
       rows: monthlyClim.value.map(m => ({
         month: MONTH_LABELS[m.month - 1],
@@ -320,7 +327,7 @@ function renderChart() {
     const hi = Math.max(...pts.map(p => Math.max(p[0]!, p[1]!)))
     const s = scatterStats.value
     chart.setOption({
-      tooltip: { trigger: 'item', formatter: (p: any) => `obs ${p.value[0].toFixed(3)}<br/>model ${p.value[1].toFixed(3)}` },
+      tooltip: { trigger: 'item', formatter: (p: any) => `obs ${fmtVar(p.value[0])}<br/>model ${fmtVar(p.value[1])}` },
       grid: { left: 60, right: 30, top: 20, bottom: 50 },
       xAxis: { type: 'value', name: varUnit.value ? `Observed (${varUnit.value})` : 'Observed', nameLocation: 'middle', nameGap: 28, min: lo, max: hi, axisLabel: { fontSize: 10 } },
       yAxis: { type: 'value', name: varUnit.value ? `Model (${varUnit.value})` : 'Model', nameLocation: 'middle', nameGap: 42, min: lo, max: hi, axisLabel: { fontSize: 10 } },
@@ -334,7 +341,7 @@ function renderChart() {
   } else if (activeTab.value === 'residuals') {
     const pts = maskedMatchedData.value.map(p => [p.date, p.model != null && p.sensor != null ? p.model - p.sensor : null])
     chart.setOption({
-      tooltip: { trigger: 'axis' },
+      tooltip: { trigger: 'axis', valueFormatter: (v: any) => fmtVar(v) },
       grid: { left: 60, right: 30, top: 20, bottom: 50 },
       xAxis: { type: 'time', axisLabel: { fontSize: 10 } },
       yAxis: { type: 'value', name: varUnit.value ? `Model − obs (${varUnit.value})` : 'Model − obs', nameLocation: 'middle', nameGap: 42, axisLabel: { fontSize: 10 } },
@@ -346,7 +353,7 @@ function renderChart() {
   } else {
     const clim = monthlyClim.value
     chart.setOption({
-      tooltip: { trigger: 'axis' },
+      tooltip: { trigger: 'axis', valueFormatter: (v: any) => fmtVar(v) },
       legend: { data: ['Model', 'Sensor'], top: 0, textStyle: { fontSize: 10 } },
       grid: { left: 60, right: 30, top: 30, bottom: 50 },
       xAxis: { type: 'category', data: MONTH_LABELS, axisLabel: { fontSize: 10 } },

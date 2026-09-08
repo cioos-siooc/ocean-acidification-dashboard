@@ -69,6 +69,7 @@ import { fetchSensorAnalysisSeries } from '~~/composables/useSensorAnalysisFetch
 import { availableVariables } from '~~/composables/useAnalysisStatistics'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { csvMeta, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
+import { sensorSourceUrl } from '~~/composables/useSensorDownloadLinks'
 import DownloadButton from './ui/DownloadButton.vue'
 import ShareButton from './ShareButton.vue'
 import AnalysisBuilder from './analysis/AnalysisBuilder.vue'
@@ -164,6 +165,7 @@ const csvContext = computed<CsvContext | null>(() => {
     sourceLabel: source.value === 'sensor'
       ? `sensor — ${sensorInfo.value?.name ?? ''}`
       : 'SalishSeaCast model',
+    sourceUrl: source.value === 'sensor' ? sensorSourceUrl(sensorInfo.value) : null,
     variable: variable.value,
     variableName: varName.value,
     unit: displayUnit(variable.value),
@@ -171,6 +173,10 @@ const csvContext = computed<CsvContext | null>(() => {
     locationLabel: source.value === 'sensor'
       ? (sensorInfo.value?.name ?? sensorInfo.value?.id ?? '')
       : (pt ? formatLatLon(pt.lat, pt.lng) : ''),
+    // The sensor's own position when the series is a sensor's, the clicked
+    // model point otherwise — the two rarely coincide exactly.
+    latitude: source.value === 'sensor' ? sensorInfo.value?.latitude : pt?.lat,
+    longitude: source.value === 'sensor' ? sensorInfo.value?.longitude : pt?.lng,
     timeRange: [`${yearRange.value[0]}-01-01`, `${yearRange.value[1]}-12-31`],
     season: selectedSeason.value,
   }
@@ -231,12 +237,10 @@ csvExport.register((): CsvDataset[] => {
     slug: 'daily-series',
     columns: [
       { header: 'time', accessorKey: 'time' },
-      { header: unit ? `value (${unit})` : 'value', accessorKey: 'value' },
+      { header: 'value', unit, accessorKey: 'value' },
     ],
     rows: primarySeries.value as unknown as Record<string, unknown>[],
-    meta: csvMeta(csvContext.value, [
-      ['note', 'the full daily record — the season filter applies to the tabs\' own derived files, not this one'],
-    ]),
+    meta: csvMeta(csvContext.value),
   }]
 })
 

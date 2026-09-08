@@ -29,7 +29,16 @@ export function registerEchartsDarkTheme() {
       crossStyle: { color: '#817f91' },
       label: { color: '#fff' }
     },
-    legend: { textStyle: { color: contrastColor } },
+    // One legend swatch style app-wide: a small filled rect. ECharts' default
+    // `legendIcon: 'inherit'` draws the series' line + point symbol, which reads as
+    // a per-point marker most of these series don't have. Setting `icon` here wins
+    // over that inherit, so every chart picks it up without a per-chart override.
+    legend: {
+      textStyle: { color: contrastColor },
+      icon: 'rect',
+      itemWidth: 12,
+      itemHeight: 8
+    },
     textStyle: { color: contrastColor },
     title: {
       textStyle: { color: '#EEF1FA' },

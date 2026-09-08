@@ -59,7 +59,7 @@ const props = defineProps<{
 }>()
 
 function varName(id: string) { return availableVariables.find(v => v.id === id)?.name || id }
-const { displayUnit } = useVariableRegistry()
+const { displayUnit, formatDisplayValue } = useVariableRegistry()
 function axisName(id: string) { const u = displayUnit(id); return u ? `${varName(id)} (${u})` : varName(id) }
 
 const selectableVariables = availableVariables
@@ -180,7 +180,7 @@ if (csv) csv.register((): CsvDataset[] => {
       slug: 'correlation-series',
       columns: [
         { header: 'time', accessorKey: 'time' },
-        ...vars.map(id => ({ header: axisName(id), accessorKey: id })),
+        ...vars.map(id => ({ header: varName(id), unit: displayUnit(id), accessorKey: id })),
       ],
       rows: csvJoinedRows.value,
       meta,
@@ -252,7 +252,7 @@ function renderScatter() {
   const trendLine = [[xMin, slope * xMin + intercept], [xMax, slope * xMax + intercept]]
 
   scatterInstance.setOption({
-    tooltip: { formatter: (p: any) => Array.isArray(p.value) ? `${varName(xVar)}: ${p.value[0]}<br/>${varName(yVar)}: ${p.value[1]}<br/>Year: ${p.value[2]}` : '' },
+    tooltip: { formatter: (p: any) => Array.isArray(p.value) ? `${varName(xVar)}: ${formatDisplayValue(xVar, p.value[0])}<br/>${varName(yVar)}: ${formatDisplayValue(yVar, p.value[1])}<br/>Year: ${p.value[2]}` : '' },
     grid: { left: '10%', right: '5%', bottom: '12%', top: '8%', containLabel: true },
     xAxis: { type: 'value', name: axisName(xVar), nameLocation: 'middle', nameGap: 28, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
     yAxis: { type: 'value', name: axisName(yVar), nameLocation: 'middle', nameGap: 40, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },

@@ -34,7 +34,7 @@ import { useMainStore } from '../stores/main';
 import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 import { csvMeta, csvTimestamp, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport';
 const mainStore = useMainStore();
-const { displayUnit } = useVariableRegistry();
+const { displayUnit, variableDecimals, formatDisplayValue } = useVariableRegistry();
 
 const chartContainer = ref<HTMLDivElement | null>(null);
 let chart: echarts.ECharts | null = null;
@@ -140,7 +140,7 @@ function initChart() {
     chart = echarts.init(chartContainer.value, 'dark', { renderer: 'canvas' });
 
     chart.setOption({
-        tooltip: { trigger: 'axis' },
+        tooltip: { trigger: 'axis', valueFormatter: (v: any) => formatDisplayValue(mainStore.selected_variable.var, v) },
         toolbox: {
             feature: {
                 dataZoom: { yAxisIndex: 'none' },
@@ -398,7 +398,12 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
                     shadowBlur: 0,
                     shadowOffsetX: 0,
                     shadowOffsetY: 0,
-                    color: '#e0e0e0'
+                    color: '#e0e0e0',
+                    // The x label is a timestamp and formats itself; only the value
+                    // axis needs rounding, or it reads out raw floats (8.282905).
+                    formatter: (p: any) => p.axisDimension === 'y'
+                        ? formatDisplayValue(varId, p.value)
+                        : moment.parseZone(p.value).format('DD MMM, HH:mm')
                 }
             },
             // formatter: (params: any) => {
@@ -428,7 +433,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
             name: displayUnit(varId),
             nameLocation: 'center',
             nameTextStyle: { color: '#e0e0e0' },
-            axisLabel: { color: '#e0e0e0', formatter: (v: any) => Number(v).toFixed(axisDecimals) }
+            axisLabel: { color: '#e0e0e0', formatter: (v: any) => Number(v).toFixed(Math.min(axisDecimals, variableDecimals(varId))) }
         },
         series: []
     };
@@ -611,7 +616,7 @@ if (csv) csv.register((): CsvDataset[] => {
     if (!p) return [];
 
     const varId = mainStore.selected_variable.var;
-    const u = displayUnit(varId) ? ` (${displayUnit(varId)})` : '';
+    const u = displayUnit(varId) || null;
     const sensorName = mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id)?.name;
 
     // Absent from the map means "never toggled", which ECharts treats as shown.
@@ -640,11 +645,11 @@ if (csv) csv.register((): CsvDataset[] => {
     const columns = [{ header: 'time', accessorKey: 'time' }];
     if (withModel) {
         put(p.model!.time!, p.model!.value, 'model');
-        columns.push({ header: `model${u}`, accessorKey: 'model' });
+        columns.push({ header: 'model', unit: u, accessorKey: 'model' });
     }
     if (withSensor) {
         put(p.sensor!.time!, p.sensor!.value, 'sensor');
-        columns.push({ header: `sensor${u}`, accessorKey: 'sensor' });
+        columns.push({ header: 'sensor', unit: u, accessorKey: 'sensor' });
     }
     if (withClimate) {
         for (const c of p.climate!) {
@@ -656,9 +661,9 @@ if (csv) csv.register((): CsvDataset[] => {
             r.climMax = c.max;
         }
         columns.push(
-            { header: `climatology_mean${u}`, accessorKey: 'climMean' },
-            { header: `climatology_min${u}`, accessorKey: 'climMin' },
-            { header: `climatology_max${u}`, accessorKey: 'climMax' },
+            { header: 'climatology_mean', unit: u, accessorKey: 'climMean' },
+            { header: 'climatology_min', unit: u, accessorKey: 'climMin' },
+            { header: 'climatology_max', unit: u, accessorKey: 'climMax' },
         );
     }
 

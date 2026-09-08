@@ -84,7 +84,7 @@ const VIEW_SCOPE = 'analysis.extremes'
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable: string }>()
 
-const { displayUnit } = useVariableRegistry()
+const { displayUnit, variableLabel, formatDisplayValue } = useVariableRegistry()
 const unit = computed(() => displayUnit(props.variable))
 const unitSuffix = computed(() => unit.value ? ` (${unit.value})` : '')
 
@@ -108,6 +108,10 @@ const fixedThreshold = field('fixedThreshold', 0)
 const windowDays = field('windowDays', 5)
 const minDurationDays = field('minDurationDays', 5)
 const maxGapDays = field('maxGapDays', 2)
+
+const valueLabel = computed(() => variableLabel(props.variable) || 'Value')
+// Shared by the markArea fill and the 'Events' legend swatch so they can't drift apart.
+const eventColor = computed(() => direction.value === 'above' ? 'rgba(255,110,118,0.18)' : 'rgba(73,146,255,0.18)')
 
 const climatology = computed(() => computeClimatologyBaseline(props.series, windowDays.value))
 const thresholdLookup = computed<ThresholdLookup>(() => thresholdMode.value === 'percentile'
@@ -154,7 +158,7 @@ const csv = useCsvExport()
 const csvParams = computed(() => thresholdMode.value === 'percentile'
   ? [
       ['threshold', `${direction.value === 'above' ? '90th' : '10th'} percentile of a day-of-year climatology`] as [string, unknown],
-      ['baseline_window_days', `±${windowDays.value}`] as [string, unknown],
+      ['baseline_half_window_days', windowDays.value] as [string, unknown],
     ]
   : [['threshold', `fixed ${direction.value === 'above' ? '>' : '<'} ${fixedThreshold.value}${unitSuffix.value}`] as [string, unknown]])
 
@@ -173,9 +177,9 @@ if (csv) csv.register((): CsvDataset[] => [
       { header: 'start_time', accessorKey: 'startTime' },
       { header: 'end_time', accessorKey: 'endTime' },
       { header: 'duration_days', accessorKey: 'durationDays' },
-      { header: `peak_value${unitSuffix.value}`, accessorKey: 'peakValue' },
-      { header: `peak_anomaly${unitSuffix.value}`, accessorKey: 'peakAnomaly' },
-      { header: `mean_intensity${unitSuffix.value}`, accessorKey: 'meanIntensity' },
+      { header: 'peak_value', unit: unit.value, accessorKey: 'peakValue' },
+      { header: 'peak_anomaly', unit: unit.value, accessorKey: 'peakAnomaly' },
+      { header: 'mean_intensity', unit: unit.value, accessorKey: 'meanIntensity' },
     ],
     rows: events.value as unknown as Record<string, unknown>[],
     meta: csvMeta(csv.context.value, csvCommonMeta.value),
@@ -187,14 +191,11 @@ if (csv) csv.register((): CsvDataset[] => [
       { header: 'year', accessorKey: 'year' },
       { header: 'event_count', accessorKey: 'eventCount' },
       { header: 'total_event_days', accessorKey: 'totalEventDays' },
-      { header: `mean_intensity${unitSuffix.value}`, accessorKey: 'meanIntensity' },
-      { header: `max_intensity${unitSuffix.value}`, accessorKey: 'maxIntensity' },
+      { header: 'mean_intensity', unit: unit.value, accessorKey: 'meanIntensity' },
+      { header: 'max_intensity', unit: unit.value, accessorKey: 'maxIntensity' },
     ],
     rows: yearlySummary.value as unknown as Record<string, unknown>[],
-    meta: csvMeta(csv.context.value, [
-      ...csvCommonMeta.value,
-      ['note', 'events are attributed to the year they start in'],
-    ]),
+    meta: csvMeta(csv.context.value, csvCommonMeta.value),
   },
 ])
 
@@ -230,8 +231,11 @@ function render() {
   const markAreaData = events.value.map(e => [{ xAxis: e.startTime }, { xAxis: e.endTime }])
 
   chartInstance.setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: '4%', right: '3%', bottom: '12%', top: '8%', containLabel: true },
+    tooltip: { trigger: 'axis', valueFormatter: (v: any) => formatDisplayValue(props.variable, v) },
+    // 'Events' is a data-less series whose only job is to give the shaded event
+    // bands a legend swatch — markArea itself never appears in the legend.
+    legend: { data: [valueLabel.value, 'Threshold', 'Events'], top: 4, textStyle: { fontSize: 10 } },
+    grid: { left: '4%', right: '3%', bottom: '12%', top: '18%', containLabel: true },
     xAxis: { type: 'time', axisLabel: { fontSize: 9, color: '#ccc' } },
     yAxis: {
       type: 'value', name: unit.value, nameLocation: 'middle', nameGap: 38,
@@ -243,11 +247,15 @@ function render() {
     ],
     series: [
       {
-        name: 'Value', type: 'line', showSymbol: false, data: valuePoints, connectNulls: false,
+        name: valueLabel.value, type: 'line', showSymbol: false, data: valuePoints, connectNulls: false,
         lineStyle: { width: 1.2, color: '#58d9f9' }, itemStyle: { color: '#58d9f9' },
-        markArea: { itemStyle: { color: direction.value === 'above' ? 'rgba(255,110,118,0.18)' : 'rgba(73,146,255,0.18)' }, data: markAreaData },
+        markArea: { itemStyle: { color: eventColor.value }, data: markAreaData },
       },
-      { name: 'Threshold', type: 'line', showSymbol: false, data: baselinePoints, connectNulls: false, lineStyle: { width: 1, color: '#ff9800', type: 'dashed' } },
+      { name: 'Threshold', type: 'line', showSymbol: false, data: baselinePoints, connectNulls: false, lineStyle: { width: 1, color: '#ff9800', type: 'dashed' }, itemStyle: { color: '#ff9800' } },
+      {
+        name: 'Events', type: 'line', data: [], silent: true, legendHoverLink: false,
+        itemStyle: { color: eventColor.value }, lineStyle: { opacity: 0 }, areaStyle: { color: eventColor.value },
+      },
     ],
   }, true)
   chartInstance.resize()

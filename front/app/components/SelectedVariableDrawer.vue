@@ -78,7 +78,7 @@ const isOpen = computed({
 
 const mainStore = useMainStore();
 
-const { variableLabel, displayUnit, toDisplayValue } = useVariableRegistry();
+const { variableLabel, displayUnit, toDisplayValue, formatDisplayValue } = useVariableRegistry();
 
 const title = computed(() => {
     const varId = mainStore.selected_variable?.var;
@@ -216,7 +216,8 @@ function renderChart(points: ProfilePoint[]) {
                 const entry = params?.[0];
                 if (!entry) return '';
                 const [value, depth] = entry.value ?? [];
-                return `${selectedVariableLabel.value}<br/>Value: ${value ?? '–'} ${selectedVariableUnit.value}<br/>Depth: ${depth ?? '–'} m`;
+                const valueStr = value == null ? '–' : formatDisplayValue(varId, value, { unit: true });
+                return `${selectedVariableLabel.value}<br/>Value: ${valueStr}<br/>Depth: ${depth != null ? depth.toFixed(depth < 10 ? 1 : 0) : '–'} m`;
             }
         },
         grid: { left: 32, right: 20, top: 12, bottom: 12 },

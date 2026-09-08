@@ -102,7 +102,7 @@ import {
 
   availableVariables, filterBySeason, groupByYear, breakDataGaps, yearColor, computeYearBandStats,
 } from '~~/composables/useAnalysisStatistics'
-import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
+import { csvMeta, useCsvExport, type CsvDataset, type CsvMetaEntry } from '~~/composables/useCsvExport'
 import { useViewState, useChartZoom } from '~~/composables/useViewState'
 
 const seasonItems = [{ value: 'full_year', label: 'All' }, { value: 'mam', label: 'MAM' }, { value: 'jja', label: 'JJA' }, { value: 'son', label: 'SON' }, { value: 'djf', label: 'DJF' }]
@@ -113,7 +113,7 @@ const analysisSource = computed(() => props.source ?? 'model')
 const isSensor = computed(() => analysisSource.value === 'sensor')
 
 const mainStore = useMainStore()
-const { displayUnit } = useVariableRegistry()
+const { displayUnit, formatDisplayValue } = useVariableRegistry()
 
 // ── SENSOR CONTEXT (unused in model mode) ────────────────────────────────────
 const selectedSensor = computed(() => mainStore.selectedSensor)
@@ -291,14 +291,16 @@ if (csv) csv.register((): CsvDataset[] => {
   // guard its files would show up in their download menus too.
   if (!props.active || !hasActivePlot.value || !rawSeasonalData.value.length) return []
 
-  const u = varUnit.value ? ` (${varUnit.value})` : ''
+  const u = varUnit.value || null
   const meta = csvMeta(csv.context.value, [
     ['season', seasonLabel.value],
     ['statistic', primaryStat.value],
     ['time_range', `${minYear.value}-01-01 .. ${maxYear.value}-12-31`],
-    ['location', queryMode.value === 'area' && !isSensor.value
-      ? `${pointLabel.value} — mean over a 0.1° box`
-      : pointLabel.value],
+    // Not a location line — the coordinates are already their own rows; this
+    // says whether the series is one grid cell or an area mean.
+    ...(isSensor.value ? [] : [['spatial_extent', queryMode.value === 'area'
+      ? 'mean over a 0.1° box around the point'
+      : 'single model grid cell'] as CsvMetaEntry]),
   ])
 
   return [
@@ -307,7 +309,7 @@ if (csv) csv.register((): CsvDataset[] => {
       slug: 'overview-series',
       columns: [
         { header: 'time', accessorKey: 'time' },
-        { header: `value${u}`, accessorKey: 'value' },
+        { header: 'value', unit: u, accessorKey: 'value' },
       ],
       rows: rawSeasonalData.value as unknown as Record<string, unknown>[],
       meta,
@@ -317,11 +319,11 @@ if (csv) csv.register((): CsvDataset[] => {
       slug: 'overview-envelope',
       columns: [
         { header: 'month_day', accessorKey: 'month_day' },
-        { header: `mean${u}`, accessorKey: 'mean' },
-        { header: `min${u}`, accessorKey: 'min' },
-        { header: `max${u}`, accessorKey: 'max' },
-        { header: `p10${u}`, accessorKey: 'p10' },
-        { header: `p90${u}`, accessorKey: 'p90' },
+        { header: 'mean', unit: u, accessorKey: 'mean' },
+        { header: 'min', unit: u, accessorKey: 'min' },
+        { header: 'max', unit: u, accessorKey: 'max' },
+        { header: 'p10', unit: u, accessorKey: 'p10' },
+        { header: 'p90', unit: u, accessorKey: 'p90' },
       ],
       rows: csvBandRows.value,
       meta: [...meta, ['note', `cross-year statistics per calendar day, from years up to ${STATS_BASELINE_MAX_YEAR}`]],
@@ -437,12 +439,13 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
         const ts = items[0].value[0]
         const band = bandStatsByTs.get(ts)
         const header = `<strong>${fmtOverlayDate(ts)}</strong><br/>`
-        const rangeLine = band ? `Range: <strong>${band.min.toFixed(3)} – ${band.max.toFixed(3)}</strong><br/>` : ''
+        const fmt = (v: number) => formatDisplayValue(variable.value ?? '', v)
+        const rangeLine = band ? `Range: <strong>${fmt(band.min)} – ${fmt(band.max)}</strong><br/>` : ''
         const cols = items.length > 15 ? 3 : items.length > 8 ? 2 : 1
         if (cols === 1) {
           let s = header + rangeLine
           items.forEach((p: any) => {
-            s += `${p.marker} ${p.seriesName}: <strong>${Number(p.value[1]).toFixed(3)}</strong><br/>`
+            s += `${p.marker} ${p.seriesName}: <strong>${fmt(Number(p.value[1]))}</strong><br/>`
           })
           return s
         }
@@ -453,7 +456,7 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
           for (let c = 0; c < cols; c++) {
             const p = items[c * rows + r]
             if (p) {
-              table += `<td style="padding:0 10px 0 0;white-space:nowrap;">${p.marker} ${p.seriesName}: <strong>${Number(p.value[1]).toFixed(3)}</strong></td>`
+              table += `<td style="padding:0 10px 0 0;white-space:nowrap;">${p.marker} ${p.seriesName}: <strong>${fmt(Number(p.value[1]))}</strong></td>`
             }
           }
           table += '</tr>'
@@ -464,9 +467,6 @@ function renderOverlayChart(series: { year: number; data: SeriesPoint[] }[]) {
     },
     legend: {
       top: 4, type: 'scroll', textStyle: { fontSize: 10 },
-      // A thin rect reads as a little line swatch — the default line+circle combo icon
-      // implied a per-point marker that these lines (all symbol:'none') don't actually have.
-      icon: 'rect', itemWidth: 14, itemHeight: 2,
       selected: {
         'Min-Max Range': true, P10: true, P90: true, Mean: true,
         ...Object.fromEntries(series.map(s => [String(s.year), s.year === defaultYear])),

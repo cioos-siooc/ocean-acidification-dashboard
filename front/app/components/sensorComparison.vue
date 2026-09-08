@@ -133,7 +133,7 @@ const props = defineProps<{ active?: boolean }>()
 // pairs — emitting them keeps this component the single fetch owner.
 const emit = defineEmits<{ data: [ComparisonPoint[]] }>()
 const mainStore = useMainStore()
-const { displayUnit } = useVariableRegistry()
+const { displayUnit, formatDisplayValue } = useVariableRegistry()
 
 // --- STORE-DERIVED STATE ---
 const variable = computed(() => mainStore.selected_variable.var)
@@ -316,7 +316,7 @@ function renderTimeseriesChart() {
         const date = rawDate != null ? new Date(rawDate).toISOString().slice(0, 10) : ''
         let s = `<strong>${date}</strong><br/>`
         for (const p of items) {
-          s += `${p.marker} ${p.seriesName}: <strong>${Number(p.value[1]).toFixed(3)}</strong><br/>`
+          s += `${p.marker} ${p.seriesName}: <strong>${formatDisplayValue(variable.value, Number(p.value[1]))}</strong><br/>`
         }
         return s
       },

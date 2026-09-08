@@ -86,7 +86,7 @@ const binModeItems = computed(() => AVAILABLE_MODES.map(m => ({ value: m, label:
 const props = defineProps<{ active?: boolean }>()
 
 const mainStore = useMainStore()
-const { toDisplayValue, displayUnit } = useVariableRegistry()
+const { toDisplayValue, displayUnit, formatDisplayValue } = useVariableRegistry()
 
 const sensorInfo = computed(() => mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id) ?? null)
 const modelSource = computed(() => mainStore.selected_variable.source)
@@ -271,7 +271,7 @@ const csvSectionRows = computed(() => {
 
 if (csv) csv.register((): CsvDataset[] => {
   if (!props.active || !csvSectionRows.value.length) return []
-  const u = displayUnit(varId.value) ? ` (${displayUnit(varId.value)})` : ''
+  const u = displayUnit(varId.value) || null
   return [{
     label: 'Depth sections (model & sensor)',
     slug: 'comparison-depth-sections',
@@ -288,9 +288,9 @@ if (csv) csv.register((): CsvDataset[] => {
     columns: [
       { header: 'time', accessorKey: 'time' },
       { header: 'depth_m', accessorKey: 'depth' },
-      { header: `model${u}`, accessorKey: 'model' },
-      { header: `sensor${u}`, accessorKey: 'sensor' },
-      { header: `difference${u}`, accessorKey: 'difference' },
+      { header: 'model', unit: u, accessorKey: 'model' },
+      { header: 'sensor', unit: u, accessorKey: 'sensor' },
+      { header: 'difference', unit: u, accessorKey: 'difference' },
     ],
     rows: csvSectionRows.value,
     meta: csvMeta(csv.context.value, [
@@ -331,9 +331,9 @@ const hoverInfo = computed(() => {
       ? { month: 'short', day: 'numeric', hour: 'numeric', timeZone: 'UTC' }
       : { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '—',
     depth: depth != null ? `${depth.toFixed(depth < 10 ? 1 : 0)}m` : '—',
-    model: mv == null ? 'no data' : mv.toFixed(2),
-    sensor: sv == null ? 'no cast' : sv.toFixed(2),
-    diff: dv == null ? '—' : `${dv >= 0 ? '+' : ''}${dv.toFixed(2)}`,
+    model: mv == null ? 'no data' : formatDisplayValue(varId.value, mv),
+    sensor: sv == null ? 'no cast' : formatDisplayValue(varId.value, sv),
+    diff: dv == null ? '—' : `${dv >= 0 ? '+' : ''}${formatDisplayValue(varId.value, dv)}`,
   }
 })
 

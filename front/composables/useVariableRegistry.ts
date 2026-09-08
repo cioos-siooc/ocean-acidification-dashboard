@@ -80,6 +80,43 @@ export function useVariableRegistry() {
         return alt ? canonicalValue * alt.scale + alt.offset : canonicalValue;
     }
 
+    /**
+     * Decimal places a value of this variable should be shown with — the single
+     * answer for every tooltip, table cell and axis label, so a reading never
+     * appears as a raw float (`8.282905`) in one place and rounded in another.
+     *
+     * Derived from `variable_config.yml`'s `precision` (the quantization step the
+     * data is actually stored at) converted into whatever unit is currently on
+     * display, then clamped to 1-3 digits: fewer would hide a pH difference, more
+     * would print four digits of noise for Omega's 0.0001 step.
+     */
+    function variableDecimals(varId: string): number {
+        const meta = mainStore.variables.find(v => v.var === varId);
+        const step = meta?.precision && meta.precision > 0 ? meta.precision : 0.01;
+        const target = mainStore.unitPreference[varId];
+        const alt = target ? variableAltUnits(varId).find(u => u.unit === target) : undefined;
+        const scaled = step * Math.abs(alt?.scale || 1);
+        return Math.min(3, Math.max(1, Math.ceil(-Math.log10(scaled))));
+    }
+
+    /**
+     * A value rounded to `variableDecimals()`, with the unit appended when asked;
+     * absent/non-finite values render as an em dash rather than "NaN". This is what
+     * tooltips and readouts should print.
+     *
+     * It takes a value that is **already in the display unit** — the fetch
+     * composables (`useModelTimeseries`, `useSensorTimeseries`, `useAnalysisFetch`,
+     * `useClimateTimeseries`, `useDepthProfileFetch`) convert on the way in, so
+     * everything a chart holds is converted already and running `toDisplayValue()`
+     * here again would double-convert.
+     */
+    function formatDisplayValue(varId: string, value: number | null | undefined, opts?: { unit?: boolean }): string {
+        if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—';
+        const text = Number(value).toFixed(variableDecimals(varId));
+        const unit = opts?.unit ? displayUnit(varId) : '';
+        return unit ? `${text} ${unit}` : text;
+    }
+
     /** Inverse of `toDisplayValue()` — a value typed/dragged in the display unit, back to canonical. */
     function toCanonicalValue(varId: string, displayValue: number | null | undefined): number | null {
         if (displayValue === null || displayValue === undefined) return null;
@@ -103,5 +140,6 @@ export function useVariableRegistry() {
     return {
         labels, isModelVariable, variableLabel, variableUnit, modelVariablesOf,
         variableAltUnits, displayUnit, toDisplayValue, toCanonicalValue,
+        variableDecimals, formatDisplayValue,
     };
 }
