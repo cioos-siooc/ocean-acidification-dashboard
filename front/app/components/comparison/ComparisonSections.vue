@@ -71,6 +71,7 @@ import { BIN_CONFIG, useTimeDepthWindow, toApiIso, type BinMode } from '~~/compo
 import TimeDepthHeatmap from '../depth/TimeDepthHeatmap.vue'
 import { csvFilename, csvMeta, csvTimestamp, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
 import SegmentedControl from '../ui/SegmentedControl.vue'
+import { useViewState } from '~~/composables/useViewState'
 const binModeItems = computed(() => AVAILABLE_MODES.map(m => ({ value: m, label: BIN_CONFIG[m].short, title: BIN_CONFIG[m].label })))
 
 /**
@@ -85,7 +86,7 @@ const binModeItems = computed(() => AVAILABLE_MODES.map(m => ({ value: m, label:
 const props = defineProps<{ active?: boolean }>()
 
 const mainStore = useMainStore()
-const { toDisplayValue, displayUnit } = useVariableRegistry()
+const { toDisplayValue, displayUnit, formatDisplayValue } = useVariableRegistry()
 
 const sensorInfo = computed(() => mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id) ?? null)
 const modelSource = computed(() => mainStore.selected_variable.source)
@@ -100,7 +101,9 @@ const depths = computed<number[]>(() => {
 
 // Monthly is omitted: no deployed profiler has anything like a 20-year cast record.
 const AVAILABLE_MODES: BinMode[] = ['hourly', 'daily']
-const binMode = ref<BinMode>('daily')
+// Store-backed so a shared link reopens this tab as the sender left it.
+const field = useViewState('comparison.sections')
+const binMode = field<BinMode>('binMode', 'daily')
 
 const dataFloor = computed(() => sensorInfo.value?.first_data_at ? new Date(sensorInfo.value.first_data_at) : null)
 const dataCeil = computed(() => sensorInfo.value?.latest_data_at ? new Date(sensorInfo.value.latest_data_at) : new Date())
@@ -235,7 +238,7 @@ const colorFn = computed(() => {
 })
 
 // ── DEPTH / HOVER / STATS ────────────────────────────────────────────────────
-const selectedDepthIdx = ref(0)
+const selectedDepthIdx = field('selectedDepthIdx', 0)
 const markDepth = computed(() => depths.value[selectedDepthIdx.value] ?? null)
 // ── CSV EXPORT ──────────────────────────────────────────────────────────────
 // One file, not two: the whole point of this tab is the two panels side by side,
@@ -268,7 +271,7 @@ const csvSectionRows = computed(() => {
 
 if (csv) csv.register((): CsvDataset[] => {
   if (!props.active || !csvSectionRows.value.length) return []
-  const u = displayUnit(varId.value) ? ` (${displayUnit(varId.value)})` : ''
+  const u = displayUnit(varId.value) || null
   return [{
     label: 'Depth sections (model & sensor)',
     slug: 'comparison-depth-sections',
@@ -285,9 +288,9 @@ if (csv) csv.register((): CsvDataset[] => {
     columns: [
       { header: 'time', accessorKey: 'time' },
       { header: 'depth_m', accessorKey: 'depth' },
-      { header: `model${u}`, accessorKey: 'model' },
-      { header: `sensor${u}`, accessorKey: 'sensor' },
-      { header: `difference${u}`, accessorKey: 'difference' },
+      { header: 'model', unit: u, accessorKey: 'model' },
+      { header: 'sensor', unit: u, accessorKey: 'sensor' },
+      { header: 'difference', unit: u, accessorKey: 'difference' },
     ],
     rows: csvSectionRows.value,
     meta: csvMeta(csv.context.value, [
@@ -328,9 +331,9 @@ const hoverInfo = computed(() => {
       ? { month: 'short', day: 'numeric', hour: 'numeric', timeZone: 'UTC' }
       : { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '—',
     depth: depth != null ? `${depth.toFixed(depth < 10 ? 1 : 0)}m` : '—',
-    model: mv == null ? 'no data' : mv.toFixed(2),
-    sensor: sv == null ? 'no cast' : sv.toFixed(2),
-    diff: dv == null ? '—' : `${dv >= 0 ? '+' : ''}${dv.toFixed(2)}`,
+    model: mv == null ? 'no data' : formatDisplayValue(varId.value, mv),
+    sensor: sv == null ? 'no cast' : formatDisplayValue(varId.value, sv),
+    diff: dv == null ? '—' : `${dv >= 0 ? '+' : ''}${formatDisplayValue(varId.value, dv)}`,
   }
 })
 

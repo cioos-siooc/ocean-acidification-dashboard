@@ -64,7 +64,7 @@ import { useMainStore } from '../stores/main';
 import { resolveColormap } from '~~/composables/useColormapResolver';
 import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 const mainStore = useMainStore();
-const { variableLabel, modelVariablesOf } = useVariableRegistry();
+const { variableLabel, modelVariablesOf, formatDisplayValue } = useVariableRegistry();
 
 import colors from '@/config/palette';
 
@@ -299,7 +299,7 @@ function buildOption(): echarts.EChartsOption {
                 const [ti, di, v] = params.data as [number, number, number | null];
                 const t = times[ti] ?? ti;
                 const d = depths[di] ?? di;
-                const val = v !== null ? v.toFixed(3) : 'N/A';
+                const val = v !== null ? formatDisplayValue(props.modelVariable, v) : 'N/A';
                 return `${t}<br/>Depth: ${d} m<br/>${props.modelVariable ?? 'Value'}: ${val}`;
             },
         },

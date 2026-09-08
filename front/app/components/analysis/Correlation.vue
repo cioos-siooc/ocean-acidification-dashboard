@@ -46,6 +46,7 @@ import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint, AnalysisLocation } from '~~/composables/useAnalysisFetch'
 import { availableVariables, filterBySeason, pearsonCorrelation, joinSeriesByDate, linearRegression } from '~~/composables/useAnalysisStatistics'
 import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
+import { useViewState } from '~~/composables/useViewState'
 
 const props = defineProps<{
   primarySeries: SeriesPoint[]
@@ -58,12 +59,15 @@ const props = defineProps<{
 }>()
 
 function varName(id: string) { return availableVariables.find(v => v.id === id)?.name || id }
-const { displayUnit } = useVariableRegistry()
+const { displayUnit, formatDisplayValue } = useVariableRegistry()
 function axisName(id: string) { const u = displayUnit(id); return u ? `${varName(id)} (${u})` : varName(id) }
 
 const selectableVariables = availableVariables
 const MAX_VARS = 4
-const selectedVariables = ref<string[]>([props.primaryVariable])
+// Store-backed so a shared link restores the chosen variables and the picked
+// matrix cell rather than reopening on the empty scatter placeholder.
+const field = useViewState('analysis.correlation')
+const selectedVariables = field<string[]>('selectedVariables', [props.primaryVariable])
 
 function onSelectionChange(vals: string[]) {
   if (vals.length > MAX_VARS) selectedVariables.value = vals.slice(0, MAX_VARS)
@@ -114,7 +118,7 @@ const matrix = computed(() => {
   return { vars, cells }
 })
 
-const selectedPair = ref<[string, string] | null>(null)
+const selectedPair = field<[string, string] | null>('selectedPair', null)
 
 // ── CSV EXPORT ──────────────────────────────────────────────────────────────
 // The matrix goes out long (one row per pair) rather than as a grid — a square
@@ -176,7 +180,7 @@ if (csv) csv.register((): CsvDataset[] => {
       slug: 'correlation-series',
       columns: [
         { header: 'time', accessorKey: 'time' },
-        ...vars.map(id => ({ header: axisName(id), accessorKey: id })),
+        ...vars.map(id => ({ header: varName(id), unit: displayUnit(id), accessorKey: id })),
       ],
       rows: csvJoinedRows.value,
       meta,
@@ -248,7 +252,7 @@ function renderScatter() {
   const trendLine = [[xMin, slope * xMin + intercept], [xMax, slope * xMax + intercept]]
 
   scatterInstance.setOption({
-    tooltip: { formatter: (p: any) => Array.isArray(p.value) ? `${varName(xVar)}: ${p.value[0]}<br/>${varName(yVar)}: ${p.value[1]}<br/>Year: ${p.value[2]}` : '' },
+    tooltip: { formatter: (p: any) => Array.isArray(p.value) ? `${varName(xVar)}: ${formatDisplayValue(xVar, p.value[0])}<br/>${varName(yVar)}: ${formatDisplayValue(yVar, p.value[1])}<br/>Year: ${p.value[2]}` : '' },
     grid: { left: '10%', right: '5%', bottom: '12%', top: '8%', containLabel: true },
     xAxis: { type: 'value', name: axisName(xVar), nameLocation: 'middle', nameGap: 28, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
     yAxis: { type: 'value', name: axisName(yVar), nameLocation: 'middle', nameGap: 40, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },

@@ -44,7 +44,7 @@ import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExp
 
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable?: string }>()
 
-const { displayUnit } = useVariableRegistry()
+const { displayUnit, formatDisplayValue } = useVariableRegistry()
 const unit = computed(() => props.variable ? displayUnit(props.variable) : '')
 
 const annualMeans = computed(() => {
@@ -79,15 +79,15 @@ const csvRows = computed(() => annualMeans.value.map(r => ({
 
 if (csv) csv.register((): CsvDataset[] => {
   if (!csvRows.value.length) return []
-  const u = unit.value ? ` (${unit.value})` : ''
+  const u = unit.value || null
   const r = result.value
   return [{
     label: 'Annual means & trend',
     slug: 'trend-annual-means',
     columns: [
       { header: 'year', accessorKey: 'year' },
-      { header: `annual_mean${u}`, accessorKey: 'mean' },
-      { header: `theil_sen_fit${u}`, accessorKey: 'theil_sen_fit' },
+      { header: 'annual_mean', unit: u, accessorKey: 'mean' },
+      { header: 'theil_sen_fit', unit: u, accessorKey: 'theil_sen_fit' },
     ],
     rows: csvRows.value,
     meta: csvMeta(csv.context.value, r ? [
@@ -125,7 +125,7 @@ function render() {
   const trendLine = years.map(y => slope * y + intercept)
 
   chartInstance.setOption({
-    tooltip: { trigger: 'axis' },
+    tooltip: { trigger: 'axis', valueFormatter: (v: any) => formatDisplayValue(props.variable ?? '', v) },
     legend: { data: ['Annual Mean', 'Theil-Sen Trend'], top: 4, textStyle: { fontSize: 10 } },
     grid: { left: '4%', right: '3%', bottom: '8%', top: '18%', containLabel: true },
     xAxis: { type: 'category', data: years, name: 'Year', nameLocation: 'middle', nameGap: 22, nameTextStyle: { fontSize: 9, color: '#ccc' }, axisLabel: { fontSize: 9, color: '#ccc' } },
@@ -135,7 +135,7 @@ function render() {
     },
     series: [
       { name: 'Annual Mean', type: 'line', data: means, symbol: 'circle', symbolSize: 6, itemStyle: { color: '#58d9f9' }, lineStyle: { color: '#58d9f9' } },
-      { name: 'Theil-Sen Trend', type: 'line', data: trendLine, symbol: 'none', lineStyle: { color: '#ff9800', type: 'dashed', width: 1.5 } },
+      { name: 'Theil-Sen Trend', type: 'line', data: trendLine, symbol: 'none', lineStyle: { color: '#ff9800', type: 'dashed', width: 1.5 }, itemStyle: { color: '#ff9800' } },
     ],
   }, true)
   chartInstance.resize()

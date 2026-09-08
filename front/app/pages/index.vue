@@ -205,6 +205,8 @@
                 block
                 v-for="sv in exploreSubViews"
                 :key="sv.value"
+                :disabled="sv.disabled"
+                :title="sv.title"
                 :class="{
                   'footer-rail-subitem--active': mainStore.exploreView === sv.value,
                 }"
@@ -222,6 +224,8 @@
               block
               v-for="t in remainingFooterTabs"
               :key="t.value"
+              :disabled="t.disabled"
+              :title="t.title"
               :class="{ 'footer-rail-item--active': activeTab === t.value }"
               @click="activeTab = t.value"
             >
@@ -361,35 +365,46 @@ const activeTab = computed({
     get: () => mainStore.activeBottomTab,
     set: (v: 'explore' | 'analysis' | 'comparison' | 'crossSection') => mainStore.setActiveBottomTab(v),
 });
-const footerTabs = computed(() => [
-    { value: 'explore' as const, icon: 'mdi-chart-line', label: 'Explore' },
-    { value: 'crossSection' as const, icon: 'mdi-vector-polyline', label: 'Cross-Section' },
-    { value: 'analysis' as const, icon: 'mdi-poll', label: 'Analysis' },
-    ...(mainStore.selectedSensor?.id
-        ? [{ value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison' }]
-        : []),
-]);
+// Every rail row is always listed; the ones that need a sensor render disabled
+// (with a title explaining why) rather than vanishing, so the rail's shape stays
+// stable and the capability is discoverable before anything is selected.
+const footerTabs = computed(() => {
+    const hasSensor = !!mainStore.selectedSensor?.id;
+    return [
+        { value: 'explore' as const, icon: 'mdi-chart-line', label: 'Explore', disabled: false, title: '' },
+        { value: 'crossSection' as const, icon: 'mdi-vector-polyline', label: 'Cross-Section', disabled: false, title: '' },
+        { value: 'analysis' as const, icon: 'mdi-poll', label: 'Analysis', disabled: false, title: '' },
+        {
+            value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison',
+            disabled: !hasSensor,
+            title: hasSensor ? 'Compare the model against the sensor' : 'Select a sensor first',
+        },
+    ];
+});
 // Explore and Analysis are rendered separately (each has its own sub-list
 // nested directly beneath it), so the rail's trailing loop only needs the rest
 // — just Comparison, when a sensor is selected.
 const remainingFooterTabs = computed(() => footerTabs.value.filter(t => t.value !== 'explore' && t.value !== 'analysis'));
 
-// Explore's own sub-views. Sensor depth only exists once a profiler sensor is
-// selected — `selectedProfilerSensorId` is the same store getter ExplorePanel
-// itself uses to decide whether there's a section to fetch, so the rail and
-// the panel never disagree about whether the option should be offered.
-const exploreSubViews = computed(() => [
-    { value: 'series' as const, label: 'Timeseries' },
-    { value: 'model-depth' as const, label: 'Model depth' },
-    ...(mainStore.selectedProfilerSensorId
-        ? [{ value: 'sensor-depth' as const, label: 'Sensor depth' }]
-        : []),
-]);
+// Explore's own sub-views. Sensor depth is always listed but disabled until a
+// profiler sensor is selected — `selectedProfilerSensorId` is the same store
+// getter ExplorePanel itself uses to decide whether there's a section to fetch,
+// so the rail and the panel never disagree about whether it's available.
+const exploreSubViews = computed(() => {
+    const hasProfiler = !!mainStore.selectedProfilerSensorId;
+    return [
+        { value: 'series' as const, label: 'Timeseries', disabled: false, title: '' },
+        { value: 'model-depth' as const, label: 'Model depth', disabled: false, title: '' },
+        {
+            value: 'sensor-depth' as const, label: 'Sensor depth',
+            disabled: !hasProfiler,
+            title: hasProfiler ? "The sensor's own depth section" : 'Select a profiling sensor first',
+        },
+    ];
+});
 
 // Analysis's own sub-views. Sensor stays visible but disabled with no sensor
-// selected (rather than disappearing like Explore's Sensor depth) — Model vs
-// Sensor is a binary choice worth always showing, not a capability that only
-// exists once something else happens to be selected.
+// selected, the same convention every other conditional row in the rail follows.
 const analysisSubViews = computed(() => {
     const hasSensor = !!mainStore.selectedSensor?.id;
     return [
@@ -595,6 +610,15 @@ onMounted(async () => {
             if (map) zoom.value = map.getZoom().toFixed(2);
         });
 
+        // Publish the camera so the Share button — mounted in the app header,
+        // nowhere near this page's `map` instance — can capture it. `moveend`
+        // rather than `move`: one write per settled gesture, not per frame.
+        map?.on('moveend', publishMapView);
+        publishMapView();
+
+        applyPendingMapView();
+        restoreSharedCrossSection();
+
         updateAnalysisBox();
 
         // Cross-Section tab's line-drawing control. Added once and left on the
@@ -616,6 +640,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
     if (map) {
         map.off('idle', raiseWaterNamesLayer);
+        map.off('moveend', publishMapView);
 
         const handlers = (map as any)?.__anchoredChartsHandlers;
         const refs = (map as any)?.__anchoredCharts as Array<any> | undefined;
@@ -714,7 +739,11 @@ watch(() => [mainStore.selected_variable.source, mainStore.selected_variable.var
 // Watcher: Explore panel's bin-mode toggle changes which dt resolution the raster tile URL
 // requests (hourly/daily/monthly — see updatePngOverlay), so the map layer needs its own refresh.
 watch(() => mainStore.exploreBinMode, async () => {
-    if (!map) return;
+    // A shared link restores the bin mode before `/variables` has landed, so
+    // this can fire with no variable metadata (and therefore no bounds) to
+    // render against. Nothing is lost by skipping: the selected_variable
+    // watcher above is `immediate` and draws the overlay once the list arrives.
+    if (!map || !mainStore.variables.length) return;
     try {
         await updatePngOverlay();
     } catch (e) {
@@ -903,13 +932,86 @@ async function init() {
 }
 
 
-function maybeInitClick() {
-    // Call initClick only once both the map has finished loading and the selected variable has been initialized
-    if (mapLoaded.value && selectedReady.value && !didInitClick) {
-        didInitClick = true;
-        initClick(49.2, -123.5); // Center of the map
+function publishMapView() {
+    if (!map) return;
+    const c = map.getCenter();
+    mainStore.setMapView({
+        center: [c.lng, c.lat],
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+    });
+}
+
+/**
+ * A shared link's camera. Applied here rather than in the Map constructor
+ * because the payload is decoded asynchronously in app.vue and may still be in
+ * flight when this page mounts — hence the watcher below as well, which covers
+ * a decode that lands after the map is already up.
+ */
+function applyPendingMapView() {
+    const view = mainStore.takePendingMapView();
+    if (!map || !view) return;
+    map.jumpTo({ center: view.center, zoom: view.zoom, bearing: view.bearing, pitch: view.pitch });
+    publishMapView();
+}
+watch(() => mainStore.pendingMapView, () => { if (mapLoaded.value || map) applyPendingMapView(); });
+
+/**
+ * Put a shared cross-section line back on the map. `mainStore.crossSectionLine`
+ * alone only feeds the panel's fetch — the line itself lives in
+ * mapbox-gl-draw's own store, which starts empty on a fresh load, so the
+ * geometry has to be handed back to it explicitly.
+ */
+let crossSectionRestored = false;
+function restoreSharedCrossSection() {
+    if (!crossSectionDraw || crossSectionRestored) return;
+    const line = mainStore.crossSectionLine;
+    if (line?.length) {
+        crossSectionRestored = true;
+        crossSectionDraw.add({
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'LineString', coordinates: line.map(p => [p.lng, p.lat]) },
+        } as GeoJSON.Feature<GeoJSON.LineString>);
+        updateCrossSectionVertexLabels();
+    } else if (!mainStore.shareRestorePending) {
+        // No line to put back (and none still arriving). Arm drawing if the
+        // app opened straight into this tab — the activeTab watcher only fires
+        // on a *change* of tab, so a shared link that lands here never triggers it.
+        crossSectionRestored = true;
+        if (activeTab.value === 'crossSection') crossSectionDraw.changeMode('draw_line_string');
     }
 }
+// The payload finishes decoding after the map is built, so the line can arrive
+// later than `map.on('load')` — retry once it does (the flag above makes this
+// idempotent, and leaves the user's own subsequent drawing alone).
+watch([() => mainStore.shareRestorePending, () => mainStore.crossSectionLine], () => {
+    if (mapLoaded.value || map) restoreSharedCrossSection();
+});
+
+function maybeInitClick() {
+    // Call initClick only once both the map has finished loading and the selected variable has been initialized
+    // — and, for a shared link, once the payload has been decoded, so the
+    // shared coordinate isn't overwritten by the default bootstrap point.
+    if (mainStore.shareRestorePending) return;
+    if (mapLoaded.value && selectedReady.value && !didInitClick) {
+        didInitClick = true;
+        const shared = mainStore.lastClickedMapPoint;
+        if (shared) {
+            // Already the app's selected point (applyShareState set it); all
+            // that's missing is the marker. Deliberately not initClick(): that
+            // reports a `model_point_queried` the user never performed.
+            trigger_mapClick(shared.lat, shared.lng);
+        } else {
+            initClick(49.2, -123.5); // Center of the map
+        }
+    }
+}
+
+// A share payload finishes decoding after this page has mounted, so the
+// bootstrap click above has to be retried once the restore releases it.
+watch(() => mainStore.shareRestorePending, (pending) => { if (!pending) maybeInitClick(); });
 
 function initClick(lat: number, lng: number) {
     if (!map) return;
@@ -1807,15 +1909,27 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
   justify-content: flex-start;
 }
 
-.footer-rail-item:hover {
+.footer-rail-item:hover:not(:disabled) {
   opacity: 0.9;
 }
 
-.footer-rail-item--active {
+/* The active row has to read at a glance against the rail's near-black ground,
+   so it gets three cues at once: a lightened primary text colour (raw primary is
+   too dark a blue on this background), a primary-tinted fill, and a solid left
+   accent bar drawn as an inset shadow so it costs no layout. */
+.footer-rail-item--active,
+.footer-rail-item--active:hover {
   opacity: 1;
   font-weight: 600;
-  color: rgb(var(--v-theme-primary));
-  background: rgba(var(--v-theme-primary), 0.16);
+  color: color-mix(in oklab, var(--ui-primary) 55%, white);
+  background: color-mix(in oklab, var(--ui-primary) 22%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--ui-primary);
+}
+
+/* Rows that need a selection they don't have yet: still listed, plainly inert. */
+.footer-rail-item:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 /* Explore's sub-views, nested directly beneath the Explore row while it's active. */
@@ -1843,15 +1957,22 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
   justify-content: flex-start;
 }
 
-.footer-rail-subitem:hover {
+.footer-rail-subitem:hover:not(:disabled) {
   opacity: 0.85;
 }
 
-.footer-rail-subitem--active {
+.footer-rail-subitem--active,
+.footer-rail-subitem--active:hover {
   opacity: 1;
   font-weight: 600;
-  color: rgb(var(--v-theme-primary));
-  background: rgba(var(--v-theme-primary), 0.12);
+  color: color-mix(in oklab, var(--ui-primary) 55%, white);
+  background: color-mix(in oklab, var(--ui-primary) 18%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--ui-primary);
+}
+
+.footer-rail-subitem:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
 }
 
 .cursor-coord-label {

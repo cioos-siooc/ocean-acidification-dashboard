@@ -47,6 +47,7 @@ import { availableVariables, filterBySeason, maskBySeason, breakDataGaps, groupB
 import { useMainStore } from '../../stores/main'
 import SegmentedControl from '../ui/SegmentedControl.vue'
 import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
+import { useViewState, useChartZoom } from '~~/composables/useViewState'
 const directionItems = [{ value: '>', label: 'Above' }, { value: '<', label: 'Below' }]
 
 const mainStore = useMainStore()
@@ -62,16 +63,22 @@ const props = defineProps<{
 }>()
 
 function varName(id: string) { return availableVariables.find(v => v.id === id)?.name || id }
-const { displayUnit } = useVariableRegistry()
+const { displayUnit, formatDisplayValue } = useVariableRegistry()
 function axisName(id: string) { const u = displayUnit(id); return u ? `${varName(id)} (${u})` : varName(id) }
 
 const otherVariables = computed(() => availableVariables.filter(v => v.id !== props.primaryVariable))
-const secondaryVariable = ref(otherVariables.value[0]?.id || '')
 
-const primaryThreshold = ref(0)
-const primaryDirection = ref<'>' | '<'>('>')
-const secondaryThreshold = ref(0)
-const secondaryDirection = ref<'>' | '<'>('>')
+// Store-backed so a shared link restores the pair and thresholds the sender set.
+const VIEW_SCOPE = 'analysis.compound'
+const field = useViewState(VIEW_SCOPE)
+const zoom = useChartZoom(VIEW_SCOPE)
+
+const secondaryVariable = field('secondaryVariable', otherVariables.value[0]?.id || '')
+
+const primaryThreshold = field('primaryThreshold', 0)
+const primaryDirection = field<'>' | '<'>('primaryDirection', '>')
+const secondaryThreshold = field('secondaryThreshold', 0)
+const secondaryDirection = field<'>' | '<'>('secondaryDirection', '>')
 
 const secondarySeries = ref<SeriesPoint[]>([])
 const secondaryLoading = ref(false)
@@ -134,7 +141,7 @@ const yearRows = computed(() => {
 })
 
 // v-data-table sorted by default; TanStack's table needs the initial state given explicitly.
-const sorting = ref([{ id: 'year', desc: true }])
+const sorting = field('sorting', [{ id: 'year', desc: true }])
 
 const yearHeaders = [
   { header: 'Year', accessorKey: 'year' },
@@ -171,18 +178,13 @@ if (csv) csv.register((): CsvDataset[] => [
     slug: 'compound-stress-days',
     columns: [
       { header: 'time', accessorKey: 'time' },
-      { header: csvValueHeader(props.primaryVariable), accessorKey: 'a' },
-      { header: csvValueHeader(secondaryVariable.value), accessorKey: 'b' },
+      { header: props.primaryVariable, unit: displayUnit(props.primaryVariable), accessorKey: 'a' },
+      { header: secondaryVariable.value, unit: displayUnit(secondaryVariable.value), accessorKey: 'b' },
     ],
     rows: compoundDays.value as unknown as Record<string, unknown>[],
     meta: csvMeta(csv.context.value, csvConditionMeta.value),
   },
 ])
-
-function csvValueHeader(id: string) {
-  const u = displayUnit(id)
-  return u ? `${id} (${u})` : id
-}
 
 // --- CHART ---
 const chartContainerRef = ref<HTMLDivElement | null>(null)
@@ -192,7 +194,10 @@ let resizeObserver: ResizeObserver | null = null
 function render() {
   if (!chartContainerRef.value) return
   registerEchartsDarkTheme()
-  if (!chartInstance) chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
+  if (!chartInstance) {
+    chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
+    zoom.track(chartInstance)
+  }
 
   const compoundSet = new Set(compoundDays.value.map(d => d.time))
   const markAreaData = buildMarkAreas(Array.from(compoundSet).sort())
@@ -206,20 +211,30 @@ function render() {
       { type: 'value', name: axisName(props.primaryVariable), nameTextStyle: { fontSize: 9 }, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
       { type: 'value', name: axisName(secondaryVariable.value), nameTextStyle: { fontSize: 9 }, axisLabel: { fontSize: 9, color: '#ccc' }, scale: true },
     ],
-    dataZoom: [{ type: 'inside' }, { type: 'slider', bottom: 4, height: 14 }],
+    dataZoom: [{ type: 'inside', ...zoom.current() }, { type: 'slider', bottom: 4, height: 14, ...zoom.current() }],
     series: [
       {
         // Masked (not compacted) so off-season months render as a real gap instead
         // of a straight diagonal connecting e.g. last August to next March.
-        name: varName(props.primaryVariable), type: 'line', showSymbol: false, yAxisIndex: 0, connectNulls: false,
+        // `symbol: 'none'` rather than `showSymbol: false` — the latter still leaves
+        // the point marker in the legend's line icon.
+        name: varName(props.primaryVariable), type: 'line', symbol: 'none', yAxisIndex: 0, connectNulls: false,
+        // Per-series rather than one tooltip-wide valueFormatter: the two series are
+        // different variables, so they round to different numbers of decimals.
+        tooltip: { valueFormatter: (v: any) => formatDisplayValue(props.primaryVariable, v) },
         data: maskBySeason(breakDataGaps(props.primarySeries), props.season).map(d => [d.time, d.value]),
         lineStyle: { width: 1.2, color: '#58d9f9' },
+        // itemStyle mirrors lineStyle: the legend swatch is drawn from itemStyle, so
+        // without it the entry takes a palette colour that doesn't match its line.
+        itemStyle: { color: '#58d9f9' },
         markArea: { itemStyle: { color: 'rgba(255,110,118,0.18)' }, data: markAreaData },
       },
       {
-        name: varName(secondaryVariable.value), type: 'line', showSymbol: false, yAxisIndex: 1, connectNulls: false,
+        name: varName(secondaryVariable.value), type: 'line', symbol: 'none', yAxisIndex: 1, connectNulls: false,
+        tooltip: { valueFormatter: (v: any) => formatDisplayValue(secondaryVariable.value, v) },
         data: maskBySeason(breakDataGaps(secondarySeries.value), props.season).map(d => [d.time, d.value]),
         lineStyle: { width: 1.2, color: '#ff9800' },
+        itemStyle: { color: '#ff9800' },
       },
     ],
   }, true)

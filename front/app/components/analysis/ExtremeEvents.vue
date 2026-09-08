@@ -53,7 +53,7 @@
           <div class="ctrl-label mb-1">Events ({{ events.length }})</div>
           <UTable v-model:sorting="sorting1" :columns="eventHeaders" :data="eventRows" class="stats-table" />
         </div>
-        <div style="width:260px; border-left:1px solid rgba(255,255,255,0.08); overflow-y:auto;" class="p-2 shrink-0">
+        <div style="width:320px; border-left:1px solid rgba(255,255,255,0.08); overflow:auto;" class="p-2 shrink-0">
           <div class="ctrl-label mb-1">Per-year summary</div>
           <UTable v-model:sorting="sorting2" :columns="yearHeaders" :data="yearRows" class="stats-table" />
         </div>
@@ -70,6 +70,7 @@ import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import type { SeriesPoint } from '~~/composables/useAnalysisFetch'
 import SegmentedControl from '../ui/SegmentedControl.vue'
 import { csvMeta, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
+import { useViewState, useChartZoom } from '~~/composables/useViewState'
 import {
 
   filterBySeason, maskBySeason, breakDataGaps, computeClimatologyBaseline, detectExtremeEvents, summarizeEventsByYear,
@@ -79,9 +80,11 @@ import {
 const thresholdModeItems = [{ value: 'percentile', label: 'Percentile' }, { value: 'fixed', label: 'Fixed value' }]
 const directionItems = [{ value: 'above', label: 'Above (high)' }, { value: 'below', label: 'Below (low)' }]
 
+const VIEW_SCOPE = 'analysis.extremes'
+
 const props = defineProps<{ series: SeriesPoint[]; season: string; variable: string }>()
 
-const { displayUnit } = useVariableRegistry()
+const { displayUnit, variableLabel, formatDisplayValue } = useVariableRegistry()
 const unit = computed(() => displayUnit(props.variable))
 const unitSuffix = computed(() => unit.value ? ` (${unit.value})` : '')
 
@@ -92,15 +95,23 @@ const shortHistoryWarning = computed(() =>
   + `true multi-year climatology here — it's a local ±${windowDays.value}-day rolling percentile of this same `
   + `record, so it will track short-term swings rather than a stable "normal for this time of year."`)
 
+// Every control here is store-backed so a shared link reopens this tab with the
+// sender's parameters, not the defaults — see composables/useViewState.ts.
+const field = useViewState(VIEW_SCOPE)
+
 // Direction defaults: low extremes matter for OA-relevant variables, high extremes for temperature.
 const LOW_EXTREME_VARS = new Set(['ph_total', 'omega_arag', 'omega_cal', 'dissolved_oxygen'])
-const direction = ref<'above' | 'below'>(LOW_EXTREME_VARS.has(props.variable) ? 'below' : 'above')
+const direction = field<'above' | 'below'>('direction', LOW_EXTREME_VARS.has(props.variable) ? 'below' : 'above')
 
-const thresholdMode = ref<'percentile' | 'fixed'>('percentile')
-const fixedThreshold = ref(0)
-const windowDays = ref(5)
-const minDurationDays = ref(5)
-const maxGapDays = ref(2)
+const thresholdMode = field<'percentile' | 'fixed'>('thresholdMode', 'percentile')
+const fixedThreshold = field('fixedThreshold', 0)
+const windowDays = field('windowDays', 5)
+const minDurationDays = field('minDurationDays', 5)
+const maxGapDays = field('maxGapDays', 2)
+
+const valueLabel = computed(() => variableLabel(props.variable) || 'Value')
+// Shared by the markArea fill and the 'Events' legend swatch so they can't drift apart.
+const eventColor = computed(() => direction.value === 'above' ? 'rgba(255,110,118,0.18)' : 'rgba(73,146,255,0.18)')
 
 const climatology = computed(() => computeClimatologyBaseline(props.series, windowDays.value))
 const thresholdLookup = computed<ThresholdLookup>(() => thresholdMode.value === 'percentile'
@@ -111,9 +122,9 @@ const events = computed(() => detectExtremeEvents(seasonalSeries.value, threshol
 const yearlySummary = computed(() => summarizeEventsByYear(events.value))
 
 // v-data-table sorted by default; TanStack's table needs the initial state given explicitly.
-const sorting1 = ref([{ id: 'peakAnomaly', desc: true }])
+const sorting1 = field('sorting1', [{ id: 'peakAnomaly', desc: true }])
 // v-data-table sorted by default; TanStack's table needs the initial state given explicitly.
-const sorting2 = ref([{ id: 'year', desc: true }])
+const sorting2 = field('sorting2', [{ id: 'year', desc: true }])
 
 const eventHeaders = computed(() => [
   { header: 'Start', accessorKey: 'startTime' },
@@ -147,7 +158,7 @@ const csv = useCsvExport()
 const csvParams = computed(() => thresholdMode.value === 'percentile'
   ? [
       ['threshold', `${direction.value === 'above' ? '90th' : '10th'} percentile of a day-of-year climatology`] as [string, unknown],
-      ['baseline_window_days', `±${windowDays.value}`] as [string, unknown],
+      ['baseline_half_window_days', windowDays.value] as [string, unknown],
     ]
   : [['threshold', `fixed ${direction.value === 'above' ? '>' : '<'} ${fixedThreshold.value}${unitSuffix.value}`] as [string, unknown]])
 
@@ -166,9 +177,9 @@ if (csv) csv.register((): CsvDataset[] => [
       { header: 'start_time', accessorKey: 'startTime' },
       { header: 'end_time', accessorKey: 'endTime' },
       { header: 'duration_days', accessorKey: 'durationDays' },
-      { header: `peak_value${unitSuffix.value}`, accessorKey: 'peakValue' },
-      { header: `peak_anomaly${unitSuffix.value}`, accessorKey: 'peakAnomaly' },
-      { header: `mean_intensity${unitSuffix.value}`, accessorKey: 'meanIntensity' },
+      { header: 'peak_value', unit: unit.value, accessorKey: 'peakValue' },
+      { header: 'peak_anomaly', unit: unit.value, accessorKey: 'peakAnomaly' },
+      { header: 'mean_intensity', unit: unit.value, accessorKey: 'meanIntensity' },
     ],
     rows: events.value as unknown as Record<string, unknown>[],
     meta: csvMeta(csv.context.value, csvCommonMeta.value),
@@ -180,14 +191,11 @@ if (csv) csv.register((): CsvDataset[] => [
       { header: 'year', accessorKey: 'year' },
       { header: 'event_count', accessorKey: 'eventCount' },
       { header: 'total_event_days', accessorKey: 'totalEventDays' },
-      { header: `mean_intensity${unitSuffix.value}`, accessorKey: 'meanIntensity' },
-      { header: `max_intensity${unitSuffix.value}`, accessorKey: 'maxIntensity' },
+      { header: 'mean_intensity', unit: unit.value, accessorKey: 'meanIntensity' },
+      { header: 'max_intensity', unit: unit.value, accessorKey: 'maxIntensity' },
     ],
     rows: yearlySummary.value as unknown as Record<string, unknown>[],
-    meta: csvMeta(csv.context.value, [
-      ...csvCommonMeta.value,
-      ['note', 'events are attributed to the year they start in'],
-    ]),
+    meta: csvMeta(csv.context.value, csvCommonMeta.value),
   },
 ])
 
@@ -195,18 +203,16 @@ if (csv) csv.register((): CsvDataset[] => [
 const chartContainerRef = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
-// Preserved across re-renders so changing a param on the left doesn't reset the user's zoom.
-let zoomRange = { start: 0, end: 100 }
+// Preserved across re-renders so changing a param on the left doesn't reset the
+// user's zoom — and stored, so a shared link reopens at the same zoom.
+const zoom = useChartZoom(VIEW_SCOPE)
 
 function render() {
   if (!chartContainerRef.value) return
   registerEchartsDarkTheme()
   if (!chartInstance) {
     chartInstance = echarts.init(chartContainerRef.value, 'dark', { renderer: 'canvas' })
-    chartInstance.on('datazoom', () => {
-      const dz = (chartInstance!.getOption().dataZoom as any[]) || []
-      if (dz[0]) zoomRange = { start: dz[0].start, end: dz[0].end }
-    })
+    zoom.track(chartInstance)
   }
 
   // Masked (not compacted) so off-season months render as a real gap in the line
@@ -225,24 +231,31 @@ function render() {
   const markAreaData = events.value.map(e => [{ xAxis: e.startTime }, { xAxis: e.endTime }])
 
   chartInstance.setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: '4%', right: '3%', bottom: '12%', top: '8%', containLabel: true },
+    tooltip: { trigger: 'axis', valueFormatter: (v: any) => formatDisplayValue(props.variable, v) },
+    // 'Events' is a data-less series whose only job is to give the shaded event
+    // bands a legend swatch — markArea itself never appears in the legend.
+    legend: { data: [valueLabel.value, 'Threshold', 'Events'], top: 4, textStyle: { fontSize: 10 } },
+    grid: { left: '4%', right: '3%', bottom: '12%', top: '18%', containLabel: true },
     xAxis: { type: 'time', axisLabel: { fontSize: 9, color: '#ccc' } },
     yAxis: {
       type: 'value', name: unit.value, nameLocation: 'middle', nameGap: 38,
       axisLabel: { fontSize: 10, color: '#ccc' }, scale: true,
     },
     dataZoom: [
-      { type: 'inside', start: zoomRange.start, end: zoomRange.end },
-      { type: 'slider', bottom: 4, height: 14, start: zoomRange.start, end: zoomRange.end },
+      { type: 'inside', ...zoom.current() },
+      { type: 'slider', bottom: 4, height: 14, ...zoom.current() },
     ],
     series: [
       {
-        name: 'Value', type: 'line', showSymbol: false, data: valuePoints, connectNulls: false,
+        name: valueLabel.value, type: 'line', showSymbol: false, data: valuePoints, connectNulls: false,
         lineStyle: { width: 1.2, color: '#58d9f9' }, itemStyle: { color: '#58d9f9' },
-        markArea: { itemStyle: { color: direction.value === 'above' ? 'rgba(255,110,118,0.18)' : 'rgba(73,146,255,0.18)' }, data: markAreaData },
+        markArea: { itemStyle: { color: eventColor.value }, data: markAreaData },
       },
-      { name: 'Threshold', type: 'line', showSymbol: false, data: baselinePoints, connectNulls: false, lineStyle: { width: 1, color: '#ff9800', type: 'dashed' } },
+      { name: 'Threshold', type: 'line', showSymbol: false, data: baselinePoints, connectNulls: false, lineStyle: { width: 1, color: '#ff9800', type: 'dashed' }, itemStyle: { color: '#ff9800' } },
+      {
+        name: 'Events', type: 'line', data: [], silent: true, legendHoverLink: false,
+        itemStyle: { color: eventColor.value }, lineStyle: { opacity: 0 }, areaStyle: { color: eventColor.value },
+      },
     ],
   }, true)
   chartInstance.resize()

@@ -26,6 +26,12 @@ import { APP_TIMEZONE } from '@/config/app'
 export interface CsvColumn {
     header: string
     accessorKey: string
+    /**
+     * The column's unit, written on its own row under the header rather than
+     * folded into the header text: `value (µmol/kg)` is a nuisance to reference
+     * in pandas or R, and a units row keeps the header a plain column name.
+     */
+    unit?: string | null
 }
 
 export type CsvRow = Record<string, unknown>
@@ -64,11 +70,28 @@ export interface CsvContext {
     /** Canonical variable id, e.g. 'ph_total'. */
     variable: string
     variableName: string
-    /** Display unit the values are already in (unit preference applied). */
+    /**
+     * Display unit the values are already in (unit preference applied). Not a
+     * preamble line of its own — units belong to columns, and each dataset
+     * writes them on the row under its header.
+     */
     unit?: string
     depth?: number | null
     /** '49.283N 123.121W' for a map point, or the sensor's name/id. */
     locationLabel?: string
+    /**
+     * The point behind the file, when there is one. Written as its own
+     * `latitude`/`longitude` preamble lines: a single 'location' string reads
+     * fine but has to be re-parsed before it can be used as a coordinate.
+     */
+    latitude?: number | null
+    longitude?: number | null
+    /**
+     * Where the data can be fetched at the source — currently the ERDDAP
+     * dataset page for ERDDAP-backed sensors (see `useSensorDownloadLinks`).
+     * Null for the model and for sources with no direct link (ONC).
+     */
+    sourceUrl?: string | null
     /** Inclusive ISO date bounds of the underlying query. */
     timeRange?: [string, string] | null
     season?: string
@@ -129,6 +152,15 @@ function roundDepth(depth: number): number {
     return Number.isInteger(depth) ? depth : Math.round(depth * 100) / 100
 }
 
+/**
+ * A coordinate for the preamble. Trimmed to 5 decimals (~1 m) — the click that
+ * produced it carries no more information than that, and the raw float would
+ * otherwise print a dozen digits of noise.
+ */
+export function coord(value: number | null | undefined): number | null {
+    return value == null || !Number.isFinite(value) ? null : Math.round(value * 1e5) / 1e5
+}
+
 function depthLabel(depth: number | null | undefined): string | null {
     if (depth == null) return null
     return depth === -1 ? 'variable (profiler)' : `${roundDepth(depth)} m`
@@ -174,9 +206,14 @@ export function csvMeta(ctx: CsvContext | null, extra: CsvMetaEntry[] = []): Csv
     if (!ctx) return extra
     const base: CsvMetaEntry[] = [
         ['source', ctx.sourceLabel],
-        ['variable', ctx.unit ? `${ctx.variableName} (${ctx.unit})` : ctx.variableName],
+        ['source_url', ctx.sourceUrl],
+        ['variable', ctx.variableName],
         ['depth', depthLabel(ctx.depth)],
-        ['location', ctx.locationLabel],
+        // `locationLabel` deliberately has no line of its own — it's a display
+        // string ('49.283N 123.121W', a sensor name) that the coordinates below
+        // and the `source` line already state, and it still names the file.
+        ['latitude', coord(ctx.latitude)],
+        ['longitude', coord(ctx.longitude)],
         ['time_range', !ctx.timeRange ? null
             : ctx.timeRange[0] === ctx.timeRange[1] ? ctx.timeRange[0]
                 : `${ctx.timeRange[0]} .. ${ctx.timeRange[1]}`],
@@ -193,6 +230,21 @@ export function csvMeta(ctx: CsvContext | null, extra: CsvMetaEntry[] = []): Csv
 }
 
 /**
+ * One provenance line, as `# label,value` rather than `# label: value`.
+ *
+ * Text values are always quoted, numbers never: a note or a label containing a
+ * comma has to be quoted to stay in a single spreadsheet cell, and quoting only
+ * those would make otherwise-identical lines look arbitrarily different from
+ * one file to the next. The line still starts with `#`, so `comment='#'`
+ * readers skip it as before.
+ */
+function metaLine(label: string, value: unknown): string {
+    const text = String(value).replace(/[\r\n]+/g, ' ')
+    const cell = typeof value === 'number' ? csvCell(value) : `"${text.replace(/"/g, '""')}"`
+    return `# ${csvCell(label)},${cell}`
+}
+
+/**
  * Serializes to RFC 4180 CSV with a `#`-commented provenance preamble.
  *
  * The preamble is the deliberate tradeoff: the numbers alone aren't reproducible
@@ -201,18 +253,25 @@ export function csvMeta(ctx: CsvContext | null, extra: CsvMetaEntry[] = []): Csv
  * `read.csv(f, comment.char='#')` — and Excel shows the lines as rows.
  */
 export function buildCsv(dataset: CsvDataset): string {
-    const lines: string[] = [
-        '# OceanECO — ocean acidification dashboard',
-        ...(dataset.omitDatasetLine ? [] : [`# dataset: ${dataset.label}`]),
-        `# generated: ${moment().tz(APP_TIMEZONE).format()}`,
+    const lines: string[] = ['# OceanECO — ocean acidification dashboard']
+    const preamble: CsvMetaEntry[] = [
+        ...(dataset.omitDatasetLine ? [] : [['dataset', dataset.label] as CsvMetaEntry]),
+        ['generated', moment().tz(APP_TIMEZONE).format()],
+        ...(dataset.meta ?? []),
     ]
-    for (const [label, value] of dataset.meta ?? []) {
+    for (const [label, value] of preamble) {
         if (value == null || value === '') continue
-        lines.push(`# ${label}: ${String(value).replace(/[\r\n]+/g, ' ')}`)
+        lines.push(metaLine(label, value))
     }
     lines.push('#')
 
     lines.push(dataset.columns.map(c => csvCell(c.header)).join(','))
+    // Second header row, present only when something in the file has a unit:
+    //   time,mean,max
+    //   ,°C,°C
+    if (dataset.columns.some(c => c.unit)) {
+        lines.push(dataset.columns.map(c => csvCell(c.unit ?? '')).join(','))
+    }
     for (const row of dataset.rows) {
         lines.push(dataset.columns.map(c => csvCell(row[c.accessorKey])).join(','))
     }

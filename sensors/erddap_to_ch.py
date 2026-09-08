@@ -135,11 +135,25 @@ def fetch_tabledap_csv(
     include_depth: bool,
     time_col: str,
     depth_col: str,
+    extra_constraints: str = "",
 ) -> list[dict]:
+    """Fetch a tabledap slice as CSV.
+
+    `extra_constraints` is appended verbatim to the query (leading `&` added
+    if missing). It exists for datasets that pack several stations into one
+    dataset — DFO_MEDS_BUOYS being the case in hand, where a sensor is
+    `STN_ID="C46146"` rather than a dataset of its own — and equally for
+    server-side QC filtering (`SSTP_UQL<=2`). Without it every such sensor
+    would ingest every station's rows.
+    """
     extra = [depth_col] if include_depth else []
     fields = [time_col] + extra + erddap_cols
     query = ",".join(fields)
     constraints = f"&{time_col}>={date_from.strftime(ERDDAP_TIME_FMT)}" if date_from else ""
+    if extra_constraints:
+        if not extra_constraints.startswith("&"):
+            extra_constraints = "&" + extra_constraints
+        constraints += extra_constraints
     url = f"{base_url}.csv?{query}{constraints}"
     print(f"  GET {url}")
 
@@ -373,6 +387,7 @@ def fetch_and_store(sensor_id_filter: str | None = None):
                 link, erddap_cols, date_from,
                 include_depth=variable_depth,
                 time_col=time_col, depth_col=depth_col,
+                extra_constraints=sensor["source"].get("constraints", ""),
             )
         except Exception as e:
             print(f"  ERROR: {e}")

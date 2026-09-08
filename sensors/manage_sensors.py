@@ -276,6 +276,8 @@ def cmd_add(ch_client, args):
         source["link"] = args.source_link
     if args.description:
         source["description"] = args.description
+    if args.constraints:
+        source["constraints"] = args.constraints
 
     sensor_id = str(uuid.uuid4())
     row = {
@@ -325,6 +327,8 @@ def cmd_update(ch_client, args):
         sensor["source"]["link"] = args.source_link
     if args.description:
         sensor["source"]["description"] = args.description
+    if args.constraints:
+        sensor["source"]["constraints"] = args.constraints
     if args.api:
         sensor["source"]["api"] = args.api
     if args.organization is not None:
@@ -388,6 +392,8 @@ def cmd_import(ch_client, args):
             source["link"] = entry["source_link"]
         if entry.get("description"):
             source["description"] = entry["description"]
+        if entry.get("constraints"):
+            source["constraints"] = entry["constraints"]
 
         sensor_id = existing[name] if (name in existing and args.overwrite) else str(uuid.uuid4())
         row = {
@@ -424,6 +430,10 @@ def _add_variable_args(p: argparse.ArgumentParser):
                         "dataSearchURL — required for ERDDAP sensors).")
     p.add_argument("--description", metavar="TEXT",
                    help="Human-readable description shown in the app.")
+    p.add_argument("--constraints", metavar="EXPR",
+                   help="Extra ERDDAP tabledap constraints appended to every fetch, "
+                        "e.g. 'STN_ID=\"C46146\"&SSTP_UQL<=2'. Use for datasets that "
+                        "hold many stations in one tabledap dataset.")
 
 
 def main():

@@ -152,3 +152,15 @@ export function sensorDownloads(
     if (sensor.source?.api === 'ONC') return oncDownloads(sensor, link ?? '', only);
     return null;
 }
+
+/**
+ * The sensor's dataset landing page at the source, for the provenance preamble
+ * of an exported CSV. ERDDAP only: an ONC "link" is a Data Search query, not a
+ * page the file's reader can fetch the same record from.
+ */
+export function sensorSourceUrl(sensor: SensorSourceLike | null | undefined): string | null {
+    if (sensor?.source?.api !== 'ERDDAP') return null;
+    // Reuses the dialog's own dataset link, so a Hakai tabledap URL keeps the
+    // column list that stops their ERDDAP bouncing it back to the index.
+    return sensorDownloads(sensor)?.dataset || null;
+}

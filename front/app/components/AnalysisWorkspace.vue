@@ -8,6 +8,7 @@
           <UBadge size="xs" color="warning" variant="subtle" class="ml-2 rounded-full" v-if="contextLabel">{{ contextLabel }}</UBadge>
         </div>
         <div class="grow" />
+        <ShareButton />
         <DownloadButton :datasets="csvDatasets" class="shrink-0" />
         <UButton variant="ghost" icon="i-mdi-close" class="shrink-0" title="Close (Esc)" @click="isOpen = false" />
       </div>
@@ -21,8 +22,8 @@
           <AnalysisBuilder :active="isOpen && activeTab === 'builder'" :source="source" />
         </div>
 
-        <div v-if="activeTab !== 'builder'" class="h-full" style="overflow:auto;">
-          <div class="flex items-center px-4 pt-3" style="gap:10px;">
+        <div v-if="activeTab !== 'builder'" class="h-full flex flex-col" style="overflow:hidden;">
+          <div class="flex items-center px-4 pt-3 pb-1 shrink-0" style="gap:10px;">
             <span class="ctrl-label">Season</span>
             <SegmentedControl v-model="selectedSeason" :items="seasonItems" size="xs" aria-label="Season" />
           </div>
@@ -30,7 +31,7 @@
           <UAlert color="error" variant="subtle" class="m-4" v-if="primaryError" :description="primaryError" />
 
           <div v-else-if="!location || !variable || depth == null"
-            class="flex flex-col items-center justify-center text-center px-6" style="height:60vh;">
+            class="grow flex flex-col items-center justify-center text-center px-6" style="min-height:0;">
             <UIcon name="i-mdi-poll" class="size-[56px] text-gray-500" />
             <div class="text-gray-500 mt-2">
               {{ source === 'sensor' ? 'Select a sensor and a depth first.' : 'Select a point, variable and depth first.' }}
@@ -38,11 +39,11 @@
           </div>
 
           <div v-else-if="primaryLoading && !primarySeries.length"
-            class="flex items-center justify-center" style="height:60vh;">
+            class="grow flex items-center justify-center" style="min-height:0;">
             <UIcon name="i-mdi-loading" class="animate-spin size-[48px] text-warning" />
           </div>
 
-          <template v-else>
+          <div v-else class="grow" style="min-height:0;">
             <ExtremeEvents v-if="activeTab === 'extremes'" :series="primarySeries" :season="selectedSeason" :variable="variable" />
             <CompoundStress v-else-if="activeTab === 'compound'"
               :primary-series="primarySeries" :primary-variable="variable" :season="selectedSeason"
@@ -52,7 +53,7 @@
             <Correlation v-else-if="activeTab === 'correlation'"
               :primary-series="primarySeries" :primary-variable="variable" :season="selectedSeason"
               :depth="depth" :location="location" :year-range="yearRange" :fetch-series="fetchSeriesFor" />
-          </template>
+          </div>
         </div>
       </div>
     </div>
@@ -68,7 +69,9 @@ import { fetchSensorAnalysisSeries } from '~~/composables/useSensorAnalysisFetch
 import { availableVariables } from '~~/composables/useAnalysisStatistics'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { csvMeta, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
+import { sensorSourceUrl } from '~~/composables/useSensorDownloadLinks'
 import DownloadButton from './ui/DownloadButton.vue'
+import ShareButton from './ShareButton.vue'
 import AnalysisBuilder from './analysis/AnalysisBuilder.vue'
 import ExtremeEvents from './analysis/ExtremeEvents.vue'
 import CompoundStress from './analysis/CompoundStress.vue'
@@ -130,8 +133,18 @@ const yearRange = computed<[number, number]>(() => {
   return [from, to]
 })
 
-const activeTab = ref<'builder' | 'extremes' | 'compound' | 'trend' | 'climatology' | 'correlation'>('builder')
-const selectedSeason = ref('full_year')
+// Tab and season live on the store rather than in local refs so a share link
+// can restore which analysis the sender was looking at — same reasoning that
+// moved `exploreView`/`exploreBinMode` out of ExplorePanel.
+type AnalysisTab = 'builder' | 'extremes' | 'compound' | 'trend' | 'climatology' | 'correlation'
+const activeTab = computed<AnalysisTab>({
+  get: () => mainStore.analysisTab as AnalysisTab,
+  set: (t) => mainStore.setAnalysisTab(t),
+})
+const selectedSeason = computed<string>({
+  get: () => mainStore.analysisSeason,
+  set: (v) => mainStore.setAnalysisSeason(v),
+})
 
 // ── CSV EXPORT ──────────────────────────────────────────────────────────────
 // The workspace owns the query (point/sensor, variable, depth, window) so it
@@ -152,6 +165,7 @@ const csvContext = computed<CsvContext | null>(() => {
     sourceLabel: source.value === 'sensor'
       ? `sensor — ${sensorInfo.value?.name ?? ''}`
       : 'SalishSeaCast model',
+    sourceUrl: source.value === 'sensor' ? sensorSourceUrl(sensorInfo.value) : null,
     variable: variable.value,
     variableName: varName.value,
     unit: displayUnit(variable.value),
@@ -159,6 +173,10 @@ const csvContext = computed<CsvContext | null>(() => {
     locationLabel: source.value === 'sensor'
       ? (sensorInfo.value?.name ?? sensorInfo.value?.id ?? '')
       : (pt ? formatLatLon(pt.lat, pt.lng) : ''),
+    // The sensor's own position when the series is a sensor's, the clicked
+    // model point otherwise — the two rarely coincide exactly.
+    latitude: source.value === 'sensor' ? sensorInfo.value?.latitude : pt?.lat,
+    longitude: source.value === 'sensor' ? sensorInfo.value?.longitude : pt?.lng,
     timeRange: [`${yearRange.value[0]}-01-01`, `${yearRange.value[1]}-12-31`],
     season: selectedSeason.value,
   }
@@ -219,12 +237,10 @@ csvExport.register((): CsvDataset[] => {
     slug: 'daily-series',
     columns: [
       { header: 'time', accessorKey: 'time' },
-      { header: unit ? `value (${unit})` : 'value', accessorKey: 'value' },
+      { header: 'value', unit, accessorKey: 'value' },
     ],
     rows: primarySeries.value as unknown as Record<string, unknown>[],
-    meta: csvMeta(csvContext.value, [
-      ['note', 'the full daily record — the season filter applies to the tabs\' own derived files, not this one'],
-    ]),
+    meta: csvMeta(csvContext.value),
   }]
 })
 

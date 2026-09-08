@@ -119,6 +119,52 @@ function createInitialState() {
         // nav rail in index.vue is what drives it now, one level up from the panel.
         exploreView: 'series' as 'series' | 'model-depth' | 'sensor-depth',
 
+        // Explore's time-depth window anchor (`useTimeDepthWindow`'s `windowEnd`),
+        // mirrored out of the panel purely so a share link can carry "which
+        // window was I looking at" — the panel remains the owner and the only
+        // writer. Epoch ms; null until the panel has published one.
+        exploreWindowEnd: null as number | null,
+
+        // Which sub-tab/season each fullscreen workspace is on. Promoted out of
+        // AnalysisWorkspace/ComparisonWorkspace local refs for the same reason
+        // `exploreView` was promoted out of ExplorePanel: something outside the
+        // component (here, the share link) has to read and restore them.
+        analysisTab: 'builder' as string,
+        analysisSeason: 'full_year' as string,
+        comparisonTab: 'overview' as string,
+        comparisonSeason: 'all' as string,
+
+        // Per-view control state that only the owning component cares about —
+        // an Extreme Events threshold, a Correlation pair, a chart's zoom
+        // extent. Promoting each of these into a named store field the way
+        // `analysisTab` was would add dozens of fields nothing else reads, so
+        // they live in one namespaced bag instead, written through
+        // `composables/useViewState.ts`'s writable refs. Share capture takes
+        // the bag wholesale, which is what lets a shared analysis tab arrive
+        // with the sender's parameters rather than the defaults.
+        viewState: {} as Record<string, Record<string, unknown>>,
+
+        // The map camera, republished on every `moveend` by index.vue (which
+        // owns the Mapbox instance). Share capture runs from the header, far
+        // outside the map's component, so the camera has to be readable from
+        // the store rather than off `map` itself.
+        mapView: null as { center: [number, number], zoom: number, bearing: number, pitch: number } | null,
+
+        // ── SHARED-LINK RESTORE ──────────────────────────────────────────────
+        // A decoded `#s=` payload is applied in two passes: everything that
+        // stands on its own is written straight onto this store by
+        // `applyShareState`, while these one-shot slots hold the parts whose
+        // consumer only exists later (the map is not built yet at decode time;
+        // Explore's window is reset by its own composable on first data). Each
+        // consumer takes its value and nulls the slot.
+        pendingShare: null as any,
+        pendingMapView: null as { center: [number, number], zoom: number, bearing: number, pitch: number } | null,
+        pendingWindowEnd: null as number | null,
+        // Set synchronously the moment a share hash is seen, before the async
+        // decode finishes, so index.vue's bootstrap click waits for the shared
+        // coordinate instead of racing it with the hardcoded default point.
+        shareRestorePending: false,
+
         // ExplorePanel's own bin-mode toggle (1H/1D/1M), mirrored here so the
         // vertical profile drawer — a sibling of ExplorePanel under index.vue,
         // not a child of it — can request a profile aggregated the same way
@@ -341,6 +387,61 @@ export const useMainStore = defineStore('main', {
         // exclusions use for high-frequency, non-navigational state changes).
         setExploreBinMode(mode: 'hourly' | 'daily' | 'monthly') {
             this.exploreBinMode = mode;
+        },
+
+        setExploreWindowEnd(ms: number | null) {
+            this.exploreWindowEnd = ms;
+        },
+
+        setViewStateField(scope: string, key: string, value: unknown) {
+            const bag = this.viewState[scope] ?? (this.viewState[scope] = {});
+            bag[key] = value;
+        },
+
+        /** Wholesale replace — restore only; normal writes go field by field. */
+        setViewState(bags: Record<string, Record<string, unknown>>) {
+            this.viewState = bags;
+        },
+
+        setAnalysisTab(tab: string) {
+            this.analysisTab = tab;
+        },
+
+        setAnalysisSeason(season: string) {
+            this.analysisSeason = season;
+        },
+
+        setComparisonTab(tab: string) {
+            this.comparisonTab = tab;
+        },
+
+        setComparisonSeason(season: string) {
+            this.comparisonSeason = season;
+        },
+
+        setMapView(view: { center: [number, number], zoom: number, bearing: number, pitch: number } | null) {
+            this.mapView = view;
+        },
+
+        setPendingShare(state: any) {
+            this.pendingShare = state;
+        },
+
+        clearPendingShare() {
+            this.pendingShare = null;
+            this.shareRestorePending = false;
+        },
+
+        takePendingMapView() {
+            const v = this.pendingMapView;
+            this.pendingMapView = null;
+            return v;
+        },
+
+        takePendingWindowEnd() {
+            const v = this.pendingWindowEnd;
+            this.pendingWindowEnd = null;
+            return v;
         },
     }
 })

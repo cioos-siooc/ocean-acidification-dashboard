@@ -79,7 +79,7 @@ import { BIN_CONFIG, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { utc2pst } from '~~/composables/useUTC2PST'
 import TimeDepthHeatmap from '../depth/TimeDepthHeatmap.vue'
 import DownloadButton from '../ui/DownloadButton.vue'
-import { csvMeta, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
+import { coord, csvMeta, provideCsvExport, type CsvContext, type CsvDataset, type CsvMetaEntry } from '~~/composables/useCsvExport'
 import TimeControls from '../TimeControls.vue'
 import ChartContextBar from '../ChartContextBar.vue'
 import SegmentedControl from '../ui/SegmentedControl.vue'
@@ -99,7 +99,7 @@ const binModeItems = computed(() => AVAILABLE_MODES.map(m => ({ value: m, label:
 const props = defineProps<{ active?: boolean }>()
 
 const mainStore = useMainStore()
-const { toDisplayValue, displayUnit } = useVariableRegistry()
+const { toDisplayValue, displayUnit, formatDisplayValue } = useVariableRegistry()
 
 const line = computed(() => mainStore.crossSectionLine)
 const source = computed(() => mainStore.selected_variable.source)
@@ -225,6 +225,17 @@ const csvContext = computed<CsvContext | null>(() => {
 const csvExport = provideCsvExport(csvContext)
 const csvDatasets = csvExport.datasets
 
+/**
+ * The drawn line's own vertices, one latitude and one longitude line each —
+ * a single `# vertices: lat,lng → lat,lng` line packed the whole geometry into
+ * one cell that had to be re-split before it could be used as coordinates.
+ */
+const vertexMeta = computed<CsvMetaEntry[]>(() =>
+  (line.value ?? []).flatMap((v, i) => [
+    [`vertex_${i + 1}_latitude`, coord(v.lat)],
+    [`vertex_${i + 1}_longitude`, coord(v.lng)],
+  ] as CsvMetaEntry[]))
+
 const csvRows = computed(() => {
   const rows: Record<string, unknown>[] = []
   for (let si = 0; si < distances.value.length; si++) {
@@ -246,7 +257,7 @@ const csvRows = computed(() => {
 
 csvExport.register((): CsvDataset[] => {
   if (!csvRows.value.length) return []
-  const u = displayUnit(varId.value) ? ` (${displayUnit(varId.value)})` : ''
+  const u = displayUnit(varId.value) || null
   return [{
     label: 'Cross-section',
     slug: 'cross-section',
@@ -256,12 +267,12 @@ csvExport.register((): CsvDataset[] => {
       { header: 'latitude', accessorKey: 'latitude' },
       { header: 'longitude', accessorKey: 'longitude' },
       { header: 'depth_m', accessorKey: 'depth' },
-      { header: `value${u}`, accessorKey: 'value' },
+      { header: 'value', unit: u, accessorKey: 'value' },
     ],
     rows: csvRows.value,
     meta: csvMeta(csvContext.value, [
       ['bin_mode', BIN_CONFIG[binMode.value].label],
-      ['vertices', line.value?.map(v => `${v.lat.toFixed(4)},${v.lng.toFixed(4)}`).join(' → ')],
+      ...vertexMeta.value,
       ['note', 'sample points are evenly spaced by arc length and snapped to the nearest model grid cell; cells below the seabed are omitted'],
     ]),
   }]
@@ -352,7 +363,7 @@ function cellTooltip(binIdx: number, depthIdx: number, value: number | null): st
   const dist = distances.value[binIdx]
   const distStr = dist != null ? `${dist.toFixed(1)} km` : '—'
   const depthStr = depth != null ? `${depth.toFixed(depth < 10 ? 1 : 0)}m` : '—'
-  const valueStr = value == null ? 'no data' : `${value.toFixed(3)} ${displayUnit(varId.value)}`
+  const valueStr = value == null ? 'no data' : formatDisplayValue(varId.value, value, { unit: true })
   return `<div style="opacity:.7;margin-bottom:2px;">${distStr} &middot; ${depthStr}</div><div>${varName.value}: <b>${valueStr}</b></div>`
 }
 
