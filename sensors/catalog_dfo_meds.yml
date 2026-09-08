@@ -1,0 +1,235 @@
+# DFO MEDS / ECCC moored buoys — sea surface temperature
+#
+# One ERDDAP dataset (DFO_MEDS_BUOYS) holds every station, so each sensor here
+# points at the same `source_link` and is separated by a `constraints:` line
+# (`STN_ID="..."`). `SSTP_UQL<=2` keeps only UNESCO QC levels 1-2 (good /
+# probably good), which drops ~2% of rows.
+#
+# Depth is 0: the dataset's `water_depth` column is the seabed depth under the
+# mooring, not the depth of the measurement.
+#
+# Archive only — the newest record on the server is 2025-03-18. `SSTP` is the
+# sole variable here that maps onto the app's registry; wind, air pressure and
+# wave height are in the dataset but have no ocean-variable equivalent.
+#
+# The station IDs are the names; rename them if you want the buoys' common
+# names in the UI.
+#
+#   uv run python manage_sensors.py import --file catalog_dfo_meds.yml
+#   uv run python erddap_to_ch.py --sensor-id <uuid>
+sensors:
+  - name: "C46036"
+    lat: 48.35
+    lon: -133.94
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46036"&SSTP_UQL<=2'
+    description: "Offshore Pacific — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46181"
+    lat: 53.82
+    lon: -128.84
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46181"&SSTP_UQL<=2'
+    description: "North coast — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46145"
+    lat: 54.38
+    lon: -132.42
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46145"&SSTP_UQL<=2'
+    description: "Hecate Strait — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46185"
+    lat: 52.42
+    lon: -129.79
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46185"&SSTP_UQL<=2'
+    description: "North coast — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46204"
+    lat: 51.38
+    lon: -128.77
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46204"&SSTP_UQL<=2'
+    description: "Central coast — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46184"
+    lat: 53.92
+    lon: -138.85
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46184"&SSTP_UQL<=2'
+    description: "Offshore Pacific — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46207"
+    lat: 50.88
+    lon: -129.91
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46207"&SSTP_UQL<=2'
+    description: "North Vancouver Island — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46205"
+    lat: 54.19
+    lon: -134.32
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46205"&SSTP_UQL<=2'
+    description: "Offshore Pacific — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46183"
+    lat: 53.57
+    lon: -131.14
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46183"&SSTP_UQL<=2'
+    description: "Hecate Strait — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46147"
+    lat: 51.83
+    lon: -131.23
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46147"&SSTP_UQL<=2'
+    description: "Offshore Haida Gwaii — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46146"
+    lat: 49.34
+    lon: -123.73
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46146"&SSTP_UQL<=2'
+    description: "Strait of Georgia — inside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46206"
+    lat: 48.83
+    lon: -126.0
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46206"&SSTP_UQL<=2'
+    description: "Outer shelf off Vancouver Island — inside the model bounding box but probably beyond the curvilinear grid"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46208"
+    lat: 52.51
+    lon: -132.69
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46208"&SSTP_UQL<=2'
+    description: "Offshore Haida Gwaii — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46131"
+    lat: 49.91
+    lon: -124.99
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46131"&SSTP_UQL<=2'
+    description: "Northern Strait of Georgia — inside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46004"
+    lat: 50.93
+    lon: -136.1
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46004"&SSTP_UQL<=2'
+    description: "Offshore Pacific — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46132"
+    lat: 49.74
+    lon: -127.93
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46132"&SSTP_UQL<=2'
+    description: "West Vancouver Island shelf — outside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46134"
+    lat: 48.65
+    lon: -123.5
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46134"&SSTP_UQL<=2'
+    description: "Southern Strait of Georgia — inside the SalishSeaCast domain"
+    variables:
+    - "temperature:SSTP:C:1.0"
+
+  - name: "C46182"
+    lat: 49.48
+    lon: -123.29
+    depth: 0
+    api: ERDDAP
+    organization: DFO MEDS
+    source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
+    constraints: 'STN_ID="C46182"&SSTP_UQL<=2'
+    description: "Howe Sound approaches — inside the SalishSeaCast domain (short record, 1989-1991)"
+    variables:
+    - "temperature:SSTP:C:1.0"
