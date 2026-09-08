@@ -22,8 +22,8 @@
           <AnalysisBuilder :active="isOpen && activeTab === 'builder'" :source="source" />
         </div>
 
-        <div v-if="activeTab !== 'builder'" class="h-full" style="overflow:auto;">
-          <div class="flex items-center px-4 pt-3" style="gap:10px;">
+        <div v-if="activeTab !== 'builder'" class="h-full flex flex-col" style="overflow:hidden;">
+          <div class="flex items-center px-4 pt-3 pb-1 shrink-0" style="gap:10px;">
             <span class="ctrl-label">Season</span>
             <SegmentedControl v-model="selectedSeason" :items="seasonItems" size="xs" aria-label="Season" />
           </div>
@@ -31,7 +31,7 @@
           <UAlert color="error" variant="subtle" class="m-4" v-if="primaryError" :description="primaryError" />
 
           <div v-else-if="!location || !variable || depth == null"
-            class="flex flex-col items-center justify-center text-center px-6" style="height:60vh;">
+            class="grow flex flex-col items-center justify-center text-center px-6" style="min-height:0;">
             <UIcon name="i-mdi-poll" class="size-[56px] text-gray-500" />
             <div class="text-gray-500 mt-2">
               {{ source === 'sensor' ? 'Select a sensor and a depth first.' : 'Select a point, variable and depth first.' }}
@@ -39,11 +39,11 @@
           </div>
 
           <div v-else-if="primaryLoading && !primarySeries.length"
-            class="flex items-center justify-center" style="height:60vh;">
+            class="grow flex items-center justify-center" style="min-height:0;">
             <UIcon name="i-mdi-loading" class="animate-spin size-[48px] text-warning" />
           </div>
 
-          <template v-else>
+          <div v-else class="grow" style="min-height:0;">
             <ExtremeEvents v-if="activeTab === 'extremes'" :series="primarySeries" :season="selectedSeason" :variable="variable" />
             <CompoundStress v-else-if="activeTab === 'compound'"
               :primary-series="primarySeries" :primary-variable="variable" :season="selectedSeason"
@@ -53,7 +53,7 @@
             <Correlation v-else-if="activeTab === 'correlation'"
               :primary-series="primarySeries" :primary-variable="variable" :season="selectedSeason"
               :depth="depth" :location="location" :year-range="yearRange" :fetch-series="fetchSeriesFor" />
-          </template>
+          </div>
         </div>
       </div>
     </div>

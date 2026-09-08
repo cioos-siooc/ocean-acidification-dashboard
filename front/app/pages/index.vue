@@ -205,6 +205,8 @@
                 block
                 v-for="sv in exploreSubViews"
                 :key="sv.value"
+                :disabled="sv.disabled"
+                :title="sv.title"
                 :class="{
                   'footer-rail-subitem--active': mainStore.exploreView === sv.value,
                 }"
@@ -222,6 +224,8 @@
               block
               v-for="t in remainingFooterTabs"
               :key="t.value"
+              :disabled="t.disabled"
+              :title="t.title"
               :class="{ 'footer-rail-item--active': activeTab === t.value }"
               @click="activeTab = t.value"
             >
@@ -361,35 +365,46 @@ const activeTab = computed({
     get: () => mainStore.activeBottomTab,
     set: (v: 'explore' | 'analysis' | 'comparison' | 'crossSection') => mainStore.setActiveBottomTab(v),
 });
-const footerTabs = computed(() => [
-    { value: 'explore' as const, icon: 'mdi-chart-line', label: 'Explore' },
-    { value: 'crossSection' as const, icon: 'mdi-vector-polyline', label: 'Cross-Section' },
-    { value: 'analysis' as const, icon: 'mdi-poll', label: 'Analysis' },
-    ...(mainStore.selectedSensor?.id
-        ? [{ value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison' }]
-        : []),
-]);
+// Every rail row is always listed; the ones that need a sensor render disabled
+// (with a title explaining why) rather than vanishing, so the rail's shape stays
+// stable and the capability is discoverable before anything is selected.
+const footerTabs = computed(() => {
+    const hasSensor = !!mainStore.selectedSensor?.id;
+    return [
+        { value: 'explore' as const, icon: 'mdi-chart-line', label: 'Explore', disabled: false, title: '' },
+        { value: 'crossSection' as const, icon: 'mdi-vector-polyline', label: 'Cross-Section', disabled: false, title: '' },
+        { value: 'analysis' as const, icon: 'mdi-poll', label: 'Analysis', disabled: false, title: '' },
+        {
+            value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison',
+            disabled: !hasSensor,
+            title: hasSensor ? 'Compare the model against the sensor' : 'Select a sensor first',
+        },
+    ];
+});
 // Explore and Analysis are rendered separately (each has its own sub-list
 // nested directly beneath it), so the rail's trailing loop only needs the rest
 // — just Comparison, when a sensor is selected.
 const remainingFooterTabs = computed(() => footerTabs.value.filter(t => t.value !== 'explore' && t.value !== 'analysis'));
 
-// Explore's own sub-views. Sensor depth only exists once a profiler sensor is
-// selected — `selectedProfilerSensorId` is the same store getter ExplorePanel
-// itself uses to decide whether there's a section to fetch, so the rail and
-// the panel never disagree about whether the option should be offered.
-const exploreSubViews = computed(() => [
-    { value: 'series' as const, label: 'Timeseries' },
-    { value: 'model-depth' as const, label: 'Model depth' },
-    ...(mainStore.selectedProfilerSensorId
-        ? [{ value: 'sensor-depth' as const, label: 'Sensor depth' }]
-        : []),
-]);
+// Explore's own sub-views. Sensor depth is always listed but disabled until a
+// profiler sensor is selected — `selectedProfilerSensorId` is the same store
+// getter ExplorePanel itself uses to decide whether there's a section to fetch,
+// so the rail and the panel never disagree about whether it's available.
+const exploreSubViews = computed(() => {
+    const hasProfiler = !!mainStore.selectedProfilerSensorId;
+    return [
+        { value: 'series' as const, label: 'Timeseries', disabled: false, title: '' },
+        { value: 'model-depth' as const, label: 'Model depth', disabled: false, title: '' },
+        {
+            value: 'sensor-depth' as const, label: 'Sensor depth',
+            disabled: !hasProfiler,
+            title: hasProfiler ? "The sensor's own depth section" : 'Select a profiling sensor first',
+        },
+    ];
+});
 
 // Analysis's own sub-views. Sensor stays visible but disabled with no sensor
-// selected (rather than disappearing like Explore's Sensor depth) — Model vs
-// Sensor is a binary choice worth always showing, not a capability that only
-// exists once something else happens to be selected.
+// selected, the same convention every other conditional row in the rail follows.
 const analysisSubViews = computed(() => {
     const hasSensor = !!mainStore.selectedSensor?.id;
     return [
@@ -1894,15 +1909,27 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
   justify-content: flex-start;
 }
 
-.footer-rail-item:hover {
+.footer-rail-item:hover:not(:disabled) {
   opacity: 0.9;
 }
 
-.footer-rail-item--active {
+/* The active row has to read at a glance against the rail's near-black ground,
+   so it gets three cues at once: a lightened primary text colour (raw primary is
+   too dark a blue on this background), a primary-tinted fill, and a solid left
+   accent bar drawn as an inset shadow so it costs no layout. */
+.footer-rail-item--active,
+.footer-rail-item--active:hover {
   opacity: 1;
   font-weight: 600;
-  color: rgb(var(--v-theme-primary));
-  background: rgba(var(--v-theme-primary), 0.16);
+  color: color-mix(in oklab, var(--ui-primary) 55%, white);
+  background: color-mix(in oklab, var(--ui-primary) 22%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--ui-primary);
+}
+
+/* Rows that need a selection they don't have yet: still listed, plainly inert. */
+.footer-rail-item:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 /* Explore's sub-views, nested directly beneath the Explore row while it's active. */
@@ -1930,15 +1957,22 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
   justify-content: flex-start;
 }
 
-.footer-rail-subitem:hover {
+.footer-rail-subitem:hover:not(:disabled) {
   opacity: 0.85;
 }
 
-.footer-rail-subitem--active {
+.footer-rail-subitem--active,
+.footer-rail-subitem--active:hover {
   opacity: 1;
   font-weight: 600;
-  color: rgb(var(--v-theme-primary));
-  background: rgba(var(--v-theme-primary), 0.12);
+  color: color-mix(in oklab, var(--ui-primary) 55%, white);
+  background: color-mix(in oklab, var(--ui-primary) 18%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--ui-primary);
+}
+
+.footer-rail-subitem:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
 }
 
 .cursor-coord-label {

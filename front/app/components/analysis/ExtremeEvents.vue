@@ -53,7 +53,7 @@
           <div class="ctrl-label mb-1">Events ({{ events.length }})</div>
           <UTable v-model:sorting="sorting1" :columns="eventHeaders" :data="eventRows" class="stats-table" />
         </div>
-        <div style="width:260px; border-left:1px solid rgba(255,255,255,0.08); overflow-y:auto;" class="p-2 shrink-0">
+        <div style="width:320px; border-left:1px solid rgba(255,255,255,0.08); overflow:auto;" class="p-2 shrink-0">
           <div class="ctrl-label mb-1">Per-year summary</div>
           <UTable v-model:sorting="sorting2" :columns="yearHeaders" :data="yearRows" class="stats-table" />
         </div>
