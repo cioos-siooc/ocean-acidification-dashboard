@@ -21,6 +21,36 @@
 
       <USeparator />
 
+      <!-- MODEL LAYER -->
+      <UButton
+        class="m-1 overlay-btn"
+        :variant="showModelLayer ? 'solid' : 'ghost'"
+        :color="showModelLayer ? 'primary' : ''"
+        @click="mainStore.setShowModelLayer(!showModelLayer)"
+      >
+        <UIcon
+          :name="showModelLayer ? 'i-mdi-layers' : 'i-mdi-layers-off'"
+          class="size-[16px]"
+        />
+        <span class="overlay-btn__label">Model Layer</span>
+      </UButton>
+
+      <!-- SENSOR LAYER -->
+      <UButton
+        class="m-1 overlay-btn"
+        :variant="showSensorLayer ? 'solid' : 'ghost'"
+        :color="showSensorLayer ? 'primary' : ''"
+        @click="mainStore.setShowSensorLayer(!showSensorLayer)"
+      >
+        <UIcon
+          :name="showSensorLayer ? 'i-mdi-map-marker-multiple' : 'i-mdi-map-marker-off'"
+          class="size-[16px]"
+        />
+        <span class="overlay-btn__label">Sensor Layer</span>
+      </UButton>
+
+      <USeparator />
+
       <!-- BATHYMETRY CONTOURS -->
       <UButton
         class="m-1 overlay-btn"
@@ -136,6 +166,10 @@ const showColorbarSettings = computed({
 });
 
 const selectedVariableName = computed(() => mainStore.selected_variable.var);
+
+const showModelLayer = computed(() => mainStore.showModelLayer);
+
+const showSensorLayer = computed(() => mainStore.showSensorLayer);
 
 const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
 

@@ -1,27 +1,51 @@
 <template>
-    <div class="rounded-lg m-0 p-0">
-        <div class="px-4 py-3">
+    <div class="rounded-lg m-0 p-0 h-full flex flex-col min-h-0">
+        <div class="px-4 py-3 flex-1 min-h-0 flex flex-col">
             <div v-if="sensors.length === 0">
                 No sensors found.
             </div>
-            <div v-else>
+            <div v-else class="flex-1 min-h-0 flex flex-col">
                 <!-- FILTERS -->
-                <div class="flex flex-wrap m-0 p-0">
-                    <div class="w-full p-1">
-                        <UFormField label="Search sensors">
-  <UInput v-model="searchQuery" icon="i-mdi-magnify" />
-</UFormField>
-                    </div>
-                    <div class="w-full p-1">
-                        <UFormField label="Organization">
-  <USelectMenu v-model="organizationFilter" :items="organizationOptions" clearable multiple class="w-full" />
-</UFormField>
-                    </div>
-                    <div class="w-full p-1">
-                        <UFormField label="Variable">
-  <USelectMenu v-model="variableFilter" :items="variableOptions" label-key="label" value-key="value" clearable multiple class="w-full" />
-</UFormField>
-                    </div>
+                <!-- Search stays on the surface (it's the one control used on most
+                     visits); the two dropdowns live in a popover so the sensor list
+                     starts higher up the panel. The badge is what tells the user a
+                     filter is on while the popover is shut. -->
+                <div class="flex items-center gap-1 p-1 shrink-0">
+                    <UInput v-model="searchQuery" icon="i-mdi-magnify" placeholder="Search sensors" size="sm" class="grow" />
+                    <UPopover v-model:open="showFilters" :content="{ side: 'bottom', align: 'end' }">
+                        <UButton
+                            :variant="activeFilterCount ? 'solid' : 'ghost'"
+                            :color="activeFilterCount ? 'primary' : 'neutral'"
+                            size="sm"
+                            class="shrink-0 relative"
+                            aria-label="Filter sensors"
+                            title="Filter sensors"
+                        >
+                            <UIcon name="i-mdi-filter-variant" class="size-[16px]" />
+                            <UBadge
+                                v-if="activeFilterCount"
+                                :label="String(activeFilterCount)"
+                                color="primary"
+                                size="xs"
+                                class="rounded-full absolute -top-1 -right-1 px-1"
+                            />
+                        </UButton>
+                        <template #content>
+                            <div class="p-3 w-[260px] flex flex-col gap-3">
+                                <UFormField label="Organization">
+                                    <USelectMenu v-model="organizationFilter" :items="organizationOptions" clearable multiple class="w-full" />
+                                </UFormField>
+                                <UFormField label="Variable">
+                                    <USelectMenu v-model="variableFilter" :items="variableOptions" label-key="label" value-key="value" clearable multiple class="w-full" />
+                                </UFormField>
+                                <div class="flex justify-end">
+                                    <UButton variant="ghost" size="xs" :disabled="!activeFilterCount" @click="clearFilters">
+                                        Clear filters
+                                    </UButton>
+                                </div>
+                            </div>
+                        </template>
+                    </UPopover>
                 </div>
 
                 <div v-if="filteredSensors.length === 0" class="text-center text-muted p-4">
@@ -29,6 +53,9 @@
                 </div>
 
                 <!-- SENSOR LIST -->
+                <!-- Only this list scrolls; the search + filter row above it stays
+                     pinned at the top of the Sensors block. -->
+                <div v-else class="flex-1 min-h-0 overflow-y-auto">
                 <div v-for="(sensor, i) in filteredSensors" :key="sensor.id" :ref="setSensorRef(sensor.id)"
                     role="button" tabindex="0" @click="selectSensor(sensor.id)" @keydown.enter="selectSensor(sensor.id)"
                     class="rounded my-3 px-3 py-1 cursor-pointer hover:bg-white/5"
@@ -75,6 +102,7 @@
 
                         </div>
                     </div>
+                </div>
                 </div>
             </div>
         </div>
@@ -183,6 +211,19 @@ const {
     sensorOrganizationFilter: organizationFilter,
     sensorVariableFilter: variableFilter,
 } = storeToRefs(mainStore);
+
+const showFilters = ref(false);
+
+// Only the two popover dropdowns count — the search box is always visible, so it
+// needs no badge to announce itself.
+const activeFilterCount = computed(
+    () => (organizationFilter.value?.length ?? 0) + (variableFilter.value?.length ?? 0)
+);
+
+function clearFilters() {
+    organizationFilter.value = [];
+    variableFilter.value = [];
+}
 
 const organizationOptions = computed(() => {
     const orgs = new Set(mainStore.sensors.map((s: Sensor) => s.organization).filter(Boolean));

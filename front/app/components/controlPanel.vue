@@ -47,6 +47,7 @@ const isOpen = computed(() => mainStore.isControlPanelOpen);
 .sensors-block {
     flex: 1 1 auto;
     min-height: 0;
-    overflow-y: auto;
+    // sensorInfo owns its own scrolling so its search/filter row can stay pinned.
+    overflow: hidden;
 }
 </style>
