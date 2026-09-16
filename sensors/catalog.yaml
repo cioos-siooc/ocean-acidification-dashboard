@@ -554,7 +554,7 @@ sensors:
   - name: "Seawater Carbon Dioxide (CO2) Content from the Burke-o-Lator pCO2/TCO2 Analyzer located at Bamfield Marine Sciences Centre, Bamfield, BC, Canada (Provisional)"
     lat: 48.836633
     lon: -125.1362667
-    depth: -1
+    depth: 20
     api: ERDDAP
     organization: Hakai
     source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiBamfieldBoL5min"
