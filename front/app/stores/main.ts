@@ -40,6 +40,12 @@ function createInitialState() {
         // colormapMin/Max, and rendered tiles are never touched by this.
         unitPreference: {} as Record<string, string>,
         showBathymetryContours: false,
+
+        // Map-layer visibility toggles (Overlay rail). These hide the layer on the
+        // map only — the left panel's selectors and every chart keep working, so
+        // the model raster can be hidden while the Explore chart still plots it.
+        showModelLayer: true,
+        showSensorLayer: true,
         // The style's built-in "water names" and "Place labels" text layers
         // are visible by default (part of the base Mapbox style), so this
         // defaults to true — matching what's on screen until toggled off.
@@ -218,6 +224,14 @@ export const useMainStore = defineStore('main', {
             for (const [key, value] of Object.entries(partial)) {
                 (this.selected_variable as any)[key] = value;
             }
+        },
+
+        setShowModelLayer(value: boolean) {
+            this.showModelLayer = value;
+        },
+
+        setShowSensorLayer(value: boolean) {
+            this.showSensorLayer = value;
         },
 
         setShowBathymetryContours(value: boolean) {

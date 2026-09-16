@@ -33,6 +33,18 @@ export const STATIONS_LAYER_ID = 'stations-circles';
 export const SOURCE_ID = 'stations';
 const LAYER_BADGE_ID = 'stations-badge';
 const LAYER_VARIABLE_DEPTH_BADGE_ID = 'stations-variable-depth-badge';
+
+// Every layer the buoy overlay owns — the Overlay rail's "Sensor Layer" toggle
+// hides them as one group.
+export const BUOY_LAYER_IDS = [STATIONS_LAYER_ID, LAYER_BADGE_ID, LAYER_VARIABLE_DEPTH_BADGE_ID];
+
+export function setBuoyLayerVisibility(map: any, visible: boolean) {
+    if (!map) return;
+    const visibility = visible ? 'visible' : 'none';
+    for (const id of BUOY_LAYER_IDS) {
+        try { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility); } catch (e) { }
+    }
+}
 const IMAGE_REALTIME = 'buoy-realtime';
 const IMAGE_ACTIVE   = 'buoy-active';
 const IMAGE_INACTIVE = 'buoy-inactive';

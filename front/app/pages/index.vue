@@ -315,7 +315,7 @@ import { resolveColormap } from '~~/composables/useColormapResolver'
 import { MAP_BOUNDS, MAP_MIN_ZOOM, MAP_MAX_ZOOM, MAP_STYLE } from '@/config/app'
 import { utc2pst } from '~~/composables/useUTC2PST'
 import useStationsInteraction from '~~/composables/useStationsInteraction';
-import { addBuoyLayer, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '~~/composables/useBuoyLayer';
+import { addBuoyLayer, setBuoyLayerVisibility, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '~~/composables/useBuoyLayer';
 import getSensorTimeseries from '~~/composables/useSensorTimeseries';
 import AnalysisWorkspace from '../components/AnalysisWorkspace.vue'
 import ExplorePanel from '../components/ExplorePanel.vue'
@@ -863,6 +863,27 @@ watch(() => mainStore.showBathymetryContours, (show) => {
     }
 }, { immediate: true });
 
+// Overlay rail: hide/show the model raster tiles. Purely a map concern — the
+// selected variable/depth keep driving the charts either way.
+watch(() => mainStore.showModelLayer, (visible: boolean) => {
+    try {
+        if (map?.getLayer('png-image-layer')) {
+            map.setLayoutProperty('png-image-layer', 'visibility', visible ? 'visible' : 'none');
+        }
+    } catch (e) {
+        console.warn('Failed to toggle model layer visibility:', e);
+    }
+});
+
+// Overlay rail: hide/show the buoy symbols (and their badges).
+watch(() => mainStore.showSensorLayer, (visible: boolean) => {
+    try {
+        setBuoyLayerVisibility(map, visible);
+    } catch (e) {
+        console.warn('Failed to toggle sensor layer visibility:', e);
+    }
+});
+
 watch(() => mainStore.showMapLabels, (visible: boolean) => {
     try {
         setMapLabelsVisibility(visible);
@@ -1147,6 +1168,9 @@ async function addSensors() {
     try {
         const detach = await addBuoyLayer(map, geojson, clickSensor, openSensorPicker, openSpiderfy);
         (map as any).__stationsDetach = detach;
+        // addBuoyLayer re-creates the layers from scratch, so the rail's toggle
+        // has to be re-applied every time the sensor list changes.
+        setBuoyLayerVisibility(map, mainStore.showSensorLayer);
     } catch (e) {
         console.warn('Failed to add buoy layer:', e);
     }
@@ -1318,6 +1342,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
                 'raster-color-mix': [256 * 256 * 255, 256 * 255, 255, 0],
                 'raster-fade-duration': 0
             },
+            layout: { visibility: mainStore.showModelLayer ? 'visible' : 'none' },
         }, 'country-boundaries');
     }
 
