@@ -50,12 +50,15 @@ schedule (`RUN_CRON`, default every 3 hours), one task run per step, with each r
 ```bash
 # dev: UI at http://localhost:9015 (admin:admin); schedule starts paused
 docker compose -f docker-compose.dev.yml --env-file .env.dev up -d prefect scheduler
-# prod process machine: UI on 127.0.0.1:4200 (ssh -L 4200:localhost:4200 ...)
+# prod process machine, reporting to a shared Prefect server elsewhere
+# (.env: PREFECT_API_URL=https://<server>/api + PREFECT_AUTH_STRING, or PREFECT_API_KEY for Cloud)
 docker compose -f docker-compose.prod.process.yml --profile tools up -d --build
+# ...or with its own local server instead (UI on 127.0.0.1:4200; leave PREFECT_API_URL unset)
+docker compose -f docker-compose.prod.process.yml --profile tools --profile prefect-local up -d --build
 ```
 
 Env: `RUN_CRON`, `RUN_SCHEDULE_PAUSED`, `RUN_LIMIT`, `RUN_WORKERS`, `PREFECT_AUTH_STRING`,
-`PREFECT_PORT`, `PREFECT_BIND` (prod), `PREFECT_PUBLIC_URL`. The CLI is unaffected and needs no
+`PREFECT_API_URL`, `PREFECT_API_KEY`, `PREFECT_PORT`, `PREFECT_BIND` (prod), `PREFECT_PUBLIC_URL`. The CLI is unaffected and needs no
 Prefect server.
 
 `--force` (where supported) acts on a row regardless of its current status, useful for a
