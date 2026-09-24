@@ -43,6 +43,8 @@ Commands:
               restarting at download.
   status      Print pipeline status for a date (default: last 7 days).
 
+`run` on a schedule, with a monitoring UI: see SSC/flows.py (Prefect).
+
 Every command that accepts --date only acts on rows in the expected pending
 state for that stage; rows already past the stage are skipped (logged), and
 rows that previously failed are retried. Pass --force to act regardless of
@@ -60,12 +62,19 @@ import logging
 import os
 import sys
 from datetime import date, datetime, timedelta
+from typing import Callable
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
 )
 logger = logging.getLogger('SalishSeaCast.cli')
+
+
+class PipelineError(RuntimeError):
+    """A step's precondition failed (unknown variable, prerequisites not met).
+    Raised rather than sys.exit() so the same helpers can run inside a Prefect
+    task; main() turns it back into exit status 1."""
 
 
 def _parse_date(s: str) -> date:
@@ -107,8 +116,7 @@ def _download_date(client, date_val, variable=None, force=False) -> None:
 
     if variable:
         if variable not in DOWNLOAD_VARIABLES:
-            logger.error('Unknown download variable: %s', variable)
-            sys.exit(1)
+            raise PipelineError(f'Unknown download variable: {variable}')
         if not _should_skip(variable):
             download_variable(client, date_val, variable)
     else:
@@ -165,8 +173,7 @@ def _compute_date(client, date_val, workers, force=False, nc_dir=None) -> None:
             return
 
     if not downloads_complete(client, date_val):
-        logger.error('Downloads not complete for %s', date_val)
-        sys.exit(1)
+        raise PipelineError(f'Downloads not complete for {date_val}')
     for var in COMPUTE_VARIABLES:
         row = get_row(client, date_val, var) or {}
         mark_running(client, date_val, var, STATUS_COMPUTING, row.get('attempts', 0))
@@ -216,8 +223,7 @@ def _image_date(client, date_val, variable=None, workers=None, force=False,
 
     if variable:
         if variable not in ALL_VARIABLES:
-            logger.error('Unknown variable: %s', variable)
-            sys.exit(1)
+            raise PipelineError(f'Unknown variable: {variable}')
         if not _should_skip(variable):
             image_variable(client, date_val, variable, workers=workers,
                            nc_base_dir=nc_dir, image_base_dir=image_dir)
@@ -268,8 +274,7 @@ def _ingest_date(client, date_val, force=False, nc_dir=None) -> None:
             return
 
     if not downloads_complete(client, date_val) or not compute_complete(client, date_val):
-        logger.error('Prerequisites not met for ingest on %s', date_val)
-        sys.exit(1)
+        raise PipelineError(f'Prerequisites not met for ingest on {date_val}')
     for var in ALL_VARIABLES:
         row = get_row(client, date_val, var) or {}
         mark_running(client, date_val, var, STATUS_INGESTING, row.get('attempts', 0))
@@ -333,104 +338,89 @@ def cmd_sync(args) -> None:
     client.close()
 
 
-def cmd_run(args) -> None:
-    """Run all pipeline steps in sequence: check, then either pending work in
-    general, or a single date (download -> check_image -> compute ->
-    check_image -> image -> promote -> ingest -> promote -> sync) when --date
-    is given."""
+def pipeline_steps(client, *, date_val: date | None = None, limit: int = 10,
+                   workers: int = 4, force: bool = False,
+                   init_days: int = 3) -> list[tuple[str, Callable[[], object]]]:
+    """The `run` command's steps, in order, as (name, thunk) pairs: check, then
+    either pending work in general, or a single date (download -> check_image ->
+    compute -> check_image -> image -> promote -> ingest -> promote -> sync)
+    when date_val is given. The one definition of the pipeline — `cmd_run` calls
+    each thunk directly, `SSC/flows.py` wraps each in a Prefect task."""
     from .config import IMAGE_BASE_DIR, NC_BASE_DIR, SYNC_API_BASE_URL
     from .downloader import check_erddap
 
-    client    = _get_client()
-    nc_dir    = os.getenv('SSC_NC_DIR', NC_BASE_DIR)
-    image_dir = os.getenv('SSC_IMAGE_DIR', IMAGE_BASE_DIR)
-    workers   = args.workers or None
+    nc_dir        = os.getenv('SSC_NC_DIR', NC_BASE_DIR)
+    image_dir     = os.getenv('SSC_IMAGE_DIR', IMAGE_BASE_DIR)
+    image_workers = workers or None
 
-    if args.date:
+    if date_val:
         from .db import check_image_ready_for_date, promote_date_if_ready
-        date_val = _parse_date(args.date)
-
-        logger.info('=== check (%s) ===', date_val)
-        check_erddap(client, init_days=args.init_days, date_override=args.date)
-
-        logger.info('=== download (%s) ===', date_val)
-        _download_date(client, date_val, force=args.force)
-
-        logger.info('=== check_image (%s, post-download) ===', date_val)
-        check_image_ready_for_date(client, date_val)
-
-        logger.info('=== compute (%s) ===', date_val)
-        _compute_date(client, date_val, args.workers, force=args.force, nc_dir=nc_dir)
-
-        logger.info('=== check_image (%s, post-compute) ===', date_val)
-        check_image_ready_for_date(client, date_val)
-
-        logger.info('=== image (%s) ===', date_val)
-        _image_date(client, date_val, workers=workers, force=args.force,
-                    nc_dir=nc_dir, image_dir=image_dir)
-
-        logger.info('=== promote (%s) ===', date_val)
-        promote_date_if_ready(client, date_val)
-
-        logger.info('=== ingest (%s) ===', date_val)
-        _ingest_date(client, date_val, force=args.force, nc_dir=nc_dir)
-
-        logger.info('=== promote (%s) ===', date_val)
-        promote_date_if_ready(client, date_val)
-
+        steps = [
+            ('check', lambda: check_erddap(client, init_days=init_days,
+                                           date_override=date_val.isoformat())),
+            ('download', lambda: _download_date(client, date_val, force=force)),
+            ('check_image (post-download)', lambda: check_image_ready_for_date(client, date_val)),
+            ('compute', lambda: _compute_date(client, date_val, workers, force=force, nc_dir=nc_dir)),
+            ('check_image (post-compute)', lambda: check_image_ready_for_date(client, date_val)),
+            ('image', lambda: _image_date(client, date_val, workers=image_workers, force=force,
+                                          nc_dir=nc_dir, image_dir=image_dir)),
+            ('promote (post-image)', lambda: promote_date_if_ready(client, date_val)),
+            ('ingest', lambda: _ingest_date(client, date_val, force=force, nc_dir=nc_dir)),
+            ('promote (post-ingest)', lambda: promote_date_if_ready(client, date_val)),
+        ]
         if SYNC_API_BASE_URL:
-            logger.info('=== sync (%s) ===', date_val)
-            _sync_date(client, date_val, force=args.force, image_dir=image_dir)
-        else:
-            logger.info('=== sync skipped (SYNC_API_BASE_URL not configured) ===')
-
-        client.close()
-        return
+            steps.append(('sync', lambda: _sync_date(client, date_val, force=force,
+                                                     image_dir=image_dir)))
+        return steps
 
     from .downloader import process_pending_downloads
     from .compute import process_pending_compute
     from .imaging import process_pending_images
     from .ingest import process_pending_ingests
     from .sync import process_pending_syncs
+    from .config import ALL_VARIABLES
     from .db import check_image_ready, promote_ready_dates
 
-    logger.info('=== check ===')
-    new_dates = check_erddap(client, init_days=args.init_days)
-    logger.info('check: %d new date(s) queued', len(new_dates))
-
-    logger.info('=== download ===')
-    process_pending_downloads(client, limit=args.limit)
-
-    logger.info('=== check_image (post-download) ===')
-    check_image_ready(client)
-
-    logger.info('=== compute ===')
-    process_pending_compute(client, limit=args.limit, workers=args.workers, nc_base_dir=nc_dir)
-
-    logger.info('=== check_image (post-compute) ===')
-    check_image_ready(client)
-
-    logger.info('=== image ===')
-    from .config import ALL_VARIABLES as _ALL_VARS
-    process_pending_images(client, limit=args.limit * len(_ALL_VARS), workers=workers,
-                           nc_base_dir=nc_dir, image_base_dir=image_dir)
-
-    logger.info('=== promote (success_image → pending_ingest, success_ingest → pending_sync) ===')
-    promote_ready_dates(client)
-
-    logger.info('=== ingest ===')
-    process_pending_ingests(client, limit=args.limit, nc_base_dir=nc_dir)
-
-    logger.info('=== promote (success_ingest → pending_sync) ===')
-    promote_ready_dates(client)
-
+    steps = [
+        ('check', lambda: check_erddap(client, init_days=init_days)),
+        ('download', lambda: process_pending_downloads(client, limit=limit)),
+        ('check_image (post-download)', lambda: check_image_ready(client)),
+        ('compute', lambda: process_pending_compute(client, limit=limit, workers=workers,
+                                                    nc_base_dir=nc_dir)),
+        ('check_image (post-compute)', lambda: check_image_ready(client)),
+        ('image', lambda: process_pending_images(client, limit=limit * len(ALL_VARIABLES),
+                                                 workers=image_workers, nc_base_dir=nc_dir,
+                                                 image_base_dir=image_dir)),
+        # success_image -> pending_ingest, success_ingest -> pending_sync
+        ('promote (post-image)', lambda: promote_ready_dates(client)),
+        ('ingest', lambda: process_pending_ingests(client, limit=limit, nc_base_dir=nc_dir)),
+        ('promote (post-ingest)', lambda: promote_ready_dates(client)),
+    ]
     if SYNC_API_BASE_URL:
-        logger.info('=== sync ===')
-        process_pending_syncs(client, limit=args.limit, image_base_dir=image_dir)
-    else:
-        logger.info('=== sync skipped (SYNC_API_BASE_URL not configured) ===')
+        steps.append(('sync', lambda: process_pending_syncs(client, limit=limit,
+                                                            image_base_dir=image_dir)))
+    return steps
 
-    client.close()
+
+def cmd_run(args) -> None:
+    """Run all pipeline steps in sequence — see pipeline_steps()."""
+    from .config import SYNC_API_BASE_URL
+
+    client   = _get_client()
+    date_val = _parse_date(args.date) if args.date else None
+    scope    = f' ({date_val})' if date_val else ''
+    try:
+        for name, step in pipeline_steps(client, date_val=date_val, limit=args.limit,
+                                         workers=args.workers, force=args.force,
+                                         init_days=args.init_days):
+            logger.info('=== %s%s ===', name, scope)
+            result = step()
+            if name == 'check' and not date_val:
+                logger.info('check: %d new date(s) queued', len(result))
+        if not SYNC_API_BASE_URL:
+            logger.info('=== sync skipped (SYNC_API_BASE_URL not configured) ===')
+    finally:
+        client.close()
 
 
 def cmd_status(args) -> None:
@@ -544,7 +534,11 @@ def main(argv=None) -> None:
     p.set_defaults(func=cmd_status)
 
     args = parser.parse_args(argv)
-    args.func(args)
+    try:
+        args.func(args)
+    except PipelineError as e:
+        logger.error('%s', e)
+        sys.exit(1)
 
 
 if __name__ == '__main__':

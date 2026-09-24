@@ -11,7 +11,9 @@ Host ports come from `docker-compose.dev.yml`'s `${VAR:-default}` fallbacks, ove
 | `front` | Nuxt 3 frontend | 9010 |
 | `api` | FastAPI backend | 9011 |
 | `db-ch` | ClickHouse (analytics) | 9013 (HTTP), 9014 (native) |
-| `process` | Data pipeline worker | — |
+| `process` | Data pipeline worker (the CLI) | — |
+| `prefect` | Prefect server: the pipeline's schedule + run-history UI (login `PREFECT_AUTH_STRING`, default `admin:admin`) | 9015 |
+| `scheduler` | the `process` image serving `SSC/flows.py` to `prefect` | — |
 
 ## Common Commands
 
@@ -113,7 +115,9 @@ Key modules:
 - `SSC/imaging.py` — renders WebP tiles via `nc2tile.py`, advances status to `success_image`
 - `SSC/sync.py` — exports a date's hourly rows to Native format and rsyncs them + WebP images to the API machine (via `cloudflared access ssh` as a ProxyCommand), triggering `POST /admin/syncHourly`
 
-`run` executes all steps in order: `check → download → check_image → compute → check_image → image → promote → ingest → promote → sync`.
+`run` executes all steps in order: `check → download → check_image → compute → check_image → image → promote → ingest → promote → sync`. The step list is defined once, in `cli.pipeline_steps()`; step helpers raise `cli.PipelineError` (turned into exit 1 by `main()`) instead of calling `sys.exit`, so they can run inside a Prefect task.
+
+**Prefect (monitoring + schedule).** `SSC/flows.py` — the only module that imports Prefect, so the CLI works with no server — wraps `pipeline_steps()` as the `ssc-pipeline` flow, one task run per step, served by the `scheduler` service (`python -m SSC.flows`) to the `prefect` server on cron `RUN_CRON` (default `0 */3 * * *`), one run at a time. The `SalishSeaCast.*`/`nc2tile` loggers reach each task's log tab via `PREFECT_LOGGING_EXTRA_LOGGERS`. Sweep stages mark rows `failed_*` without raising, so each run ends with a `pipeline-status` markdown artifact (7-day per-status counts + rows that failed during the run) and is marked Failed if any row did. Ad-hoc runs (a `date`, `force`) are triggered from the UI's "Run → custom". `RUN_SCHEDULE_PAUSED` is re-applied on every scheduler start (defaults: **paused in dev**, since `.env.dev` points at the production ClickHouse; unpaused in prod); stop `scheduler` for a pause that holds. `prefect==` in `process/pyproject.toml` must match the server image tag. In `docker-compose.prod.process.yml` both sit in the `tools` profile, the server binds to loopback (`PREFECT_BIND`) — reach it by SSH port-forward, and set a real `PREFECT_AUTH_STRING` before exposing it — and `scheduler` replaces any host cron running `SSC.cli run`.
 
 Shared between `api` and `process` containers: `shared/nc2tile.py` (curvilinear → Web-Mercator WebP reprojection). Sources the grid from ClickHouse's `grid_SSC` table (cached locally to an `.npz` file) and variable precision/colormap bounds from `shared/variable_config.py` — no database credentials of its own beyond the standard `CH_*` ClickHouse env vars. `shared/grid_lookup.py` reuses that same cached grid load to build a `scipy.spatial.cKDTree` (built once per process) for nearest-cell snapping of arbitrary point batches — currently only `extract_cross_section.py`'s polyline resampling needs this, as opposed to `nc2tile.py`'s own Delaunay/linear interpolation used for tile regridding.
 
