@@ -56,8 +56,9 @@ docker compose -f docker-compose.prod.process.yml --env-file .env.process.remote
 ```
 
 Env: `RUN_CRON`, `RUN_SCHEDULE_PAUSED`, `RUN_LIMIT`, `RUN_WORKERS`, `PREFECT_AUTH_STRING`,
-`PREFECT_API_URL` (required in prod), `PREFECT_PORT`/`PREFECT_PUBLIC_URL` (dev's local server). The CLI is unaffected and needs no
-Prefect server.
+`PREFECT_API_URL` (required in prod), `PREFECT_PORT`/`PREFECT_PUBLIC_URL` (dev's local server). The CLI is unaffected and needs no Prefect server. In prod there is no `process` service —
+run CLI commands in the scheduler container: `docker compose -f docker-compose.prod.process.yml
+--env-file .env.process.remote exec scheduler uv run python -m SSC.cli status`.
 
 `--force` (where supported) acts on a row regardless of its current status, useful for a
 redundant re-download or re-compute.
