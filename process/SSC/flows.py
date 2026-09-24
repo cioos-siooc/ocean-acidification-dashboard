@@ -26,7 +26,10 @@ signal to open the artifact.
 
 - **Steps run sequentially**, never `.submit()`ed: each stage consumes the
   previous stage's promotions, and the ClickHouse client is not thread-safe.
-- **`limit=1`.** Two overlapping runs would both claim the same pending rows.
+- **One run at a time, overlaps cancelled** (deployment concurrency limit 1,
+  `CANCEL_NEW`). Two overlapping runs would both claim the same pending rows,
+  and queueing instead would let runs longer than the cron interval stack up.
+  The next scheduled run picks up whatever the cancelled one would have.
 - **No task retries.** Bulk sweeps already retry failed_* rows up to
   `SSC_MAX_RETRY_ATTEMPTS` on the next run, so the next scheduled run is the
   retry by design.
@@ -164,11 +167,13 @@ if __name__ == '__main__':
     # module just defined: the deployment's entrypoint is recorded from the
     # flow's module, and `__main__.ssc_pipeline` is not importable by the
     # process that later executes a run.
+    from prefect import serve
+    from prefect.client.schemas.objects import ConcurrencyLimitConfig, ConcurrencyLimitStrategy
     from prefect.deployments.runner import EntrypointType
 
     from SSC.flows import ssc_pipeline as served
 
-    served.serve(
+    deployment = served.to_deployment(
         name='scheduled',
         cron=os.environ.get('RUN_CRON', DEFAULT_CRON),
         paused=_bool_env('RUN_SCHEDULE_PAUSED'),
@@ -176,6 +181,11 @@ if __name__ == '__main__':
             'limit': int(os.environ.get('RUN_LIMIT', '10')),
             'workers': int(os.environ.get('RUN_WORKERS', '4')),
         },
-        limit=1,
+        # A run can outlast the cron interval; one that comes due mid-run is
+        # cancelled rather than queued, so a slow stretch can't stack a backlog.
+        concurrency_limit=ConcurrencyLimitConfig(
+            limit=1, collision_strategy=ConcurrencyLimitStrategy.CANCEL_NEW,
+        ),
         entrypoint_type=EntrypointType.MODULE_PATH,
     )
+    serve(deployment, limit=1)
