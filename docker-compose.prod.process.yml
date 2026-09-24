@@ -51,7 +51,9 @@ services:
   # only at the end").
   db-ch:
     image: clickhouse/clickhouse-server:latest
-    profiles: ["tools"]
+    # Also `cli`: `run process` enables only process's own profile, and a
+    # dependency outside every active profile is "no such service".
+    profiles: ["tools", "cli"]
     ports:
       - "8123:8123"
       - "9000:9000"
@@ -62,7 +64,17 @@ services:
       CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
     restart: unless-stopped
 
-  process: *process
+  # The CLI, run on demand — scheduled runs belong to `scheduler`:
+  #   docker compose -f docker-compose.prod.process.yml run --rm process \
+  #     uv run python -m SSC.cli status
+  # Its own `cli` profile keeps `--profile tools up -d` from starting it (the
+  # image's default `python3` exits at once without a TTY and restart-loops);
+  # naming it in `run` enables the profile. `run` also always uses the current
+  # image, where a long-lived container would keep the pre-rebuild one.
+  process:
+    <<: *process
+    profiles: ["cli"]
+    restart: "no"
 
   # --- Prefect: schedule + run-history UI for the SSC pipeline's `run` ------
   # Self-hosted on SQLite: a few runs a day need no Postgres. Bound to
