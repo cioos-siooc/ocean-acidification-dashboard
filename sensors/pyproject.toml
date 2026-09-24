@@ -8,6 +8,8 @@ dependencies = [
     "netcdf4>=1.7.4",
     "numpy>=2.4.0",
     "onc>=2.6.0",
+    # Must be <= the Prefect server's version; keep in step with process/pyproject.toml.
+    "prefect==3.8.6",
     "pyyaml>=6.0",
     "requests>=2.32.5",
     "urllib3>=2.0",

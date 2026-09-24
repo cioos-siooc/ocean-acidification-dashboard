@@ -14,6 +14,7 @@ Host ports come from `docker-compose.dev.yml`'s `${VAR:-default}` fallbacks, ove
 | `process` | Data pipeline worker (the CLI) | — |
 | `prefect` | Dev-only local Prefect server: the pipeline's schedule + run-history UI (login `PREFECT_AUTH_STRING`, default `admin:admin`). Prod uses the shared https://prefect.cioospacific.ca instead | 9015 |
 | `scheduler` | the `process` image serving `SSC/flows.py` to Prefect; in prod, the only pipeline container (no `process` service) | — |
+| `sensors-scheduler` | the `sensors` image serving `sensors/flows.py` (hourly ERDDAP/ONC ingestion) to Prefect; prod: `docker-compose.prod.api.yml` on the API machine | — |
 
 ## Common Commands
 
@@ -121,7 +122,7 @@ Key modules:
 
 Shared between `api` and `process` containers: `shared/nc2tile.py` (curvilinear → Web-Mercator WebP reprojection). Sources the grid from ClickHouse's `grid_SSC` table (cached locally to an `.npz` file) and variable precision/colormap bounds from `shared/variable_config.py` — no database credentials of its own beyond the standard `CH_*` ClickHouse env vars. `shared/grid_lookup.py` reuses that same cached grid load to build a `scipy.spatial.cKDTree` (built once per process) for nearest-cell snapping of arbitrary point batches — currently only `extract_cross_section.py`'s polyline resampling needs this, as opposed to `nc2tile.py`'s own Delaunay/linear interpolation used for tile regridding.
 
-Sensor ingestion (ONC/ERDDAP → ClickHouse) lives in the top-level `sensors/` directory, its own docker-compose service — unrelated to `process/`. An older, Postgres-backed `process/sensors/` subsystem existed before that migration; it's been removed entirely, superseded by `sensors/`.
+Sensor ingestion (ONC/ERDDAP → ClickHouse) lives in the top-level `sensors/` directory, its own docker-compose service — unrelated to `process/`. Scheduled by `sensors/flows.py` (the only sensors module importing Prefect; the scripts still run standalone): flows `oceaneco-sensors-erddap`/`oceaneco-sensors-onc`, deployments `OceanECO-sensors-ERDDAP`/`-ONC` (crons `ERDDAP_CRON` `0 * * * *`, `ONC_CRON` `30 * * * *`, same `CANCEL_NEW` overlap rule and shared-server setup as the SSC `scheduler`), one task run per sensor via each script's `store_sensor()` — which raises `FetchError` on a failed source request instead of printing and moving on, so the task fails and the run is marked Failed. Served by `sensors-scheduler` (paused by default in dev via `SENSORS_SCHEDULE_PAUSED`), replacing the API machine's host cron; its `PREFECT_API_URL` is `:?`-required, so every `docker-compose.prod.api.yml` command needs it in the env file. An older, Postgres-backed `process/sensors/` subsystem existed before that migration; it's been removed entirely, superseded by `sensors/`.
 
 ### Frontend (`front/`)
 Nuxt 4 + Nuxt UI (v4, Tailwind v4 + Reka UI) + Pinia. Key structure:

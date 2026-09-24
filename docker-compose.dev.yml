@@ -143,6 +143,32 @@ services:
       retries: 12
     restart: unless-stopped
 
+  # The `sensors` image serving sensors/flows.py to `prefect`. PAUSED by
+  # default for the same reason as `scheduler`: .env.dev's CH_USE_REMOTE
+  # points it at the production ClickHouse.
+  sensors-scheduler:
+    build:
+      context: .
+      dockerfile: sensors/Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
+    command: ["uv", "run", "--no-sync", "python", "flows.py"]
+    env_file:
+      - .env.dev
+    environment:
+      - CH_HOST=db-ch
+      - CH_PORT=8123
+      - CH_PASSWORD=
+      - PREFECT_API_URL=http://prefect:4200/api
+      - PREFECT_API_AUTH_STRING=${PREFECT_AUTH_STRING:-admin:admin}
+      - PREFECT_HOME=/tmp/prefect
+      - SENSORS_SCHEDULE_PAUSED=${SENSORS_SCHEDULE_PAUSED:-true}
+    depends_on:
+      db-ch:
+        condition: service_healthy
+      prefect:
+        condition: service_healthy
+    restart: unless-stopped
+
   # The `process` image serving SSC/flows.py to `prefect` instead of idling.
   scheduler:
     <<: *process

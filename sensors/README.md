@@ -189,16 +189,24 @@ docker compose -f docker-compose.prod.api.yml run --rm sensors \
 
 ---
 
-## Ongoing updates (cron)
+## Ongoing updates (Prefect)
 
-`updateSensors.sh` (project root) runs both ingestion scripts for all active sensors.  Add it to crontab on the API machine:
+The `sensors-scheduler` service (`docker-compose.prod.api.yml`) serves `flows.py` to the shared Prefect server at https://prefect.cioospacific.ca: deployments `OceanECO-sensors-ERDDAP` (hourly, on the hour) and `OceanECO-sensors-ONC` (hourly, at half past), one task run per sensor. A sensor whose source fails shows up as a failed task, and the run is marked Failed; the other sensors still run. A run that comes due while the previous one is still going is cancelled rather than queued (what `flock -n` did for the old cron).
+
+Add to the API machine's env file:
 
 ```bash
-# Run daily at 06:00
-0 6 * * * cd /home/cioos/ocean-acidification-dashboard && ./updateSensors.sh >> logs/sensors.log 2>&1
+PREFECT_API_URL=https://prefect.cioospacific.ca/api
+PREFECT_AUTH_STRING=user:password
 ```
 
-The script uses a `.updating_sensors` lockfile to prevent overlapping runs.
+then start it:
+
+```bash
+docker compose -f docker-compose.prod.api.yml --env-file <env file> up -d --build sensors-scheduler
+```
+
+`PREFECT_API_URL` is required (`:?`) by every command against this compose file, `api` included. Optional: `ERDDAP_CRON`, `ONC_CRON` (defaults `0 * * * *`, `30 * * * *`), `SENSORS_SCHEDULE_PAUSED` (default `false`, re-applied on every start). Ad-hoc runs (e.g. one `sensor_id`) go through the UI's "Run → custom". It replaces the host crontab entries for `erddap_to_ch.py`/`onc_to_ch.py` (and `updateSensors.sh`): remove those, or the runs overlap. Rebuild/recreate `sensors-scheduler` after a code update.
 
 ---
 

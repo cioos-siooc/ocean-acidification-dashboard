@@ -82,6 +82,11 @@ def dt_to_naive_utc(dt_str: str) -> datetime | None:
     return None
 
 
+def utc_now_str() -> str:
+    """Now, in the timestamp format ONC's dateTo expects."""
+    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
 def apply_conversion(value: float, canonical: str, variables: dict) -> float:
     info = variables.get(canonical)
     if isinstance(info, dict):
@@ -91,6 +96,112 @@ def apply_conversion(value: float, canonical: str, variables: dict) -> float:
 
 # ── Main fetch loop ───────────────────────────────────────────────────────────
 
+class FetchError(RuntimeError):
+    """An ONC request for the sensor failed; its rows are left as they were."""
+
+
+def store_sensor(ch_client, sensor: dict, date_to: str):
+    """Fetch one sensor's new data up to `date_to` and insert it. Raises
+    FetchError, after trying every device category, if any ONC request failed."""
+    sensor_id = sensor["id"]
+    variables = sensor["variables"]
+    device_config = sensor["device_config"]
+    print(f"\nSensor: {sensor['name']} (ID: {sensor_id})")
+
+    if not device_config:
+        print("  No device_config, skipping.")
+        return
+
+    location_code = device_config.get("locationCode")
+    code_rows = device_config.get("codes", [])
+
+    # Build reverse map: ONC code → canonical name
+    code_to_canonical: dict[str, str] = {}
+    for canonical, info in variables.items():
+        if isinstance(info, dict) and info.get("name"):
+            code_to_canonical[info["name"]] = canonical
+
+    errors: list[str] = []
+    for code_row in code_rows:
+        device_category = code_row.get("deviceCategoryCode")
+        sensor_codes = code_row.get("sensorCategoryCodes", "")
+
+        # Determine the canonical names involved so we can find the latest stored time
+        involved_canonicals = [
+            code_to_canonical[c] for c in sensor_codes.split(",")
+            if c.strip() in code_to_canonical
+        ]
+        if not involved_canonicals:
+            print(f"  No canonical mapping for codes '{sensor_codes}', skipping.")
+            continue
+
+        # Re-fetch from OVERLAP_HOURS before the last stored timestamp so
+        # that recently revised ONC data overwrites any stale rows.
+        last_times = [get_last_stored_time(ch_client, sensor_id, c) for c in involved_canonicals]
+        valid_times = [t for t in last_times if t is not None]
+        if valid_times:
+            date_from = (min(valid_times) - timedelta(hours=OVERLAP_HOURS)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        else:
+            date_from = None
+
+        print(f"  Fetching {location_code}/{device_category}/{sensor_codes} from {date_from or 'beginning'}")
+
+        try:
+            data = onc.getScalardataByLocation({
+                "locationCode": location_code,
+                "deviceCategoryCode": device_category,
+                "getLatest": True,
+                "resamplePeriod": 3600,
+                "resampleType": "avg",
+                "qualityControl": "clean",
+                "sensorCategoryCodes": sensor_codes,
+                "dateFrom": date_from,
+                "dateTo": date_to,
+            })
+        except Exception as e:
+            # Carry on with the sensor's other device categories; raised below.
+            print(f"  ERROR fetching ONC data: {e}")
+            errors.append(f"{device_category}/{sensor_codes}: {e}")
+            continue
+
+        if not data.get("sensorData"):
+            print(f"  No sensorData returned.")
+            continue
+
+        for s in data["sensorData"]:
+            onc_code = s.get("sensorCategoryCode")
+            canonical = code_to_canonical.get(onc_code)
+            if not canonical:
+                print(f"  Skipping unmapped code '{onc_code}'")
+                continue
+
+            vals = s.get("data", {}).get("values", [])
+            raw_times = s.get("data", {}).get("sampleTimes", [])
+
+            rows = []
+            for t_str, v in zip(raw_times, vals):
+                if v is None or (isinstance(v, float) and np.isnan(v)):
+                    continue
+                t_dt = dt_to_naive_utc(t_str)
+                if t_dt is None:
+                    continue
+                converted = apply_conversion(float(v), canonical, variables)
+                # depth for ONC sensors comes from device position; use 0 as default
+                # and let the sensors.depth field in metadata carry the actual depth
+                rows.append([sensor_id, t_dt, 0.0, canonical, converted])
+
+            for start in range(0, len(rows), BATCH_SIZE):
+                ch_client.insert(
+                    "sensor_timeseries",
+                    rows[start:start + BATCH_SIZE],
+                    column_names=["sensor_id", "time", "depth", "variable", "value"],
+                )
+            print(f"  {onc_code} → '{canonical}': {len(rows)} point(s) inserted")
+
+    if errors:
+        raise FetchError("; ".join(errors))
+
+
 def fetch_and_store(sensor_id_filter: str | None = None):
     ch_client = get_ch_client()
     sensors = get_active_onc_sensors(ch_client, sensor_id_filter)
@@ -99,100 +210,13 @@ def fetch_and_store(sensor_id_filter: str | None = None):
         print("No active ONC sensors found in ClickHouse.")
         return
 
-    date_to = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    date_to = utc_now_str()
 
     for sensor in sensors:
-        sensor_id = sensor["id"]
-        variables = sensor["variables"]
-        device_config = sensor["device_config"]
-        print(f"\nSensor: {sensor['name']} (ID: {sensor_id})")
-
-        if not device_config:
-            print("  No device_config, skipping.")
-            continue
-
-        location_code = device_config.get("locationCode")
-        code_rows = device_config.get("codes", [])
-
-        # Build reverse map: ONC code → canonical name
-        code_to_canonical: dict[str, str] = {}
-        for canonical, info in variables.items():
-            if isinstance(info, dict) and info.get("name"):
-                code_to_canonical[info["name"]] = canonical
-
-        for code_row in code_rows:
-            device_category = code_row.get("deviceCategoryCode")
-            sensor_codes = code_row.get("sensorCategoryCodes", "")
-
-            # Determine the canonical names involved so we can find the latest stored time
-            involved_canonicals = [
-                code_to_canonical[c] for c in sensor_codes.split(",")
-                if c.strip() in code_to_canonical
-            ]
-            if not involved_canonicals:
-                print(f"  No canonical mapping for codes '{sensor_codes}', skipping.")
-                continue
-
-            # Re-fetch from OVERLAP_HOURS before the last stored timestamp so
-            # that recently revised ONC data overwrites any stale rows.
-            last_times = [get_last_stored_time(ch_client, sensor_id, c) for c in involved_canonicals]
-            valid_times = [t for t in last_times if t is not None]
-            if valid_times:
-                date_from = (min(valid_times) - timedelta(hours=OVERLAP_HOURS)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-            else:
-                date_from = None
-
-            print(f"  Fetching {location_code}/{device_category}/{sensor_codes} from {date_from or 'beginning'}")
-
-            try:
-                data = onc.getScalardataByLocation({
-                    "locationCode": location_code,
-                    "deviceCategoryCode": device_category,
-                    "getLatest": True,
-                    "resamplePeriod": 3600,
-                    "resampleType": "avg",
-                    "qualityControl": "clean",
-                    "sensorCategoryCodes": sensor_codes,
-                    "dateFrom": date_from,
-                    "dateTo": date_to,
-                })
-            except Exception as e:
-                print(f"  ERROR fetching ONC data: {e}")
-                continue
-
-            if not data.get("sensorData"):
-                print(f"  No sensorData returned.")
-                continue
-
-            for s in data["sensorData"]:
-                onc_code = s.get("sensorCategoryCode")
-                canonical = code_to_canonical.get(onc_code)
-                if not canonical:
-                    print(f"  Skipping unmapped code '{onc_code}'")
-                    continue
-
-                vals = s.get("data", {}).get("values", [])
-                raw_times = s.get("data", {}).get("sampleTimes", [])
-
-                rows = []
-                for t_str, v in zip(raw_times, vals):
-                    if v is None or (isinstance(v, float) and np.isnan(v)):
-                        continue
-                    t_dt = dt_to_naive_utc(t_str)
-                    if t_dt is None:
-                        continue
-                    converted = apply_conversion(float(v), canonical, variables)
-                    # depth for ONC sensors comes from device position; use 0 as default
-                    # and let the sensors.depth field in metadata carry the actual depth
-                    rows.append([sensor_id, t_dt, 0.0, canonical, converted])
-
-                for start in range(0, len(rows), BATCH_SIZE):
-                    ch_client.insert(
-                        "sensor_timeseries",
-                        rows[start:start + BATCH_SIZE],
-                        column_names=["sensor_id", "time", "depth", "variable", "value"],
-                    )
-                print(f"  {onc_code} → '{canonical}': {len(rows)} point(s) inserted")
+        try:
+            store_sensor(ch_client, sensor, date_to)
+        except FetchError:
+            pass  # already printed per device category
 
     print("\nDone.")
 
