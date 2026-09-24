@@ -43,9 +43,9 @@ python -m SSC.cli status      [--date YYYY-MM-DD]                    # print pip
 
 ## Scheduling and monitoring (Prefect)
 
-`python -m SSC.flows` serves the `run` pipeline as the `oa-ssc-pipeline` Prefect flow (deployment `oa-salishseacast`) on a cron
+`python -m SSC.flows` serves the `run` pipeline as the `oceaneco-ssc-pipeline` Prefect flow (deployment `OceanECO-SSC`) on a cron
 schedule (`RUN_CRON`, default every 3 hours), one task run per step, with each run's logs and a
-`oa-ssc-pipeline-status` artifact in the Prefect UI. The `prefect` + `scheduler` compose services run it:
+`oceaneco-ssc-status` artifact in the Prefect UI. The `prefect` + `scheduler` compose services run it:
 
 ```bash
 # dev: UI at http://localhost:9015 (admin:admin); schedule starts paused

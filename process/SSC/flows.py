@@ -14,7 +14,7 @@ per pipeline step** (check, download, check_image, compute, image, promote,
 ingest, sync), so a slow or failing stage is visible at a glance. The
 pipeline's own `logging` lines (`SalishSeaCast.*`, `nc2tile`) land in each
 task's log tab through `PREFECT_LOGGING_EXTRA_LOGGERS`. Each run ends with a
-`oa-ssc-pipeline-status` artifact: per-status row counts from `SalishSeaCast_status`
+`oceaneco-ssc-status` artifact: per-status row counts from `SalishSeaCast_status`
 over the recent window, plus every failed_* row touched during the run.
 
 The sweep stages mark individual rows failed_* and carry on rather than
@@ -121,7 +121,7 @@ def _status_summary(client, since: dt.datetime) -> tuple[str, int]:
     return '\n'.join(lines), len(failed)
 
 
-@flow(name='oa-ssc-pipeline', log_prints=True)
+@flow(name='oceaneco-ssc-pipeline', log_prints=True)
 def ssc_pipeline(
     date: dt.date | None = None,
     limit: int = 10,
@@ -155,7 +155,7 @@ def ssc_pipeline(
     finally:
         client.close()
 
-    create_markdown_artifact(key='oa-ssc-pipeline-status', markdown=summary,
+    create_markdown_artifact(key='oceaneco-ssc-status', markdown=summary,
                              description='SalishSeaCast_status after this run')
     if n_failed:
         return Failed(message=f'{n_failed} status row(s) entered failed_* during this run')
@@ -174,10 +174,10 @@ if __name__ == '__main__':
     from SSC.flows import ssc_pipeline as served
 
     deployment = served.to_deployment(
-        # Names, tag and artifact key carry the `oa` prefix: the Prefect server
+        # Names, tag and artifact key carry the OceanECO prefix: the Prefect server
         # is shared with other apps, and all of these are global on it.
-        name='oa-salishseacast',
-        tags=['oa'],
+        name='OceanECO-SSC',
+        tags=['oceaneco'],
         description='SalishSeaCast pipeline (ocean-acidification-dashboard): '
                     'check -> download -> compute -> image -> ingest -> sync',
         cron=os.environ.get('RUN_CRON', DEFAULT_CRON),
