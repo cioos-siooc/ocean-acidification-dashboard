@@ -77,47 +77,11 @@ services:
     restart: "no"
 
   # --- Prefect: schedule + run-history UI for the SSC pipeline's `run` ------
-  # `scheduler` reports to whatever server PREFECT_API_URL names — normally a
-  # shared, always-on Prefect elsewhere (set PREFECT_API_URL plus
-  # PREFECT_AUTH_STRING for a self-hosted server, or PREFECT_API_KEY for
-  # Prefect Cloud). That server must run Prefect >= the `prefect==` pin in
-  # process/pyproject.toml.
-  #
-  # Optional local server, only with `--profile prefect-local` (then leave
-  # PREFECT_API_URL unset). Self-hosted on SQLite: a few runs a day need no
-  # Postgres. Bound to
-  # loopback by default — reach the UI through an SSH port-forward
-  # (ssh -L 4200:localhost:4200 <process-host>) or a TLS reverse proxy. Before
-  # binding it anywhere else (PREFECT_BIND=0.0.0.0), set a real
-  # PREFECT_AUTH_STRING: the UI can trigger runs, including --force ones.
-  prefect:
-    # Must match the `prefect==` pin in process/pyproject.toml.
-    image: prefecthq/prefect:${PREFECT_IMAGE_TAG:-3.8.6-python3.13}
-    profiles: ["prefect-local"]
-    command: ["prefect", "server", "start", "--host", "0.0.0.0"]
-    ports:
-      - "${PREFECT_BIND:-127.0.0.1}:${PREFECT_PORT:-4200}:4200"
-    volumes:
-      # SQLite database + server state. Not /opt/prefect: the image keeps its
-      # entrypoint.sh there, and a mount over it breaks startup.
-      - prefect-data:/var/lib/prefect
-    environment:
-      PREFECT_HOME: /var/lib/prefect
-      # Never blank: Prefect treats "" as a password of "" rather than "no
-      # auth", and every client call then 401s.
-      PREFECT_SERVER_API_AUTH_STRING: ${PREFECT_AUTH_STRING:-admin:admin}
-      # What the BROWSER calls. Without it the UI points at 0.0.0.0:4200.
-      PREFECT_UI_API_URL: ${PREFECT_PUBLIC_URL:-http://localhost:4200}/api
-      PREFECT_SERVER_ANALYTICS_ENABLED: "false"
-    healthcheck:
-      # /api/health is exempt from the auth string.
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
-      interval: 15s
-      timeout: 5s
-      retries: 8
-      start_period: 20s
-    restart: unless-stopped
-
+  # `scheduler` reports to the shared, always-on Prefect server named by
+  # PREFECT_API_URL (e.g. https://prefect.cioospacific.ca/api), with
+  # PREFECT_AUTH_STRING for its basic auth. No local server: the server is
+  # what hands out scheduled runs, so it lives somewhere that never sleeps. It
+  # must run Prefect >= the `prefect==` pin in process/pyproject.toml.
   # The same image as `process`, serving SSC/flows.py instead of idling.
   # Stopping it pauses the schedule; starting it re-applies RUN_SCHEDULE_PAUSED
   # — so the UI's pause toggle lasts only until the next restart. Replaces any
@@ -127,13 +91,11 @@ services:
     command: ["uv", "run", "--no-sync", "python", "-m", "SSC.flows"]
     environment:
       <<: *process-env
-      # Default: the optional local server above (host networking, like
-      # `process`, so it's on loopback).
-      PREFECT_API_URL: ${PREFECT_API_URL:-http://localhost:${PREFECT_PORT:-4200}/api}
-      # Self-hosted server's basic auth (user:password). Blank sends none.
-      PREFECT_API_AUTH_STRING: ${PREFECT_AUTH_STRING:-admin:admin}
-      # Prefect Cloud only; ignored when an auth string is set.
-      PREFECT_API_KEY: ${PREFECT_API_KEY:-}
+      # Required, no default: a fallback URL turns a missing --env-file into
+      # a restart loop of opaque "All connection attempts failed" errors.
+      PREFECT_API_URL: ${PREFECT_API_URL:?set PREFECT_API_URL (e.g. https://prefect.cioospacific.ca/api) — did you pass --env-file?}
+      # The server's basic auth (user:password). Blank sends none.
+      PREFECT_API_AUTH_STRING: ${PREFECT_AUTH_STRING:-}
       PREFECT_LOGGING_EXTRA_LOGGERS: SalishSeaCast,nc2tile
       # The container runs as the host UID, whose home isn't writable here, so
       # the default ~/.prefect would fail.
@@ -145,10 +107,3 @@ services:
     depends_on:
       db-ch:
         condition: service_started
-      prefect:
-        condition: service_healthy
-        # Only present with --profile prefect-local; skipped otherwise.
-        required: false
-
-volumes:
-  prefect-data:
