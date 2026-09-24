@@ -103,7 +103,8 @@ services:
       RUN_CRON: ${RUN_CRON:-0 */3 * * *}
       RUN_SCHEDULE_PAUSED: ${RUN_SCHEDULE_PAUSED:-false}
       RUN_LIMIT: ${RUN_LIMIT:-10}
-      RUN_WORKERS: ${RUN_WORKERS:-4}
+      # What the old host cron passed (`SSC.cli run --workers 30`).
+      RUN_WORKERS: ${RUN_WORKERS:-30}
     depends_on:
       db-ch:
         condition: service_started
