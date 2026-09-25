@@ -50,7 +50,7 @@ services:
     restart: unless-stopped
 
   # Sensor ingestion — fetches from ONC/ERDDAP and writes directly to db-ch.
-  # Run on-demand (cron or manual); not a long-running service.
+  # Run on demand (manual); scheduled runs are sensors-scheduler's job.
   # Example: docker compose -f docker-compose.prod.api.yml run --rm sensors python onc_to_ch.py
   sensors:
     build:
@@ -68,6 +68,46 @@ services:
     depends_on:
       db-ch:
         condition: service_healthy
+
+  # The sensors image serving sensors/flows.py: a long-running container that
+  # polls the shared Prefect server (PREFECT_API_URL, basic auth via
+  # PREFECT_AUTH_STRING) and runs each scheduled ERDDAP/ONC ingestion
+  # in-process — deployments OceanECO-sensors-ERDDAP (ERDDAP_CRON, default on
+  # the hour) and OceanECO-sensors-ONC (ONC_CRON, default half past). Replaces
+  # the host cron running erddap_to_ch.py / onc_to_ch.py: keep only one, or
+  # the two overlap. A code update means rebuilding/recreating this service.
+  #
+  # Stopping it pauses the schedule; starting it re-applies
+  # SENSORS_SCHEDULE_PAUSED — so the UI's pause toggle lasts only until the
+  # next restart.
+  sensors-scheduler:
+    build:
+      context: .
+      dockerfile: sensors/Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
+    command: ["uv", "run", "--no-sync", "python", "flows.py"]
+    environment:
+      - CH_HOST=${CH_HOST:-db-ch}
+      - CH_PORT=${CH_PORT:-8123}
+      - CH_USER=${CH_USER:-default}
+      - CH_PASSWORD=${CH_PASSWORD:-}
+      - CH_USE_REMOTE=${CH_USE_REMOTE:-false}
+      - CH_REMOTE_URL=${CH_REMOTE_URL:-}
+      - ONC_TOKEN=${ONC_TOKEN:-}
+      # Required, no default: a fallback URL turns a missing --env-file into a
+      # restart loop of opaque "All connection attempts failed" errors.
+      - PREFECT_API_URL=${PREFECT_API_URL:?set PREFECT_API_URL (e.g. https://prefect.cioospacific.ca/api) — did you pass --env-file?}
+      # The server's basic auth (user:password). Blank sends none.
+      - PREFECT_API_AUTH_STRING=${PREFECT_AUTH_STRING:-}
+      # The container runs as the host UID, whose home isn't writable here.
+      - PREFECT_HOME=/tmp/prefect
+      - ERDDAP_CRON=${ERDDAP_CRON:-0 * * * *}
+      - ONC_CRON=${ONC_CRON:-30 * * * *}
+      - SENSORS_SCHEDULE_PAUSED=${SENSORS_SCHEDULE_PAUSED:-false}
+    depends_on:
+      db-ch:
+        condition: service_healthy
+    restart: unless-stopped
 
   # Canonical ClickHouse — receives the PROCESS machine's synced
   # SalishSeaCast_hourly data (see api/modules/sync_hourly.py) and serves

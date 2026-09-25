@@ -287,6 +287,141 @@ def fetch_griddap_nc(
 
 # ── Main fetch loop ───────────────────────────────────────────────────────────
 
+class FetchError(RuntimeError):
+    """The sensor's ERDDAP request failed; its rows are left as they were."""
+
+
+def store_sensor(ch_client, sensor: dict):
+    """Fetch one sensor's new data since its last stored timestamp and insert it.
+    Raises FetchError when the ERDDAP request fails."""
+    sensor_id = sensor["id"]
+    variables = sensor["variables"]
+    link = sensor["link"]
+    variable_depth = sensor["depth"] == -1.0
+    print(f"\nSensor: {sensor['name']} (ID: {sensor_id})  "
+          f"{'variable' if variable_depth else 'fixed'} depth")
+    print(f"  Dataset: {link}")
+
+    if not link:
+        print("  No source link, skipping.")
+        return
+
+    # Resolve axis column names (allow override via variables mapping)
+    time_col  = (variables.get("time")  or {}).get("name", "time")
+    depth_col = (variables.get("depth") or {}).get("name", "depth")
+
+    # Build {erddap_col: canonical} for data variables (exclude axis entries)
+    erddap_to_canonical = {
+        info["name"]: canonical
+        for canonical, info in variables.items()
+        if canonical not in ("time", "depth")
+        and isinstance(info, dict) and info.get("name")
+    }
+    if not erddap_to_canonical:
+        print("  No variable mappings, skipping.")
+        return
+
+    erddap_cols = list(erddap_to_canonical.keys())
+
+    # --- griddap path ------------------------------------------------
+    if "/griddap/" in link:
+        last_times = [
+            get_last_stored_time(ch_client, sensor_id, c)
+            for c in erddap_to_canonical.values()
+        ]
+        valid = [t for t in last_times if t is not None]
+        date_from = (min(valid) - timedelta(days=1)) if valid else None
+
+        try:
+            times_epoch, depth_levels, grids = fetch_griddap_nc(
+                link, erddap_cols, date_from, time_col, depth_col
+            )
+        except Exception as e:
+            raise FetchError(str(e)) from e
+
+        # Convert once per level, not per (time, level) cell — the axis
+        # unit doesn't vary across the grid.
+        axis_unit = depth_axis_unit(variables)
+        depth_levels_m = [
+            resolve_depth_value(float(d), axis_unit, sensor["latitude"])
+            for d in depth_levels
+        ]
+        if axis_unit.lower() in PRESSURE_UNITS:
+            print(f"  Depth axis '{depth_col}' is pressure ({axis_unit}) — converted via gsw.z_from_p")
+
+        for erddap_col, canonical in erddap_to_canonical.items():
+            if erddap_col not in grids:
+                continue
+            arr = grids[erddap_col]
+            rows = []
+            for ti, t_epoch in enumerate(times_epoch):
+                t_dt = (EPOCH + timedelta(seconds=float(t_epoch))).replace(tzinfo=None)
+                for di, d in enumerate(depth_levels_m):
+                    v = float(arr[ti, di])
+                    if math.isnan(v):
+                        continue
+                    converted = apply_conversion(v, canonical, variables)
+                    rows.append([sensor_id, t_dt, float(d), canonical, converted])
+            insert_rows(ch_client, rows)
+            print(f"  {erddap_col} → '{canonical}': {len(rows)} row(s) inserted")
+        return
+
+    # --- tabledap path -----------------------------------------------
+    if "/tabledap/" not in link:
+        print(f"  SKIP: link contains neither /tabledap/ nor /griddap/")
+        return
+
+    last_times = [
+        get_last_stored_time(ch_client, sensor_id, c)
+        for c in erddap_to_canonical.values()
+    ]
+    valid = [t for t in last_times if t is not None]
+    date_from = (min(valid) - timedelta(days=1)) if valid else None
+    print(f"  Fetching from: {date_from.strftime(ERDDAP_TIME_FMT) if date_from else 'beginning'}")
+
+    try:
+        records = fetch_tabledap_csv(
+            link, erddap_cols, date_from,
+            include_depth=variable_depth,
+            time_col=time_col, depth_col=depth_col,
+            extra_constraints=sensor["source"].get("constraints", ""),
+        )
+    except Exception as e:
+        raise FetchError(str(e)) from e
+
+    if not records:
+        print("  No data returned.")
+        return
+    print(f"  Fetched {len(records)} raw record(s).")
+
+    if not variable_depth:
+        records = bin_to_hourly(records)
+        fixed_depth = sensor["depth"] if sensor["depth"] >= 0 else 0.0
+        print(f"  Binned into {len(records)} hourly slot(s).")
+    else:
+        # Per-cast depth came straight off the wire in fetch_tabledap_csv —
+        # convert once here if that axis was actually pressure.
+        axis_unit = depth_axis_unit(variables)
+        if axis_unit.lower() in PRESSURE_UNITS:
+            print(f"  Depth axis '{depth_col}' is pressure ({axis_unit}) — converted via gsw.z_from_p")
+            for rec in records:
+                if "depth" in rec:
+                    rec["depth"] = resolve_depth_value(rec["depth"], axis_unit, sensor["latitude"])
+
+    for erddap_col, canonical in erddap_to_canonical.items():
+        rows = []
+        for rec in records:
+            t = rec.get("time")
+            v = rec.get(erddap_col)
+            if t is None or v is None:
+                continue
+            converted = apply_conversion(v, canonical, variables)
+            depth_val = rec.get("depth", fixed_depth if not variable_depth else 0.0)
+            rows.append([sensor_id, t.replace(tzinfo=None), float(depth_val), canonical, converted])
+        insert_rows(ch_client, rows)
+        print(f"  {erddap_col} → '{canonical}': {len(rows)} row(s) inserted")
+
+
 def fetch_and_store(sensor_id_filter: str | None = None):
     ch_client = get_ch_client()
     sensors = get_active_erddap_sensors(ch_client, sensor_id_filter)
@@ -296,134 +431,10 @@ def fetch_and_store(sensor_id_filter: str | None = None):
         return
 
     for sensor in sensors:
-        sensor_id = sensor["id"]
-        variables = sensor["variables"]
-        link = sensor["link"]
-        variable_depth = sensor["depth"] == -1.0
-        print(f"\nSensor: {sensor['name']} (ID: {sensor_id})  "
-              f"{'variable' if variable_depth else 'fixed'} depth")
-        print(f"  Dataset: {link}")
-
-        if not link:
-            print("  No source link, skipping.")
-            continue
-
-        # Resolve axis column names (allow override via variables mapping)
-        time_col  = (variables.get("time")  or {}).get("name", "time")
-        depth_col = (variables.get("depth") or {}).get("name", "depth")
-
-        # Build {erddap_col: canonical} for data variables (exclude axis entries)
-        erddap_to_canonical = {
-            info["name"]: canonical
-            for canonical, info in variables.items()
-            if canonical not in ("time", "depth")
-            and isinstance(info, dict) and info.get("name")
-        }
-        if not erddap_to_canonical:
-            print("  No variable mappings, skipping.")
-            continue
-
-        erddap_cols = list(erddap_to_canonical.keys())
-
-        # --- griddap path ------------------------------------------------
-        if "/griddap/" in link:
-            last_times = [
-                get_last_stored_time(ch_client, sensor_id, c)
-                for c in erddap_to_canonical.values()
-            ]
-            valid = [t for t in last_times if t is not None]
-            date_from = (min(valid) - timedelta(days=1)) if valid else None
-
-            try:
-                times_epoch, depth_levels, grids = fetch_griddap_nc(
-                    link, erddap_cols, date_from, time_col, depth_col
-                )
-            except Exception as e:
-                print(f"  ERROR: {e}")
-                continue
-
-            # Convert once per level, not per (time, level) cell — the axis
-            # unit doesn't vary across the grid.
-            axis_unit = depth_axis_unit(variables)
-            depth_levels_m = [
-                resolve_depth_value(float(d), axis_unit, sensor["latitude"])
-                for d in depth_levels
-            ]
-            if axis_unit.lower() in PRESSURE_UNITS:
-                print(f"  Depth axis '{depth_col}' is pressure ({axis_unit}) — converted via gsw.z_from_p")
-
-            for erddap_col, canonical in erddap_to_canonical.items():
-                if erddap_col not in grids:
-                    continue
-                arr = grids[erddap_col]
-                rows = []
-                for ti, t_epoch in enumerate(times_epoch):
-                    t_dt = (EPOCH + timedelta(seconds=float(t_epoch))).replace(tzinfo=None)
-                    for di, d in enumerate(depth_levels_m):
-                        v = float(arr[ti, di])
-                        if math.isnan(v):
-                            continue
-                        converted = apply_conversion(v, canonical, variables)
-                        rows.append([sensor_id, t_dt, float(d), canonical, converted])
-                insert_rows(ch_client, rows)
-                print(f"  {erddap_col} → '{canonical}': {len(rows)} row(s) inserted")
-            continue
-
-        # --- tabledap path -----------------------------------------------
-        if "/tabledap/" not in link:
-            print(f"  SKIP: link contains neither /tabledap/ nor /griddap/")
-            continue
-
-        last_times = [
-            get_last_stored_time(ch_client, sensor_id, c)
-            for c in erddap_to_canonical.values()
-        ]
-        valid = [t for t in last_times if t is not None]
-        date_from = (min(valid) - timedelta(days=1)) if valid else None
-        print(f"  Fetching from: {date_from.strftime(ERDDAP_TIME_FMT) if date_from else 'beginning'}")
-
         try:
-            records = fetch_tabledap_csv(
-                link, erddap_cols, date_from,
-                include_depth=variable_depth,
-                time_col=time_col, depth_col=depth_col,
-                extra_constraints=sensor["source"].get("constraints", ""),
-            )
-        except Exception as e:
+            store_sensor(ch_client, sensor)
+        except FetchError as e:
             print(f"  ERROR: {e}")
-            continue
-
-        if not records:
-            print("  No data returned.")
-            continue
-        print(f"  Fetched {len(records)} raw record(s).")
-
-        if not variable_depth:
-            records = bin_to_hourly(records)
-            fixed_depth = sensor["depth"] if sensor["depth"] >= 0 else 0.0
-            print(f"  Binned into {len(records)} hourly slot(s).")
-        else:
-            # Per-cast depth came straight off the wire in fetch_tabledap_csv —
-            # convert once here if that axis was actually pressure.
-            axis_unit = depth_axis_unit(variables)
-            if axis_unit.lower() in PRESSURE_UNITS:
-                print(f"  Depth axis '{depth_col}' is pressure ({axis_unit}) — converted via gsw.z_from_p")
-                for rec in records:
-                    if "depth" in rec:
-                        rec["depth"] = resolve_depth_value(rec["depth"], axis_unit, sensor["latitude"])
-
-        for erddap_col, canonical in erddap_to_canonical.items():
-            rows = []
-            for rec in records:
-                t = rec.get("time")
-                v = rec.get(erddap_col)
-                if t is None or v is None:
-                    continue
-                converted = apply_conversion(v, canonical, variables)
-                depth_val = rec.get("depth", fixed_depth if not variable_depth else 0.0)
-                rows.append([sensor_id, t.replace(tzinfo=None), float(depth_val), canonical, converted])
-            insert_rows(ch_client, rows)
-            print(f"  {erddap_col} → '{canonical}': {len(rows)} row(s) inserted")
 
     print("\nDone.")
 

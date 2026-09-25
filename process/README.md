@@ -41,6 +41,33 @@ python -m SSC.cli run         [--date YYYY-MM-DD] [--limit N] [--workers N]  # a
 python -m SSC.cli status      [--date YYYY-MM-DD]                    # print pipeline status summary
 ```
 
+## Scheduling and monitoring (Prefect)
+
+`python -m SSC.flows` serves the `run` pipeline as the `oceaneco-ssc-pipeline` Prefect flow (deployment `OceanECO-SSC`) on a cron
+schedule (`RUN_CRON`, default every 3 hours), one task run per step, with each run's logs and a
+`oceaneco-ssc-status` artifact in the Prefect UI. The `scheduler` compose service runs it — a
+long-running container that polls the Prefect server and executes each due run in-process. Only
+one run at a time: one that comes due while another is still going is cancelled, not queued.
+In dev it reports to a local `prefect` service; in prod to the shared server at
+https://prefect.cioospacific.ca.
+
+```bash
+# dev: UI at http://localhost:9015 (admin:admin); schedule starts paused
+docker compose -f docker-compose.dev.yml --env-file .env.dev up -d prefect scheduler
+# prod process machine, reporting to the shared Prefect server
+# (.env.process.remote: PREFECT_API_URL=https://prefect.cioospacific.ca/api, PREFECT_AUTH_STRING=user:pass)
+docker compose -f docker-compose.prod.process.yml --env-file .env.process.remote --profile tools up -d --build
+```
+
+Env: `RUN_CRON`, `RUN_SCHEDULE_PAUSED` (dev default paused), `RUN_LIMIT` (default 10),
+`RUN_WORKERS` (prod default 30, matching the old cron's `SSC.cli run --workers 30`; dev 4),
+`PREFECT_API_URL` (required in prod), `PREFECT_AUTH_STRING`, `PREFECT_PORT`/`PREFECT_PUBLIC_URL`
+(dev's local server). The Prefect scheduler replaces the old host cron job — don't run both.
+
+The CLI is unaffected and needs no Prefect server. In prod there is no `process` service —
+run CLI commands in the scheduler container (`run --rm scheduler ...` while it's stopped): `docker compose -f docker-compose.prod.process.yml
+--env-file .env.process.remote exec scheduler uv run python -m SSC.cli status`.
+
 `--force` (where supported) acts on a row regardless of its current status, useful for a
 redundant re-download or re-compute.
 

@@ -16,38 +16,71 @@ services:
       CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD:-}"
     restart: unless-stopped
 
-  process:
+  # The SSC pipeline, served as a Prefect flow (process/SSC/flows.py): a
+  # long-running container that polls the Prefect server and executes each
+  # scheduled run in-process. It is also the CLI — there is no separate
+  # `process` service:
+  #   docker compose -f docker-compose.prod.process.yml --env-file .env.process.remote \
+  #     exec scheduler uv run python -m SSC.cli status
+  # (`run --rm scheduler uv run python -m SSC.cli ...` when it's stopped).
+  #
+  # It reports to the shared, always-on Prefect server named by
+  # PREFECT_API_URL (e.g. https://prefect.cioospacific.ca/api), with
+  # PREFECT_AUTH_STRING for its basic auth. No local server: the server is
+  # what hands out scheduled runs, so it lives somewhere that never sleeps. It
+  # must run Prefect >= the `prefect==` pin in process/pyproject.toml.
+  #
+  # Stopping it pauses the schedule; starting it re-applies RUN_SCHEDULE_PAUSED
+  # — so the UI's pause toggle lasts only until the next restart. Replaces any
+  # host cron running `SSC.cli run`: keep only one, or the two overlap.
+  scheduler:
     build:
       context: .
       dockerfile: process/Dockerfile
     user: "${UID:-1000}:${GID:-1000}"
     profiles: ["tools"]
+    command: ["uv", "run", "--no-sync", "python", "-m", "SSC.flows"]
     environment:
       # Python/uv
-      - UV_CACHE_DIR=/tmp/uv-cache
-      - UV_NO_SYNC=1
+      UV_CACHE_DIR: /tmp/uv-cache
+      UV_NO_SYNC: "1"
       # SSH to the API machine via `cloudflared access ssh` as a ProxyCommand
       # (see process/SSC/sync.py) — service-token auth, no tunnel container.
-      - API_SSH_HOST=${API_SSH_HOST:-ssh.cioospacificlabs.ca}
-      - API_SSH_USER=${API_SSH_USER:-cioos}
-      - API_SSH_KEY_PATH=${API_SSH_KEY_PATH:-/run/secrets/ONC_OA_rsync}
-      - API_SSH_KNOWN_HOSTS=${API_SSH_KNOWN_HOSTS:-/run/secrets/known_hosts}
-      - CF_TOKEN_ID=${CF_TOKEN_ID:-}
-      - CF_TOKEN_SECRET=${CF_TOKEN_SECRET:-}
+      API_SSH_HOST: ${API_SSH_HOST:-ssh.cioospacificlabs.ca}
+      API_SSH_USER: ${API_SSH_USER:-cioos}
+      API_SSH_KEY_PATH: ${API_SSH_KEY_PATH:-/run/secrets/ONC_OA_rsync}
+      API_SSH_KNOWN_HOSTS: ${API_SSH_KNOWN_HOSTS:-/run/secrets/known_hosts}
+      CF_TOKEN_ID: ${CF_TOKEN_ID:-}
+      CF_TOKEN_SECRET: ${CF_TOKEN_SECRET:-}
       # SSC pipeline: local ClickHouse (db-ch above) for status tracking
-      - CH_HOST=${CH_HOST:-localhost}
-      - CH_PORT=${CH_PORT:-8123}
-      - CH_USER=${CH_USER:-default}
-      - CH_PASSWORD=${CH_PASSWORD:-}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+      CH_HOST: ${CH_HOST:-localhost}
+      CH_PORT: ${CH_PORT:-8123}
+      CH_USER: ${CH_USER:-default}
+      CH_PASSWORD: ${CH_PASSWORD:-}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
       # SSC pipeline: local processing output dirs on this machine
-      - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
-      - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
-      - SSC_SYNC_STAGING_DIR=${SSC_SYNC_STAGING_DIR:-/opt/data/SalishSeaCast/sync_staging}
+      SSC_NC_DIR: ${SSC_NC_DIR:-/opt/data/SSC/nc}
+      SSC_IMAGE_DIR: ${SSC_IMAGE_DIR:-/opt/data/SSC/images}
+      SSC_SYNC_STAGING_DIR: ${SSC_SYNC_STAGING_DIR:-/opt/data/SalishSeaCast/sync_staging}
       # SSC sync stage: push finished dates' hourly rows + images to the API machine
-      - SYNC_API_DATA_DIR=${SYNC_API_DATA_DIR:-}
-      - SYNC_API_BASE_URL=${SYNC_API_BASE_URL:-}
-      - SYNC_API_TOKEN=${SYNC_API_TOKEN:-}
+      SYNC_API_DATA_DIR: ${SYNC_API_DATA_DIR:-}
+      SYNC_API_BASE_URL: ${SYNC_API_BASE_URL:-}
+      SYNC_API_TOKEN: ${SYNC_API_TOKEN:-}
+      # Prefect. PREFECT_API_URL is required, no default: a fallback URL turns
+      # a missing --env-file into a restart loop of opaque "All connection
+      # attempts failed" errors.
+      PREFECT_API_URL: ${PREFECT_API_URL:?set PREFECT_API_URL (e.g. https://prefect.cioospacific.ca/api) — did you pass --env-file?}
+      # The server's basic auth (user:password). Blank sends none.
+      PREFECT_API_AUTH_STRING: ${PREFECT_AUTH_STRING:-}
+      PREFECT_LOGGING_EXTRA_LOGGERS: SalishSeaCast,nc2tile
+      # The container runs as the host UID, whose home isn't writable here, so
+      # the default ~/.prefect would fail.
+      PREFECT_HOME: /tmp/prefect
+      RUN_CRON: ${RUN_CRON:-0 */3 * * *}
+      RUN_SCHEDULE_PAUSED: ${RUN_SCHEDULE_PAUSED:-false}
+      RUN_LIMIT: ${RUN_LIMIT:-10}
+      # What the old host cron passed (`SSC.cli run --workers 30`).
+      RUN_WORKERS: ${RUN_WORKERS:-30}
     volumes:
       - ./shared:/app/shared
       - ./data:/opt/data
@@ -57,4 +90,3 @@ services:
         condition: service_started
     network_mode: "host"
     restart: unless-stopped
-

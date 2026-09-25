@@ -93,7 +93,7 @@ services:
       db-ch:
         condition: service_healthy
 
-  process:
+  process: &process
     build:
       context: .
       dockerfile: process/Dockerfile
@@ -110,3 +110,84 @@ services:
     depends_on:
       db-ch:
         condition: service_healthy
+
+  # --- Prefect: schedule + run-history UI for the SSC pipeline's `run` ------
+  # UI at http://localhost:${PREFECT_PORT:-9015}. The schedule opens PAUSED in
+  # dev: .env.dev points CH_USE_REMOTE at the production ClickHouse, so a
+  # scheduled dev run would advance the real SalishSeaCast_status table.
+  # Trigger ad-hoc runs from the UI ("Run" → custom parameters) instead, or set
+  # RUN_SCHEDULE_PAUSED=false deliberately.
+  prefect:
+    # Must match the `prefect==` pin in process/pyproject.toml.
+    image: prefecthq/prefect:${PREFECT_IMAGE_TAG:-3.8.6-python3.13}
+    command: ["prefect", "server", "start", "--host", "0.0.0.0"]
+    ports:
+      - "${PREFECT_PORT:-9015}:4200"
+    volumes:
+      # SQLite database + server state. Not /opt/prefect: the image keeps its
+      # entrypoint.sh there, and a mount over it breaks startup.
+      - prefect-data:/var/lib/prefect
+    environment:
+      PREFECT_HOME: /var/lib/prefect
+      # Never blank: Prefect treats "" as a password of "" rather than "no
+      # auth", and every client call then 401s.
+      PREFECT_SERVER_API_AUTH_STRING: ${PREFECT_AUTH_STRING:-admin:admin}
+      # What the BROWSER calls. Without it the UI points at 0.0.0.0:4200.
+      PREFECT_UI_API_URL: ${PREFECT_PUBLIC_URL:-http://localhost:9015}/api
+      PREFECT_SERVER_ANALYTICS_ENABLED: "false"
+    healthcheck:
+      # /api/health is exempt from the auth string.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # The `sensors` image serving sensors/flows.py to `prefect`. PAUSED by
+  # default for the same reason as `scheduler`: .env.dev's CH_USE_REMOTE
+  # points it at the production ClickHouse.
+  sensors-scheduler:
+    build:
+      context: .
+      dockerfile: sensors/Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
+    command: ["uv", "run", "--no-sync", "python", "flows.py"]
+    env_file:
+      - .env.dev
+    environment:
+      - CH_HOST=db-ch
+      - CH_PORT=8123
+      - CH_PASSWORD=
+      - PREFECT_API_URL=http://prefect:4200/api
+      - PREFECT_API_AUTH_STRING=${PREFECT_AUTH_STRING:-admin:admin}
+      - PREFECT_HOME=/tmp/prefect
+      - SENSORS_SCHEDULE_PAUSED=${SENSORS_SCHEDULE_PAUSED:-true}
+    depends_on:
+      db-ch:
+        condition: service_healthy
+      prefect:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # The `process` image serving SSC/flows.py to `prefect` instead of idling.
+  scheduler:
+    <<: *process
+    command: ["uv", "run", "--no-dev", "python", "-m", "SSC.flows"]
+    environment:
+      - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
+      - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
+      - PREFECT_API_URL=http://prefect:4200/api
+      - PREFECT_API_AUTH_STRING=${PREFECT_AUTH_STRING:-admin:admin}
+      - PREFECT_LOGGING_EXTRA_LOGGERS=SalishSeaCast,nc2tile
+      - PREFECT_HOME=/tmp/prefect
+      - RUN_CRON=${RUN_CRON:-0 */3 * * *}
+      - RUN_SCHEDULE_PAUSED=${RUN_SCHEDULE_PAUSED:-true}
+    depends_on:
+      db-ch:
+        condition: service_healthy
+      prefect:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  prefect-data:

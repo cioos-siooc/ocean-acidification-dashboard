@@ -137,8 +137,9 @@ A `409` response means the API already has the date (idempotent — treated as s
 If you need to force a full re-sync of a date from the process machine (e.g. after manually clearing bad data):
 
 ```bash
-# On the process machine
-uv run python -m SSC.cli sync --date YYYY-MM-DD --force
+# On the process machine (the CLI runs in the `scheduler` container)
+docker compose -f docker-compose.prod.process.yml --env-file .env.process.remote \
+  exec scheduler uv run python -m SSC.cli sync --date YYYY-MM-DD --force
 ```
 
 Before doing this, clear the API's sync log entry for that date so the import isn't blocked by a `success` status:
