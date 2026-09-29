@@ -45,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import moment from 'moment';
 
 import { useMainStore } from '../stores/main'
@@ -233,7 +233,13 @@ function cancelDatePicker() {
   datePickerOpen.value = false;
 }
 
-onBeforeUnmount(() => stopTimer());
+// Published so index.vue can hold back the map-layer spinner during playback.
+watch(playing, (p) => mainStore.setTimePlaying(p));
+
+onBeforeUnmount(() => {
+  stopTimer();
+  if (playing.value) mainStore.setTimePlaying(false);
+});
 </script>
 
 <style scoped>

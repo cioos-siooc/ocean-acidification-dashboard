@@ -592,6 +592,9 @@ onMounted(async () => {
         // layer-adding function here needing to know it exists.
         map?.on('idle', raiseWaterNamesLayer);
 
+        map?.on('sourcedata', onPngSourceSettled);
+        map?.on('error', onPngSourceSettled);
+
         map?.on('mousemove', (e) => {
             mouseCoords.value.lng = e.lngLat.lng;
             mouseCoords.value.lat = e.lngLat.lat;
@@ -638,8 +641,12 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+    clearMapLoadTimers();
+    mainStore.setMapLayerLoading(false);
     if (map) {
         map.off('idle', raiseWaterNamesLayer);
+        map.off('sourcedata', onPngSourceSettled);
+        map.off('error', onPngSourceSettled);
         map.off('moveend', publishMapView);
 
         const handlers = (map as any)?.__anchoredChartsHandlers;
@@ -1229,6 +1236,55 @@ async function getSensors() {
     }
 }
 
+// Map-layer loading indicator (selectedInfo.vue's spinner). Every pane that
+// moves the map (Explore clicks, Model depth, Cross-Section, pickers, share
+// restore) funnels through updatePngOverlay, so tracking it here covers them
+// all. The spinner only shows after a delay so cached/fast tiles never flash
+// it; during playback the delay is longer, so animation stays clean unless a
+// frame genuinely stalls.
+const MAP_LOADING_DELAY_MS = 400;
+const MAP_LOADING_DELAY_PLAYING_MS = 1500;
+const MAP_LOADING_GIVE_UP_MS = 60_000;
+let mapLoadUrl: string | null = null;
+let mapLoadShowTimer: number | null = null;
+let mapLoadGiveUpTimer: number | null = null;
+
+function clearMapLoadTimers() {
+    if (mapLoadShowTimer != null) { clearTimeout(mapLoadShowTimer); mapLoadShowTimer = null; }
+    if (mapLoadGiveUpTimer != null) { clearTimeout(mapLoadGiveUpTimer); mapLoadGiveUpTimer = null; }
+}
+
+function beginMapLayerLoad(url: string) {
+    clearMapLoadTimers();
+    mapLoadUrl = url;
+    const delay = mainStore.timePlaying ? MAP_LOADING_DELAY_PLAYING_MS : MAP_LOADING_DELAY_MS;
+    mapLoadShowTimer = window.setTimeout(() => {
+        mapLoadShowTimer = null;
+        mainStore.setMapLayerLoading(true);
+    }, delay);
+    // Backstop in case mapbox never reports back (e.g. a request it dropped).
+    mapLoadGiveUpTimer = window.setTimeout(() => endMapLayerLoad(url), MAP_LOADING_GIVE_UP_MS);
+}
+
+function endMapLayerLoad(url: string | undefined) {
+    // A superseded request finishing must not hide the newer one's spinner.
+    if (!url || url !== mapLoadUrl) return;
+    mapLoadUrl = null;
+    clearMapLoadTimers();
+    mainStore.setMapLayerLoading(false);
+}
+
+// ImageSource sets `url` when a load starts and `loaded()` once its image
+// request completes (success fires 'sourcedata', failure fires 'error', both
+// tagged with sourceId), so matching the url pins the event to the latest request.
+function onPngSourceSettled(e: any) {
+    if (e?.sourceId !== 'png-image') return;
+    const src = map?.getSource('png-image') as any;
+    if (!src) return;
+    if (e.type === 'sourcedata' && !src.loaded?.()) return;
+    endMapLayerLoad(src.url);
+}
+
 // Add / update / remove PNG overlay for a given public PNG path
 async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
     if (!map) throw new Error('map not initialized');
@@ -1309,6 +1365,7 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
         }
     }
 
+    beginMapLayerLoad(pngPath);
     if (map.getSource(sourceId)) {
         map.getSource(sourceId)?.updateImage({
             type: 'image',

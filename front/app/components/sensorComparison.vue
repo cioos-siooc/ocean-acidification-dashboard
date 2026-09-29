@@ -4,9 +4,9 @@
     <!-- HEADER STRIP -->
     <div class="flex items-center px-3 shrink-0"
       style="height:30px; border-bottom:1px solid rgba(255,255,255,0.08); gap:8px;">
-      <span class="font-medium truncate" style="min-width:0;">
-        {{ sensorInfo?.name || '—' }}
-        <span class="text-gray-500"> · {{ varName }} · {{ variableDepthLabel }}</span>
+      <!-- Sensor and variable are in the workspace header; only the depth is new here. -->
+      <span class="truncate text-muted" style="min-width:0;">
+        {{ variableDepthLabel }}
       </span>
       <div class="grow" />
       <!-- Daily spans the whole record; hourly trades that reach for a fortnight
@@ -151,8 +151,8 @@ const sensorInfo = computed(() => {
 const isVariableDepth = computed(() => sensorInfo.value?.depth === -1)
 
 const variableDepthLabel = computed(() => {
-  if (!isVariableDepth.value) return depthLabel.value
-  return depth.value != null ? `variable depth · ${depth.value}m picked` : 'variable depth'
+  if (!isVariableDepth.value) return `Sensor depth ${depthLabel.value}`
+  return depth.value != null ? `Variable-depth sensor · ${depth.value}m picked` : 'Variable-depth sensor'
 })
 
 const varName = computed(() =>

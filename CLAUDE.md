@@ -12,7 +12,7 @@ Host ports come from `docker-compose.dev.yml`'s `${VAR:-default}` fallbacks, ove
 | `api` | FastAPI backend | 9011 |
 | `db-ch` | ClickHouse | 9013 (HTTP), 9014 (native) |
 | `process` | Data pipeline worker (the CLI) — dev only | — |
-| `prefect` | Dev-only local Prefect server (login `PREFECT_AUTH_STRING`, default `admin:admin`). Prod uses the shared https://prefect.cioospacific.ca | 9015 |
+| `prefect` | Dev-only local Prefect server (login `PREFECT_AUTH_STRING`, default `admin:admin`). Prod uses the shared https://pipelines.cioospacific.ca (the [cioos-pacific-pipeline](https://github.com/cioos-siooc/cioos-pacific-pipeline) stack; our flows are served by our own containers, not its `pipelines` work pool) | 9015 |
 | `scheduler` | `process` image serving `SSC/flows.py` to Prefect; in prod the only pipeline container | — |
 | `sensors-scheduler` | `sensors` image serving `sensors/flows.py` (hourly ERDDAP/ONC ingestion); prod: `docker-compose.prod.api.yml` | — |
 
@@ -80,7 +80,7 @@ pending_download → downloading → success_download → pending_compute → co
 **Prefect.** `SSC/flows.py` is the only module importing Prefect (the CLI works without a server). Flow `oceaneco-ssc-pipeline`, deployment `OceanECO-SSC`, tag `oceaneco` (the server is shared across apps), one task run per step. Served by `scheduler` on cron `RUN_CRON` (default `0 */3 * * *`) with `RUN_LIMIT`/`RUN_WORKERS` (prod 10/30, dev 10/4); overlapping runs are cancelled (`CANCEL_NEW`). `SalishSeaCast.*`/`nc2tile` loggers reach task logs via `PREFECT_LOGGING_EXTRA_LOGGERS`. Sweep stages mark rows `failed_*` without raising; each run ends with an `oceaneco-ssc-status` markdown artifact and is marked Failed if any row failed. Ad-hoc runs (`date`, `force`) via the UI's "Run → custom".
 - `RUN_SCHEDULE_PAUSED` is re-applied on every scheduler start — **paused by default in dev** (`.env.dev` points at production ClickHouse). Stop `scheduler` for a pause that holds.
 - `prefect==` in `process/pyproject.toml` must match dev's server image tag and be ≤ the shared server's version.
-- Prod (`docker-compose.prod.process.yml`) has no `process` service and no local server; `scheduler` (`tools` profile) reports to `PREFECT_API_URL` (`https://prefect.cioospacific.ca/api`, basic auth `PREFECT_AUTH_STRING`). A code update means rebuilding/recreating `scheduler`.
+- Prod (`docker-compose.prod.process.yml`) has no `process` service and no local server; `scheduler` (`tools` profile) reports to `PREFECT_API_URL` (`https://pipelines.cioospacific.ca/api`, basic auth `PREFECT_AUTH_STRING`). A code update means rebuilding/recreating `scheduler`.
 - Don't start a manual `SSC.cli run` while a scheduled one is in progress — both claim the same pending rows.
 - Renaming a flow/deployment leaves the old one on the server — delete it in the UI.
 

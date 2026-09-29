@@ -25,7 +25,7 @@ services:
   # (`run --rm scheduler uv run python -m SSC.cli ...` when it's stopped).
   #
   # It reports to the shared, always-on Prefect server named by
-  # PREFECT_API_URL (e.g. https://prefect.cioospacific.ca/api), with
+  # PREFECT_API_URL (e.g. https://pipelines.cioospacific.ca/api), with
   # PREFECT_AUTH_STRING for its basic auth. No local server: the server is
   # what hands out scheduled runs, so it lives somewhere that never sleeps. It
   # must run Prefect >= the `prefect==` pin in process/pyproject.toml.
@@ -69,7 +69,7 @@ services:
       # Prefect. PREFECT_API_URL is required, no default: a fallback URL turns
       # a missing --env-file into a restart loop of opaque "All connection
       # attempts failed" errors.
-      PREFECT_API_URL: ${PREFECT_API_URL:?set PREFECT_API_URL (e.g. https://prefect.cioospacific.ca/api) — did you pass --env-file?}
+      PREFECT_API_URL: ${PREFECT_API_URL:?set PREFECT_API_URL (e.g. https://pipelines.cioospacific.ca/api) — did you pass --env-file?}
       # The server's basic auth (user:password). Blank sends none.
       PREFECT_API_AUTH_STRING: ${PREFECT_AUTH_STRING:-}
       PREFECT_LOGGING_EXTRA_LOGGERS: SalishSeaCast,nc2tile

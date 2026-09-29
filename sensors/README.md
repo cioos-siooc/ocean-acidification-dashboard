@@ -191,12 +191,12 @@ docker compose -f docker-compose.prod.api.yml run --rm sensors \
 
 ## Ongoing updates (Prefect)
 
-The `sensors-scheduler` service (`docker-compose.prod.api.yml`) serves `flows.py` to the shared Prefect server at https://prefect.cioospacific.ca: deployments `OceanECO-sensors-ERDDAP` (hourly, on the hour) and `OceanECO-sensors-ONC` (hourly, at half past), one task run per sensor. A sensor whose source fails shows up as a failed task, and the run is marked Failed; the other sensors still run. A run that comes due while the previous one is still going is cancelled rather than queued (what `flock -n` did for the old cron).
+The `sensors-scheduler` service (`docker-compose.prod.api.yml`) serves `flows.py` to the shared Prefect server at https://pipelines.cioospacific.ca: deployments `OceanECO-sensors-ERDDAP` (hourly, on the hour) and `OceanECO-sensors-ONC` (hourly, at half past), one task run per sensor. A sensor whose source fails shows up as a failed task, and the run is marked Failed; the other sensors still run. A run that comes due while the previous one is still going is cancelled rather than queued (what `flock -n` did for the old cron).
 
 Add to the API machine's env file:
 
 ```bash
-PREFECT_API_URL=https://prefect.cioospacific.ca/api
+PREFECT_API_URL=https://pipelines.cioospacific.ca/api
 PREFECT_AUTH_STRING=user:password
 ```
 

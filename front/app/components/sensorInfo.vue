@@ -120,68 +120,7 @@
     </UModal>
 
     <!-- SENSOR INFO -->
-    <UModal v-model:open="showInfoDialog" :ui="{ content: 'max-w-[480px]' }">
-        <template #content>
-        <div class="bg-elevated rounded-lg" v-if="infoDialogSensor">
-            <div class="px-4 pt-4 pb-2 text-lg flex items-center">
-                <UIcon name="i-mdi-circle" :style="{ color: sensorStatusColor(infoDialogSensor) }" class="size-[14px] mr-2" />
-                {{ infoDialogSensor.name }}
-            </div>
-            <div class="px-4 pb-2 text-sm text-muted" v-if="infoDialogSensor.organization">{{ infoDialogSensor.organization }}</div>
-            <div class="px-4 py-3">
-                <div>
-                    <div class="px-4 py-1"><div class="text-muted text-xs">Location</div>
-                        <div class="text-sm">{{ coordTxt(infoDialogSensor.latitude, infoDialogSensor.longitude)
-                            }}</div>
-                    </div>
-                    <div class="px-4 py-1"><div class="text-muted text-xs">Depth</div>
-                        <div class="text-sm">{{ depth2txt(infoDialogSensor) }}</div>
-                    </div>
-                    <div class="px-4 py-1"><div class="text-muted text-xs">Data range</div>
-                        <div class="text-sm">{{ formatDataRange(infoDialogSensor) }}</div>
-                    </div>
-                    <div class="px-4 py-1"><div class="text-muted text-xs">Variables</div>
-                        <!-- Sensors with nothing to download (ONC, or an ERDDAP link of an
-                             unrecognized layout) fall back to a plain list. -->
-                        <div class="text-sm" v-if="!infoDownloads?.variables.length">
-                            {{ infoDialogVariables.map(variableLabel).join(', ') }}
-                        </div>
-                        <div v-else>
-                            <div v-for="v in infoDownloads.variables" :key="v.canonical"
-                                class="flex items-center gap-1 mt-2">
-                                <span class="var-name">{{ variableLabel(v.canonical) }}</span>
-                                <UButton variant="subtle" size="xs" color="neutral" v-if="v.nc" leading-icon="i-mdi-download" :href="v.nc" target="_blank" rel="noopener">
-                                    NetCDF
-                                </UButton>
-                                <UButton variant="subtle" size="xs" color="neutral" v-if="v.csv" leading-icon="i-mdi-download" :href="v.csv" target="_blank" rel="noopener">
-                                    CSV
-                                </UButton>
-                                <UButton variant="subtle" size="xs" color="neutral" v-if="v.page" leading-icon="i-mdi-open-in-new" :href="v.page" target="_blank" rel="noopener">
-                                    Oceans 3.0
-                                </UButton>
-                            </div>
-                            <!-- ONC has no direct-download URL: Oceans 3.0 is a cart/order
-                                 flow, so say so rather than let the buttons imply a file. -->
-                            <div v-if="infoDownloads.api === 'ONC'" class="mt-3 var-note">
-                                ONC data is ordered through Oceans 3.0 (account required). Each link opens Data
-                                Search with that instrument selected.
-                            </div>
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-            <USeparator v-if="infoDownloads" />
-            <div class="flex items-center gap-2 px-2 py-2">
-                <UButton variant="subtle" size="xs" v-if="infoDownloads?.dataset" leading-icon="i-mdi-open-in-new" :href="infoDownloads.dataset" target="_blank" rel="noopener">
-                    Go to {{ infoDownloads.api }}
-                </UButton>
-                <div class="grow" />
-                <UButton variant="ghost" size="sm" @click="showInfoDialog = false">Close</UButton>
-            </div>
-        </div>
-        </template>
-    </UModal>
+    <SensorInfoDialog v-model:open="showInfoDialog" :sensor="infoDialogSensor" />
 </template>
 
 <script setup lang="ts">
@@ -190,7 +129,8 @@ import { storeToRefs } from 'pinia';
 import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue';
 import colors from '@/config/palette';
 import { sensorStatusColor } from '~~/composables/useSensorStatus';
-import { sensorDownloads } from '~~/composables/useSensorDownloadLinks';
+import { coordTxt, depth2txt, formatDataRange } from '~~/composables/useSensorFormat';
+import SensorInfoDialog from './SensorInfoDialog.vue';
 import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 import { trackEvent } from '~~/composables/useAnalytics';
 
@@ -254,11 +194,6 @@ const heatmap_maxDate = ref<string | null>(null);
 
 const showInfoDialog = ref(false);
 const infoDialogSensor = ref<typeof mainStore.sensors[number] | null>(null);
-const infoDialogVariables = computed(() => modelVariablesOf(infoDialogSensor.value?.variables));
-// null for non-ERDDAP sensors (e.g. ONC), which have no direct download URLs to offer.
-// Restricted to the same variables the dialog lists, so a sensor never offers a
-// download for something the app doesn't otherwise acknowledge.
-const infoDownloads = computed(() => sensorDownloads(infoDialogSensor.value, infoDialogVariables.value));
 
 const sensorRefs = new Map<string, Element | ComponentPublicInstance>();
 function setSensorRef(id: string) {
@@ -290,34 +225,6 @@ function selectSensor(sensorID: string) {
     }
 }
 
-function coordTxt(lat: number, lng: number): string {
-    const latStr = `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? 'N' : 'S'}`;
-    const lngStr = `${Math.abs(lng).toFixed(2)}°${lng >= 0 ? 'E' : 'W'}`;
-    return `${latStr}, ${lngStr}`;
-}
-
-function depth2txt(sensor: { depth: number, depth_min?: number | null, depth_max?: number | null }): string {
-    const { depth, depth_min, depth_max } = sensor;
-    if (depth == null || depth < 0) {
-        if (depth_min != null && depth_max != null) {
-            return `Variable depth (${depth_min.toFixed(0)}–${depth_max.toFixed(0)} m)`;
-        }
-        return 'Variable depth';
-    }
-    if (depth === 0) return 'Surface';
-    return depth.toFixed(0) + ' m';
-}
-
-function formatDataRange(sensor: any): string {
-    const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { year: 'numeric', month: 'short' });
-    const { first_data_at, latest_data_at } = sensor;
-    if (!first_data_at && !latest_data_at) return 'No data';
-    if (!first_data_at) return `Up to ${fmt(latest_data_at)}`;
-    if (!latest_data_at) return `From ${fmt(first_data_at)}`;
-    const isRecent = Date.now() - new Date(latest_data_at).getTime() < 14 * 86400_000;
-    return `${fmt(first_data_at)} – ${isRecent ? 'present' : fmt(latest_data_at)}`;
-}
-
 function openHeatmapDialog(sensorId: string) {
     const sensor = sensors.value.find(s => s.id === sensorId);
     heatmap_sensorId.value = sensorId;
@@ -339,20 +246,5 @@ function openInfoDialog(sensor: typeof mainStore.sensors[number]) {
 
 .gap-1 {
     gap: 4px;
-}
-
-/* Keeps the per-variable download buttons aligned in a column. */
-.var-name {
-    /* Wide enough for the longest label a sensor actually carries ("Dissolved
-       Oxygen") so the download buttons line up in a column across rows. */
-    min-width: 9rem;
-    font-size: 0.75rem;
-    opacity: var(--v-medium-emphasis-opacity);
-}
-
-.var-note {
-    font-size: 0.75rem;
-    line-height: 1.1rem;
-    opacity: var(--v-medium-emphasis-opacity);
 }
 </style>

@@ -28,6 +28,12 @@
         <span>no model data here</span>
       </div>
     </div>
+
+    <!-- Only set once a tile request outlasts index.vue's show delay, so fast
+         tiles and smooth playback never flash it. -->
+    <div v-if="mapLayerLoading" class="loading-glow" role="status" aria-label="Updating map layer">
+      <div class="loading-ring" />
+    </div>
   </div>
 </template>
 
@@ -55,6 +61,8 @@ const selectedVariable = computed(() => mainStore.selected_variable);
 // stores/main.ts's `modelDomain`). Null means "not established" — treated as
 // in-domain, so the normal case is never labelled as missing data.
 const outsideDomain = computed(() => mainStore.modelDomain?.inDomain === false);
+
+const mapLayerLoading = computed(() => mainStore.mapLayerLoading);
 
 // selected_variable.dt is a real model instant in hourly mode (PST display
 // makes sense there), but a UTC calendar-day/month bin start in daily/monthly
@@ -85,6 +93,38 @@ const formattedDt = computed(() => {
   font-family: monospace;
   font-size: 11px;
   color: #ccc;
+}
+
+/* A bright arc chasing around the box's border: a rotating conic gradient,
+   masked down to a ring so the contents stay untouched. The glow lives on the
+   unmasked wrapper — a filter on the ring itself would be masked away too. */
+@property --loading-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.loading-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 0 3px #22d3ee) drop-shadow(0 0 6px rgba(34, 211, 238, 0.6));
+}
+
+.loading-ring {
+  position: absolute;
+  inset: 0;
+  padding: 3px;
+  border-radius: 6px;
+  background: conic-gradient(from var(--loading-angle), transparent 0 55%, #22d3ee 85%, #e0fbff 97%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: map-layer-loading 1.4s linear infinite;
+}
+
+@keyframes map-layer-loading {
+  to { --loading-angle: 360deg; }
 }
 
 .layer-label {
