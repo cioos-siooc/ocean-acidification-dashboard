@@ -1,5 +1,5 @@
 <template>
-  <main class="grow min-h-0 cs-index">
+  <main class="grow min-h-0 overflow-y-auto cs-index">
     <header class="masthead">
       <div class="wrap">
         <span class="eyebrow">OceanECO &middot; Field Notes</span>

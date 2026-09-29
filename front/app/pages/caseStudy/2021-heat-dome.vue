@@ -1,5 +1,5 @@
 <template>
-  <main class="grow min-h-0 case-study">
+  <main class="grow min-h-0 overflow-y-auto case-study">
     <div class="wrap col back-row">
       <NuxtLink to="/" class="back-link">&larr; Back to the map</NuxtLink>
     </div>

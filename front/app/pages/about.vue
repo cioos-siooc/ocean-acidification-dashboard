@@ -1,5 +1,5 @@
 <template>
-    <main class="grow min-h-0 bg-default">
+    <main class="grow min-h-0 overflow-y-auto bg-default">
         <!-- Hero Banner -->
         <div class="hero-banner text-white text-center py-16 px-4">
             <div class="mx-auto w-full max-w-screen-xl py-10">
@@ -28,7 +28,7 @@
                             <br><br>
                             To learn more, visit <a href="https://www.oceanacidification.ca/" target="_blank"
                                 rel="noopener noreferrer"
-                                class="text-primary font-bold text-decoration-none">Canada's Ocean Acidification
+                                class="text-primary font-bold hover:underline underline-offset-3">Canada's Ocean Acidification
                                 Community of Practice</a> to discover our species impacts, action plans, Canada's expert
                             database and more.
                         </div>
@@ -45,7 +45,7 @@
                         <div class="text-muted pl-4 pr-4" style="line-height: 1.6;">
                             The Ocean Environmental Conditions Observer app is developed and maintained by the Canadian Integrated Ocean Observing System 
                             (<a href="https://www.cioospacific.ca/" target="_blank" rel="noopener noreferrer"
-                                class="text-primary text-decoration-none font-bold">CIOOS</a>)
+                                class="text-primary font-bold hover:underline underline-offset-3">CIOOS</a>)
                             Pacific regional association. OceanECO is designed to be a supporting tool for the "British Columbia Ocean Acidification and Hypoxia Action Plan" and "MEOPAR Ocean Acidification Community of Practice" partners. Data access is made possible by our data partners, which include Ocean Networks Canada, Hakai Institute, Fisheries and Oceans Canada, the University of British Columbia, and the University of Washington.
                         </div>
                     </div>
@@ -89,20 +89,28 @@
                                 Sensor Network
                             </h3>
 
-                            <div class="border border-default rounded-lg overflow-hidden">
-                                <table class="w-full text-sm">
-                                    <thead class="bg-elevated">
+                            <div class="border border-accented rounded-lg overflow-x-auto">
+                                <table class="w-full min-w-[900px] table-fixed border-collapse text-sm text-left">
+                                    <colgroup>
+                                        <col class="w-[25%]" />
+                                        <col class="w-[23%]" />
+                                        <col class="w-[14%]" />
+                                        <col class="w-[8%]" />
+                                        <col class="w-[30%]" />
+                                    </colgroup>
+                                    <thead class="bg-accented/40 text-xs uppercase tracking-wide text-muted">
                                         <tr>
-                                            <th class="text-subtitle-2 font-bold py-3">Sensor Details</th>
-                                            <th class="text-subtitle-2 font-bold py-3">Data Source</th>
-                                            <th class="text-subtitle-2 font-bold py-3">Location & Depth</th>
-                                            <th class="text-subtitle-2 font-bold py-3">Variables</th>
+                                            <th class="font-semibold px-4 py-3">Sensor</th>
+                                            <th class="font-semibold px-4 py-3">Data Source</th>
+                                            <th class="font-semibold px-4 py-3">Location</th>
+                                            <th class="font-semibold px-4 py-3">Depth</th>
+                                            <th class="font-semibold px-4 py-3">Variables</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr v-for="sensor in sensors" :key="sensor.id">
-                                            <td class="py-3">
-                                                <div class="font-bold text-subtitle-1">{{ sensor.id }}</div>
+                                        <tr v-for="sensor in sensors" :key="sensor.id" class="align-top border-t border-accented hover:bg-accented/30">
+                                            <td class="px-4 py-3">
+                                                <div class="font-semibold text-highlighted">{{ sensor.id }}</div>
                                                 <div v-if="sensor.note" class="text-muted mt-1">
                                                     {{ sensor.note }}</div>
                                                 <UBadge size="sm" color="error" variant="solid" class="mt-2 font-bold rounded-full" v-if="sensor.decommissioned">
@@ -110,23 +118,17 @@
                                                     Decommissioned
                                                 </UBadge>
                                             </td>
-                                            <td class="py-3">
-                                                <div class="font-medium">{{ sensor.organization }}</div>
+                                            <td class="px-4 py-3">
+                                                <a :href="sensor.dataUrl" target="_blank" rel="noopener noreferrer"
+                                                    class="text-primary hover:underline underline-offset-3">{{ orgHead(sensor.organization) }}<span
+                                                        class="whitespace-nowrap">{{ orgTail(sensor.organization) }}<UIcon
+                                                        name="i-mdi-open-in-new" class="size-3.5 ml-1 align-[-2px] opacity-70" /></span></a>
                                             </td>
-                                            <td class="py-3">
-                                                <div class="flex items-center mb-1">
-                                                    <UIcon name="i-mdi-map-marker" class="size-[16px] text-muted mr-2" />
-                                                    <span class="">{{ sensor.coordinates }}</span>
-                                                </div>
-                                                <div class="flex items-center">
-                                                    <UIcon name="i-mdi-arrow-down-box" class="size-[16px] text-muted mr-2" />
-                                                    <span class="">{{ sensor.depth }}</span>
-                                                </div>
+                                            <td class="px-4 py-3 whitespace-nowrap tabular-nums text-toned">
+                                                {{ sensor.coordinates }}
                                             </td>
-                                            <td class="py-3">
-                                                <div class="" style="max-width: 300px; line-height: 1.4;">{{
-                                                    sensor.variables }}</div>
-                                            </td>
+                                            <td class="px-4 py-3 whitespace-nowrap text-toned">{{ sensor.depth }}</td>
+                                            <td class="px-4 py-3 text-toned leading-relaxed">{{ sensor.variables }}</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -170,10 +172,10 @@
                                 </p>
                             </div>
                             <div class="flex flex-col sm:flex-row gap-4">
-                                <UButton variant="solid" size="lg" color="secondary" href="mailto:yayla.sezginer@cioospacific.ca" class="text-none font-bold rounded-lg mx-2 my-2 my-sm-0" leading-icon="i-mdi-email">
+                                <UButton variant="solid" size="lg" color="secondary" href="mailto:yayla.sezginer@cioospacific.ca" class="font-bold rounded-lg mx-2 my-2 sm:my-0" leading-icon="i-mdi-email">
                                     Yayla Sezginer
                                 </UButton>
-                                <UButton variant="solid" size="lg" color="secondary" href="mailto:taimazb@oceannetworks.ca" class="text-none font-bold rounded-lg mx-2 my-2 my-sm-0" leading-icon="i-mdi-email">
+                                <UButton variant="solid" size="lg" color="secondary" href="mailto:taimazb@oceannetworks.ca" class="font-bold rounded-lg mx-2 my-2 sm:my-0" leading-icon="i-mdi-email">
                                     Taimaz Bahadory
                                 </UButton>
                             </div>
@@ -200,6 +202,10 @@ interface Sensor {
     dataUrl: string
     decommissioned?: boolean
 }
+
+// Split off the last word so the external-link icon wraps with it instead of alone.
+const orgHead = (org: string) => org.slice(0, org.lastIndexOf(' ') + 1)
+const orgTail = (org: string) => org.slice(org.lastIndexOf(' ') + 1)
 
 const sensors: Sensor[] = [
     {
