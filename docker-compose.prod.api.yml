@@ -96,7 +96,7 @@ services:
       - ONC_TOKEN=${ONC_TOKEN:-}
       # Required, no default: a fallback URL turns a missing --env-file into a
       # restart loop of opaque "All connection attempts failed" errors.
-      - PREFECT_API_URL=${PREFECT_API_URL:?set PREFECT_API_URL (e.g. https://prefect.cioospacific.ca/api) — did you pass --env-file?}
+      - PREFECT_API_URL=${PREFECT_API_URL:?set PREFECT_API_URL (e.g. https://pipelines.cioospacific.ca/api) — did you pass --env-file?}
       # The server's basic auth (user:password). Blank sends none.
       - PREFECT_API_AUTH_STRING=${PREFECT_AUTH_STRING:-}
       # The container runs as the host UID, whose home isn't writable here.

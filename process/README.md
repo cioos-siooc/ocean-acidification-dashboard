@@ -49,13 +49,13 @@ schedule (`RUN_CRON`, default every 3 hours), one task run per step, with each r
 long-running container that polls the Prefect server and executes each due run in-process. Only
 one run at a time: one that comes due while another is still going is cancelled, not queued.
 In dev it reports to a local `prefect` service; in prod to the shared server at
-https://prefect.cioospacific.ca.
+https://pipelines.cioospacific.ca.
 
 ```bash
 # dev: UI at http://localhost:9015 (admin:admin); schedule starts paused
 docker compose -f docker-compose.dev.yml --env-file .env.dev up -d prefect scheduler
 # prod process machine, reporting to the shared Prefect server
-# (.env.process.remote: PREFECT_API_URL=https://prefect.cioospacific.ca/api, PREFECT_AUTH_STRING=user:pass)
+# (.env.process.remote: PREFECT_API_URL=https://pipelines.cioospacific.ca/api, PREFECT_AUTH_STRING=user:pass)
 docker compose -f docker-compose.prod.process.yml --env-file .env.process.remote --profile tools up -d --build
 ```
 
