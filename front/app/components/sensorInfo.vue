@@ -58,48 +58,38 @@
                 <div v-else class="flex-1 min-h-0 overflow-y-auto">
                 <div v-for="(sensor, i) in filteredSensors" :key="sensor.id" :ref="setSensorRef(sensor.id)"
                     role="button" tabindex="0" @click="selectSensor(sensor.id)" @keydown.enter="selectSensor(sensor.id)"
-                    class="rounded my-3 px-3 py-1 cursor-pointer hover:bg-white/5"
+                    class="rounded my-2 px-3 py-2 cursor-pointer hover:bg-white/5"
                     :class="sensor.id === selectedSensor?.id ? 'ring-1 ring-yellow-400' : ''"
                     :style="{ backgroundColor: '#33333399' }">
-                    <div>
-                        <div class="text-sm">
-                            <UIcon name="i-mdi-circle" :style="{ color: sensorStatusColor(sensor) }" class="size-[12px]" />
-                            {{ sensor.name }}
-                        </div>
+                    <div class="ml-4 flex items-center gap-1">
+                        <UBadge v-if="sensor.organization" color="primary" variant="solid" size="xs"
+                            class="rounded-sm px-1.5 py-0 text-[10px] leading-4 font-semibold tracking-wide bg-(--ui-color-primary-700) text-white">
+                            {{ sensor.organization }}
+                        </UBadge>
+                        <div class="grow" />
+                        <UButton v-if="sensor.id === selectedSensor?.id" variant="ghost" size="xs" color="neutral" class="p-0.5"
+                            aria-label="Compare with model" @click.stop="mainStore.setActiveBottomTab('comparison')">
+                            <UIcon name="i-mdi-chart-bar" class="size-[14px]" />
+                        </UButton>
+                        <UButton variant="ghost" size="xs" color="neutral" class="p-0.5"
+                            aria-label="Sensor details" @click.stop="openInfoDialog(sensor)">
+                            <UIcon name="i-mdi-information-outline" class="size-[14px]" />
+                        </UButton>
+                    </div>
 
-                        <div class="ml-4">
-                            <div class="text-[11px] font-medium text-muted">
-                                <span v-if="sensor.organization" class="sensor-org">{{ sensor.organization }} </span>
-                                {{ depth2txt(sensor) }}
-                            </div>
+                    <div class="text-sm leading-5">
+                        <UIcon name="i-mdi-circle" :style="{ color: sensorStatusColor(sensor) }" class="size-[12px]" />
+                        {{ sensor.name }}
+                    </div>
 
-                            <div class="text-[11px] font-medium text-muted">
-                                {{ coordTxt(sensor.latitude, sensor.longitude) }}
-                            </div>
+                    <div class="ml-4 text-[11px] leading-4 font-medium text-muted">
+                        <div>{{ depth2txt(sensor) }} · {{ coordTxt(sensor.latitude, sensor.longitude) }}</div>
+                        <div>{{ formatDataRange(sensor) }}</div>
 
-                            <div class="text-[11px] font-medium text-muted">{{ formatDataRange(sensor)
-                            }}</div>
-
-                            <div class="mt-1 flex flex-wrap gap-1">
-                                <UBadge size="xs" color="neutral" variant="subtle" class="rounded-full" v-for="varKey in modelVariablesOf(sensor.variables)" :key="varKey">
-                                    {{ variableLabel(varKey) }}
-                                </UBadge>
-                            </div>
-
-                            <div class="flex flex-wrap mt-2 flex gap-1">
-                                <div class="grow" />
-                                <div class="p-3 w-1/12">
-                                    <UButton variant="subtle" size="xs" color="neutral" class="shrink-0" @click.stop="openInfoDialog(sensor)">
-                                        <UIcon name="i-mdi-information-variant" class="size-[12px]" />
-                                    </UButton>
-                                </div>
-                                <div class="p-3 w-1/12">
-                                    <UButton variant="subtle" size="xs" color="neutral" class="shrink-0" v-if="sensor.id === selectedSensor?.id" @click.stop="mainStore.setActiveBottomTab('comparison')">
-                                        <UIcon name="i-mdi-chart-bar" class="size-[12px]" />
-                                    </UButton>
-                                </div>
-                            </div>
-
+                        <div class="mt-1.5 flex flex-wrap gap-1">
+                            <UBadge size="xs" color="neutral" variant="subtle" class="rounded-full" v-for="varKey in modelVariablesOf(sensor.variables)" :key="varKey">
+                                {{ variableLabel(varKey) }}
+                            </UBadge>
                         </div>
                     </div>
                 </div>
@@ -239,11 +229,6 @@ function openInfoDialog(sensor: typeof mainStore.sensors[number]) {
 </script>
 
 <style scoped>
-.sensor-org {
-    opacity: 0.6;
-    font-size: 0.75em;
-}
-
 .gap-1 {
     gap: 4px;
 }
