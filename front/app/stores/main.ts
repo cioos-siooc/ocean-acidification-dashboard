@@ -83,6 +83,13 @@ function createInitialState() {
          */
         modelDomain: null as { inDomain: boolean, distanceKm: number | null } | null,
 
+        // Raster layer is still fetching its image past index.vue's show delay
+        // (drives selectedInfo.vue's spinner). Transient UI state, not shared.
+        mapLayerLoading: false as boolean,
+        // TimeControls playback is running; index.vue lengthens the spinner
+        // delay so animation frames don't flash it.
+        timePlaying: false as boolean,
+
         mapCenter: null as { lat: number, lng: number } | null,
 
         snackMessages: [] as Array<{ color: string, text: string }>,
@@ -305,7 +312,7 @@ export const useMainStore = defineStore('main', {
                         // it was the *map layer* that moved, not the sensor.
                         this.snackMessages.push({
                             color: 'warning',
-                            // Rounded as sensorInfo.vue's `depth2txt` rounds it:
+                            // Rounded as `composables/useSensorFormat.ts`'s `depth2txt` rounds it:
                             // this line exists to be compared against the sensor
                             // card, and the raw float (1256.830810546875) reads
                             // as a third, unrelated number.
@@ -332,6 +339,14 @@ export const useMainStore = defineStore('main', {
 
         setModelDomainStatus(status: { inDomain: boolean, distanceKm: number | null } | null) {
             this.modelDomain = status;
+        },
+
+        setMapLayerLoading(loading: boolean) {
+            this.mapLayerLoading = loading;
+        },
+
+        setTimePlaying(playing: boolean) {
+            this.timePlaying = playing;
         },
 
         setCrossSectionLine(line: { lat: number, lng: number }[] | null) {

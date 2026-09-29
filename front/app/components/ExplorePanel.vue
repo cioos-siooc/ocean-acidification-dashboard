@@ -368,7 +368,7 @@ const sensorMeta = computed(() => {
   const sel = mainStore.selectedSensor
   if (!sel?.id) return null
   const rec = mainStore.sensors.find(s => s.id === sel.id)
-  // Rounded exactly as sensorInfo.vue's `depth2txt` rounds it. The user is
+  // Rounded exactly as `composables/useSensorFormat.ts`'s `depth2txt` rounds it. The user is
   // being asked to compare this number against the one on the sensor card;
   // the raw stored float (1256.830810546875) reads as a different figure.
   const depthLabel = sel.depth === -1

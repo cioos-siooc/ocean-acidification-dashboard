@@ -3,10 +3,12 @@
     <template #content>
     <div class="flex flex-col bg-default" style="height:100vh;">
       <div class="flex items-center gap-2 px-3 h-12 bg-elevated shrink-0">
-        <div class="font-medium truncate">
+        <div class="font-medium truncate" style="min-width:0;">
           Comparison — {{ varName }}
-          <UBadge size="xs" color="warning" variant="subtle" class="ml-2 rounded-full" v-if="sensorName">{{ sensorName }}</UBadge>
+          <span v-if="sensorName" class="text-muted font-normal"> · {{ sensorName }}</span>
         </div>
+        <UButton v-if="sensorInfo" variant="soft" color="neutral" size="xs" icon="i-mdi-information-outline"
+          label="Sensor details" class="shrink-0" @click="showSensorInfo = true" />
         <div class="grow" />
         <ShareButton />
         <DownloadButton :datasets="csvDatasets" class="shrink-0" />
@@ -57,6 +59,7 @@
     </div>
     </template>
   </UModal>
+  <SensorInfoDialog v-model:open="showSensorInfo" :sensor="sensorInfo" />
 </template>
 
 <script setup lang="ts">
@@ -81,6 +84,7 @@ import ComparisonSections from './comparison/ComparisonSections.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 import DownloadButton from './ui/DownloadButton.vue'
 import ShareButton from './ShareButton.vue'
+import SensorInfoDialog from './SensorInfoDialog.vue'
 import { csvMeta, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
 import { sensorSourceUrl } from '~~/composables/useSensorDownloadLinks'
 const seasonItems = [{ value: 'all', label: 'All' }, { value: 'mam', label: 'MAM' }, { value: 'jja', label: 'JJA' }, { value: 'son', label: 'SON' }, { value: 'djf', label: 'DJF' }]
@@ -104,6 +108,7 @@ const fmtVar = (v: number | null | undefined) => formatDisplayValue(mainStore.se
 const sensorInfo = computed(() => mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id) ?? null)
 const sensorName = computed(() => sensorInfo.value?.name ?? '')
 const isVariableDepth = computed(() => sensorInfo.value?.depth === -1)
+const showSensorInfo = ref(false)
 // "Depth sections" only applies to variable-depth sensors, so the tab list is
 // computed rather than static (v-tabs used a v-if on the tab itself).
 const tabItems = computed(() => [
