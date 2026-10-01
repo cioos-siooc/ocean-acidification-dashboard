@@ -12,9 +12,10 @@ Host ports come from `docker-compose.dev.yml`'s `${VAR:-default}` fallbacks, ove
 | `api` | FastAPI backend | 9011 |
 | `db-ch` | ClickHouse | 9013 (HTTP), 9014 (native) |
 | `process` | Data pipeline worker (the CLI) — dev only | — |
-| `prefect` | Dev-only local Prefect server (login `PREFECT_AUTH_STRING`, default `admin:admin`). Prod uses the shared https://pipelines.cioospacific.ca (the [cioos-pacific-pipeline](https://github.com/cioos-siooc/cioos-pacific-pipeline) stack; our flows are served by our own containers, not its `pipelines` work pool) | 9015 |
-| `scheduler` | `process` image serving `SSC/flows.py` to Prefect; in prod the only pipeline container | — |
-| `sensors-scheduler` | `sensors` image serving `sensors/flows.py` (hourly ERDDAP/ONC ingestion); prod: `docker-compose.prod.api.yml` | — |
+| `scheduler` | Prod only (`docker-compose.prod.process.yml`): `process` image serving `SSC/flows.py` to Prefect; the only pipeline container there | — |
+| `sensors-scheduler` | Prod only (`docker-compose.prod.api.yml`): `sensors` image serving `sensors/flows.py` (hourly ERDDAP/ONC ingestion) | — |
+
+Prefect is **prod-only**: both schedulers report to the shared https://pipelines.cioospacific.ca (the [cioos-pacific-pipeline](https://github.com/cioos-siooc/cioos-pacific-pipeline) stack; our flows are served by our own containers, not its `pipelines` work pool). Dev has no Prefect server or schedulers — run the CLI instead.
 
 ## Common Commands
 
@@ -77,16 +78,16 @@ pending_download → downloading → success_download → pending_compute → co
 
 `run` = `check → download → check_image → compute → check_image → image → promote → ingest → promote → sync`, defined once in `cli.pipeline_steps()`. Step helpers raise `cli.PipelineError` (not `sys.exit`) so they can run inside Prefect tasks.
 
-**Prefect.** `SSC/flows.py` is the only module importing Prefect (the CLI works without a server). Flow `oceaneco-ssc-pipeline`, deployment `OceanECO-SSC`, tag `oceaneco` (the server is shared across apps), one task run per step. Served by `scheduler` on cron `RUN_CRON` (default `0 */3 * * *`) with `RUN_LIMIT`/`RUN_WORKERS` (prod 10/30, dev 10/4); overlapping runs are cancelled (`CANCEL_NEW`). `SalishSeaCast.*`/`nc2tile` loggers reach task logs via `PREFECT_LOGGING_EXTRA_LOGGERS`. Sweep stages mark rows `failed_*` without raising; each run ends with an `oceaneco-ssc-status` markdown artifact and is marked Failed if any row failed. Ad-hoc runs (`date`, `force`) via the UI's "Run → custom".
-- `RUN_SCHEDULE_PAUSED` is re-applied on every scheduler start — **paused by default in dev** (`.env.dev` points at production ClickHouse). Stop `scheduler` for a pause that holds.
-- `prefect==` in `process/pyproject.toml` must match dev's server image tag and be ≤ the shared server's version.
+**Prefect.** `SSC/flows.py` is the only module importing Prefect (the CLI works without a server). Flow `oceaneco-ssc-pipeline`, deployment `OceanECO-SSC`, tag `oceaneco` (the server is shared across apps), one task run per step. Served by `scheduler` on cron `RUN_CRON` (default `0 */3 * * *`) with `RUN_LIMIT`/`RUN_WORKERS` (10/30); overlapping runs are cancelled (`CANCEL_NEW`). `SalishSeaCast.*`/`nc2tile` loggers reach task logs via `PREFECT_LOGGING_EXTRA_LOGGERS`. Sweep stages mark rows `failed_*` without raising; each run ends with an `oceaneco-ssc-status` markdown artifact and is marked Failed if any row failed. Ad-hoc runs (`date`, `force`) via the UI's "Run → custom".
+- `RUN_SCHEDULE_PAUSED` (default `false`) is re-applied on every scheduler start, so a UI pause lasts until the next restart. Stop `scheduler` for a pause that holds.
+- `prefect==` in `process/pyproject.toml` and `sensors/pyproject.toml` must be ≤ the shared server's version.
 - Prod (`docker-compose.prod.process.yml`) has no `process` service and no local server; `scheduler` (`tools` profile) reports to `PREFECT_API_URL` (`https://pipelines.cioospacific.ca/api`, basic auth `PREFECT_AUTH_STRING`). A code update means rebuilding/recreating `scheduler`.
 - Don't start a manual `SSC.cli run` while a scheduled one is in progress — both claim the same pending rows.
 - Renaming a flow/deployment leaves the old one on the server — delete it in the UI.
 
 **Shared code** (`shared/`, used by `api` and `process`): `nc2tile.py` (curvilinear → Web-Mercator WebP; grid from `grid_SSC` cached to `.npz`, bounds from `variable_config.py`, only `CH_*` env vars needed); `grid_lookup.py` (`cKDTree` over the same cached grid, built once per process, for batch nearest-cell snapping).
 
-**Sensors** (`sensors/`, own compose service, unrelated to `process/`): ONC/ERDDAP → ClickHouse. `sensors/flows.py` (only Prefect importer) defines flows `oceaneco-sensors-erddap`/`-onc`, deployments `OceanECO-sensors-ERDDAP`/`-ONC` (crons `ERDDAP_CRON` `0 * * * *`, `ONC_CRON` `30 * * * *`, same `CANCEL_NEW`/shared-server setup), one task per sensor via `store_sensor()`, which raises `FetchError` on a failed request so the run is marked Failed. Served by `sensors-scheduler` (paused by default in dev via `SENSORS_SCHEDULE_PAUSED`); its `PREFECT_API_URL` is `:?`-required.
+**Sensors** (`sensors/`, own compose service, unrelated to `process/`): ONC/ERDDAP → ClickHouse. `sensors/flows.py` (only Prefect importer) defines flows `oceaneco-sensors-erddap`/`-onc`, deployments `OceanECO-sensors-ERDDAP`/`-ONC` (crons `ERDDAP_CRON` `0 * * * *`, `ONC_CRON` `30 * * * *`, same `CANCEL_NEW`/shared-server setup), one task per sensor via `store_sensor()`, which raises `FetchError` on a failed request so the run is marked Failed. Served by `sensors-scheduler` (pausable via `SENSORS_SCHEDULE_PAUSED`); its `PREFECT_API_URL` is `:?`-required.
 
 ### Frontend (`front/`)
 Nuxt 4 + Nuxt UI v4 (Tailwind v4 + Reka UI) + Pinia. Vuetify has been fully removed — don't reintroduce `v-*` components.

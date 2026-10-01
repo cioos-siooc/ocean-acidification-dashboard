@@ -18,7 +18,7 @@ dependencies = [
     "ipython>=9.12.0",
     "clickhouse-connect>=1.3.0",
     "pyyaml>=6.0",
-    # Pinned exactly: must match the `prefecthq/prefect` server image tag in
-    # docker-compose.dev.yml / docker-compose.prod.process.yml.
+    # Pinned exactly: must be <= the shared Prefect server's version
+    # (https://pipelines.cioospacific.ca); keep in step with sensors/pyproject.toml.
     "prefect==3.8.6",
 ]

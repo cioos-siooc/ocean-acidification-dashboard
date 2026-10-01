@@ -1,6 +1,6 @@
 # OA Service
 
-The OA service provides a comprehensive pipeline for environmental data processing, storage, and visualization. It is composed of four primary integrated systems.
+The OA service provides a comprehensive pipeline for environmental data processing, storage, and visualization. It is composed of four primary integrated systems, with scheduled jobs orchestrated by Prefect.
 
 ---
 
@@ -18,15 +18,15 @@ The frontend is a high-performance dashboard that visualizes spatial and tempora
 ---
 
 ## 2. API Services
-The API acts as the bridge between the database/NetCDF files and the frontend, providing on-demand data extraction.
+The API acts as the bridge between ClickHouse and the frontend, providing on-demand data extraction. It never reads NetCDF: all data comes from ClickHouse.
 
 ### Data Extraction Endpoints
 *   **`extractTimeseries.py`**: Pulls historical data for a specific coordinate (lat/lon) across time for ECharts graphs.
-*   **`extractProfile.py`**: Generates vertical "depth profiles," showing variable changes from surface to seabed.
+*   **`extract_profile.py`**: Generates vertical "depth profiles," showing variable changes from surface to seabed.
 *   **On-Demand Computation**: Designed to scale with computational demand, performing real-time slicing and interpolation of massive datasets as user requests arrive.
 
 ### External Sensor Integration
-*   **`extractSensorTimeseries.py`**: Handles both NetCDF and JSON data sources. Includes robust time-decoding logic to normalize disparate sensor timestamps.
+*   **`extractSensorTimeseries.py`**: Serves sensor observations from ClickHouse (ingested hourly from ERDDAP and ONC by the `sensors` service).
 
 ### Variable Metadata
 *   Manages logic in **`variables.py`** to serve unit definitions, display names, and color scales, ensuring consistency across all services.
@@ -62,3 +62,22 @@ The "engine" that transforms raw external data into precisely-tiled, color-corre
 ### Pipeline Orchestration
 *   **Status Evolution**: Managed processing statuses (e.g., `downloading`, `computing`, `imaging`).
 *   **Self-Healing Queue**: Failed or interrupted tasks are automatically re-queued.
+
+---
+
+## 5. Scheduling (Prefect)
+Scheduled jobs run as Prefect flows reporting to the shared CIOOS Pacific server at https://pipelines.cioospacific.ca. Prefect is production-only: dev has no Prefect server or schedulers, so run the pipeline with the CLI (`python -m SSC.cli ...`).
+
+| Job | Flow code | Container (compose file) | Deployment | Schedule |
+|---|---|---|---|---|
+| SalishSeaCast model pipeline | `process/SSC/flows.py` | `scheduler` (`docker-compose.prod.process.yml`, `tools` profile) | `OceanECO-SSC` | `RUN_CRON`, every 3 hours |
+| ERDDAP sensor ingestion | `sensors/flows.py` | `sensors-scheduler` (`docker-compose.prod.api.yml`) | `OceanECO-sensors-ERDDAP` | `ERDDAP_CRON`, hourly on the hour |
+| ONC sensor ingestion | `sensors/flows.py` | `sensors-scheduler` (`docker-compose.prod.api.yml`) | `OceanECO-sensors-ONC` | `ONC_CRON`, hourly at half past |
+
+*   **Our own containers**: Each scheduler serves its flows with `serve()` and runs them in-process, so the shared server only schedules and records runs. All deployments carry the `oceaneco` tag because the server is shared with other apps.
+*   **Configuration**: Both compose files require `PREFECT_API_URL` (`https://pipelines.cioospacific.ca/api`) and take the server's basic auth from `PREFECT_AUTH_STRING`, so always pass `--env-file`.
+*   **One run at a time**: A run that comes due while the previous one is still going is cancelled, not queued.
+*   **Pausing**: `RUN_SCHEDULE_PAUSED` / `SENSORS_SCHEDULE_PAUSED` are re-applied on every container start, so a pause set in the UI lasts only until the next restart. Stop the container for a pause that holds.
+*   **Updating**: After a code change, rebuild and recreate the scheduler container. Keep the `prefect==` pin in `process/pyproject.toml` and `sensors/pyproject.toml` at or below the server's version.
+
+Details: [process/README.md](process/README.md#scheduling-and-monitoring-prefect) (SSC pipeline) and [sensors/README.md](sensors/README.md#ongoing-updates-prefect) (sensor ingestion).

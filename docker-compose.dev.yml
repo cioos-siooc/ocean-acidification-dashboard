@@ -110,6 +110,3 @@ services:
     depends_on:
       db-ch:
         condition: service_healthy
-
-volumes:
-  prefect-data:

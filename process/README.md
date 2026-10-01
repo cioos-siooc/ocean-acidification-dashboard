@@ -48,21 +48,19 @@ schedule (`RUN_CRON`, default every 3 hours), one task run per step, with each r
 `oceaneco-ssc-status` artifact in the Prefect UI. The `scheduler` compose service runs it — a
 long-running container that polls the Prefect server and executes each due run in-process. Only
 one run at a time: one that comes due while another is still going is cancelled, not queued.
-In dev it reports to a local `prefect` service; in prod to the shared server at
-https://pipelines.cioospacific.ca.
+It runs only on the prod process machine and reports to the shared server at
+https://pipelines.cioospacific.ca; dev has no Prefect services (use the CLI).
 
 ```bash
-# dev: UI at http://localhost:9015 (admin:admin); schedule starts paused
-docker compose -f docker-compose.dev.yml --env-file .env.dev up -d prefect scheduler
 # prod process machine, reporting to the shared Prefect server
 # (.env.process.remote: PREFECT_API_URL=https://pipelines.cioospacific.ca/api, PREFECT_AUTH_STRING=user:pass)
 docker compose -f docker-compose.prod.process.yml --env-file .env.process.remote --profile tools up -d --build
 ```
 
-Env: `RUN_CRON`, `RUN_SCHEDULE_PAUSED` (dev default paused), `RUN_LIMIT` (default 10),
-`RUN_WORKERS` (prod default 30, matching the old cron's `SSC.cli run --workers 30`; dev 4),
-`PREFECT_API_URL` (required in prod), `PREFECT_AUTH_STRING`, `PREFECT_PORT`/`PREFECT_PUBLIC_URL`
-(dev's local server). The Prefect scheduler replaces the old host cron job — don't run both.
+Env: `RUN_CRON`, `RUN_SCHEDULE_PAUSED` (default `false`), `RUN_LIMIT` (default 10),
+`RUN_WORKERS` (default 30, matching the old cron's `SSC.cli run --workers 30`),
+`PREFECT_API_URL` (required), `PREFECT_AUTH_STRING`. The Prefect scheduler replaces the old
+host cron job — don't run both.
 
 The CLI is unaffected and needs no Prefect server. In prod there is no `process` service —
 run CLI commands in the scheduler container (`run --rm scheduler ...` while it's stopped): `docker compose -f docker-compose.prod.process.yml
