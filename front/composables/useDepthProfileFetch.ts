@@ -112,3 +112,18 @@ export async function fetchDepthProfile(params: DepthProfileFetchParams): Promis
         grid ? grid.map((row) => row.map((v) => toDisplayValue(params.var, v))) : grid;
     return { ...raw, model: convertGrid(raw.model), sensor: convertGrid(raw.sensor) };
 }
+
+/**
+ * How many depth levels, from the top, a time-depth panel needs to show: down to
+ * the deepest row holding a value in any of `grids` (rows are depth levels).
+ * Panels scale their depth axis to the last level they're given, so passing the
+ * variable's full level list squeezes a 30 m water column into the top strip of
+ * a 0–442 m axis. Falls back to `fallback` while nothing has loaded.
+ */
+export function dataDepthCount(fallback: number, ...grids: ((number | null)[][] | null | undefined)[]): number {
+    let deepest = -1;
+    for (const g of grids) {
+        g?.forEach((row, i) => { if (i > deepest && row?.some(v => v != null)) deepest = i; });
+    }
+    return deepest < 0 ? fallback : deepest + 1;
+}

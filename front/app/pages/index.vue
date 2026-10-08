@@ -621,6 +621,9 @@ onMounted(async () => {
 
         applyPendingMapView();
         restoreSharedCrossSection();
+        // A share link sets these before the style has loaded, when their watchers can't add layers yet.
+        if (mainStore.showBathymetryContours) applyBathymetryContours(true);
+        if (mainStore.showMapLabels) setMapLabelsVisibility(true);
 
         updateAnalysisBox();
 
@@ -758,7 +761,7 @@ watch(() => mainStore.exploreBinMode, async () => {
     }
 });
 
-watch(() => mainStore.showBathymetryContours, (show) => {
+function applyBathymetryContours(show: boolean) {
     if (!map) return;
     try {
         if (show) {
@@ -868,7 +871,8 @@ watch(() => mainStore.showBathymetryContours, (show) => {
     } catch (e) {
         console.warn('Failed to toggle bathymetry contours layer visibility:', e);
     }
-}, { immediate: true });
+}
+watch(() => mainStore.showBathymetryContours, applyBathymetryContours);
 
 // Overlay rail: hide/show the model raster tiles. Purely a map concern — the
 // selected variable/depth keep driving the charts either way.
@@ -913,6 +917,12 @@ watch([
     if (!map || !mapLoaded.value) return;
     if (mainStore.selected_variable.var === 'bathymetry') {
         updateBathymetryTilesLayerColorization();
+    } else if (map.getLayer('png-image-layer')) {
+        // Same image, new colours: repaint only. Reloading the image on every slider tick made
+        // range drags stutter.
+        const paint = pngRasterPaint();
+        map.setPaintProperty('png-image-layer', 'raster-color', paint.color);
+        map.setPaintProperty('png-image-layer', 'raster-color-range', paint.range);
     } else {
         try {
             await updatePngOverlay();
@@ -1285,38 +1295,10 @@ function onPngSourceSettled(e: any) {
     endMapLayerLoad(src.url);
 }
 
-// Add / update / remove PNG overlay for a given public PNG path
-async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
-    if (!map) throw new Error('map not initialized');
-    // if (!meta.value || !meta.value.bounds) throw new Error('metadata not loaded');
-
-    const source = mainStore.selected_variable.source.replace(/\s+/g, ''); // Remove spaces from source name for URL
+// Paint for the model layer: packed raster values -> colours, from the store's colormap and range.
+// Separate from updatePngOverlay so a range/palette change only repaints (no image reload).
+function pngRasterPaint() {
     const varName = mainStore.selected_variable.var;
-    // dt's shape tells the API which bin mode to render (see extract_image.resolve_bin_mode):
-    // full timestamp -> hourly, YYYY-MM-DD -> daily, YYYY-MM -> monthly. Keeps the map layer's
-    // resolution in sync with the Explore panel's bin-mode toggle used by the timeseries/depth charts.
-    const dtFormat = mainStore.exploreBinMode === 'daily' ? 'YYYY-MM-DD'
-        : mainStore.exploreBinMode === 'monthly' ? 'YYYY-MM'
-            : 'YYYY-MM-DDTHHmmss';
-    const dt = mainStore.selected_variable.dt?.format(dtFormat) || '';
-    const depth = mainStore.selected_variable.depth
-    const pngPath = `${apiBaseUrl}/png/${source}/${varName}/${dt}/${depth}`;
-
-    const bounds = mainStore.variables.find(v => v.source === mainStore.selected_variable.source && v.var === varName)?.bounds;
-    if (!bounds) throw new Error('bounds not found');
-    const [lonmin, latmin, lonmax, latmax] = bounds;
-    const coords = [
-        [lonmin, latmax], // top-left
-        [lonmax, latmax], // top-right
-        [lonmax, latmin], // bottom-right
-        [lonmin, latmin], // bottom-left
-    ] as [number, number][];
-
-    // remove existing if present
-    // try { if (map.getLayer(layerId)) map.removeLayer(layerId); } catch (e) { }
-    // try { if (map.getSource(sourceId)) map.removeSource(sourceId); } catch (e) { }
-
-    // prepare raster-color stops for Mapbox style
     const raster_values: any[] = [];
     // e.g.
     // 0, 'rgba(0, 0, 0, 0)',
@@ -1364,6 +1346,44 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
             raster_values.push(val_packed, stop[1]);
         }
     }
+    return {
+        color: ['interpolate', ['linear'], ['raster-value'], ...raster_values] as any,
+        range: [(colormapMin - base) / precision, (colormapMax - base) / precision] as [number, number],
+    };
+}
+
+// Add / update / remove PNG overlay for a given public PNG path
+async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-layer') {
+    if (!map) throw new Error('map not initialized');
+    // if (!meta.value || !meta.value.bounds) throw new Error('metadata not loaded');
+
+    const source = mainStore.selected_variable.source.replace(/\s+/g, ''); // Remove spaces from source name for URL
+    const varName = mainStore.selected_variable.var;
+    // dt's shape tells the API which bin mode to render (see extract_image.resolve_bin_mode):
+    // full timestamp -> hourly, YYYY-MM-DD -> daily, YYYY-MM -> monthly. Keeps the map layer's
+    // resolution in sync with the Explore panel's bin-mode toggle used by the timeseries/depth charts.
+    const dtFormat = mainStore.exploreBinMode === 'daily' ? 'YYYY-MM-DD'
+        : mainStore.exploreBinMode === 'monthly' ? 'YYYY-MM'
+            : 'YYYY-MM-DDTHHmmss';
+    const dt = mainStore.selected_variable.dt?.format(dtFormat) || '';
+    const depth = mainStore.selected_variable.depth
+    const pngPath = `${apiBaseUrl}/png/${source}/${varName}/${dt}/${depth}`;
+
+    const bounds = mainStore.variables.find(v => v.source === mainStore.selected_variable.source && v.var === varName)?.bounds;
+    if (!bounds) throw new Error('bounds not found');
+    const [lonmin, latmin, lonmax, latmax] = bounds;
+    const coords = [
+        [lonmin, latmax], // top-left
+        [lonmax, latmax], // top-right
+        [lonmax, latmin], // bottom-right
+        [lonmin, latmin], // bottom-left
+    ] as [number, number][];
+
+    // remove existing if present
+    // try { if (map.getLayer(layerId)) map.removeLayer(layerId); } catch (e) { }
+    // try { if (map.getSource(sourceId)) map.removeSource(sourceId); } catch (e) { }
+
+    const paint = pngRasterPaint();
 
     beginMapLayerLoad(pngPath);
     if (map.getSource(sourceId)) {
@@ -1372,27 +1392,17 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
             url: pngPath,
             coordinates: coords
         })
-        map.setPaintProperty(layerId, 'raster-color', [
-            'interpolate',
-            ['linear'],
-            ['raster-value'],
-            ...raster_values
-        ]);
-        map.setPaintProperty(layerId, 'raster-color-range', [(colormapMin - base) / precision, (colormapMax - base) / precision]);
+        map.setPaintProperty(layerId, 'raster-color', paint.color);
+        map.setPaintProperty(layerId, 'raster-color-range', paint.range);
     }
     else {
         map.addSource(sourceId, { type: 'image', url: pngPath, coordinates: coords });
         map.addLayer({
             id: layerId, type: 'raster', source: sourceId, paint: {
                 'raster-opacity': 1.0,
-                'raster-color': [
-                    'interpolate',
-                    ['linear'],
-                    ['raster-value'],
-                    ...raster_values
-                ],
+                'raster-color': paint.color,
                 // Range of the packed integer values
-                'raster-color-range': [(colormapMin - base) / precision, (colormapMax - base) / precision],
+                'raster-color-range': paint.range,
                 // Mix to recover the 24-bit integer from normalized RGB [0..1]
                 // R_int = R_norm * 255. Packed = R_int*65536 + G_int*256 + B_int
                 // Coeffs: [255*65536, 255*256, 255, 0] -> [16711680, 65280, 255, 0]

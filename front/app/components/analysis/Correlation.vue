@@ -2,7 +2,7 @@
   <div class="flex h-full" style="overflow:hidden;">
     <div class="p-2 flex flex-col shrink-0" style="width:220px; overflow-y:auto; border-right:1px solid rgba(255,255,255,0.08);">
       <div class="ctrl-label">Variables (2-4)</div>
-      <USelectMenu v-model="selectedVariables" :items="selectableVariables" label-key="name" value-key="id" class="mb-3 w-full" :return-object="false" multiple />
+      <USelectMenu v-model="selectedVariables" :items="selectableVariables" label-key="name" value-key="id" class="mb-3 w-full" :return-object="false" multiple @update:model-value="onSelectionChange" />
 
       <template v-for="id in selectedVariables" :key="id">
         <UAlert color="error" variant="subtle" class="mb-2" v-if="errorByVar[id]" :description="`${varName(id)}: ${errorByVar[id]}`" />
@@ -211,7 +211,7 @@ function renderMatrix() {
     xAxis: { type: 'category', data: labels, axisLabel: { fontSize: 9, color: '#ccc', rotate: 30 }, splitArea: { show: true } },
     yAxis: { type: 'category', data: labels, axisLabel: { fontSize: 9, color: '#ccc' }, splitArea: { show: true } },
     visualMap: {
-      min: -1, max: 1, show: true, orient: 'horizontal', left: 'center', bottom: 0,
+      min: -1, max: 1, show: true, orient: 'horizontal', left: 'center', bottom: 0, text: ['+1', '−1'],
       textStyle: { color: '#ccc', fontSize: 9 },
       inRange: { color: ['#4992ff', '#222', '#ff6e76'] },
     },

@@ -8,11 +8,7 @@
 
       <div class="flex items-center min-w-0">
         <span class="">OceanECO</span>
-        <span class="text-xs font-medium mx-2" style="font-family: monospace">v{{ config.public.version }}</span>
-        <UTooltip text="This dashboard is in active development. Data, features, and layout may change without notice."
-          :content="{ side: 'bottom' }" :ui="{ content: 'max-w-[280px]' }">
-          <UBadge size="sm" color="warning" variant="solid">BETA</UBadge>
-        </UTooltip>
+        <span class="text-xs font-medium mx-2" style="font-family: monospace">v{{ versionLabel }}</span>
       </div>
 
       <a href="https://cioospacific.ca/" target="_blank" rel="noopener noreferrer" class="logo-link"
@@ -28,9 +24,10 @@
 
       <ShareButton label="Share" />
 
-      <NuxtLink to="/caseStudy" target="_blank">
+      <!-- Hidden for v1.0; the /caseStudy pages still exist. -->
+      <!-- <NuxtLink to="/caseStudy" target="_blank">
         <UButton variant="ghost">Case Studies</UButton>
-      </NuxtLink>
+      </NuxtLink> -->
 
       <NuxtLink to="/about" target="_blank">
         <UButton variant="ghost">About</UButton>
@@ -47,7 +44,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeMount, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeMount, onMounted, onBeforeUnmount, ref } from 'vue'
 import moment from 'moment'
 import axios from 'axios'
 
@@ -57,6 +54,11 @@ import { readShareHash, decodeShareState, applyShareState, applySharedVariable }
 import ShareButton from './components/ShareButton.vue'
 const mainStore = useMainStore();
 const config = useRuntimeConfig();
+// NUXT_PUBLIC_* env values are JSON-parsed at runtime, so "1.0" arrives as the number 1.
+const versionLabel = computed(() => {
+  const v = String(config.public.version ?? '');
+  return /^\d+$/.test(v) ? `${v}.0` : v;
+});
 const apiBaseUrl = config.public.apiBaseUrl;
 
 // A shared link's payload is decoded before anything is fetched, so

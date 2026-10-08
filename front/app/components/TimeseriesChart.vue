@@ -477,17 +477,32 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         // fields here is safe even under an affine unit like temperature's °F.
         const maxDiff = climateData.map((row: any) => row.max - row.min);
 
-        // endLabel renders at each series' own last (for _stats_mean) or stacked-cumulative
-        // (for the stack:'minmax' pair, where the rendered height is min, then min+range=max)
-        // pixel position, so labelling "Min"/"Max"/"Mean" here lines up with the band's
-        // actual top/bottom edges and the dashed mean line without any extra computation.
+        // endLabel sits at a series' last value. On the stacked range series that is the
+        // range itself, not the band's top edge, so "Max" rides on its own invisible series of
+        // the absolute max. The climatology is fetched a day past the window, and ECharts places
+        // the end label of a series clipped at the axis edge off its line ("Max" landed beside
+        // "Mean"), so each series ends exactly at the axis edge with an interpolated point.
         const statsEndLabel = (formatter: string) => ({
             show: true, formatter, color: mainStore.colors.stats, fontSize: 14, distance: -28,
         });
 
-        const fmt = (ts: number[], vals: any[]) => ts.map((t, i) => [moment.utc(t).tz(tz).format(), vals[i]]);
+        const endMs = endLocal.valueOf();
+        const fmt = (ts: number[], vals: any[]) => {
+            const out: [string, any][] = [];
+            for (let i = 0; i < ts.length; i++) {
+                if (ts[i]! <= endMs) { out.push([moment.utc(ts[i]).tz(tz).format(), vals[i]]); continue; }
+                const a = vals[i - 1], b = vals[i];
+                if (i > 0 && a != null && b != null) {
+                    const f = (endMs - ts[i - 1]!) / (ts[i]! - ts[i - 1]!);
+                    out.push([endLocal.format(), a + (b - a) * f]);
+                }
+                break;
+            }
+            return out;
+        };
         seriesArr.push({ name: '_stats_min_base', type: 'line', data: fmt(climate_ts, min), lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none', endLabel: statsEndLabel('Min') });
-        seriesArr.push({ name: '_stats_max_range', type: 'line', data: fmt(climate_ts, maxDiff), lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, stack: 'minmax', symbol: 'none', endLabel: statsEndLabel('Max') });
+        seriesArr.push({ name: '_stats_max_range', type: 'line', data: fmt(climate_ts, maxDiff), lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, stack: 'minmax', symbol: 'none' });
+        seriesArr.push({ name: '_stats_max_label', type: 'line', data: fmt(climate_ts, climateData.map((row: any) => row.max)), lineStyle: { opacity: 0 }, symbol: 'none', silent: true, tooltip: { show: false }, endLabel: statsEndLabel('Max') });
         seriesArr.push({ name: '_stats_mean', type: 'line', data: fmt(climate_ts, mean), smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 2, type: 'dashed' }, symbol: 'none', endLabel: statsEndLabel('Mean') });
         seriesArr.push({ name: 'Climatology', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
     }
@@ -540,7 +555,8 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
             chart!.setOption({
                 series: [
                     { name: '_stats_min_base', endLabel: { show: visible } },
-                    { name: '_stats_max_range', areaStyle: { color: mainStore.colors.stats, opacity: visible ? 0.2 : 0 }, endLabel: { show: visible } },
+                    { name: '_stats_max_range', areaStyle: { color: mainStore.colors.stats, opacity: visible ? 0.2 : 0 } },
+                    { name: '_stats_max_label', endLabel: { show: visible } },
                     { name: '_stats_mean', lineStyle: { color: mainStore.colors.stats, opacity: visible ? 0.8 : 0, width: 2, type: 'dashed' }, endLabel: { show: visible } },
                 ]
             });
