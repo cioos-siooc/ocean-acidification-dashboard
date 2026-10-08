@@ -109,7 +109,7 @@
 
         <div v-if="!showSection" class="line-slot" :style="{ height: chartH + 'px' }">
           <TimeseriesChart ref="lineChart" :window-start="windowStart" :window-end="chartWindowEnd"
-            :grid-left="AXIS_LEFT_PX" :grid-right="DATAZOOM_RIGHT_PX" legend-layout="top" />
+            :grid-left="AXIS_LEFT_PX" :grid-right="DATAZOOM_RIGHT_PX" legend-layout="top" :bin-mode="binMode" />
           <!-- Out-of-domain already has the alert above; repeating it across the
                plot labels a chart that is drawing real sensor data as empty. -->
           <div v-if="!depthHasData && !loading && !outOfDomain" class="line-empty">{{ emptyLineMessage }}</div>

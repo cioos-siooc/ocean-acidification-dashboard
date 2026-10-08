@@ -83,7 +83,15 @@ const props = defineProps<{
     gridLeft?: number
     gridRight?: number
     legendLayout?: 'left' | 'top'
+    /** Host's bin resolution; picks the hover timestamp format (hours are noise on daily/monthly bins). */
+    binMode?: 'hourly' | 'daily' | 'monthly'
 }>();
+
+const hoverTimeFormat = computed(() => ({
+    hourly: 'DD MMM, HH:mm',
+    daily: 'DD MMM YYYY',
+    monthly: 'MMM YYYY',
+})[props.binMode ?? 'hourly']);
 
 const gridConfig = computed(() => ({
     left: props.gridLeft ?? 160,
@@ -403,7 +411,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
                     // axis needs rounding, or it reads out raw floats (8.282905).
                     formatter: (p: any) => p.axisDimension === 'y'
                         ? formatDisplayValue(varId, p.value)
-                        : moment.parseZone(p.value).format('DD MMM, HH:mm')
+                        : moment.parseZone(p.value).format(hoverTimeFormat.value)
                 }
             },
             // formatter: (params: any) => {
