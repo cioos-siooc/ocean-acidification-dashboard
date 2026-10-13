@@ -206,7 +206,7 @@ sensors:
   - name: "Profiling Instrument Package"
     lat: 49.486885
     lon: -124.769333
-    depth: 5.26
+    depth: -1
     api: ONC
     organization: ONC
     location_code: BSVPP
