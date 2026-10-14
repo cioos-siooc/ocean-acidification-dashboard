@@ -21,4 +21,5 @@ dependencies = [
     # Pinned exactly: must be <= the shared Prefect server's version
     # (https://pipelines.cioospacific.ca); keep in step with sensors/pyproject.toml.
     "prefect==3.8.6",
+    "gsw>=3.6",
 ]

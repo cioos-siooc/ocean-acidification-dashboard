@@ -11,6 +11,8 @@ export type AnalysisLocation =
     | { sensorId: string };
 
 export type AnalysisFetchParams = {
+    /** Model source (default SalishSeaCast) — which daily table the series comes from. */
+    source?: string;
     variable: string;
     stat: 'min' | 'mean' | 'max';
     depth: number;
@@ -29,6 +31,7 @@ export async function fetchAnalysisSeries(params: AnalysisFetchParams): Promise<
     const apiBaseUrl = config.public.apiBaseUrl;
 
     const body = {
+        source: params.source ?? 'SalishSeaCast',
         depth: params.depth,
         primaryMetric: { variable: params.variable, stat: params.stat },
         temporal: { yearRange: params.yearRange },

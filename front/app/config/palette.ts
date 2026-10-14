@@ -13,6 +13,8 @@ export const material = {
     orange: { lighten2: '#ffb74d' },
     yellow: { base: '#ffeb3b', accent2: '#ffff00' },
     blue:   { darken2: '#1976d2' },
+    // Forecast span of a forecast model (LiveOcean) — charts and the map-layer box.
+    deepPurple: { lighten2: '#9575cd' },
 } as const
 
 export default material

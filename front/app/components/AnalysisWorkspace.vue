@@ -68,6 +68,7 @@ import { fetchAnalysisSeries, type SeriesPoint, type AnalysisLocation } from '~~
 import { fetchSensorAnalysisSeries } from '~~/composables/useSensorAnalysisFetch'
 import { availableVariables } from '~~/composables/useAnalysisStatistics'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
+import { useModelSource } from '~~/composables/useModelSource'
 import { csvMeta, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
 import { sensorSourceUrl } from '~~/composables/useSensorDownloadLinks'
 import DownloadButton from './ui/DownloadButton.vue'
@@ -80,7 +81,6 @@ import Climatology from './analysis/Climatology.vue'
 import Correlation from './analysis/Correlation.vue'
 import SegmentedControl from './ui/SegmentedControl.vue'
 const seasonItems = [{ value: 'full_year', label: 'All' }, { value: 'mam', label: 'MAM' }, { value: 'jja', label: 'JJA' }, { value: 'son', label: 'SON' }, { value: 'djf', label: 'DJF' }]
-const tabItems = [{ value: 'builder', label: 'Overview' }, { value: 'extremes', label: 'Extreme Events' }, { value: 'compound', label: 'Compound Stress' }, { value: 'trend', label: 'Trend' }, { value: 'climatology', label: 'Climatology Anomaly' }, { value: 'correlation', label: 'Correlation' }]
 
 /**
  * Analysis workspace — fullscreen, because nothing in it is tied to the map.
@@ -98,6 +98,25 @@ const isOpen = defineModel<boolean>()
 const mainStore = useMainStore()
 
 const source = computed(() => mainStore.analysisSource)
+// The map's model (SalishSeaCast / LiveOcean) — `source` above is model vs sensor.
+const { sourceLabel, hasCapability, modelYearRange } = useModelSource()
+const modelSource = computed(() => mainStore.selected_variable.source)
+
+// Trend and Climatology Anomaly need a multi-year record; a model without one
+// (LiveOcean's archive starts mid-2025) keeps the tabs visible but disabled,
+// with the reason in the tooltip.
+const tabItems = computed(() => {
+  const short = source.value === 'model' && !hasCapability('trend')
+  const why = short ? `Needs a multi-year record — ${sourceLabel()} only reaches back to ${modelYearRange()[0]}` : undefined
+  return [
+    { value: 'builder', label: 'Overview' },
+    { value: 'extremes', label: 'Extreme Events' },
+    { value: 'compound', label: 'Compound Stress' },
+    { value: 'trend', label: 'Trend', disabled: short, title: why },
+    { value: 'climatology', label: 'Climatology Anomaly', disabled: short, title: why },
+    { value: 'correlation', label: 'Correlation' },
+  ]
+})
 const hasSensor = computed(() => !!mainStore.selectedSensor?.id)
 const sensorInfo = computed(() => mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id) ?? null)
 
@@ -127,7 +146,7 @@ const location = computed<AnalysisLocation | null>(() => {
 
 const currentYear = new Date().getFullYear()
 const yearRange = computed<[number, number]>(() => {
-  if (source.value !== 'sensor') return [2007, 2026]
+  if (source.value !== 'sensor') return modelYearRange()
   const from = sensorInfo.value?.first_data_at ? parseInt(sensorInfo.value.first_data_at.slice(0, 4), 10) : currentYear
   const to = sensorInfo.value?.latest_data_at ? parseInt(sensorInfo.value.latest_data_at.slice(0, 4), 10) : currentYear
   return [from, to]
@@ -141,6 +160,10 @@ const activeTab = computed<AnalysisTab>({
   get: () => mainStore.analysisTab as AnalysisTab,
   set: (t) => mainStore.setAnalysisTab(t),
 })
+// Switching to a model without a long record while on a tab it can't back.
+watch(tabItems, (items) => {
+  if (items.find(t => t.value === activeTab.value)?.disabled) activeTab.value = 'builder'
+}, { immediate: true })
 const selectedSeason = computed<string>({
   get: () => mainStore.analysisSeason,
   set: (v) => mainStore.setAnalysisSeason(v),
@@ -164,7 +187,7 @@ const csvContext = computed<CsvContext | null>(() => {
     source: source.value,
     sourceLabel: source.value === 'sensor'
       ? `sensor — ${sensorInfo.value?.name ?? ''}`
-      : 'SalishSeaCast model',
+      : `${sourceLabel(modelSource.value)} model`,
     sourceUrl: source.value === 'sensor' ? sensorSourceUrl(sensorInfo.value) : null,
     variable: variable.value,
     variableName: varName.value,
@@ -197,7 +220,7 @@ function fetchSeriesFor(variableId: string, depthVal: number, loc: AnalysisLocat
     return fetchSensorAnalysisSeries(loc.sensorId, variableId, 'mean', depthVal, from, to,
       isVariableDepth.value ? mainStore.selected_variable.source : null)
   }
-  return fetchAnalysisSeries({ variable: variableId, stat: 'mean', depth: depthVal, location: loc, yearRange: yearRange.value })
+  return fetchAnalysisSeries({ source: modelSource.value, variable: variableId, stat: 'mean', depth: depthVal, location: loc, yearRange: yearRange.value })
 }
 
 async function fetchPrimary() {

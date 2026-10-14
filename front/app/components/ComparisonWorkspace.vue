@@ -69,6 +69,7 @@ import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
 import { useMainStore } from '../stores/main'
 import { availableVariables } from '~~/composables/useAnalysisStatistics'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
+import { useModelSource } from '~~/composables/useModelSource'
 import {
   filterBySeason,
   maskBySeason,
@@ -99,6 +100,7 @@ const seasonItems = [{ value: 'all', label: 'All' }, { value: 'mam', label: 'MAM
 const isOpen = defineModel<boolean>()
 
 const mainStore = useMainStore()
+const { sourceLabel } = useModelSource()
 const { displayUnit, formatDisplayValue } = useVariableRegistry()
 const varUnit = computed(() => displayUnit(mainStore.selected_variable.var))
 // Chart readouts (tooltips) round to the selected variable's own precision; the
@@ -217,7 +219,7 @@ const csvContext = computed<CsvContext | null>(() => {
   const dates = rawData.value.map(p => p.date)
   return {
     source: 'comparison',
-    sourceLabel: `SalishSeaCast model vs sensor — ${sensorName.value}`,
+    sourceLabel: `${sourceLabel()} model vs sensor — ${sensorName.value}`,
     sourceUrl: sensorSourceUrl(sensorInfo.value),
     variable: mainStore.selected_variable.var,
     variableName: varName.value,

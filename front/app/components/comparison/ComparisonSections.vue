@@ -27,7 +27,7 @@
       class="mb-2 shrink-0"
       close
       @update:open="outOfDomainDismissed = true"
-      title="Outside the SalishSeaCast model domain"
+      :title="`Outside the ${sourceLabel(modelSource)} model domain`"
       :description="`This sensor sits ${outOfDomain.distanceKm.toFixed(0)} km from the nearest model cell, so there is no model section to compare against.`"
     />
 
@@ -66,8 +66,9 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useMainStore, formatDepthLabel } from '../../stores/main'
 import { fetchDepthProfile, parseCoverageBound, asOutsideDomainError, type DepthProfileResponse, type OutsideDomainError, dataDepthCount } from '~~/composables/useDepthProfileFetch'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
+import { useModelSource } from '~~/composables/useModelSource'
 import { resolveColormap } from '~~/composables/useColormapResolver'
-import { BIN_CONFIG, useTimeDepthWindow, toApiIso, type BinMode } from '~~/composables/useTimeDepthWindow'
+import { BIN_CONFIG, useTimeDepthWindow, toApiIso, holdModelSteps, type BinMode } from '~~/composables/useTimeDepthWindow'
 import TimeDepthHeatmap from '../depth/TimeDepthHeatmap.vue'
 import { csvFilename, csvMeta, csvTimestamp, useCsvExport, type CsvDataset } from '~~/composables/useCsvExport'
 import SegmentedControl from '../ui/SegmentedControl.vue'
@@ -87,6 +88,7 @@ const props = defineProps<{ active?: boolean }>()
 
 const mainStore = useMainStore()
 const { toDisplayValue, displayUnit, formatDisplayValue } = useVariableRegistry()
+const { sourceLabel, current: currentSource } = useModelSource()
 
 const sensorInfo = computed(() => mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id) ?? null)
 const modelSource = computed(() => mainStore.selected_variable.source)
@@ -162,7 +164,7 @@ function applyResponse(resp: DepthProfileResponse) {
       sensor[li]![bi] = resp.sensor?.[ri]?.[ti] ?? null
     }
   })
-  modelGrid.value = model
+  modelGrid.value = binMode.value === 'hourly' ? holdModelSteps(model, starts, currentSource.value?.stepHours ?? 1) : model
   sensorGrid.value = sensor
 }
 

@@ -18,9 +18,12 @@ from typing import Optional, Tuple
 from modules.clickhouse_helpers import get_ch_client
 from modules.extractTimeseries import (
     ALLOWED_VARIABLES,
+    DAILY_TABLE_BY_SOURCE,
     DATA_TABLE_BY_SOURCE,
     DEPTH_MATCH_TOLERANCE_M,
     GRID_TABLE_BY_SOURCE,
+    check_variable,
+    has_bottom_rows,
 )
 
 
@@ -51,21 +54,15 @@ def extract_minmax(
 
     `bin_mode` matches the Depth tab / on-demand tile rendering's own
     semantics (see extract_profile.py, shared/nc2tile.py): "hourly" reads the
-    exact instant from SalishSeaCast_hourly; "daily"/"monthly" read the
-    pre-aggregated `{var}_mean` off SalishSeaCast_daily, for `dt`'s calendar
+    exact instant from the source's data table; "daily"/"monthly" read the
+    pre-aggregated `{var}_mean` off its daily table, for `dt`'s calendar
     day or the average across `dt`'s calendar month respectively. Without
     this, callers requesting the daily/monthly colorbar range would filter
     the hourly table on a `time` value that table never actually stores.
 
     Raises RuntimeError if no data matches.
     """
-    if source not in DATA_TABLE_BY_SOURCE:
-        raise RuntimeError(
-            f"Source '{source}' is not yet available via ClickHouse. "
-            f"Supported sources: {sorted(DATA_TABLE_BY_SOURCE)}"
-        )
-    if var not in ALLOWED_VARIABLES:
-        raise ValueError(f"Unknown variable '{var}'. Supported variables: {sorted(ALLOWED_VARIABLES)}")
+    check_variable(source, var)
     if bin_mode not in ("hourly", "daily", "monthly"):
         raise ValueError(f"Unsupported bin_mode '{bin_mode}'. Supported: hourly, daily, monthly.")
 
@@ -78,12 +75,12 @@ def extract_minmax(
         params: dict = {"dt": dt}
         where = ["time = %(dt)s"]
     elif bin_mode == "daily":
-        table = "SalishSeaCast_daily"
+        table = DAILY_TABLE_BY_SOURCE[source]
         value_expr = f"{var}_mean"
         params = {"day": dt.date().isoformat()}
         where = ["time = toDate(%(day)s)"]
     else:  # monthly
-        table = "SalishSeaCast_daily"
+        table = DAILY_TABLE_BY_SOURCE[source]
         value_expr = f"{var}_mean"
         params = {"month": dt.date().replace(day=1).isoformat()}
         where = ["toStartOfMonth(time) = toDate(%(month)s)"]
@@ -103,8 +100,13 @@ def extract_minmax(
 
     client = get_ch_client()
     try:
-        if depth is None or float(depth) == -1.0:
+        # LiveOcean stores its bottom layer as depth -1 rows: "bottom" is then
+        # a plain fixed-depth match below, and the per-cell shallowest /
+        # deepest resolution must not pick those rows up as a level.
+        bottom_rows = has_bottom_rows(source)
+        if depth is None or (float(depth) == -1.0 and not bottom_rows):
             agg = "argMin" if depth is None else "argMax"
+            where.append("depth >= 0")
             if bin_mode == "monthly":
                 # Monthly has one row per cell per day, not one per cell —
                 # resolve the shallowest/deepest depth per cell per day, then

@@ -54,6 +54,7 @@
     <template #content>
       <div class="p-5">
       <about-ssc v-if="selectedSource === 'SalishSeaCast'"></about-ssc>
+      <about-liveocean v-else-if="selectedSource === 'LiveOcean'"></about-liveocean>
       <about-nonna v-else-if="selectedSource === 'NONNA'"></about-nonna>
       </div>
     </template>
@@ -64,12 +65,14 @@
 import { computed, toRef, ref, watch } from 'vue';
 import moment from 'moment-timezone';
 import { useVariableRegistry } from '~~/composables/useVariableRegistry';
+import { useModelSource } from '~~/composables/useModelSource';
 import { trackEvent } from '~~/composables/useAnalytics';
 import colors from '@/config/palette'
 
 import { useMainStore, formatDepthLabel } from '../stores/main'
 const mainStore = useMainStore();
 const { variableLabel } = useVariableRegistry();
+const { sources: modelSources } = useModelSource();
 
 const emit = defineEmits<{
   (e: 'autorange'): void;
@@ -112,29 +115,35 @@ const showSourceInfo = ref(false);
 const variables = computed(() => mainStore.variables);
 const variableItems = computed(() => variables.value.filter(v => v.source === selectedSource.value).map((v) => ({ var: v.var, label: variableLabel(v.var), colormapMin: v.colormapMin, colormapMax: v.colormapMax })));
 const selectedVariable = computed(() => mainStore.selected_variable);
-const sourceItems = computed(() => {
-  const sources = variables.value.filter(v => v.var == selectedVariable.value.var).map(v => ({ source: v.source, label: v.source }));
-  // Check if selectedSource is in the sources list, if not set it to the first source
-  if (!sources.some(s => s.source === selectedVariable.value.source)) {
-    const firstSource = sources[0]?.source ?? '';
-    mainStore.updateSelectedVariable({ source: firstSource });
-  }
-  return sources;
-});
+// Every source, not just the ones offering the current field: switching to a
+// model without it (e.g. SalishSeaCast while on LiveOcean's nitrate) falls back
+// to temperature in the setter below rather than hiding the model.
+const sourceItems = computed(() =>
+  modelSources.value.map(s => ({ source: s.source, label: s.forecast ? `${s.label} (forecast)` : s.label })));
 const selectedSource = computed({
   get() { return selectedVariable.value.source },
   set(v: string) {
-    // Find depths for the new source/variable combination and update selected variable with new source and reset depth
-    const variable = variables.value.find(variable => variable.source === v && variable.var === selectedVariable.value.var);
+    if (v === selectedVariable.value.source) return;
+    trackEvent('model_source_changed', { source: v, variable: selectedVariable.value.var });
+    // Same field in the new model if it has it, else temperature.
+    const variable = variables.value.find(variable => variable.source === v && variable.var === selectedVariable.value.var)
+      ?? variables.value.find(variable => variable.source === v && variable.var === 'temperature')
+      ?? variables.value.find(variable => variable.source === v);
+    if (!variable) return;
     const depths = variable?.depths ?? [];
     
     // Find closest available depth in the new source
     let newDepthNc: number | null = depths.length > 0 ? depths[0] : null;
 
-    if (depths.length > 0 && selectedVariable.value.depth_nc !== null) {
-      // Find depth closest to the currently selected depth value
+    if (depths.length > 0 && selectedVariable.value.depth_nc === -1) {
+      // "bottom" (-1) isn't a distance: keep it if the new model has a bottom
+      // layer, else take its deepest level.
+      newDepthNc = depths.includes(-1) ? -1 : Math.max(...depths);
+    } else if (depths.length > 0 && selectedVariable.value.depth_nc !== null) {
+      // Find depth closest to the currently selected depth value (never the
+      // -1 bottom sentinel, which only looks close to the surface)
       const currentDepthNc = selectedVariable.value.depth_nc;
-      newDepthNc = depths.reduce((closest, current) =>
+      newDepthNc = depths.filter(d => d >= 0).reduce((closest, current) =>
         Math.abs(current - currentDepthNc) < Math.abs(closest - currentDepthNc)
           ? current
           : closest
@@ -161,7 +170,11 @@ const selectedSource = computed({
       newDt = moment.unix(Math.max(...dts)/1000).tz('UTC');
     }
     
-    mainStore.updateSelectedVariable({ source: v, depth: newDepth, depth_nc: newDepthNc, dt: newDt });
+    mainStore.updateSelectedVariable({
+      source: v, var: variable.var, depth: newDepth, depth_nc: newDepthNc, dt: newDt,
+      colormap: variable.colormap, colormapMin: variable.colormapMin, colormapMax: variable.colormapMax,
+      precision: variable.precision,
+    });
   }
 });
 

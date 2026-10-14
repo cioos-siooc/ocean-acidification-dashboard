@@ -26,6 +26,8 @@ from modules.extract_cross_section import extract_cross_section
 from modules.extract_image import generate_image
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
 from modules.sync_hourly import import_native_file, import_daily_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
+from modules import sync_liveocean
+from modules.sources import CapabilityUnavailable, DATA_TABLE_BY_SOURCE
 from modules.posthog_helpers import capture_event
 from modules import response_cache
 
@@ -52,11 +54,22 @@ async def extract_slot(label: str):
         _extract_semaphore.release()
 
 
-def _require_ssc(source: str) -> None:
-    """SalishSeaCast is the only supported source; reject anything else as 400."""
-    if source != "SalishSeaCast":
+def _require_source(source: str) -> None:
+    """Reject a source shared/variable_config.yml doesn't define as 400."""
+    if source not in DATA_TABLE_BY_SOURCE:
         logger.error(f"Unsupported source: {source}")
         raise HTTPException(status_code=400, detail=f"Unsupported source: {source}")
+
+
+def _capability_response(exc: CapabilityUnavailable) -> JSONResponse:
+    """A feature the source's record can't support (e.g. a climatology from
+    LiveOcean's ~1-year archive): a 400 shaped like _outside_domain_response,
+    so the frontend can tell it from a failure by `error.code`."""
+    return JSONResponse(
+        status_code=400,
+        content={"detail": str(exc), "error": {"code": exc.code, "source": exc.source,
+                                               "capability": exc.capability, "message": str(exc)}},
+    )
 
 
 def _outside_domain_response(exc: OutsideDomainError) -> JSONResponse:
@@ -128,21 +141,23 @@ async def _stamp_request_start_time(request: Request, call_next):
 
 # Explicit PNG route that sets cache-control for compatibility with Mapbox and browsers
 SSC_IMAGE_DIR = os.environ.get("SSC_IMAGE_DIR", "/opt/data/SalishSeaCast/images")
+LO_IMAGE_DIR = os.environ.get("LO_IMAGE_DIR", "/opt/data/LiveOcean/images")
 
 
 def _get_image_roots(source: str) -> list:
     """Return list of image root directories to search when serving tiles.
 
-    Searches SSC_IMAGE_DIR and its optional archive counterpart. All
-    directories are searched in order when looking up a tile file.
-    SalishSeaCast is the only supported source.
+    SalishSeaCast: SSC_IMAGE_DIR and its optional archive counterpart,
+    searched in order. LiveOcean: LO_IMAGE_DIR.
     """
     roots = []
-    if(source == "SalishSeaCast"):
+    if source == "SalishSeaCast":
         roots = [SSC_IMAGE_DIR]
         archive_ssc = os.getenv("SSC_IMAGE_DIR_ARCHIVE", "")
         if archive_ssc:
             roots.append(archive_ssc)
+    elif source == "LiveOcean":
+        roots = [LO_IMAGE_DIR]
 
     return [r for r in roots if r]
 
@@ -474,15 +489,23 @@ async def get_cross_section(request: crossSectionRequest, http_request: Request)
 
 #######################################
 
-def _png_file_response(full_path: str) -> FileResponse:
+def _png_file_response(full_path: str, mutable: bool = False) -> FileResponse:
+    """`mutable` tiles (LiveOcean: a newer forecast run re-renders the same
+    path) get a short max-age and an mtime-based ETag instead of `immutable`
+    — the frontend also adds `?run=<runDate>` so a new run is a new URL."""
     ext = os.path.splitext(full_path)[1]
+    if mutable:
+        st = os.stat(full_path)
+        cache_control, etag = "public, max-age=600", f'"{full_path}-{int(st.st_mtime)}-{st.st_size}"'
+    else:
+        cache_control, etag = "public, max-age=31536000, immutable", f'"{full_path}-v1"'
     headers = {
-        "Cache-Control": "public, max-age=31536000, immutable",
+        "Cache-Control": cache_control,
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, OPTIONS",
         "Access-Control-Allow-Headers": "*",
         "Vary": "Origin",
-        "ETag": f'"{full_path}-v1"',
+        "ETag": etag,
     }
     media_type = "image/webp" if ext == '.webp' else "image/png"
     return FileResponse(full_path, media_type=media_type, headers=headers)
@@ -507,8 +530,8 @@ async def get_png(source: str, var: str, dt: str, depth: str):
     safe_dt = os.path.basename(dt)
     safe_depth = depth # .replace('.', 'p')
 
-    if safe_source != "SalishSeaCast":
-        raise HTTPException(status_code=400, detail=f"Unsupported source: {safe_source}")
+    _require_source(safe_source)
+    mutable = safe_source == "LiveOcean"
 
     image_roots = _get_image_roots(safe_source)
     for image_root in image_roots:
@@ -520,7 +543,7 @@ async def get_png(source: str, var: str, dt: str, depth: str):
 
             exists = await run_in_threadpool(os.path.isfile, full_path)
             if exists:
-                return _png_file_response(full_path)
+                return _png_file_response(full_path, mutable)
 
     # Not pre-generated — try rendering it on demand from ClickHouse. Writes
     # into the first (primary, non-archive) image root so it's found by the
@@ -542,7 +565,7 @@ async def get_png(source: str, var: str, dt: str, depth: str):
             )
 
     if generated_path:
-        return _png_file_response(generated_path)
+        return _png_file_response(generated_path, mutable)
 
     raise HTTPException(status_code=404, detail=f"PNG not found for {var}/{dt}/{depth}")
 
@@ -686,6 +709,9 @@ async def fn_extract_timeseries(request: timeseriesRequest, http_request: Reques
             # Other RuntimeErrors are unexpected, treat as 500
             logger.exception("extract_timeseries failed with RuntimeError")
             raise HTTPException(status_code=500, detail=str(exc))
+        except ValueError as exc:
+            # Unknown variable for this source, bad bin mode, unparseable time.
+            raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
             logger.exception("extract_timeseries failed")
             raise HTTPException(status_code=500, detail=str(exc))
@@ -693,6 +719,7 @@ async def fn_extract_timeseries(request: timeseriesRequest, http_request: Reques
 #######################################
 
 class climate_timeseriesRequest(BaseModel):
+    source: str = "SalishSeaCast"
     var: str
     lat: float
     lon: float
@@ -717,7 +744,7 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_
             extract_climate_timeseries,
             lat=request.lat, lon=request.lon, variable=request.var,
             depth=request.depth, from_date=request.fromDate, to_date=request.toDate,
-            bin_mode=request.bin_mode,
+            bin_mode=request.bin_mode, source=request.source,
         )
         if result is None:
             logger.error("extract_climate_timeseries returned None")
@@ -734,6 +761,10 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_
         raise
     except OutsideDomainError as exc:
         return _outside_domain_response(exc)
+    except CapabilityUnavailable as exc:
+        return _capability_response(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.exception("extract_climate_timeseries failed")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -768,7 +799,7 @@ async def fn_get_minmax(request: minmaxRequest, http_request: Request):
             source = request.source
             var = request.var
 
-            _require_ssc(source)
+            _require_source(source)
 
             # Parse datetime string (ISO format: YYYY-MM-DDTHH:mm:ss)
             dt = datetime.fromisoformat(request.dt.replace('Z', '+00:00'))
@@ -803,6 +834,9 @@ async def fn_get_minmax(request: minmaxRequest, http_request: Request):
                 raise HTTPException(status_code=400, detail=str(exc))
             logger.exception("getMinMax failed with RuntimeError")
             raise HTTPException(status_code=500, detail=str(exc))
+        except ValueError as exc:
+            # Unknown variable for this source, bad bin mode, unparseable time.
+            raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
             logger.exception("getMinMax failed")
             raise HTTPException(status_code=500, detail=str(exc))
@@ -837,7 +871,7 @@ async def fn_get_profile(request: profileRequest, http_request: Request):
             dt = request.dt
             bin_mode = request.bin_mode
 
-            _require_ssc(source)
+            _require_source(source)
 
             profile = await asyncio.wait_for(
                 run_in_process(
@@ -870,6 +904,9 @@ async def fn_get_profile(request: profileRequest, http_request: Request):
             # Other RuntimeErrors are unexpected, treat as 500
             logger.exception("extract_profile failed with RuntimeError")
             raise HTTPException(status_code=500, detail=str(exc))
+        except ValueError as exc:
+            # Unknown variable for this source, bad bin mode, unparseable time.
+            raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
             logger.exception("extract_profile failed")
             raise HTTPException(status_code=500, detail=str(exc))
@@ -886,6 +923,7 @@ class MetricSpec(BaseModel):
     stat: str
 
 class AnalysisRequest(BaseModel):
+    source: str = "SalishSeaCast"
     # Either a GeoJSON-style polygon [[lon, lat], ...] for area mode,
     # or lat + lon for point mode. At least one must be provided.
     polygon: Optional[List[Tuple[float, float]]] = None
@@ -927,10 +965,12 @@ async def analysis_timeseries(request: AnalysisRequest, http_request: Request):
                 detail="Provide either a polygon (area mode) or lat + lon (point mode)."
             )
 
+        _require_source(request.source)
         if has_polygon:
             grid_points = await run_in_threadpool(
                 lookup_grid_cells_for_polygon,
-                polygon_coords=request.polygon
+                polygon_coords=request.polygon,
+                source=request.source,
             )
             if not grid_points:
                 raise HTTPException(
@@ -941,7 +981,8 @@ async def analysis_timeseries(request: AnalysisRequest, http_request: Request):
             grid_points = await run_in_threadpool(
                 lookup_nearest_grid_cell,
                 lat=request.lat,
-                lon=request.lon
+                lon=request.lon,
+                source=request.source,
             )
             if not grid_points:
                 raise HTTPException(
@@ -956,6 +997,7 @@ async def analysis_timeseries(request: AnalysisRequest, http_request: Request):
             variable=request.primaryMetric.variable,
             stat=request.primaryMetric.stat,
             year_range=request.temporal["yearRange"],
+            source=request.source,
         )
         response_cache.set_model(key, result)
         capture_event(http_request, "analysis_timeseries", {
@@ -1030,6 +1072,46 @@ async def sync_daily(request: SyncHourlyRequest, authorization: Optional[str] = 
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         logger.exception("sync_daily failed for date %s", request.date)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class SyncLiveOceanRequest(BaseModel):
+    kind: Literal["grid", "day"]
+    expected_rows: int
+    date: Optional[str] = None       # valid day, YYYY-MM-DD (kind == "day")
+    run_date: Optional[str] = None   # run that produced it (kind == "day")
+    expected_daily_rows: int = 0
+
+
+@app.post("/admin/syncLiveOcean")
+async def sync_liveocean_route(request: SyncLiveOceanRequest, authorization: Optional[str] = Header(None)):
+    """Import one LiveOcean valid day (or the grid) exported by
+    process/LO/sync.py. Same bearer-token auth and server-derived file paths
+    as /admin/syncHourly; 409 means this server already has the day from
+    this run or a newer one (see modules/sync_liveocean.py)."""
+    if not SYNC_API_TOKEN or authorization != f"Bearer {SYNC_API_TOKEN}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        if request.kind == "grid":
+            result = await run_in_threadpool(sync_liveocean.import_grid, request.expected_rows)
+        else:
+            if not request.date or not request.run_date:
+                raise HTTPException(status_code=400, detail="date and run_date are required for kind=day")
+            result = await run_in_threadpool(
+                sync_liveocean.import_day, request.date, request.run_date,
+                request.expected_rows, request.expected_daily_rows,
+            )
+        response_cache.invalidate_all()
+        return result
+    except HTTPException:
+        raise
+    except SyncConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except SyncError as exc:
+        logger.warning("syncLiveOcean rejected (%s): %s", request, exc)
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("syncLiveOcean failed (%s)", request)
         raise HTTPException(status_code=500, detail=str(exc))
 
 

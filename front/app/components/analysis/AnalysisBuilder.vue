@@ -95,6 +95,7 @@ import * as echarts from 'echarts'
 import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { useMainStore } from '../../stores/main'
+import { useModelSource } from '~~/composables/useModelSource'
 import { fetchAnalysisSeries, type SeriesPoint } from '~~/composables/useAnalysisFetch'
 import { fetchSensorAnalysisSeries } from '~~/composables/useSensorAnalysisFetch'
 import SegmentedControl from '../ui/SegmentedControl.vue'
@@ -113,6 +114,7 @@ const analysisSource = computed(() => props.source ?? 'model')
 const isSensor = computed(() => analysisSource.value === 'sensor')
 
 const mainStore = useMainStore()
+const { modelYearRange } = useModelSource()
 const { displayUnit, formatDisplayValue } = useVariableRegistry()
 
 // ── SENSOR CONTEXT (unused in model mode) ────────────────────────────────────
@@ -139,12 +141,10 @@ const depth = computed(() => {
 })
 
 // --- CONSTANTS ---
-const MODEL_MIN_YEAR = 2007
-const MODEL_MAX_YEAR = 2026
 const currentYear = new Date().getFullYear()
-const minYear = computed(() => !isSensor.value ? MODEL_MIN_YEAR
+const minYear = computed(() => !isSensor.value ? modelYearRange()[0]
   : (sensorInfo.value?.first_data_at ? parseInt(sensorInfo.value.first_data_at.slice(0, 4), 10) : currentYear))
-const maxYear = computed(() => !isSensor.value ? MODEL_MAX_YEAR
+const maxYear = computed(() => !isSensor.value ? modelYearRange()[1]
   : (sensorInfo.value?.latest_data_at ? parseInt(sensorInfo.value.latest_data_at.slice(0, 4), 10) : currentYear))
 
 // --- REACTIVE STATE ---
@@ -565,7 +565,7 @@ async function fetchRegionTimeseries(): Promise<SeriesPoint[]> {
   // cancellation — fetchAnalysisSeries's cache can be shared across callers,
   // so aborting it here would cancel other callers waiting on the same request.
   return fetchAnalysisSeries(
-    { variable: variable.value, stat: primaryStat.value as 'min' | 'mean' | 'max', depth: depth.value, location, yearRange: [minYear.value, maxYear.value] },
+    { source: mainStore.selected_variable.source, variable: variable.value, stat: primaryStat.value as 'min' | 'mean' | 'max', depth: depth.value, location, yearRange: [minYear.value, maxYear.value] },
   )
 }
 

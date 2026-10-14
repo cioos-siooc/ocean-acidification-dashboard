@@ -59,6 +59,25 @@ export function floorToBin(d: Date, mode: BinMode): Date {
 export function toApiIso(d: Date): string { return d.toISOString().slice(0, 19) + 'Z' }
 
 /**
+ * Hourly bins of a model with a coarser output step (LiveOcean, 4-hourly) are
+ * empty between its steps, which turns a time-depth section into thin
+ * stripes. Holds each step's value across the hourly bins up to the next step,
+ * as the map holds a step's tile until the next one. A step's own empty bin (a
+ * real gap) stays empty, and so do the bins it would cover.
+ */
+export function holdModelSteps(grid: (number | null)[][], starts: Date[], stepHours: number): (number | null)[][] {
+    if (stepHours <= 1) return grid
+    const onStep = starts.map(b => b.getUTCHours() % stepHours === 0)
+    return grid.map(row => {
+        let held: number | null = null
+        return row.map((v, i) => {
+            if (onStep[i]) { held = v; return v }
+            return v ?? held
+        })
+    })
+}
+
+/**
  * Bin a raw {time, value} series (e.g. sensor observations, which land at
  * whatever cadence the instrument reports on) down to one mean value per
  * `binStarts` bucket — the same buckets the model series is already

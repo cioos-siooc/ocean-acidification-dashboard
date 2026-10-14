@@ -117,6 +117,7 @@ async function getVariables() {
     // Convert datetimes to epoch ms numbers (plain numbers avoid deep Vue proxy overhead)
     data.forEach((v: any) => {
       v.dts = v.dts?.map((dtstr: string) => moment.utc(dtstr).valueOf());
+      if (v.forecastFrom) v.forecastFrom = moment.utc(v.forecastFrom).valueOf();
     });
 
     mainStore.setVariables(data);

@@ -1313,7 +1313,7 @@ function pngRasterPaint() {
 
     // Get packing params from metadata, default to 0.1 precision and 0 base if missing
     // Note: base might be equal to colormapMin if it was dynamic
-    const precision = mainStore.variables.find(v => v.var === varName)?.precision ?? 0.1;
+    const precision = mainStore.variables.find(v => v.source === mainStore.selected_variable.source && v.var === varName)?.precision ?? 0.1;
     const base = 0
 
     // Use colormap if available, otherwise fall back to default ramp
@@ -1367,9 +1367,14 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
             : 'YYYY-MM-DDTHHmmss';
     const dt = mainStore.selected_variable.dt?.format(dtFormat) || '';
     const depth = mainStore.selected_variable.depth
-    const pngPath = `${apiBaseUrl}/png/${source}/${varName}/${dt}/${depth}`;
+    const varMeta = mainStore.variables.find(v => v.source === mainStore.selected_variable.source && v.var === varName);
+    // A forecast model re-renders the same tile paths with every new run, so
+    // the run date goes in the URL: a new run is a new URL to the browser and
+    // Mapbox, while tiles within one run still cache.
+    const runQuery = varMeta?.forecast && varMeta.runDate ? `?run=${varMeta.runDate}` : '';
+    const pngPath = `${apiBaseUrl}/png/${source}/${varName}/${dt}/${depth}${runQuery}`;
 
-    const bounds = mainStore.variables.find(v => v.source === mainStore.selected_variable.source && v.var === varName)?.bounds;
+    const bounds = varMeta?.bounds;
     if (!bounds) throw new Error('bounds not found');
     const [lonmin, latmin, lonmax, latmax] = bounds;
     const coords = [

@@ -74,6 +74,7 @@ import moment from 'moment'
 import { useMainStore, formatDepthLabel } from '../../stores/main'
 import { fetchCrossSection, type CrossSectionResponse } from '~~/composables/useCrossSectionFetch'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
+import { useModelSource } from '~~/composables/useModelSource'
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { utc2pst } from '~~/composables/useUTC2PST'
@@ -100,6 +101,7 @@ const props = defineProps<{ active?: boolean }>()
 
 const mainStore = useMainStore()
 const { toDisplayValue, displayUnit, formatDisplayValue } = useVariableRegistry()
+const { sourceLabel } = useModelSource()
 
 const line = computed(() => mainStore.crossSectionLine)
 const source = computed(() => mainStore.selected_variable.source)
@@ -210,7 +212,7 @@ const csvContext = computed<CsvContext | null>(() => {
   if (!varId.value || !line.value?.length) return null
   return {
     source: 'model',
-    sourceLabel: 'SalishSeaCast model',
+    sourceLabel: `${sourceLabel(source.value)} model`,
     variable: varId.value,
     variableName: varName.value,
     unit: displayUnit(varId.value),

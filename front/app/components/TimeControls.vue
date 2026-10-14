@@ -100,7 +100,12 @@ const dts = computed(() => {
 // ExplorePanel's own toggle — since these controls have no window/coverage
 // of their own to derive it from.
 const binMode = computed(() => mainStore.exploreBinMode);
-const unitLabel = computed(() => ({ hourly: 'hour', daily: 'day', monthly: 'month' }[binMode.value]));
+// "hour" for SalishSeaCast; LiveOcean's raw steps are 4-hourly.
+const stepHours = computed(() => mainStore.variables.find(v => v.source === selectedVariable.value.source)?.stepHours ?? 1);
+const unitLabel = computed(() => ({
+  hourly: stepHours.value > 1 ? `${stepHours.value}-hour step` : 'hour',
+  daily: 'day', monthly: 'month',
+}[binMode.value]));
 
 // Only hourly is bounded by a known timestamp list — daily/monthly reach back
 // far further (up to two decades) than that list covers, so the picker stays
@@ -169,10 +174,13 @@ function stepCoarse(dir: 1 | -1) {
   const cur = selectedDatetime.value;
   if (!cur) return false
   const next = addBins(floorToBin(cur.toDate(), binMode.value), dir, binMode.value);
-  // Forward-only cap at "now" — there's nothing to play into past today.
+  // Forward-only cap at "now" — there's nothing to play into past today —
+  // or at a forecast model's last step, whichever is later.
   // Backward is intentionally open-ended: daily/monthly reach back up to two
   // decades and there's no cheap coverage bound available here to clamp to.
-  if (dir > 0 && next.getTime() > floorToBin(new Date(), binMode.value).getTime()) return false
+  const lastDt = dts.value?.length ? dts.value[dts.value.length - 1]!.valueOf() : 0;
+  const cap = floorToBin(new Date(Math.max(Date.now(), lastDt)), binMode.value).getTime();
+  if (dir > 0 && next.getTime() > cap) return false
   mainStore.updateSelectedVariable({ dt: moment.utc(next) });
   return true
 }

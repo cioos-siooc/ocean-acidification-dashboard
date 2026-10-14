@@ -85,6 +85,12 @@ const props = defineProps<{
     legendLayout?: 'left' | 'top'
     /** Host's bin resolution; picks the hover timestamp format (hours are noise on daily/monthly bins). */
     binMode?: 'hourly' | 'daily' | 'monthly'
+    /**
+     * Epoch ms where a forecast model's predictions start (see
+     * useModelSource); the model line is shaded from there to the window's
+     * end. Omit for a hindcast model.
+     */
+    forecastFrom?: number | null
 }>();
 
 const hoverTimeFormat = computed(() => ({
@@ -345,7 +351,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     // Determine y-axis decimal precision from data range
     const axisDecimals = (() => {
         const values: number[] = [];
-        const push = (arr: any[] | undefined) => { if (Array.isArray(arr)) arr.forEach(v => { const n = Number(v); if (Number.isFinite(n)) values.push(n); }); };
+        const push = (arr: any[] | undefined) => { if (Array.isArray(arr)) arr.forEach(v => { if (v == null) return; const n = Number(v); if (Number.isFinite(n)) values.push(n); }); };
         push(modelData?.value);
         if (Array.isArray(climateData)) climateData.forEach(row => push([row?.mean, row?.min, row?.max]));
         if (sensorData?.value) push(sensorData.value);
@@ -516,7 +522,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     }
 
     if (hasModelData) {
-        seriesArr.push({
+        const modelSeries: any = {
             name: 'Model',
             type: 'line',
             data: __series_model,
@@ -524,7 +530,19 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
             lineStyle: { width: 1, color: mainStore.colors.model.line, shadowColor: mainStore.colors.model.shadow, shadowBlur: mainStore.colors.model.shadowBlur, opacity: 0.8 },
             itemStyle: { color: mainStore.colors.model.line },
             legendIcon: 'roundRect'
-        });
+        };
+        // Rides on the model series so hiding "Model" hides it too.
+        const forecastStart = props.forecastFrom != null ? moment.utc(props.forecastFrom).tz(tz) : null;
+        if (forecastStart && forecastStart.isBefore(endLocal)) {
+            const from = forecastStart.isAfter(startLocal) ? forecastStart : startLocal;
+            modelSeries.markArea = {
+                silent: true,
+                itemStyle: { color: colors.deepPurple.lighten2, opacity: 0.12 },
+                label: { show: true, position: 'insideTopLeft', formatter: 'FORECAST', color: colors.deepPurple.lighten2, fontSize: 10 },
+                data: [[{ xAxis: from.format() }, { xAxis: endLocal.format() }]],
+            };
+        }
+        seriesArr.push(modelSeries);
     }
 
     if (hasSensorData) {

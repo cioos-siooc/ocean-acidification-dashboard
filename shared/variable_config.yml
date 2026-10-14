@@ -1,4 +1,4 @@
-# Static SalishSeaCast variable/display metadata.
+# Static model-source and variable/display metadata.
 #
 # Single source of truth for both the `api` and `process` containers (this
 # file lives in shared/, mounted into both — see docker-compose.dev.yml).
@@ -36,65 +36,116 @@
 # lon/lat/pressure-dependent conversion, not a fixed scale/offset (same gap
 # as sensors.variables' conversion_factor, see shared/variable_config.py).
 #
-# LiveOcean is intentionally not covered here — support for it was removed
-# entirely (not yet being implemented), so there's nothing to migrate.
+# sources: one block per model. Everything that differs between models —
+# ClickHouse tables, grid, depth axis, time step, which variables it has and
+# which features its record length supports — lives here, so api/ and
+# process/ look a source up instead of hardcoding SalishSeaCast. Variable
+# display metadata (below) is shared: `temperature` means the same thing,
+# in the same unit, whichever model it came from.
 
-source: SalishSeaCast
+sources:
+  SalishSeaCast:
+    label: SalishSeaCast
+    # Human name for the model domain, used in out-of-domain messages.
+    domain_label: SalishSeaCast model domain
+    grid_table: grid_SSC
+    data_table: SalishSeaCast_hourly
+    daily_table: SalishSeaCast_daily
+    # Model domain bounding box: [min_lon, min_lat, max_lon, max_lat] — also
+    # where the frontend places every raster tile.
+    bounds: [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
+    # Hours between model outputs, and the minute past the hour they land on.
+    step_hours: 1
+    step_offset_minutes: 30
+    forecast: false
+    # Feature gates: SalishSeaCast_daily reaches back to 2007, so everything
+    # that needs a multi-year record works.
+    capabilities: {climatology: true, trend: true}
+    # Native sigma depth levels (meters), shared by every variable — process/
+    # SSC/ingest.py already assumes a single depth axis across variables when
+    # it builds its meshgrid from one variable's file and reuses it for all 8.
+    # Each value is also the WebP filename stem (e.g. 18.0 -> "18.0.webp").
+    # -1 is a synthetic sentinel for the bottom layer ("bottom.webp"), not
+    # part of the native depth axis.
+    depths:
+    - 0.5
+    - 1.5
+    - 2.5
+    - 3.5
+    - 4.5
+    - 5.5
+    - 6.5
+    - 7.5
+    - 8.5
+    - 9.5
+    - 10.5
+    - 11.5
+    - 12.5
+    - 13.5
+    - 14.6
+    - 15.6
+    - 16.8
+    - 18.0
+    - 19.5
+    - 21.4
+    - 24.1
+    - 28.2
+    - 34.7
+    - 44.5
+    - 58.5
+    - 76.6
+    - 98.1
+    - 121.9
+    - 147.1
+    - 173.1
+    - 199.6
+    - 226.3
+    - 253.1
+    - 279.9
+    - 306.8
+    - 333.8
+    - 360.7
+    - 387.6
+    - 414.5
+    - 441.5
+    variables:
+      - temperature
+      - salinity
+      - total_alkalinity
+      - dissolved_oxygen
+      - dissolved_inorganic_carbon
+      - ph_total
+      - omega_arag
+      - omega_cal
 
-# Model domain bounding box: [min_lon, min_lat, max_lon, max_lat]. Identical
-# across all 8 variables (it's a property of the grid, not the variable).
-bounds: [-126.4002914428711, 46.85966491699218, -121.31835174560548, 51.10480117797852]
-
-# Native sigma depth levels (meters), shared by every variable — process/SSC/
-# ingest.py already assumes a single depth axis across variables when it
-# builds its meshgrid from one variable's file and reuses it for all 8, so
-# this list isn't a new assumption, just making an existing one explicit.
-# Each value is also the WebP filename stem (e.g. 18.0 -> "18.0.webp") — no
-# separate label needed since nc2tile.py writes them out verbatim, decimal
-# point and all. -1 is a synthetic sentinel for the bottom layer, a separate
-# companion level read from each variable's own `_bottom.nc` file (filename
-# "bottom.webp"), not part of the native depth axis.
-depths:
-  - 0.5
-  - 1.5
-  - 2.5
-  - 3.5
-  - 4.5
-  - 5.5
-  - 6.5
-  - 7.5
-  - 8.5
-  - 9.5
-  - 10.5
-  - 11.5
-  - 12.5
-  - 13.5
-  - 14.6
-  - 15.6
-  - 16.8
-  - 18.0
-  - 19.5
-  - 21.4
-  - 24.1
-  - 28.2
-  - 34.7
-  - 44.5
-  - 58.5
-  - 76.6
-  - 98.1
-  - 121.9
-  - 147.1
-  - 173.1
-  - 199.6
-  - 226.3
-  - 253.1
-  - 279.9
-  - 306.8
-  - 333.8
-  - 360.7
-  - 387.6
-  - 414.5
-  - 441.5
+  LiveOcean:
+    label: LiveOcean
+    domain_label: LiveOcean model domain
+    grid_table: grid_LO
+    data_table: LiveOcean_4h
+    daily_table: LiveOcean_daily
+    bounds: [-129.97980154387872, 42.00674983947646, -122.00183469439246, 52.00989523651225]
+    step_hours: 4
+    step_offset_minutes: 0
+    # Each daily run is a 3-day forecast; newer runs replace the hours older
+    # runs forecast (see process/LO/). Past days hold each run's day 0.
+    forecast: true
+    # The public archive starts mid-2025: too short for climatologies/trends.
+    capabilities: {climatology: false, trend: false}
+    # LiveOcean's layers.nc is sliced at fixed z-levels; "surface" is stored
+    # as 0 and "bottom" as the -1 sentinel (a real row here, unlike SSC).
+    depths: [0.0, 10.0, 20.0, 30.0, 50.0, 100.0, 500.0, 1000.0, 1500.0, 2000.0, 2500.0, -1]
+    variables:
+      - temperature
+      - salinity
+      - dissolved_oxygen
+      - ph_total
+      - omega_arag
+      - omega_cal
+      - total_alkalinity
+      - dissolved_inorganic_carbon
+      - nitrate
+      - phytoplankton
 
 variables:
   temperature:
@@ -164,3 +215,17 @@ variables:
     colormapMin: 0.0001
     colormapMax: 6.5
     precision: 0.0001
+  nitrate:
+    name: "Nitrate"
+    unit: "mmol/m³"
+    colormap: matter
+    colormapMin: 0.01
+    colormapMax: 45
+    precision: 0.01
+  phytoplankton:
+    name: "Phytoplankton"
+    unit: "mmol N/m³"
+    colormap: algae
+    colormapMin: 0.01
+    colormapMax: 6
+    precision: 0.01

@@ -422,7 +422,7 @@ async function loadData() {
 
     loadingStep.value = 'Fetching model data…'
     const location = { lat: sensorInfo.value.latitude, lon: sensorInfo.value.longitude }
-    const base = { variable: variable.value, depth: depth.value, location, yearRange: [firstYear, lastYear] as [number, number] }
+    const base = { source: mainStore.selected_variable.source, variable: variable.value, depth: depth.value, location, yearRange: [firstYear, lastYear] as [number, number] }
 
     const [meanData, minData, maxData] = await Promise.all([
       fetchAnalysisSeries({ ...base, stat: 'mean' }),

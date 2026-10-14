@@ -157,9 +157,9 @@ def test_out_of_domain_raises(monkeypatch):
 def test_unsupported_source_raises(monkeypatch):
     _patch(monkeypatch, FakeClient(grid_row=GRID_ROW))
 
-    with pytest.raises(ValueError, match="not yet available"):
+    with pytest.raises(ValueError, match="Unknown source"):
         extract_depth_profile(
-            source='LiveOcean', var='temperature', sensor_id='abc',
+            source='NoSuchModel', var='temperature', sensor_id='abc',
             lat=49.0, lon=-123.0, from_date='2026-01-01T00:00:00', to_date='2026-01-01T01:59:59',
         )
 

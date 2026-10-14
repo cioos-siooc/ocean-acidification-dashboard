@@ -1,8 +1,8 @@
 """
 Ocean Analysis Module for the Analysis Builder.
 
-Provides query functions that read from ClickHouse SalishSeaCast_daily /
-grid_SSC tables for the Analysis Builder frontend. The frontend resolves a
+Provides query functions that read from a source's ClickHouse daily / grid
+tables (e.g. SalishSeaCast_daily / grid_SSC) for the Analysis Builder frontend. The frontend resolves a
 polygon to a flat regionally-averaged daily timeseries via these helpers,
 then computes climatology, trend, threshold, streak, and extreme-value
 analytics client-side.
@@ -13,11 +13,12 @@ import logging
 from typing import List, Tuple
 
 from modules.clickhouse_helpers import get_ch_client as _get_ch_client
+from modules.sources import DAILY_TABLE_BY_SOURCE, GRID_TABLE_BY_SOURCE, check_variable, has_bottom_rows
 
 logger = logging.getLogger(__name__)
 
 
-def lookup_nearest_grid_cell(lat: float, lon: float) -> List[Tuple[int, int]]:
+def lookup_nearest_grid_cell(lat: float, lon: float, source: str = "SalishSeaCast") -> List[Tuple[int, int]]:
     """
     Returns the single (gridX, gridY) tuple whose coordinate is closest
     to the given (lat, lon), using great-circle distance via ClickHouse's
@@ -29,7 +30,7 @@ def lookup_nearest_grid_cell(lat: float, lon: float) -> List[Tuple[int, int]]:
     # well under 0.5°, so the true nearest cell is always inside the box.
     query = f"""
         SELECT gridX, gridY
-        FROM grid_SSC
+        FROM {GRID_TABLE_BY_SOURCE[source]}
         WHERE latitude BETWEEN {lat - 0.5} AND {lat + 0.5}
           AND longitude BETWEEN {lon - 0.5} AND {lon + 0.5}
         ORDER BY geoDistance({lon}, {lat}, longitude, latitude)
@@ -39,10 +40,11 @@ def lookup_nearest_grid_cell(lat: float, lon: float) -> List[Tuple[int, int]]:
     return result.result_rows
 
 
-def lookup_grid_cells_for_polygon(polygon_coords: List[Tuple[float, float]]) -> List[Tuple[int, int]]:
+def lookup_grid_cells_for_polygon(polygon_coords: List[Tuple[float, float]],
+                                  source: str = "SalishSeaCast") -> List[Tuple[int, int]]:
     """
     Takes a GeoJSON polygon array [(lon1, lat1), (lon2, lat2), ...]
-    Filters the grid_SSC table using primary index bounding boxes,
+    Filters the source's grid table using primary index bounding boxes,
     runs pointInPolygon, and returns a list of matching (gridX, gridY) tuples.
     """
     if not polygon_coords:
@@ -65,7 +67,7 @@ def lookup_grid_cells_for_polygon(polygon_coords: List[Tuple[float, float]]) -> 
     # 4. Execute the optimized coordinate lookup
     query = f"""
         SELECT gridX, gridY
-        FROM grid_SSC
+        FROM {GRID_TABLE_BY_SOURCE[source]}
         WHERE longitude BETWEEN {min_lon} AND {max_lon}
           AND latitude BETWEEN {min_lat} AND {max_lat}
           AND pointInPolygon((longitude, latitude), {polygon_sql_format})
@@ -83,30 +85,34 @@ def lookup_grid_cells_for_polygon(polygon_coords: List[Tuple[float, float]]) -> 
 # silently snap to whatever level happens to be closest.
 DEPTH_MATCH_TOLERANCE_M = 0.1
 
-# Depth levels are uniform across the entire SSC sigma-coordinate grid — every
-# cell has the same discrete set. Cached on first use (per process) to avoid a
-# per-request full-table scan.
-_CACHED_DEPTH_LEVELS: list[float] | None = None
+# Depth levels are uniform across a source's whole grid — every cell has the
+# same discrete set. Cached on first use (per process, per table) to avoid a
+# per-request full-table scan. Real depths only (see extractTimeseries.py's
+# _get_depth_levels for LiveOcean's -1 bottom rows).
+_CACHED_DEPTH_LEVELS: dict[str, list[float]] = {}
 
 
-def _get_depth_levels(client) -> list[float]:
-    global _CACHED_DEPTH_LEVELS
-    if _CACHED_DEPTH_LEVELS is None:
+def _get_depth_levels(client, table: str) -> list[float]:
+    if table not in _CACHED_DEPTH_LEVELS:
         result = client.query(
-            "SELECT DISTINCT depth FROM SalishSeaCast_daily ORDER BY depth"
+            f"SELECT DISTINCT depth FROM {table} WHERE depth >= 0 ORDER BY depth"
         )
-        _CACHED_DEPTH_LEVELS = [float(r[0]) for r in result.result_rows]
-    return _CACHED_DEPTH_LEVELS
+        _CACHED_DEPTH_LEVELS[table] = [float(r[0]) for r in result.result_rows]
+    return _CACHED_DEPTH_LEVELS[table]
 
 
-def _resolve_nearest_depth(client, grid_x: int, grid_y: int, depth: float) -> float | None:
+def _resolve_nearest_depth(client, grid_x: int, grid_y: int, depth: float,
+                           source: str = "SalishSeaCast") -> float | None:
     """Return the available depth level nearest to `depth`.
 
-    `depth == -1` selects the deepest (bottom) level, whatever it is.
+    `depth == -1` selects the bottom: the stored -1 rows for a source that
+    has them, else the deepest level, whatever it is.
     Otherwise, the nearest available level must be within
     `DEPTH_MATCH_TOLERANCE_M` of `depth` or this returns None.
     """
-    depths = _get_depth_levels(client)
+    if float(depth) == -1.0 and has_bottom_rows(source):
+        return -1.0
+    depths = _get_depth_levels(client, DAILY_TABLE_BY_SOURCE[source])
     if not depths:
         return None
     if float(depth) == -1.0:
@@ -123,6 +129,7 @@ def query_region_timeseries(
     variable: str,
     stat: str,
     year_range: List[int],
+    source: str = "SalishSeaCast",
 ) -> dict:
     """
     Returns the regionally-averaged daily timeseries for `{variable}_{stat}`
@@ -133,6 +140,9 @@ def query_region_timeseries(
 
     Returns: {"data": [{"time": "YYYY-MM-DD", "value": ...}, ...]}
     """
+    check_variable(source, variable)
+    if stat not in ("mean", "min", "max"):
+        raise ValueError(f"Unsupported stat '{stat}'. Supported: mean, min, max.")
     column_name = f"{variable}_{stat}"
 
     client = _get_ch_client()
@@ -141,7 +151,7 @@ def query_region_timeseries(
     # selection can resolve the nearest available level (same approach as
     # extractTimeseries.py's _resolve_depth, used for single-point lookups).
     grid_x, grid_y = grid_points[0]
-    depth_sel = _resolve_nearest_depth(client, grid_x, grid_y, depth)
+    depth_sel = _resolve_nearest_depth(client, grid_x, grid_y, depth, source)
     if depth_sel is None:
         return {"data": []}
 
@@ -154,7 +164,7 @@ def query_region_timeseries(
 
     query = f"""
         SELECT time, avg({column_name}) AS val
-        FROM SalishSeaCast_daily
+        FROM {DAILY_TABLE_BY_SOURCE[source]}
         WHERE (gridX, gridY) IN %(grid_points)s
           AND depth = %(depth)s
           AND toYear(time) BETWEEN %(min_year)s AND %(max_year)s

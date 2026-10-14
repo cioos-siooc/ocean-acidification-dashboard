@@ -107,8 +107,8 @@ def test_extract_minmax_genuine_zero_value_not_treated_as_no_data(monkeypatch):
 def test_extract_minmax_unsupported_source(monkeypatch):
     monkeypatch.setattr('extractMinMax.get_ch_client', lambda: FakeClient())
 
-    with pytest.raises(RuntimeError, match="not yet available via ClickHouse"):
-        extract_minmax(source='Live Ocean', var='temperature', dt=datetime(2026, 1, 1, 0, 30))
+    with pytest.raises(ValueError, match="Unknown source"):
+        extract_minmax(source='NoSuchModel', var='temperature', dt=datetime(2026, 1, 1, 0, 30))
 
 
 def test_extract_minmax_unknown_variable(monkeypatch):

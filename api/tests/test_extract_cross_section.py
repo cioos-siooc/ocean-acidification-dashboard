@@ -31,12 +31,12 @@ def _patch_client(monkeypatch, fake):
 
 
 def _patch_grid(monkeypatch, fn):
-    """fn(lons, lats) -> (gridX_list, gridY_list); replaces the real KD-tree lookup."""
+    """fn(lons, lats, grid_table) -> (gridX_list, gridY_list); replaces the real KD-tree lookup."""
     monkeypatch.setattr('extract_cross_section.grid_lookup.nearest_grid_cells', fn)
 
 
 def _single_cell(gx, gy):
-    return lambda lons, lats: ([gx] * len(lons), [gy] * len(lons))
+    return lambda lons, lats, grid_table="grid_SSC": ([gx] * len(lons), [gy] * len(lons))
 
 
 # ── resample_polyline ────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ def test_multi_cell_values_broadcast_per_sample(monkeypatch):
     fake = FakeClient(hourly_rows=[(10, 20, 0.0, 9.0), (11, 20, 0.0, 9.5)])
     _patch_client(monkeypatch, fake)
 
-    def fake_nearest(lons, lats):
+    def fake_nearest(lons, lats, grid_table="grid_SSC"):
         n = len(lons)
         half = n // 2
         return [10] * half + [11] * (n - half), [20] * n
@@ -188,9 +188,9 @@ def test_no_data_raises(monkeypatch):
 
 
 def test_unsupported_source_raises():
-    with pytest.raises(ValueError, match="not yet available"):
+    with pytest.raises(ValueError, match="Unknown source"):
         extract_cross_section(
-            source='LiveOcean', var='temperature',
+            source='NoSuchModel', var='temperature',
             vertices=[(49.0, -123.0), (49.05, -123.0)],
             dt='2026-01-01T00:00:00', bin_mode='hourly',
         )

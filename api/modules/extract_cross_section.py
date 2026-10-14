@@ -5,7 +5,7 @@ polyline drawn on the map, at one time snapshot — the spatial counterpart to
 extract_depth_profile.py's single-point *time*-depth grid.
 
 The polyline is resampled into evenly-spaced points by arc length, each
-snapped to its nearest grid_SSC cell via shared/grid_lookup.py's cached
+snapped to its nearest model grid cell via shared/grid_lookup.py's cached
 KD-tree (one vectorized nearest-neighbor query for every sample point, no
 per-point ClickHouse round trip). The distinct cells actually hit are then
 read in a single query and the resulting depth columns are broadcast back
@@ -21,7 +21,12 @@ from typing import Optional
 
 import shared.grid_lookup as grid_lookup
 from modules.clickhouse_helpers import get_ch_client
-from modules.extractTimeseries import ALLOWED_VARIABLES, DATA_TABLE_BY_SOURCE
+from modules.extractTimeseries import (
+    DAILY_TABLE_BY_SOURCE,
+    DATA_TABLE_BY_SOURCE,
+    GRID_TABLE_BY_SOURCE,
+    check_variable,
+)
 
 EARTH_RADIUS_KM = 6371.0088
 
@@ -153,20 +158,18 @@ def extract_cross_section(
                    resample_polyline)
     RuntimeError — no data found for the requested line/time
     """
-    if source not in DATA_TABLE_BY_SOURCE:
-        raise ValueError(f"Source '{source}' is not yet available via ClickHouse.")
-    if var not in ALLOWED_VARIABLES:
-        raise ValueError(f"Unknown variable '{var}'. Supported variables: {sorted(ALLOWED_VARIABLES)}")
+    check_variable(source, var)
     if bin_mode not in ("hourly", "daily", "monthly"):
         raise ValueError(f"Unsupported bin_mode '{bin_mode}'. Supported: hourly, daily, monthly.")
 
     table = DATA_TABLE_BY_SOURCE[source]
+    daily_table = DAILY_TABLE_BY_SOURCE[source]
 
     points, distances_km, vertex_distances_km = resample_polyline(vertices)
 
     lats = [p[0] for p in points]
     lons = [p[1] for p in points]
-    grid_x, grid_y = grid_lookup.nearest_grid_cells(lons, lats)
+    grid_x, grid_y = grid_lookup.nearest_grid_cells(lons, lats, GRID_TABLE_BY_SOURCE[source])
     cell_for_sample = [(int(gx), int(gy)) for gx, gy in zip(grid_x, grid_y)]
 
     # Distinct cells actually hit, in first-occurrence order — bounds the
@@ -179,21 +182,21 @@ def extract_cross_section(
     try:
         if bin_mode == "daily":
             rows = client.query(
-                f"SELECT gridX, gridY, depth, {var}_mean AS value FROM SalishSeaCast_daily "
-                f"WHERE (gridX, gridY) IN %(cells)s AND time = toDate(%(day)s)",
+                f"SELECT gridX, gridY, depth, {var}_mean AS value FROM {daily_table} "
+                f"WHERE (gridX, gridY) IN %(cells)s AND time = toDate(%(day)s) AND depth >= 0",
                 parameters={"cells": distinct_cells, "day": dt[:10]},
             ).result_rows
         elif bin_mode == "monthly":
             rows = client.query(
-                f"SELECT gridX, gridY, depth, avg({var}_mean) AS value FROM SalishSeaCast_daily "
-                f"WHERE (gridX, gridY) IN %(cells)s AND toStartOfMonth(time) = toDate(%(month)s) "
+                f"SELECT gridX, gridY, depth, avg({var}_mean) AS value FROM {daily_table} "
+                f"WHERE (gridX, gridY) IN %(cells)s AND toStartOfMonth(time) = toDate(%(month)s) AND depth >= 0 "
                 f"GROUP BY gridX, gridY, depth",
                 parameters={"cells": distinct_cells, "month": f"{dt[:7]}-01"},
             ).result_rows
         else:
             rows = client.query(
                 f"SELECT gridX, gridY, depth, {var} AS value FROM {table} "
-                f"WHERE (gridX, gridY) IN %(cells)s AND time = %(t)s",
+                f"WHERE (gridX, gridY) IN %(cells)s AND time = %(t)s AND depth >= 0",
                 parameters={"cells": distinct_cells, "t": _fmt_hourly(dt)},
             ).result_rows
         if not rows:

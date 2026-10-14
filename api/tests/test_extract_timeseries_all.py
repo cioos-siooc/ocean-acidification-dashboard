@@ -175,8 +175,8 @@ def test_extract_timeseries_empty_grid_table_still_raises_plain_error(monkeypatc
 def test_extract_timeseries_unsupported_source(monkeypatch):
     monkeypatch.setattr('extractTimeseries.get_ch_client', lambda: FakeClient(grid_row=(0, 0, 0.0, 0.0, 0.0)))
 
-    with pytest.raises(RuntimeError, match="not yet available via ClickHouse"):
-        extract_timeseries(source='Live Ocean', var='temperature', lat=49.0, lon=-123.0, depth=5.0)
+    with pytest.raises(ValueError, match="Unknown source"):
+        extract_timeseries(source='NoSuchModel', var='temperature', lat=49.0, lon=-123.0, depth=5.0)
 
 
 def test_extract_timeseries_unknown_variable(monkeypatch):

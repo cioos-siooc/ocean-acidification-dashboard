@@ -20,8 +20,11 @@ import pandas as pd
 from modules.clickhouse_helpers import get_ch_client
 from modules.extractTimeseries import (
     ALLOWED_VARIABLES,
+    DAILY_TABLE_BY_SOURCE,
     DATA_TABLE_BY_SOURCE,
     GRID_TABLE_BY_SOURCE,
+    check_variable,
+    require_source,
     _find_nearest_grid_point,
 )
 
@@ -31,7 +34,8 @@ from modules.extractTimeseries import (
 TIME_MATCH_TOLERANCE_S = 3600
 
 
-def _find_nearest_time(client, table: str, grid_x: int, grid_y: int, target: pd.Timestamp) -> pd.Timestamp:
+def _find_nearest_time(client, table: str, grid_x: int, grid_y: int, target: pd.Timestamp,
+                       tolerance_s: int = TIME_MATCH_TOLERANCE_S) -> pd.Timestamp:
     """Return the available `time` at (grid_x, grid_y) nearest to `target`.
 
     Raises RuntimeError if the cell has no rows at all, or if the nearest
@@ -50,10 +54,10 @@ def _find_nearest_time(client, table: str, grid_x: int, grid_y: int, target: pd.
             f"No data available for grid point (gridX={grid_x}, gridY={grid_y}) at any time."
         )
     nearest_time, diff_s = result.result_rows[0]
-    if diff_s > TIME_MATCH_TOLERANCE_S:
+    if diff_s > tolerance_s:
         raise RuntimeError(
             f"Requested datetime {target} has no matching data within "
-            f"{TIME_MATCH_TOLERANCE_S}s at this location; nearest available time is "
+            f"{tolerance_s}s at this location; nearest available time is "
             f"{nearest_time} ({diff_s}s away)."
         )
     return pd.Timestamp(nearest_time)
@@ -75,7 +79,8 @@ def extract_profile(
       "hourly"  — the actual model value at the nearest available hour to `dt`
                   (original behaviour).
       "daily"   — the pre-aggregated mean for `dt`'s calendar day, off the same
-                  `SalishSeaCast_daily` table the Depth tab's daily section reads.
+                  daily table (e.g. `SalishSeaCast_daily`) the Depth tab's daily
+                  section reads.
       "monthly" — the mean of that table's daily rows across `dt`'s calendar
                   month.
     Matches the Depth tab's own bin-mode semantics, so a profile requested at
@@ -86,13 +91,7 @@ def extract_profile(
     ascending by depth. Raises RuntimeError/ValueError on bad input or
     out-of-domain coordinates/time (caller maps these to HTTP 400/500).
     """
-    if source not in DATA_TABLE_BY_SOURCE:
-        raise RuntimeError(
-            f"Source '{source}' is not yet available via ClickHouse. "
-            f"Supported sources: {sorted(DATA_TABLE_BY_SOURCE)}"
-        )
-    if var not in ALLOWED_VARIABLES:
-        raise ValueError(f"Unknown variable '{var}'. Supported variables: {sorted(ALLOWED_VARIABLES)}")
+    check_variable(source, var)
     if bin_mode not in ("hourly", "daily", "monthly"):
         raise ValueError(f"Unsupported bin_mode '{bin_mode}'. Supported: hourly, daily, monthly.")
 
@@ -102,6 +101,9 @@ def extract_profile(
         raise ValueError(f"Could not parse datetime '{dt}': {exc}")
 
     table = DATA_TABLE_BY_SOURCE[source]
+    daily_table = DAILY_TABLE_BY_SOURCE[source]
+    # Half a model step either side (an hour for SSC, two for LiveOcean).
+    time_tolerance_s = max(TIME_MATCH_TOLERANCE_S, require_source(source)['step_hours'] * 1800)
     grid_table = GRID_TABLE_BY_SOURCE[source]
 
     client = get_ch_client()
@@ -111,13 +113,13 @@ def extract_profile(
             print(f"Nearest grid point: gridX={grid_x} gridY={grid_y} lat={grid_lat} lon={grid_lon}", flush=True)
 
         if bin_mode == "hourly":
-            resolved_time = _find_nearest_time(client, table, grid_x, grid_y, target_dt)
+            resolved_time = _find_nearest_time(client, table, grid_x, grid_y, target_dt, time_tolerance_s)
             if verbose:
                 print(f"Resolved time: requested={target_dt} -> nearest={resolved_time}", flush=True)
             query = f"""
                 SELECT depth, {var} AS value
                 FROM {table}
-                WHERE gridX = %(gx)s AND gridY = %(gy)s AND time = %(t)s
+                WHERE gridX = %(gx)s AND gridY = %(gy)s AND time = %(t)s AND depth >= 0
                 ORDER BY depth ASC
             """
             rows = client.query(query, parameters={"gx": grid_x, "gy": grid_y, "t": resolved_time}).result_rows
@@ -125,8 +127,8 @@ def extract_profile(
             day = target_dt.date().isoformat()
             query = f"""
                 SELECT depth, {var}_mean AS value
-                FROM SalishSeaCast_daily
-                WHERE gridX = %(gx)s AND gridY = %(gy)s AND time = toDate(%(day)s)
+                FROM {daily_table}
+                WHERE gridX = %(gx)s AND gridY = %(gy)s AND time = toDate(%(day)s) AND depth >= 0
                 ORDER BY depth ASC
             """
             rows = client.query(query, parameters={"gx": grid_x, "gy": grid_y, "day": day}).result_rows
@@ -134,8 +136,8 @@ def extract_profile(
             month_start = target_dt.replace(day=1).date().isoformat()
             query = f"""
                 SELECT depth, avg({var}_mean) AS value
-                FROM SalishSeaCast_daily
-                WHERE gridX = %(gx)s AND gridY = %(gy)s AND toStartOfMonth(time) = toDate(%(month)s)
+                FROM {daily_table}
+                WHERE gridX = %(gx)s AND gridY = %(gy)s AND toStartOfMonth(time) = toDate(%(month)s) AND depth >= 0
                 GROUP BY depth
                 ORDER BY depth ASC
             """

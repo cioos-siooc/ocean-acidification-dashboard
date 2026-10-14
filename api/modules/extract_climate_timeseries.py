@@ -24,7 +24,8 @@ def _clean(v):
     return None if (math.isnan(f) or math.isinf(f)) else round(f, 6)
 
 
-def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, bin_mode='daily'):
+def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, bin_mode='daily',
+                               source='SalishSeaCast'):
     """
     Returns [{requested_date, mean, min, max}, ...] with climatological stats
     aggregated across all available years in SalishSeaCast_daily.
@@ -41,6 +42,12 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, bi
     cycle stretched across the 20-year window.
     """
     from modules.extractTimeseries import _find_nearest_grid_point
+    from modules.sources import DAILY_TABLE_BY_SOURCE, GRID_TABLE_BY_SOURCE, check_variable, require_capability
+
+    # A climatology needs a multi-year record; LiveOcean's archive is ~1 year.
+    require_capability(source, 'climatology')
+    check_variable(source, variable)
+    daily_table = DAILY_TABLE_BY_SOURCE[source]
 
     client = _get_ch_client()
 
@@ -50,20 +57,20 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, bi
     # became "returned None" and a 500 for a user who had merely clicked outside
     # the model. The shared helper raises OutsideDomainError instead, which
     # SERVER.py renders as the same structured 400 every other endpoint sends.
-    grid_x, grid_y, _, _, _ = _find_nearest_grid_point(client, "grid_SSC", lat, lon)
+    grid_x, grid_y, _, _, _ = _find_nearest_grid_point(client, GRID_TABLE_BY_SOURCE[source], lat, lon, source=source)
 
     # Resolve nearest available depth
     depth_float = float(depth)
     if depth_float == -1.0:
-        r = client.query("SELECT max(depth) FROM SalishSeaCast_daily")
+        r = client.query(f"SELECT max(depth) FROM {daily_table}")
         depth_sel = float(r.result_rows[0][0])
     else:
         r = client.query(
-            f"SELECT depth FROM SalishSeaCast_daily "
+            f"SELECT depth FROM {daily_table} "
             f"WHERE abs(depth - {depth_float}) < 0.1 LIMIT 1"
         )
         if not r.result_rows:
-            logger.warning("No depth near %s found in SalishSeaCast_daily", depth_float)
+            logger.warning("No depth near %s found in %s", depth_float, daily_table)
             return []
         depth_sel = float(r.result_rows[0][0])
 
@@ -92,7 +99,7 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, bi
                 avg({col_mean}),
                 min({col_min}),
                 max({col_max})
-            FROM SalishSeaCast_daily
+            FROM {daily_table}
             WHERE gridX = {grid_x}
               AND gridY = {grid_y}
               AND depth = {depth_sel}
@@ -142,7 +149,7 @@ def extract_climate_timeseries(lat, lon, variable, depth, from_date, to_date, bi
             avg({col_mean}),
             min({col_min}),
             max({col_max})
-        FROM SalishSeaCast_daily
+        FROM {daily_table}
         WHERE gridX = {grid_x}
           AND gridY = {grid_y}
           AND depth = {depth_sel}

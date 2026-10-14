@@ -3,7 +3,7 @@
 
 Behavior (defaults chosen according to your inputs):
 - Uses xarray to open a `ds_data` NetCDF file (contains variables and time). Lat/lon grid is read from the ClickHouse `grid_SSC` table.
-- Reads lat/lon arrays from the ClickHouse `grid_SSC` table (columns: gridX, gridY, latitude, longitude). If ClickHouse cannot be reached or the grid is missing the script will raise an error and exit.
+- Reads lat/lon arrays from a ClickHouse grid table (`grid_SSC` for the CLI path; any source's `grid_table` for `render_tile_from_db`; columns: gridX, gridY, latitude, longitude). If ClickHouse cannot be reached or the grid is missing the script will raise an error and exit.
 - For each variable in `ds_data` (or a selected subset) and for each time step,
   regrids the variable from the source curvilinear grid to a regular Web-Mercator (EPSG:3857) grid
   using `scipy.interpolate.griddata` (linear interpolation by default).
@@ -44,15 +44,17 @@ from urllib.parse import urlparse
 
 import clickhouse_connect
 
-from shared.variable_config import load_variable_config
+from shared.variable_config import get_source, load_variable_config
 
 try:
     from pyproj import Transformer
 except Exception:
     Transformer = None
 
-# module-level cache for grid loaded from DB
-GRID_CACHE = None
+# module-level cache for grids loaded from DB, keyed by grid table
+GRID_CACHE: dict = {}
+# On-disk cache for grid_SSC (path kept for existing deployments); other grid
+# tables get a sibling file named after the table (see _grid_cache_path).
 GRID_CACHE_PATH = os.getenv("GRID_CACHE_PATH", "/opt/data/cache/oa_grid_cache.npz")
 INTERP_CACHE = {}
 INTERP_CACHE_DIR = os.getenv("INTERP_CACHE_DIR", "/opt/data/cache")
@@ -118,22 +120,28 @@ def _write_grid_cache(path: str, lon: np.ndarray, lat: np.ndarray) -> None:
         logger.exception("Failed to write grid cache to %s", path)
 
 
+def _grid_cache_path(table: str) -> str:
+    if table == 'grid_SSC':
+        return GRID_CACHE_PATH
+    return os.path.join(os.path.dirname(GRID_CACHE_PATH), f"grid_cache_{table}.npz")
+
+
 def get_grid_from_db(table: str = 'grid_SSC') -> Tuple[np.ndarray, np.ndarray]:
     """Load curvilinear grid lon/lat arrays from ClickHouse table named `table`.
 
     Expects columns: gridX, gridY, longitude, latitude
     Returns lon2d, lat2d shaped (nrows, ncols) aligned by sorted unique row/col indices.
-    Caches result in module-level GRID_CACHE.
+    Caches result per table in module-level GRID_CACHE.
     """
-    global GRID_CACHE
-    if GRID_CACHE is not None:
-        return GRID_CACHE
+    if table in GRID_CACHE:
+        return GRID_CACHE[table]
 
-    cached = _load_grid_cache(GRID_CACHE_PATH)
+    cache_path = _grid_cache_path(table)
+    cached = _load_grid_cache(cache_path)
     if cached is not None:
-        GRID_CACHE = cached
-        logger.info("Loaded grid from cache %s", GRID_CACHE_PATH)
-        return GRID_CACHE
+        GRID_CACHE[table] = cached
+        logger.info("Loaded grid from cache %s", cache_path)
+        return cached
 
     client = _get_ch_client()
     result = client.query(f"SELECT gridX, gridY, longitude, latitude FROM {table}")
@@ -158,10 +166,10 @@ def get_grid_from_db(table: str = 'grid_SSC') -> Tuple[np.ndarray, np.ndarray]:
         lon[i, j] = float(longitude)
         lat[i, j] = float(latitude)
 
-    GRID_CACHE = (lon, lat)
-    _write_grid_cache(GRID_CACHE_PATH, lon, lat)
-    logger.info("Worker loaded grid from ClickHouse table '%s' and cached to %s", table, GRID_CACHE_PATH)
-    return GRID_CACHE
+    GRID_CACHE[table] = (lon, lat)
+    _write_grid_cache(cache_path, lon, lat)
+    logger.info("Worker loaded grid from ClickHouse table '%s' and cached to %s", table, cache_path)
+    return GRID_CACHE[table]
 
 
 # module-level cache for the gridX/gridY -> row/col index mapping used to
@@ -169,7 +177,7 @@ def get_grid_from_db(table: str = 'grid_SSC') -> Tuple[np.ndarray, np.ndarray]:
 # get_grid_from_db's lon/lat arrays. Kept separate from GRID_CACHE since the
 # latter may be satisfied from the on-disk .npz cache without ever re-running
 # the query these positions are derived from.
-GRID_INDEX_CACHE = None
+GRID_INDEX_CACHE: dict = {}
 
 
 def get_grid_index_maps(table: str = 'grid_SSC') -> Tuple[dict, dict, int, int]:
@@ -179,9 +187,8 @@ def get_grid_index_maps(table: str = 'grid_SSC') -> Tuple[dict, dict, int, int]:
     so a values array built with these positions aligns cell-for-cell with
     that function's lon/lat arrays.
     """
-    global GRID_INDEX_CACHE
-    if GRID_INDEX_CACHE is not None:
-        return GRID_INDEX_CACHE
+    if table in GRID_INDEX_CACHE:
+        return GRID_INDEX_CACHE[table]
 
     client = _get_ch_client()
     try:
@@ -195,8 +202,8 @@ def get_grid_index_maps(table: str = 'grid_SSC') -> Tuple[dict, dict, int, int]:
 
     row_pos = {v: i for i, v in enumerate(row_idxs)}
     col_pos = {v: j for j, v in enumerate(col_idxs)}
-    GRID_INDEX_CACHE = (row_pos, col_pos, len(row_idxs), len(col_idxs))
-    return GRID_INDEX_CACHE
+    GRID_INDEX_CACHE[table] = (row_pos, col_pos, len(row_idxs), len(col_idxs))
+    return GRID_INDEX_CACHE[table]
 
 
 class _PrecomputedLinearInterpolator:
@@ -591,7 +598,10 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
 
 # ---- ClickHouse-sourced tile generation (on-demand, no NC file involved) -----
 
-def _value_query_for_bin_mode(variable: str, bin_mode: str) -> Tuple[str, dict]:
+def _value_query_for_bin_mode(
+    variable: str, bin_mode: str,
+    data_table: str = 'SalishSeaCast_hourly', daily_table: str = 'SalishSeaCast_daily',
+) -> Tuple[str, dict]:
     """Return (sql, base_params) selecting (gridX, gridY, value) for one date/depth.
 
     Caller fills in the `depth` param and whichever of `t`/`day`/`month` the
@@ -602,17 +612,17 @@ def _value_query_for_bin_mode(variable: str, bin_mode: str) -> Tuple[str, dict]:
     """
     if bin_mode == 'hourly':
         sql = (
-            f"SELECT gridX, gridY, {variable} AS value FROM SalishSeaCast_hourly "
+            f"SELECT gridX, gridY, {variable} AS value FROM {data_table} "
             f"WHERE time = %(t)s AND abs(depth - %(depth)s) < 0.05"
         )
     elif bin_mode == 'daily':
         sql = (
-            f"SELECT gridX, gridY, {variable}_mean AS value FROM SalishSeaCast_daily "
+            f"SELECT gridX, gridY, {variable}_mean AS value FROM {daily_table} "
             f"WHERE time = toDate(%(day)s) AND abs(depth - %(depth)s) < 0.05"
         )
     elif bin_mode == 'monthly':
         sql = (
-            f"SELECT gridX, gridY, avg({variable}_mean) AS value FROM SalishSeaCast_daily "
+            f"SELECT gridX, gridY, avg({variable}_mean) AS value FROM {daily_table} "
             f"WHERE toStartOfMonth(time) = toDate(%(month)s) AND abs(depth - %(depth)s) < 0.05 "
             f"GROUP BY gridX, gridY"
         )
@@ -633,6 +643,7 @@ def render_tile_from_db(
     max_dim: int = 2048,
     method: str = "linear",
     clip_percentile: Optional[Tuple[float, float]] = None,
+    source: str = 'SalishSeaCast',
 ) -> Optional[str]:
     """Render one variable/depth/date WebP tile straight from ClickHouse (no NC
     file involved) — the on-demand counterpart to process_variable/_process_task
@@ -644,10 +655,13 @@ def render_tile_from_db(
     for this variable/date/depth (caller should treat that as a 404, not an
     error).
     """
-    lon_src, lat_src = get_grid_from_db('grid_SSC')
-    row_pos, col_pos, nrows, ncols = get_grid_index_maps('grid_SSC')
+    src_cfg = get_source(source)
+    lon_src, lat_src = get_grid_from_db(src_cfg['grid_table'])
+    row_pos, col_pos, nrows, ncols = get_grid_index_maps(src_cfg['grid_table'])
 
-    sql, _ = _value_query_for_bin_mode(variable, bin_mode)
+    sql, _ = _value_query_for_bin_mode(
+        variable, bin_mode, src_cfg['data_table'], src_cfg['daily_table'],
+    )
     params = {'depth': float(depth)}
     if bin_mode == 'hourly':
         params['t'] = time_param
@@ -675,6 +689,30 @@ def render_tile_from_db(
     if not valid_mask.any():
         return None
 
+    image_root = image_root or os.getenv('IMAGE_ROOT', '/opt/data/image')
+    out_png = os.path.join(image_root, variable, dt_folder, f"{depth_label}.webp")
+    render_values(lon_src, lat_src, values, valid_mask, variable, out_png,
+                  max_dim=max_dim, method=method, clip_percentile=clip_percentile)
+    return out_png
+
+
+def render_values(
+    lon_src: np.ndarray,
+    lat_src: np.ndarray,
+    values: np.ndarray,
+    valid_mask: np.ndarray,
+    variable: str,
+    out_png: str,
+    *,
+    max_dim: int = 2048,
+    method: str = "linear",
+    clip_percentile: Optional[Tuple[float, float]] = None,
+) -> None:
+    """Render an in-memory source-grid field (lon/lat/values all the same
+    shape) to a packed WebP at `out_png`, scaled/capped by the variable's
+    variable_config.yml bounds and precision. Written to a temp name and
+    renamed into place, so a tile being re-rendered (a newer forecast run)
+    is never served half-written."""
     minx, miny, maxx, maxy = compute_mercator_grid_bounds(lon_src, lat_src)
     xx_merc, yy_merc, w, h = build_target_grid(minx, miny, maxx, maxy, max_dim=max_dim)
 
@@ -683,15 +721,13 @@ def render_tile_from_db(
     erddap_max = var_cfg.get('colormapMax')
     pack_precision = var_cfg.get('precision', 0.1)
 
-    image_root = image_root or os.getenv('IMAGE_ROOT', '/opt/data/image')
-    out_png = os.path.join(image_root, variable, dt_folder, f"{depth_label}.webp")
-
+    tmp_png = f"{out_png}.tmp-{os.getpid()}.webp"
     _render_tile_core(
         lon_src, lat_src, values, valid_mask, xx_merc, yy_merc, w, h,
         erddap_min, erddap_max, erddap_min, erddap_max, method, clip_percentile,
-        pack_precision, out_png,
+        pack_precision, tmp_png,
     )
-    return out_png
+    os.replace(tmp_png, out_png)
 
 
 def scale_to_uint8(arr: np.ndarray, vmin: float, vmax: float, clip_percentile: Optional[Tuple[float, float]] = None) -> np.ndarray:

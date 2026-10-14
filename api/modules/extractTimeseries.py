@@ -31,34 +31,21 @@ import pandas as pd
 
 from modules.clickhouse_helpers import get_ch_client
 
-# ClickHouse table holding the 4D (time, depth, gridX, gridY, <variables>) data per source
-DATA_TABLE_BY_SOURCE = {
-    "SalishSeaCast": "SalishSeaCast_hourly",
-}
-
-# ClickHouse table mapping gridX/gridY to longitude/latitude per source
-GRID_TABLE_BY_SOURCE = {
-    "SalishSeaCast": "grid_SSC",
-}
-
-# Columns in the data table that hold variable values; also the allowed `var` values
-ALLOWED_VARIABLES = {
-    "temperature",
-    "salinity",
-    "total_alkalinity",
-    "omega_arag",
-    "omega_cal",
-    "ph_total",
-    "dissolved_oxygen",
-    "dissolved_inorganic_carbon",
-}
+# Per-source ClickHouse tables (data, daily, grid), the variables each source
+# has, and its domain's human name — all from shared/variable_config.yml.
+from modules.sources import (  # noqa: F401  (re-exported for the other extract modules)
+    ALLOWED_VARIABLES,
+    DAILY_TABLE_BY_SOURCE,
+    DATA_TABLE_BY_SOURCE,
+    DOMAIN_LABEL_BY_SOURCE,
+    GRID_TABLE_BY_SOURCE,
+    check_variable,
+    has_bottom_rows,
+    require_source,
+)
+from shared.variable_config import source_for_table
 
 MAX_GRID_DIST_KM = 25.0
-
-# Human name for the model domain, used in the out-of-domain message below.
-DOMAIN_LABEL_BY_SOURCE = {
-    "SalishSeaCast": "SalishSeaCast model domain",
-}
 
 
 class OutsideDomainError(RuntimeError):
@@ -129,17 +116,24 @@ class OutsideDomainError(RuntimeError):
 # instead of signalling "no data here".
 DEPTH_MATCH_TOLERANCE_M = 0.1
 
-# Depth levels are uniform across the entire SSC sigma-coordinate grid — every
-# cell has the same discrete set. Cached per table per process to avoid a
-# per-request full-table scan.
+# Depth levels are uniform across a source's whole grid — every cell has the
+# same discrete set. Cached per table per process to avoid a per-request
+# full-table scan. Only real depths (>= 0): LiveOcean also stores its bottom
+# layer as depth -1 rows, which is a per-cell pseudo-level, not part of the
+# axis profiles and sections are drawn on (see _resolve_depth for -1).
 _CACHED_DEPTHS: dict[str, list[float]] = {}
 
 
 def _get_depth_levels(client, table: str) -> list[float]:
     if table not in _CACHED_DEPTHS:
-        result = client.query(f"SELECT DISTINCT depth FROM {table} ORDER BY depth")
+        result = client.query(f"SELECT DISTINCT depth FROM {table} WHERE depth >= 0 ORDER BY depth")
         _CACHED_DEPTHS[table] = [float(r[0]) for r in result.result_rows]
     return _CACHED_DEPTHS[table]
+
+
+def _table_has_bottom_rows(table: str) -> bool:
+    source = source_for_table(table)
+    return source is not None and has_bottom_rows(source)
 
 
 def _find_nearest_grid_point(client, grid_table: str, lat: float, lon: float, max_dist_km: float = MAX_GRID_DIST_KM, source: str = "SalishSeaCast") -> Tuple[int, int, float, float, float]:
@@ -238,12 +232,15 @@ def _find_grid_points_in_polygon(client, grid_table: str, polygon: List[Tuple[fl
 def _resolve_depth(client, table: str, grid_x: int, grid_y: int, depth: float) -> Optional[float]:
     """Return the available depth level nearest to `depth`.
 
-    `depth == -1` selects the deepest (bottom) level, whatever it is.
+    `depth == -1` selects the bottom: the stored bottom-layer rows (-1) when
+    the source has them (LiveOcean), else the deepest level, whatever it is.
     Otherwise, the nearest available level must be within
     `DEPTH_MATCH_TOLERANCE_M` of `depth` or this returns None — a depth
     deeper than the local water column should mean "no data", not silently
     fall back to the cell's shallowest/deepest level.
     """
+    if float(depth) == -1.0 and _table_has_bottom_rows(table):
+        return -1.0
     depths = _get_depth_levels(client, table)
     if not depths:
         return None
@@ -307,13 +304,7 @@ def extract_timeseries(
         print(f"From date: {from_date}", flush=True)
         print(f"To date: {to_date}", flush=True)
 
-    if source not in DATA_TABLE_BY_SOURCE:
-        raise RuntimeError(
-            f"Source '{source}' is not yet available via ClickHouse. "
-            f"Supported sources: {sorted(DATA_TABLE_BY_SOURCE)}"
-        )
-    if var not in ALLOWED_VARIABLES:
-        raise ValueError(f"Unknown variable '{var}'. Supported variables: {sorted(ALLOWED_VARIABLES)}")
+    check_variable(source, var)
 
     table = DATA_TABLE_BY_SOURCE[source]
     grid_table = GRID_TABLE_BY_SOURCE[source]
@@ -345,10 +336,11 @@ def extract_timeseries(
 
         if depth is None:
             # avg() is a no-op for point mode (one grid cell per group) and averages
-            # across cells for area mode — one query path covers both.
+            # across cells for area mode — one query path covers both. Real
+            # depths only (LiveOcean's -1 bottom rows aren't a level).
             query = (
                 f"SELECT time, depth, avg({var}) AS value FROM {table} "
-                f"WHERE {' AND '.join(where)} GROUP BY time, depth ORDER BY time, depth"
+                f"WHERE {' AND '.join(where + ['depth >= 0'])} GROUP BY time, depth ORDER BY time, depth"
             )
             result = client.query(query, parameters=params)
             if not result.result_rows:

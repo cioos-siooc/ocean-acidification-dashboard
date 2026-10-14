@@ -4,6 +4,8 @@ import { createRequestCache } from './useRequestCache';
 import { useVariableRegistry } from './useVariableRegistry';
 
 type ClimateTimeseriesParams = {
+    /** Model source; the API refuses one without the `climatology` capability. */
+    source?: string;
     variable: string;
     lat: number;
     lon: number;
@@ -37,6 +39,7 @@ export async function fetchClimateTimeseries(params: ClimateTimeseriesParams) {
 
     const key = JSON.stringify(params);
     const raw = await cache.fetch(key, () => axios.post(`${apiBaseUrl}/extract_climateTimeseries`, {
+        source: params.source ?? 'SalishSeaCast',
         var: params.variable,
         lat: params.lat,
         lon: params.lon,

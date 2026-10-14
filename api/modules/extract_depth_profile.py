@@ -32,9 +32,10 @@ from typing import Optional
 
 from modules.clickhouse_helpers import get_ch_client
 from modules.extractTimeseries import (
-    ALLOWED_VARIABLES,
+    DAILY_TABLE_BY_SOURCE,
     DATA_TABLE_BY_SOURCE,
     GRID_TABLE_BY_SOURCE,
+    check_variable,
     _find_nearest_grid_point,
     _get_depth_levels,
     _nearest_level_index,
@@ -135,10 +136,7 @@ def extract_depth_profile(
     OutsideDomainError — (a RuntimeError) no grid cell within MAX_GRID_DIST_KM
                  of (lat, lon)
     """
-    if source not in DATA_TABLE_BY_SOURCE:
-        raise ValueError(f"Source '{source}' is not yet available via ClickHouse.")
-    if var not in ALLOWED_VARIABLES:
-        raise ValueError(f"Unknown variable '{var}'. Supported variables: {sorted(ALLOWED_VARIABLES)}")
+    check_variable(source, var)
 
     if bin_mode is None:
         if bin_hours not in MODE_BY_BIN_HOURS:
@@ -150,6 +148,7 @@ def extract_depth_profile(
         mode = bin_mode
 
     table = DATA_TABLE_BY_SOURCE[source]
+    daily_table = DAILY_TABLE_BY_SOURCE[source]
     grid_table = GRID_TABLE_BY_SOURCE[source]
 
     client = get_ch_client()
@@ -170,7 +169,7 @@ def extract_depth_profile(
         # and hardcoding the eras there would silently rot as backfill lands.
         # Both tables lead their sort key with (gridX, gridY), so this is a
         # primary-key range scan rather than a table scan.
-        coverage_table = table if mode == "hourly" else "SalishSeaCast_daily"
+        coverage_table = table if mode == "hourly" else daily_table
         cov_rows = client.query(
             f"SELECT min(time), max(time) FROM {coverage_table} "
             f"WHERE gridX = %(gx)s AND gridY = %(gy)s",
@@ -183,14 +182,14 @@ def extract_depth_profile(
         }
 
         if mode == "daily":
-            # SalishSeaCast_daily already stores one pre-aggregated row per
+            # The daily table already stores one pre-aggregated row per
             # (day, depth, grid cell) — a plain filtered select, no GROUP BY
             # needed. It also covers 2007-present, vs. SalishSeaCast_hourly's
             # 2026-present, so daily mode isn't silently truncated to whatever
             # short window the hourly table happens to cover.
             daily_rows = client.query(
-                f"SELECT time, depth, {var}_mean AS value FROM SalishSeaCast_daily "
-                f"WHERE gridX = %(gx)s AND gridY = %(gy)s "
+                f"SELECT time, depth, {var}_mean AS value FROM {daily_table} "
+                f"WHERE gridX = %(gx)s AND gridY = %(gy)s AND depth >= 0 "
                 f"  AND time >= toDate(%(from)s) AND time <= toDate(%(to)s) "
                 f"ORDER BY time, depth",
                 parameters={"gx": grid_x, "gy": grid_y, "from": from_str[:10], "to": to_str[:10]},
@@ -203,8 +202,8 @@ def extract_depth_profile(
             # pass — where monthly keeps a two-decade section at ~230 buckets.
             monthly_rows = client.query(
                 f"SELECT toStartOfMonth(time) AS bucket, depth, avg({var}_mean) AS value "
-                f"FROM SalishSeaCast_daily "
-                f"WHERE gridX = %(gx)s AND gridY = %(gy)s "
+                f"FROM {daily_table} "
+                f"WHERE gridX = %(gx)s AND gridY = %(gy)s AND depth >= 0 "
                 f"  AND time >= toDate(%(from)s) AND time <= toDate(%(to)s) "
                 f"GROUP BY bucket, depth "
                 f"ORDER BY bucket, depth",
@@ -216,7 +215,7 @@ def extract_depth_profile(
             model_rows = client.query(
                 f"SELECT toStartOfInterval(time, INTERVAL 1 HOUR) AS bucket, depth, avg({var}) AS value "
                 f"FROM {table} "
-                f"WHERE gridX = %(gx)s AND gridY = %(gy)s "
+                f"WHERE gridX = %(gx)s AND gridY = %(gy)s AND depth >= 0 "
                 f"  AND time >= toDateTime(%(from)s) AND time <= toDateTime(%(to)s) "
                 f"GROUP BY bucket, depth "
                 f"ORDER BY bucket, depth",

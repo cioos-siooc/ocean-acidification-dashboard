@@ -7,7 +7,7 @@
            than two different things. This box only ever describes the raster
            layer the map is painting. -->
       <div class="w-full m-0 p-0 layer-label" style="height:16px">
-        <span>MAP LAYER &middot; {{ selectedVariable.source }}</span>
+        <span>MAP LAYER &middot; {{ sourceLabel(selectedVariable.source) }}</span>
       </div>
 
       <div class="w-full m-0 p-0" style="height:20px">
@@ -16,6 +16,11 @@
 
       <div class="w-full m-0 p-0" style="height:20px">
         <span>{{ formattedDt }}</span>
+      </div>
+      <!-- A forecast model's future steps are predictions from the newest run,
+           and get replaced when the next run lands. -->
+      <div v-if="forecastLabel" class="w-full m-0 p-0 layer-forecast" style="height:20px">
+        <span>{{ forecastLabel }}</span>
       </div>
       <div class="w-full m-0 p-0" style="height:20px">
         <span>Depth {{ selectedVariable.depth }}{{ selectedVariable.depth && !isNaN(Number(selectedVariable.depth)) ? ' m' : '' }}</span>
@@ -47,6 +52,8 @@ const mainStore = useMainStore();
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 const { variableLabel } = useVariableRegistry()
 import { utc2pst } from '~~/composables/useUTC2PST'
+import { useModelSource } from '~~/composables/useModelSource'
+const { sourceLabel, isForecast, current: currentSource } = useModelSource()
 
 ////////////////////////////////////// COMPUTED //////////////////////////////////////
 
@@ -75,6 +82,13 @@ const formattedDt = computed(() => {
   if (mainStore.exploreBinMode === 'monthly') return moment.utc(dt).format('MMM YYYY');
   if (mainStore.exploreBinMode === 'daily') return moment.utc(dt).format('ddd MMM DD, YYYY');
   return utc2pst(moment(dt));
+});
+
+const forecastLabel = computed(() => {
+  const dt = selectedVariable.value.dt;
+  if (!dt || !isForecast(dt.valueOf())) return '';
+  const run = currentSource.value?.runDate;
+  return run ? `forecast · run ${moment.utc(run).format('MMM DD')}` : 'forecast';
 });
 
 ////////////////////////////////////// METHODS //////////////////////////////////////
@@ -135,5 +149,12 @@ const formattedDt = computed(() => {
 
 .layer-empty {
   color: rgb(251, 191, 36);
+}
+
+.layer-forecast {
+  color: #a78bfa;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
 }
 </style>

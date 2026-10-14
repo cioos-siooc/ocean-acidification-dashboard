@@ -9,6 +9,27 @@ export function formatDepthLabel(depth: number): string {
     return depth === -1 ? 'bottom' : depth.toFixed(1);
 }
 
+/** One `/variables` entry: a variable as one model source serves it. */
+export type VariableMeta = {
+    var: string, name: string, source: string,
+    /** Available instants, epoch ms (app.vue converts the API's ISO strings). */
+    dts: number[],
+    colormap: string | null, colormapMin: number, colormapMax: number,
+    depths: number[], precision: number, bounds: [number, number, number, number],
+    alt_units?: Array<{ unit: string, scale: number, offset?: number }>,
+    unit?: string,
+    sourceLabel?: string,
+    /** Hours between model outputs (SSC 1, LiveOcean 4). */
+    stepHours?: number,
+    /** A forecast model: instants from `forecastFrom` (epoch ms) on are predictions. */
+    forecast?: boolean,
+    forecastFrom?: number | null,
+    /** The newest forecast run (YYYY-MM-DD); tiles past it get re-rendered by the next run. */
+    runDate?: string | null,
+    /** Features the source's record length supports (see shared/variable_config.yml). */
+    capabilities?: { climatology?: boolean, trend?: boolean },
+}
+
 // Pulled out (rather than inlined in `state:`) so its return type can be
 // named via `ReturnType<>` below — Pinia's `this` typing inside `actions`
 // collapses to just the actions' own shape once the inline state literal
@@ -31,7 +52,7 @@ function createInitialState() {
         },
 
         dfnDays: 14, // days from now for climate timeseries
-        variables: [] as Array<{ var: string, name: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number], alt_units?: Array<{ unit: string, scale: number, offset?: number }> }>,
+        variables: [] as VariableMeta[],
         selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as string | null, depth_nc: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null, colormapStops: [null, null, null] as (number | null)[] },
 
         // var -> chosen display unit. Absent means "show the canonical unit"
@@ -222,7 +243,7 @@ export const useMainStore = defineStore('main', {
     },
 
     actions: {
-        setVariables(vars: Array<{ var: string, name: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number] }>) {
+        setVariables(vars: VariableMeta[]) {
             this.variables = vars;
         },
 
@@ -297,7 +318,7 @@ export const useMainStore = defineStore('main', {
             // the model's currently-selected depth is left untouched.
             if (depth !== -1) {
                 const variable = this.selected_variable.var;
-                const depthsArray = this.variables.find((v) => v.var === variable)?.depths;
+                const depthsArray = this.variables.find((v) => v.source === this.selected_variable.source && v.var === variable)?.depths;
                 const closestDepth = depthsArray
                     ? [...depthsArray].sort((a, b) => Math.abs(a - depth) - Math.abs(b - depth))
                     : [];

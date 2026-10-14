@@ -69,10 +69,10 @@
         class="mb-2 shrink-0"
         close
         @update:open="outOfDomainDismissed = true"
-        :title="`Outside the SalishSeaCast model domain (nearest model cell is ${outOfDomain.distanceKm.toFixed(0)} km away)`"
+        :title="`Outside the ${sourceLabel(source)} model domain (nearest model cell is ${outOfDomain.distanceKm.toFixed(0)} km away)`"
         :description="sensorMeta
           ? `No model values here — the chart shows ${sensorMeta.name} only, at its own depth of ${sensorMeta.depthLabel}.`
-          : 'No model values here. Pick a point inside the Salish Sea, or select a sensor at this location.'"
+          : 'No model values here. Pick a point inside the model domain, or select a sensor at this location.'"
       />
 
       <ChartContextBar :items="contextItems" />
@@ -109,7 +109,8 @@
 
         <div v-if="!showSection" class="line-slot" :style="{ height: chartH + 'px' }">
           <TimeseriesChart ref="lineChart" :window-start="windowStart" :window-end="chartWindowEnd"
-            :grid-left="AXIS_LEFT_PX" :grid-right="DATAZOOM_RIGHT_PX" legend-layout="top" :bin-mode="binMode" />
+            :grid-left="AXIS_LEFT_PX" :grid-right="DATAZOOM_RIGHT_PX" legend-layout="top" :bin-mode="binMode"
+            :forecast-from="showingSensor ? null : currentSource?.forecastFrom" />
           <!-- Out-of-domain already has the alert above; repeating it across the
                plot labels a chart that is drawing real sensor data as empty. -->
           <div v-if="!depthHasData && !loading && !outOfDomain" class="line-empty">{{ emptyLineMessage }}</div>
@@ -129,13 +130,14 @@ import moment from 'moment'
 import { useMainStore, formatDepthLabel } from '../stores/main'
 import { fetchDepthProfile, parseCoverageBound, asOutsideDomainError, type DepthProfileResponse, type OutsideDomainError, dataDepthCount } from '~~/composables/useDepthProfileFetch'
 import { resolveColormap } from '~~/composables/useColormapResolver'
-import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, floorToBin, type BinMode } from '~~/composables/useTimeDepthWindow'
+import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, floorToBin, holdModelSteps, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { fetchClimateTimeseries } from '~~/composables/useClimateTimeseries'
 import { getSensorTimeseries } from '~~/composables/useSensorTimeseries'
 import { csvMeta, csvTimestamp, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
 import { sensorSourceUrl } from '~~/composables/useSensorDownloadLinks'
 import DownloadButton from './ui/DownloadButton.vue'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
+import { useModelSource } from '~~/composables/useModelSource'
 import TimeDepthHeatmap from './depth/TimeDepthHeatmap.vue'
 import TimeseriesChart from './TimeseriesChart.vue'
 import TimeControls from './TimeControls.vue'
@@ -167,6 +169,7 @@ const props = defineProps<{ active?: boolean }>()
 
 const mainStore = useMainStore()
 const { toDisplayValue, displayUnit, formatDisplayValue } = useVariableRegistry()
+const { sourceLabel, hasCapability, current: currentSource } = useModelSource()
 
 const point = computed(() => mainStore.lastClickedMapPoint)
 const source = computed(() => mainStore.selected_variable.source)
@@ -422,9 +425,10 @@ function applyResponse(resp: DepthProfileResponse) {
       if (nextSensor) nextSensor[li]![bi] = resp.sensor?.[ri]?.[ti] ?? null
     }
   })
-  grid.value = next
+  const filled = binMode.value === 'hourly' ? holdModelSteps(next, starts, currentSource.value?.stepHours ?? 1) : next
+  grid.value = filled
   sensorGrid.value = nextSensor
-  snapDepthToData(next)
+  snapDepthToData(filled)
 
   gridCell.value = resp.grid ?? null
   mainStore.setModelDomainStatus({ inDomain: true, distanceKm: resp.grid?.distanceKm ?? null })
@@ -714,6 +718,18 @@ const contextItems = computed<ContextItem[]>(() => {
     })
   }
 
+  // A forecast model's newest steps are predictions; say from when, and which
+  // run they come from, whenever the window reaches into them.
+  const fc = currentSource.value
+  if (!showingSensor.value && fc?.forecast && fc.forecastFrom != null && chartWindowEnd.value.getTime() > fc.forecastFrom) {
+    items.push({
+      label: 'Forecast',
+      value: `from ${moment.utc(fc.forecastFrom).format('MMM D')}`,
+      tone: 'muted',
+      title: `${fc.label} run of ${fc.runDate}: values from ${moment.utc(fc.forecastFrom).format('MMM D')} on are its forecast, replaced as newer runs arrive.`,
+    })
+  }
+
   items.push({ label: 'Range', value: rangeLabel.value })
   if (point.value) items.push({ label: 'Point', value: `${point.value.lat.toFixed(4)}, ${point.value.lng.toFixed(4)}` })
 
@@ -741,7 +757,7 @@ const csvContext = computed<CsvContext | null>(() => {
   const sensor = mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id)
   return {
     source: showingSensor.value ? 'sensor' : 'model',
-    sourceLabel: showingSensor.value ? `sensor — ${sensor?.name ?? ''}` : 'SalishSeaCast model',
+    sourceLabel: showingSensor.value ? `sensor — ${sensor?.name ?? ''}` : `${sourceLabel(source.value)} model`,
     sourceUrl: showingSensor.value ? sensorSourceUrl(sensor) : null,
     variable: varId.value,
     variableName: varName.value,
@@ -912,13 +928,21 @@ async function updateLineChart() {
   // window's values on the new window's axis (seen when opening a share link).
   const seq = ++lineSeq
   const d = selectedDepthIdx.value
+  // A model with a coarser step than the hourly bins (LiveOcean, 4-hourly)
+  // leaves the bins between its steps empty; drop those, or the line breaks
+  // at every step. Empty bins *on* a step are real gaps and stay null.
+  const step = binMode.value === 'hourly' ? (currentSource.value?.stepHours ?? 1) : 1
+  const bins = binStarts.value
+    .map((b, bi) => ({ b, bi }))
+    .filter(({ b }) => step <= 1 || b.getUTCHours() % step === 0)
   const model = {
-    time: binStarts.value.map(b => b.toISOString()),
-    value: binStarts.value.map((_, bi) => grid.value[d]?.[bi] ?? null),
+    time: bins.map(({ b }) => b.toISOString()),
+    value: bins.map(({ bi }) => grid.value[d]?.[bi] ?? null),
   }
 
   let clim: any = null
-  if (point.value && depths.value[d] != null) {
+  // No climatology for a source whose record is too short (LiveOcean).
+  if (point.value && depths.value[d] != null && hasCapability('climatology')) {
     try {
       // Pad a day on each side: the API places each calendar day's point at
       // noon UTC (extract_climate_timeseries.py), but the chart's axis bounds
@@ -927,6 +951,7 @@ async function updateLineChart() {
       // can land inside the local window instead of past its edge, so the
       // band/mean line stops short of the axis instead of running to it.
       const resp = await fetchClimateTimeseries({
+        source: source.value,
         variable: varId.value,
         lat: point.value.lat,
         lon: point.value.lng,

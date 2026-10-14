@@ -2,8 +2,8 @@
 """extract_image.py
 
 On-demand WebP tile generation for GET /png, straight from ClickHouse — for
-dates/bin-modes the process/SSC pipeline hasn't (or, for daily/monthly, never
-will) pre-rendered. See shared/nc2tile.py's render_tile_from_db for the
+dates/bin-modes the pipelines haven't (or, for daily/monthly, never will)
+pre-rendered. See shared/nc2tile.py's render_tile_from_db for the
 actual rendering; this module is the HTTP-layer glue: parsing the route's
 `dt`/`depth` path segments and picking the right ClickHouse query shape.
 
@@ -20,7 +20,7 @@ from typing import Optional
 
 import shared.nc2tile as nc2tile
 
-from modules.extractTimeseries import ALLOWED_VARIABLES
+from modules.extractTimeseries import ALLOWED_VARIABLES, DATA_TABLE_BY_SOURCE, check_variable, has_bottom_rows
 
 # Dash-separated, matching the pipeline's own hourly folder convention
 # (2024-01-15T003000) so all three bin modes read as the same date format at
@@ -44,14 +44,17 @@ def resolve_bin_mode(dt: str) -> str:
     return 'hourly'
 
 
-def parse_depth_label(depth: str) -> Optional[float]:
+def parse_depth_label(depth: str, source: str = 'SalishSeaCast') -> Optional[float]:
     """Parse the `depth` path segment (e.g. "18.0") into a float.
 
-    Returns None for "bottom" (the per-cell deepest-valid-layer pseudo-depth
-    — not a fixed value, so not supported for on-demand generation) or any
-    other unparseable string; callers should treat that as "can't generate,
-    fall through to the usual 404".
+    "bottom" maps to the -1 rows for a source that stores its bottom layer
+    (LiveOcean). For SalishSeaCast it's a per-cell deepest-valid-layer
+    pseudo-depth — not a fixed value, so not supported for on-demand
+    generation — and returns None, like any other unparseable string;
+    callers should treat that as "can't generate, fall through to the 404".
     """
+    if depth == 'bottom':
+        return -1.0 if has_bottom_rows(source) else None
     try:
         return float(depth)
     except (TypeError, ValueError):
@@ -80,10 +83,14 @@ def generate_image(
     ClickHouse rows for that variable/date/depth) — callers should treat
     None the same as a cache miss that stays a 404, not a server error.
     """
-    if source != 'SalishSeaCast' or var not in ALLOWED_VARIABLES:
+    if source not in DATA_TABLE_BY_SOURCE:
+        return None
+    try:
+        check_variable(source, var)
+    except ValueError:
         return None
 
-    depth_val = parse_depth_label(depth)
+    depth_val = parse_depth_label(depth, source)
     if depth_val is None:
         return None
 
@@ -101,12 +108,13 @@ def generate_image(
         depth_label=depth,
         dt_folder=dt,
         image_root=image_root,
+        source=source,
     )
 
 
 def main(argv: Optional[list] = None) -> int:
     p = argparse.ArgumentParser(description="Generate a WebP tile on demand from ClickHouse")
-    p.add_argument("--source", default="SalishSeaCast")
+    p.add_argument("--source", default="SalishSeaCast", choices=sorted(DATA_TABLE_BY_SOURCE))
     p.add_argument("--var", "-v", required=True, choices=sorted(ALLOWED_VARIABLES))
     p.add_argument("--dt", required=True, help="2024-01-15T003000 (hourly), 2024-01-15 (daily), or 2024-01 (monthly)")
     p.add_argument("--depth", required=True, help="e.g. 18.0")

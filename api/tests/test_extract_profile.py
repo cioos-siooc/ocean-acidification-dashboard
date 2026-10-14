@@ -85,8 +85,8 @@ def test_extract_profile_unknown_variable_raises(monkeypatch):
 def test_extract_profile_unsupported_source_raises(monkeypatch):
     monkeypatch.setattr('extract_profile.get_ch_client', lambda: FakeClient(grid_row=(0, 0, 0.0, 0.0, 0.0)))
 
-    with pytest.raises(RuntimeError, match="not yet available via ClickHouse"):
-        extract_profile(source='Live Ocean', var='temperature', lat=49.0, lon=-123.0, dt='2026-01-01T12:00:00')
+    with pytest.raises(ValueError, match="Unknown source"):
+        extract_profile(source='NoSuchModel', var='temperature', lat=49.0, lon=-123.0, dt='2026-01-01T12:00:00')
 
 
 def test_extract_profile_unsupported_bin_mode_raises(monkeypatch):
