@@ -334,8 +334,8 @@ function renderTimeseriesChart() {
       nameLocation: 'middle',
       nameGap: 50,
       axisLabel: { fontSize: 10, color: '#ccc' },
-      min: 'dataMin',
-      max: 'dataMax',
+      // Fit the data on rounded ticks; 'dataMin'/'dataMax' printed the raw extremes as labels.
+      scale: true,
     },
     dataZoom: [{ type: 'inside', ...zoom.current() }, { type: 'slider', bottom: 4, height: 16, ...zoom.current() }],
     series: [

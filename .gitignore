@@ -77,3 +77,6 @@ clickhouse/logs/
 /secrets
 
 *.native
+*.mp4
+*.webm
+tutorials/

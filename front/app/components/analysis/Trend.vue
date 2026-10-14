@@ -105,9 +105,9 @@ if (csv) csv.register((): CsvDataset[] => {
 
 const trendColor = computed(() => {
   const t = result.value?.mk.trend
-  if (t === 'increasing') return 'red-lighten-2'
-  if (t === 'decreasing') return 'blue-lighten-2'
-  return 'grey'
+  if (t === 'increasing') return 'error' as const
+  if (t === 'decreasing') return 'info' as const
+  return 'neutral' as const
 })
 
 const chartContainerRef = ref<HTMLDivElement | null>(null)

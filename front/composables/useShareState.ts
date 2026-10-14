@@ -80,7 +80,7 @@ export interface SharedState {
         cc?: boolean   // cursor coords
         vp?: boolean   // vertical profile drawer
         qm?: 'point' | 'area'
-        ar?: boolean   // autoRangeDisabled
+        ar?: boolean   // no longer written or read: it only means "Auto Color request in flight"
     }
     /** sensor list filters */
     f?: { q?: string, o?: string[], v?: string[] }
@@ -173,7 +173,6 @@ export function captureShareState(): SharedState {
             cc: s.showCursorCoords,
             vp: s.isVerticalProfileOpen,
             qm: s.queryMode,
-            ar: s.autoRangeDisabled,
         },
         f: prune({
             q: s.sensorSearchQuery,
@@ -231,7 +230,6 @@ export function applyShareState(state: SharedState): void {
         if (ui.cc != null) s.setShowCursorCoords(ui.cc)
         if (ui.vp != null) s.setIsVerticalProfileOpen(ui.vp)
         if (ui.qm) s.queryMode = ui.qm
-        if (ui.ar != null) s.setAutoRangeDisabled(ui.ar)
     }
 
     // Applied wholesale: each view reads its own scope lazily through

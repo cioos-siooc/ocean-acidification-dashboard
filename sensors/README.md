@@ -141,6 +141,10 @@ docker compose -f docker-compose.prod.api.yml run --rm sensors \
   --variable "salinity:salinity:PSU:1.0:CTD"
 ```
 
+### ONC profiler (variable depth)
+
+Use `depth: -1` (catalog) or `--depth -1` (CLI), e.g. `YPVPP`. `onc_to_ch.py` then fetches 10 s ONC averages from first deployment onward (in 7-day windows), pairs every variable with the location's `CTD` `depth` reading at the same timestamp, and stores (hour, 1 m) cell means instead of one hourly value at depth 0. The location must have a `CTD` device; its first backfill is long, so run it by hand rather than leaving it to the scheduler.
+
 ### ERDDAP tabledap sensor (fixed depth)
 
 ```bash

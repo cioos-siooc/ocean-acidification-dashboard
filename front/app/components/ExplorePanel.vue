@@ -82,8 +82,8 @@
              what the Comparison tab is for; this tab answers "what does this one
              record look like through the water column". -->
         <div v-if="showSection" class="hm-slot" :style="{ height: sectionH + 'px' }">
-          <TimeDepthHeatmap ref="modelPanel" :label="panelLabel" :depths="depths" :values="activeGrid"
-            :bin-count="binCount" :color-fn="seqColorFn" :gridline-bins="gridlineBins" :mark-cell="selectedCell"
+          <TimeDepthHeatmap ref="modelPanel" :label="panelLabel" :depths="shownDepths" :values="shownGrid"
+            :bin-count="binCount" :color-fn="seqColorFn" :gridline-bins="gridlineBins" :mark-cell="shownSelectedCell"
             :tooltip-formatter="cellTooltip" show-x-axis :x-label="xLabel" @cell-click="onCellClick" />
         </div>
 
@@ -109,7 +109,7 @@
 
         <div v-if="!showSection" class="line-slot" :style="{ height: chartH + 'px' }">
           <TimeseriesChart ref="lineChart" :window-start="windowStart" :window-end="chartWindowEnd"
-            :grid-left="AXIS_LEFT_PX" :grid-right="DATAZOOM_RIGHT_PX" legend-layout="top" />
+            :grid-left="AXIS_LEFT_PX" :grid-right="DATAZOOM_RIGHT_PX" legend-layout="top" :bin-mode="binMode" />
           <!-- Out-of-domain already has the alert above; repeating it across the
                plot labels a chart that is drawing real sensor data as empty. -->
           <div v-if="!depthHasData && !loading && !outOfDomain" class="line-empty">{{ emptyLineMessage }}</div>
@@ -127,7 +127,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import moment from 'moment'
 import { useMainStore, formatDepthLabel } from '../stores/main'
-import { fetchDepthProfile, parseCoverageBound, asOutsideDomainError, type DepthProfileResponse, type OutsideDomainError } from '~~/composables/useDepthProfileFetch'
+import { fetchDepthProfile, parseCoverageBound, asOutsideDomainError, type DepthProfileResponse, type OutsideDomainError, dataDepthCount } from '~~/composables/useDepthProfileFetch'
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, floorToBin, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { fetchClimateTimeseries } from '~~/composables/useClimateTimeseries'
@@ -253,6 +253,8 @@ const selectedCell = computed<{ binIdx: number, depthIdx: number } | null>(() =>
   if (binIdx < 0) return null
   return { binIdx, depthIdx: selectedDepthIdx.value }
 })
+const shownSelectedCell = computed(() =>
+  selectedCell.value && selectedCell.value.depthIdx < shownDepthCount.value ? selectedCell.value : null)
 
 function pageWindow(dir: number) {
   page(dir)
@@ -384,6 +386,11 @@ watch(hasSensorGrid, (has) => { if (!has && viewMode.value === 'sensor-depth') m
 const showSection = computed(() => viewMode.value !== 'series')
 const showingSensor = computed(() => viewMode.value === 'sensor-depth' && hasSensorGrid.value)
 const activeGrid = computed(() => showingSensor.value ? sensorGrid.value! : grid.value)
+// The panel only gets the levels down to the deepest one with data, so a shallow
+// column (a 30 m inlet) fills the panel instead of the top of a 0–442 m axis.
+const shownDepthCount = computed(() => dataDepthCount(depths.value.length, activeGrid.value))
+const shownDepths = computed(() => depths.value.slice(0, shownDepthCount.value))
+const shownGrid = computed(() => activeGrid.value?.slice(0, shownDepthCount.value) ?? [])
 const emptyCellLabel = computed(() => showingSensor.value ? 'no cast in this bin' : 'no model data (below seabed)')
 
 
@@ -893,12 +900,17 @@ const lineChart = ref<InstanceType<typeof TimeseriesChart> | null>(null)
  * resolution matches the monthly view's own coarse bins instead of showing
  * day-level texture stretched across the window's two decades.
  */
+let lineSeq = 0
 async function updateLineChart() {
   // The chart only exists in the series sub-view now — depth sections are
   // heatmap-only. `lineChart.value` is already null once viewMode moves away
   // (its `v-if` unmounts the component), but guard on viewMode directly too so
   // an in-flight call from just before the switch doesn't race the teardown.
   if (!lineChart.value || viewMode.value !== 'series') return
+  // Calls overlap (window change, then its fetch landing) and each awaits the
+  // climate fetch; without this a slower, older call plots last — the previous
+  // window's values on the new window's axis (seen when opening a share link).
+  const seq = ++lineSeq
   const d = selectedDepthIdx.value
   const model = {
     time: binStarts.value.map(b => b.toISOString()),
@@ -934,7 +946,7 @@ async function updateLineChart() {
     : null
   // Re-check: the awaited climate fetch above can outlive a sub-view switch,
   // which unmounts this chart (`v-if`) out from under the in-flight call.
-  if (!lineChart.value || viewMode.value !== 'series') return
+  if (seq !== lineSeq || !lineChart.value || viewMode.value !== 'series') return
   lineChart.value.plot(model, clim, sensor)
 }
 

@@ -244,10 +244,11 @@ function render() {
   if (series.length) (series[0] as any).markLine = { silent: true, symbol: 'none', lineStyle: { color: '#fff', opacity: 0.4, type: 'solid', width: 1 }, data: [{ yAxis: 0 }] }
 
   chartInstance.setOption({
-    tooltip: { trigger: 'axis', formatter: tooltipFormatter },
+    tooltip: { trigger: 'axis', formatter: tooltipFormatter, confine: true },
     legend: { top: 4, type: 'scroll', textStyle: { fontSize: 10 } },
     grid: { left: '4%', right: '3%', bottom: '12%', top: '18%', containLabel: true },
-    xAxis: { type: 'time', axisLabel: { fontSize: 9, color: '#ccc' } },
+    // Label days, not dates: the axis year is the synthetic REF_YEAR.
+    xAxis: { type: 'time', axisLabel: { fontSize: 9, color: '#ccc', formatter: (v: number) => formatDayOfYear(v) } },
     yAxis: {
       type: 'value', name: unit.value ? `Anomaly (${unit.value})` : 'Anomaly',
       nameLocation: 'middle', nameGap: 40, axisLabel: { fontSize: 10, color: '#ccc' }, scale: true,

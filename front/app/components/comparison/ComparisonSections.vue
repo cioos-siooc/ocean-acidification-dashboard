@@ -33,13 +33,13 @@
 
     <div class="grow" style="min-height:0;" @mouseleave="hoverCell = null">
       <div class="hm-slot" :style="{ height: panelH + 'px' }">
-        <TimeDepthHeatmap ref="modelPanel" label="MODEL" :depths="depths" :values="modelGrid"
+        <TimeDepthHeatmap ref="modelPanel" label="MODEL" :depths="shownDepths" :values="shownModelGrid"
           :bin-count="binCount" :color-fn="colorFn" :gridline-bins="gridlineBins"
           :chart-group="CHART_GROUP" :mark-depth="markDepth" :mark-label="depthLabel"
           @cell-click="onCellClick" @hover="hoverCell = $event" />
       </div>
       <div class="hm-slot" :style="{ height: panelH + 'px' }">
-        <TimeDepthHeatmap ref="sensorPanel" label="SENSOR &#183; BINNED" :depths="depths" :values="sensorGrid"
+        <TimeDepthHeatmap ref="sensorPanel" label="SENSOR &#183; BINNED" :depths="shownDepths" :values="shownSensorGrid"
           :bin-count="binCount" :color-fn="colorFn" :gridline-bins="gridlineBins"
           :chart-group="CHART_GROUP" :mark-depth="markDepth"
           show-x-axis :x-label="xLabel"
@@ -64,7 +64,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useMainStore, formatDepthLabel } from '../../stores/main'
-import { fetchDepthProfile, parseCoverageBound, asOutsideDomainError, type DepthProfileResponse, type OutsideDomainError } from '~~/composables/useDepthProfileFetch'
+import { fetchDepthProfile, parseCoverageBound, asOutsideDomainError, type DepthProfileResponse, type OutsideDomainError, dataDepthCount } from '~~/composables/useDepthProfileFetch'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, useTimeDepthWindow, toApiIso, type BinMode } from '~~/composables/useTimeDepthWindow'
@@ -118,6 +118,12 @@ const {
 
 const modelGrid = ref<(number | null)[][]>([])
 const sensorGrid = ref<(number | null)[][]>([])
+// Both panels share one depth axis, cut at the deepest level with data in either
+// (see dataDepthCount) so a shallow column isn't squeezed into the top strip.
+const shownDepthCount = computed(() => dataDepthCount(depths.value.length, modelGrid.value, sensorGrid.value))
+const shownDepths = computed(() => depths.value.slice(0, shownDepthCount.value))
+const shownModelGrid = computed(() => modelGrid.value.slice(0, shownDepthCount.value))
+const shownSensorGrid = computed(() => sensorGrid.value.slice(0, shownDepthCount.value))
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 

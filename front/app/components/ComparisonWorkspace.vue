@@ -331,11 +331,12 @@ function renderChart() {
     const lo = Math.min(...pts.map(p => Math.min(p[0]!, p[1]!)))
     const hi = Math.max(...pts.map(p => Math.max(p[0]!, p[1]!)))
     const s = scatterStats.value
+    // lo/hi are raw data extremes: hide their labels, or they print full-precision floats.
     chart.setOption({
       tooltip: { trigger: 'item', formatter: (p: any) => `obs ${fmtVar(p.value[0])}<br/>model ${fmtVar(p.value[1])}` },
       grid: { left: 60, right: 30, top: 20, bottom: 50 },
-      xAxis: { type: 'value', name: varUnit.value ? `Observed (${varUnit.value})` : 'Observed', nameLocation: 'middle', nameGap: 28, min: lo, max: hi, axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'value', name: varUnit.value ? `Model (${varUnit.value})` : 'Model', nameLocation: 'middle', nameGap: 42, min: lo, max: hi, axisLabel: { fontSize: 10 } },
+      xAxis: { type: 'value', name: varUnit.value ? `Observed (${varUnit.value})` : 'Observed', nameLocation: 'middle', nameGap: 28, min: lo, max: hi, axisLabel: { fontSize: 10, showMinLabel: false, showMaxLabel: false } },
+      yAxis: { type: 'value', name: varUnit.value ? `Model (${varUnit.value})` : 'Model', nameLocation: 'middle', nameGap: 42, min: lo, max: hi, axisLabel: { fontSize: 10, showMinLabel: false, showMaxLabel: false } },
       series: [
         { type: 'scatter', data: pts, symbolSize: 4, itemStyle: { color: 'rgba(255,152,0,0.55)' } },
         { type: 'line', data: [[lo, lo], [hi, hi]], symbol: 'none', lineStyle: { type: 'dashed', color: 'rgba(255,255,255,0.4)' } },
@@ -362,7 +363,7 @@ function renderChart() {
       legend: { data: ['Model', 'Sensor'], top: 0, textStyle: { fontSize: 10 } },
       grid: { left: 60, right: 30, top: 30, bottom: 50 },
       xAxis: { type: 'category', data: MONTH_LABELS, axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'value', name: varUnit.value, nameLocation: 'middle', nameGap: 42, axisLabel: { fontSize: 10 } },
+      yAxis: { type: 'value', name: varUnit.value, nameLocation: 'middle', nameGap: 42, scale: true, axisLabel: { fontSize: 10 } },
       series: [
         { name: 'Model', type: 'line', data: clim.map(m => m.model), symbol: 'circle', symbolSize: 5, lineStyle: { color: '#ff9800' }, itemStyle: { color: '#ff9800' } },
         { name: 'Sensor', type: 'line', data: clim.map(m => m.sensor), symbol: 'circle', symbolSize: 5, lineStyle: { color: '#a5d6a7' }, itemStyle: { color: '#a5d6a7' } },

@@ -207,7 +207,7 @@ sensors:
   - name: "Profiling Instrument Package"
     lat: 49.486885
     lon: -124.769333
-    depth: 5.26
+    depth: -1
     api: ONC
     organization: ONC
     location_code: BSVPP
@@ -329,7 +329,7 @@ sensors:
     - "salinity:salinity:PSU:1.0:CTD"
     - "temperature:temperature:C:1.0:CTD"
 
-  - name: "Instrument Float"
+  - name: "Yarrow Point"
     lat: 48.622389
     lon: -123.498839
     depth: 0.083333
@@ -340,6 +340,18 @@ sensors:
     variables:
     - "chlorophyll:chlorophyll:µg/L:1.0:FLUOROMETER"
     - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
+    - "salinity:salinity:PSU:1.0:CTD"
+    - "temperature:temperature:C:1.0:CTD"
+
+  - name: "Yarrow Point Profiler"
+    lat: 48.622366
+    lon: -123.498849
+    depth: -1
+    api: ONC
+    organization: ONC
+    location_code: YPVPP
+    source_link: "https://data.oceannetworks.ca/DataSearch?location=YPVPP"
+    variables:
     - "salinity:salinity:PSU:1.0:CTD"
     - "temperature:temperature:C:1.0:CTD"
 

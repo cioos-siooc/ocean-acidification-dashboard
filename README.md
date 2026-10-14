@@ -80,4 +80,15 @@ Scheduled jobs run as Prefect flows reporting to the shared CIOOS Pacific server
 *   **Pausing**: `RUN_SCHEDULE_PAUSED` / `SENSORS_SCHEDULE_PAUSED` are re-applied on every container start, so a pause set in the UI lasts only until the next restart. Stop the container for a pause that holds.
 *   **Updating**: After a code change, rebuild and recreate the scheduler container. Keep the `prefect==` pin in `process/pyproject.toml` and `sensors/pyproject.toml` at or below the server's version.
 
+### Filling a missed SSC date
+Scheduled runs only queue dates newer than the latest date in `SalishSeaCast_status`, so a day that was skipped in the past is never picked up on its own. Process it explicitly on the process machine (or use **Run → custom** in the Prefect UI with `date` set, which won't overlap a scheduled run):
+
+```bash
+C="docker compose -f docker-compose.prod.process.yml --env-file .env.process.remote exec scheduler uv run python -m SSC.cli"
+$C status --date YYYY-MM-DD   # where it stopped (no rows = never queued)
+$C run --date YYYY-MM-DD      # seeds missing rows, then resumes from the date's current stage through sync
+```
+
+Don't start it while a scheduled run is in progress. Add `--force` only if rows are stuck at `failed_*` after exhausting retries or the date must be redone from scratch; if the API already holds partial data for that date, clear it first (see [docs/clickhouse-ops.md](docs/clickhouse-ops.md#re-syncing-a-specific-date)).
+
 Details: [process/README.md](process/README.md#scheduling-and-monitoring-prefect) (SSC pipeline) and [sensors/README.md](sensors/README.md#ongoing-updates-prefect) (sensor ingestion).
