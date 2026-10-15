@@ -2,15 +2,19 @@
 discover_location.py
 
 Query the ONC Oceans 3.0 API to find what sensors are available at a given
-location, then print a ready-to-paste catalog.yaml entry.
+location and its child locations (e.g. CRIP → CRIP.C1, CRIP.C2), then print a
+catalog entry to review and paste into catalog_ONC.yml.
 
 Usage
 -----
     uv run python discover_location.py SCVIP
     uv run python discover_location.py SCVIP SEVIP FGPD   # multiple at once
 
-The script prints a YAML block for each location.  Review the output, remove
-any variables you don't want, then paste into sensors/catalog.yaml.
+The script prints a YAML block for each location. Each variable lists every
+instrument that reports it as `sources`, most recently deployed first (ties:
+specialist devices before general ones) — the order onc_to_ch.py fills hours
+in. Review the order, drop sources you don't trust, then paste into
+sensors/catalog_ONC.yml.
 
 Canonical variable mapping (extend as needed):
     ONC sensor code       →  canonical name in this system
@@ -26,8 +30,10 @@ Canonical variable mapping (extend as needed):
 
 import argparse
 import json
+import math
 import os
 import sys
+from datetime import datetime
 
 from onc import ONC
 
@@ -50,6 +56,26 @@ CANONICAL = {
 }
 
 
+def child_locations(location_code: str) -> list[str]:
+    """Location codes under `location_code` in ONC's hierarchy, depth first."""
+    def walk(nodes):
+        for n in nodes or []:
+            yield n.get("locationCode")
+            yield from walk(n.get("children"))
+    tree = onc.getLocationHierarchy({"locationCode": location_code}) or []
+    return [c for n in tree for c in walk(n.get("children"))]
+
+
+def last_deployed(location_code: str, device_category: str) -> float:
+    """Epoch seconds the category's latest deployment there ended (inf if one
+    is still in the water, 0 if none)."""
+    deps = onc.getDeployments({"locationCode": location_code, "deviceCategoryCode": device_category}) or []
+    if any(not d.get("end") for d in deps):
+        return math.inf
+    ends = [datetime.fromisoformat(d["end"].replace("Z", "+00:00")).timestamp() for d in deps]
+    return max(ends, default=0.0)
+
+
 def discover(location_code: str, show_unmapped: bool = False) -> str:
     # ── Location metadata ─────────────────────────────────────────────────────
     loc_result = onc.getLocations({"locationCode": location_code})
@@ -67,53 +93,56 @@ def discover(location_code: str, show_unmapped: bool = False) -> str:
     description = (loc.get("description") or "").strip()
     source_link = loc.get("dataSearchURL", "")
 
-    # ── Device categories at this location ────────────────────────────────────
-    dev_cats = onc.getDeviceCategories({"locationCode": location_code})
-    if not dev_cats:
-        return (
-            f"# WARNING: no device categories found for '{location_code}'\n"
-            f"# - name: \"{name}\"\n"
-            f"#   lat: {lat}\n#   lon: {lon}\n#   depth: {depth}\n"
-        )
-
-    # ── Sensor codes per device category ─────────────────────────────────────
-    # Collect all (canonical_name, onc_code, unit, factor, dev_code) tuples,
-    # then deduplicate by canonical name keeping the highest-priority device.
-    # Priority: specialist devices (CTD, OXYSENSOR) beat general ones (ADCP, etc.)
+    # ── Sensor codes per device category, here and at child locations ────────
+    # Every (location, device category, code) that maps to a canonical name is
+    # a source. They're ordered most recently deployed first, so a retired
+    # instrument only fills gaps; ties go to specialist devices (CTD,
+    # OXYSENSOR) over general ones (ADCP, etc.).
     DEVICE_PRIORITY = {"CTD": 0, "OXYSENSOR": 1, "FLUOROMETER": 2, "PHTPH": 3}
 
-    best: dict[str, tuple] = {}   # canonical → (priority, onc_code, unit, factor, dev_code)
+    found: dict[str, list[tuple]] = {}   # canonical → [(sort key, "LOC/CAT/code")]
+    units: dict[str, tuple[str, float]] = {}
     unmapped: list[str] = []
 
-    for dev in dev_cats:
-        dev_code = dev.get("deviceCategoryCode", "")
-        priority = DEVICE_PRIORITY.get(dev_code, 99)
-        sensor_cats = onc.getSensorCategoryCodes({
-            "locationCode": location_code,
-            "deviceCategoryCode": dev_code,
-        })
-        for sc in (sensor_cats or []):
-            code = sc.get("sensorCategoryCode", "")
-            if code not in CANONICAL:
-                unit_raw = sc.get("unitOfMeasure", "?")
-                entry = f'    # - "UNMAPPED:{code}:{unit_raw}:1.0:{dev_code}"'
-                if entry not in unmapped:
-                    unmapped.append(entry)
+    for loc_code in [location_code, *child_locations(location_code)]:
+        for dev in onc.getDeviceCategories({"locationCode": loc_code}) or []:
+            dev_code = dev.get("deviceCategoryCode", "")
+            sensor_cats = onc.getSensorCategoryCodes({
+                "locationCode": loc_code,
+                "deviceCategoryCode": dev_code,
+            })
+            mapped = [sc for sc in (sensor_cats or []) if sc.get("sensorCategoryCode", "") in CANONICAL]
+            for sc in sensor_cats or []:
+                code = sc.get("sensorCategoryCode", "")
+                if code not in CANONICAL:
+                    entry = f"      # UNMAPPED {loc_code}/{dev_code}/{code} ({sc.get('unitOfMeasure', '?')})"
+                    if entry not in unmapped:
+                        unmapped.append(entry)
+            if not mapped:
                 continue
-            canonical, unit, factor = CANONICAL[code]
-            existing = best.get(canonical)
-            if existing is None or priority < existing[0]:
-                best[canonical] = (priority, code, unit, factor, dev_code)
+            key = (-last_deployed(loc_code, dev_code), DEVICE_PRIORITY.get(dev_code, 99))
+            for sc in mapped:
+                code = sc["sensorCategoryCode"]
+                canonical, unit, factor = CANONICAL[code]
+                units.setdefault(canonical, (unit, factor))
+                found.setdefault(canonical, []).append((key, f"{loc_code}/{dev_code}/{code}"))
 
-    variable_lines = [
-        f'    - "{canonical}:{v[1]}:{v[2]}:{v[3]}:{v[4]}"'
-        for canonical, v in sorted(best.items())
-    ]
+    variable_lines = []
+    for canonical in sorted(found):
+        unit, factor = units[canonical]
+        sources = [src for _, src in sorted(found[canonical])]
+        variable_lines += [
+            f"      {canonical}:",
+            f"        unit: {json.dumps(unit) if not unit else unit}",
+            f"        factor: {factor}",
+            "        sources:",
+            *[f"        - {src}" for src in sources],
+        ]
 
     if not variable_lines:
-        variable_lines = ["    # No mappable variables found"]
+        variable_lines = ["      # No mappable variables found"]
     if unmapped and show_unmapped:
-        variable_lines += ["    # ── unmapped (not in CANONICAL dict) ──"] + unmapped
+        variable_lines += ["      # ── unmapped (not in CANONICAL dict) ──"] + unmapped
 
     vars_block = "\n".join(variable_lines)
 
@@ -142,7 +171,7 @@ def main():
                         help="Also show unmapped sensor codes as commented-out lines.")
     args = parser.parse_args()
 
-    print("# Generated by discover_location.py — review before pasting into catalog.yaml")
+    print("# Generated by discover_location.py — review before pasting into catalog_ONC.yml")
     if args.show_unmapped:
         print("# Unmapped variables shown as comments — add to CANONICAL dict to enable.\n")
     print("sensors:")

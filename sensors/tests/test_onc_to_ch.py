@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from onc_to_ch import PROFILER_CHUNK_DAYS, bin_profile, floor_to_bin, plan_windows
+from onc_to_ch import PROFILER_CHUNK_DAYS, bin_profile, floor_to_bin, plan_windows, variable_sources
 
 
 def test_floor_to_bin_drops_to_the_hour():
@@ -56,3 +56,18 @@ def test_plan_windows_skips_undeployed_gaps_and_ended_deployments():
 def test_plan_windows_starts_at_first_deployment_when_nothing_stored(date_from):
     deps = [(datetime(2025, 6, 1), datetime(2025, 6, 3))]
     assert plan_windows(deps, date_from, datetime(2026, 1, 1)) == [(datetime(2025, 6, 1), datetime(2025, 6, 3))]
+
+
+def test_variable_sources_keeps_priority_order():
+    config = {"locationCode": "CRIP", "sources": {"dissolved_oxygen": [
+        {"locationCode": "CRIP.O1", "deviceCategoryCode": "OXYSENSOR", "sensorCategoryCode": "oxygen_corrected"},
+        {"locationCode": "CRIP", "deviceCategoryCode": "WETLABS_WQM", "sensorCategoryCode": "oxygen"},
+    ]}}
+    assert variable_sources(config) == {"dissolved_oxygen": [
+        ("CRIP.O1", "OXYSENSOR", "oxygen_corrected"),
+        ("CRIP", "WETLABS_WQM", "oxygen"),
+    ]}
+
+
+def test_variable_sources_empty_for_pre_sources_device_config():
+    assert variable_sources({"locationCode": "SCVIP", "codes": [{"deviceCategoryCode": "CTD"}]}) == {}

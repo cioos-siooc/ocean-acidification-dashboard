@@ -131,7 +131,8 @@ import { fetchDepthProfile, parseCoverageBound, asOutsideDomainError, type Depth
 import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, floorToBin, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { fetchClimateTimeseries } from '~~/composables/useClimateTimeseries'
-import { getSensorTimeseries } from '~~/composables/useSensorTimeseries'
+import { getSensorTimeseries, sensorInstruments } from '~~/composables/useSensorTimeseries'
+import { useViewState } from '~~/composables/useViewState'
 import { csvMeta, csvTimestamp, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
 import { sensorSourceUrl } from '~~/composables/useSensorDownloadLinks'
 import DownloadButton from './ui/DownloadButton.vue'
@@ -452,6 +453,20 @@ function applyResponse(resp: DepthProfileResponse) {
  */
 const sensorSeries = ref<{ time: string[]; value: (number | null)[] } | null>(null)
 
+/**
+ * A sensor can have several instruments for one variable (an ONC site's CTDs on
+ * child locations). The overlay above is their priority merge; "Compare
+ * instruments" swaps it for each instrument's own series, binned the same way,
+ * so drift or a bad deployment shows up as lines parting. The toggle lives on
+ * the selected sensor's card (sensorInfo.vue). Off by default: where
+ * they agree (the usual case) three lines just read as one thick one.
+ */
+const instruments = computed(() => sensorInstruments(
+  mainStore.sensors.find(s => s.id === mainStore.selectedSensor?.id), varId.value))
+const canCompareInstruments = computed(() => instruments.value.length > 1 && viewMode.value === 'series')
+const compareInstruments = useViewState('explore')('compareInstruments', false)
+const instrumentSeries = ref<{ id: string; label: string; time: string[]; value: (number | null)[] }[] | null>(null)
+
 /** getSensorTimeseries wants `YYYY-MM-DDTHHmmss`, not a zoned ISO string. */
 function toSensorApiDate(d: Date) {
   const iso = d.toISOString()
@@ -466,11 +481,11 @@ let sensorFetchSeq = 0
 async function fetchSensorOverlay() {
   const sel = mainStore.selectedSensor
   const meta = sel?.id ? mainStore.sensors.find(s => s.id === sel.id) : null
-  if (!sel?.id || !meta) { sensorSeries.value = null; return }
+  if (!sel?.id || !meta) { sensorSeries.value = null; instrumentSeries.value = null; return }
 
   const isProfiler = meta.depth === -1
   const d = isProfiler ? (depths.value[selectedDepthIdx.value] ?? null) : sel.depth
-  if (d == null) { sensorSeries.value = null; return }
+  if (d == null) { sensorSeries.value = null; instrumentSeries.value = null; return }
 
   // Snapshot the window/bin mode this request is answering for. Reading
   // `binStarts`/`binMode` fresh *after* the await — rather than these
@@ -481,20 +496,34 @@ async function fetchSensorOverlay() {
   const mode = binMode.value
   const starts = binStarts.value
 
-  try {
-    const resp = await getSensorTimeseries(
-      sel.id, varId.value,
-      toSensorApiDate(windowStart.value), toSensorApiDate(windowEnd.value),
-      d, isProfiler ? source.value : null,
-    )
-    if (reqId !== sensorFetchSeq) return
+  const binned = (resp: { data?: { time?: string[]; value?: (number | null)[] } } | null) => {
     const rawTime: string[] = resp?.data?.time ?? []
     const rawValue: (number | null)[] = resp?.data?.value ?? []
-    sensorSeries.value = rawTime.length
+    return rawTime.length
       ? { time: starts.map(b => b.toISOString()), value: binSeries(rawTime, rawValue, mode, starts) }
       : { time: [], value: [] }
+  }
+  const fetchOne = (instrument: string | null) => getSensorTimeseries(
+    sel.id, varId.value,
+    toSensorApiDate(windowStart.value), toSensorApiDate(windowEnd.value),
+    d, isProfiler ? source.value : null, instrument,
+  )
+  const compared = compareInstruments.value && canCompareInstruments.value ? instruments.value : []
+
+  try {
+    const [merged, ...each] = await Promise.all([
+      fetchOne(null),
+      // One instrument failing (or having nothing here) leaves just its line out.
+      ...compared.map(inst => fetchOne(inst.id).catch(() => null)),
+    ])
+    if (reqId !== sensorFetchSeq) return
+    sensorSeries.value = binned(merged)
+    instrumentSeries.value = compared.length
+      ? compared.map((inst, i) => ({ ...inst, ...binned(each[i]) }))
+      : null
   } catch {
-    if (reqId === sensorFetchSeq) sensorSeries.value = null  // overlay is supplementary; never blank the model line for it
+    // overlay is supplementary; never blank the model line for it
+    if (reqId === sensorFetchSeq) { sensorSeries.value = null; instrumentSeries.value = null }
   }
 }
 
@@ -835,7 +864,7 @@ watch([selectedDepthIdx, viewMode], updateLineChart)
 // and a watcher's source array is evaluated during setup, so it has to come
 // after that ref is declared.
 watch(
-  [windowEnd, binMode, varId, () => mainStore.selectedSensor?.id, selectedDepthIdx, () => props.active, () => mainStore.unitPreference[varId.value]],
+  [windowEnd, binMode, varId, () => mainStore.selectedSensor?.id, selectedDepthIdx, () => props.active, () => mainStore.unitPreference[varId.value], compareInstruments, canCompareInstruments],
   async () => {
     if (!props.active) return
     await fetchSensorOverlay()
@@ -947,7 +976,7 @@ async function updateLineChart() {
   // Re-check: the awaited climate fetch above can outlive a sub-view switch,
   // which unmounts this chart (`v-if`) out from under the in-flight call.
   if (seq !== lineSeq || !lineChart.value || viewMode.value !== 'series') return
-  lineChart.value.plot(model, clim, sensor)
+  lineChart.value.plot(model, clim, sensor, instrumentSeries.value)
 }
 
 // ── LAYOUT — heatmap and line chart split the space left after the fixed

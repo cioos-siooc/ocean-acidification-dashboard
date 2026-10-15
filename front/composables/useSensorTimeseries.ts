@@ -8,7 +8,7 @@ import { useVariableRegistry } from './useVariableRegistry';
 // the backend's `_sensor_cache` (api/modules/response_cache.py).
 const cache = createRequestCache<any>(60_000);
 
-export async function getSensorTimeseries(sensorId: string|null, canonicalVariable: string, fromDate: string, toDate: string, depth: number|null = null, source: string|null = null) {
+export async function getSensorTimeseries(sensorId: string|null, canonicalVariable: string, fromDate: string, toDate: string, depth: number|null = null, source: string|null = null, instrument: string|null = null) {
     if (sensorId === null || sensorId === undefined) {
         return null
     }
@@ -30,6 +30,11 @@ export async function getSensorTimeseries(sensorId: string|null, canonicalVariab
     if (source !== null) {
         payload.source = source;
     }
+    // One instrument's own series (a `sensorInstruments()` id); without it the
+    // API merges a multi-instrument sensor's series by catalog priority.
+    if (instrument !== null) {
+        payload.instrument = instrument;
+    }
     const url = `${apiBaseUrl}/sensorTimeseries`;
     const key = JSON.stringify(payload);
     const raw = await cache.fetch(key, () => axios.post(url, payload));
@@ -48,6 +53,27 @@ export async function getSensorTimeseries(sensorId: string|null, canonicalVariab
             value: raw.data.value.map((v: number | null) => toDisplayValue(canonicalVariable, v)),
         },
     };
+}
+
+export interface SensorInstrument {
+    /** `sensor_timeseries.source` value, e.g. `CRIP.C1/CTD` — what the API filters on. */
+    id: string;
+    /** Display label, e.g. `CTD · CRIP.C1`. */
+    label: string;
+}
+
+/**
+ * The instruments that report `variable` at a sensor, highest priority first
+ * (`device_config.sources`, from the sensor's catalog entry). Most sensors
+ * have one; ONC sites with child locations can have several.
+ */
+export function sensorInstruments(
+    sensor: { device_config?: { sources?: Record<string, Array<Record<string, string>>> } } | null | undefined,
+    variable: string,
+): SensorInstrument[] {
+    return (sensor?.device_config?.sources?.[variable] ?? [])
+        .filter(s => s?.locationCode && s?.deviceCategoryCode)
+        .map(s => ({ id: `${s.locationCode}/${s.deviceCategoryCode}`, label: `${s.deviceCategoryCode} · ${s.locationCode}` }));
 }
 
 export default getSensorTimeseries;

@@ -67,6 +67,13 @@
                             {{ sensor.organization }}
                         </UBadge>
                         <div class="grow" />
+                        <UButton v-if="sensor.id === selectedSensor?.id && selectedInstruments.length > 1" size="xs" class="p-0.5"
+                            :variant="compareInstruments ? 'soft' : 'ghost'" :color="compareInstruments ? 'primary' : 'neutral'"
+                            :aria-pressed="compareInstruments" aria-label="Compare instruments"
+                            :title="`Plot each of the ${selectedInstruments.length} instruments that measure ${variableLabel(selectedVar)} here, with their differences`"
+                            @click.stop="toggleCompareInstruments">
+                            <UIcon name="i-mdi-compare-horizontal" class="size-[14px]" />
+                        </UButton>
                         <UButton v-if="sensor.id === selectedSensor?.id" variant="ghost" size="xs" color="neutral" class="p-0.5"
                             aria-label="Compare with model" @click.stop="mainStore.setActiveBottomTab('comparison')">
                             <UIcon name="i-mdi-chart-bar" class="size-[14px]" />
@@ -87,8 +94,12 @@
                         <div>{{ formatDataRange(sensor) }}</div>
 
                         <div class="mt-1.5 flex flex-wrap gap-1">
-                            <UBadge size="xs" color="neutral" variant="subtle" class="rounded-full" v-for="varKey in modelVariablesOf(sensor.variables)" :key="varKey">
+                            <UBadge size="xs" color="neutral" variant="subtle" class="rounded-full" v-for="varKey in modelVariablesOf(sensor.variables)" :key="varKey"
+                                :title="instrumentCount(sensor, varKey) > 1 ? `${instrumentCount(sensor, varKey)} instruments measure this here` : undefined">
                                 {{ variableLabel(varKey) }}
+                                <span v-if="instrumentCount(sensor, varKey) > 1" class="inline-flex items-center opacity-70">
+                                    <UIcon name="i-mdi-layers-outline" class="size-[11px]" />{{ instrumentCount(sensor, varKey) }}
+                                </span>
                             </UBadge>
                         </div>
                     </div>
@@ -123,6 +134,8 @@ import { coordTxt, depth2txt, formatDataRange } from '~~/composables/useSensorFo
 import SensorInfoDialog from './SensorInfoDialog.vue';
 import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 import { trackEvent } from '~~/composables/useAnalytics';
+import { sensorInstruments } from '~~/composables/useSensorTimeseries';
+import { useViewState } from '~~/composables/useViewState';
 
 const mainStore = useMainStore();
 // Labels and the "is this a variable we show?" test both come from
@@ -143,6 +156,26 @@ const {
 } = storeToRefs(mainStore);
 
 const showFilters = ref(false);
+
+// Several instruments can report one variable at a site (ONC child locations),
+// and that differs per variable, so the compare toggle follows the selected
+// variable. It's Explore's state; the timeseries chart reads it.
+const selectedVar = computed(() => mainStore.selected_variable?.var ?? '');
+const selectedInstruments = computed(() => sensorInstruments(
+    mainStore.sensors.find(s => s.id === selectedSensor.value?.id), selectedVar.value));
+const compareInstruments = useViewState('explore')('compareInstruments', false);
+
+function instrumentCount(sensor: Sensor, variable: string) {
+    return sensorInstruments(sensor, variable).length;
+}
+
+function toggleCompareInstruments() {
+    compareInstruments.value = !compareInstruments.value;
+    if (compareInstruments.value) {
+        mainStore.setActiveBottomTab('explore');
+        mainStore.setExploreView('series');
+    }
+}
 
 // Only the two popover dropdowns count — the search box is always visible, so it
 // needs no badge to announce itself.

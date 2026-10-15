@@ -17,6 +17,13 @@ and matched against a window around that level. See extract_depth_profile.py
 for the sibling endpoint that bins a profiler's full water column at once;
 this module only ever resolves to one target depth.
 
+A sensor can have several instruments per variable (ONC sites with child
+locations, e.g. CRIP.C1 and CRIP.C2), each stored as its own series under
+sensor_timeseries.source. By default the series are merged: each timestamp
+takes the value of the highest-priority instrument that has one, in the order
+the sensor's catalog entry lists them (sensors.device_config.sources). Passing
+`instrument` returns that one instrument's series instead.
+
 Returns a dict ready to serialize as a JSON response:
   {"time": [...], "value": [...]}
   {"time": [...], "depth": [...], "value": [...]}   — when depth data exists
@@ -24,6 +31,7 @@ Returns a dict ready to serialize as a JSON response:
 
 from __future__ import annotations
 
+import json
 import math
 from datetime import datetime, timezone
 from typing import Optional
@@ -48,6 +56,39 @@ def _is_profiler_sensor(client, sensor_id: str) -> bool:
     return bool(rows) and float(rows[0][0]) == -1.0
 
 
+def source_rank_sql(client, sensor_id: str, variable: str) -> str:
+    """SQL ranking a row's `source` by the sensor's priority order for
+    `variable`: 1 for the first instrument, and past the end for one no longer
+    listed. Constant for single-source sensors (ERDDAP, most ONC)."""
+    safe_id = str(sensor_id).replace("'", "")
+    rows = client.query(
+        f"SELECT device_config FROM sensors FINAL WHERE id = '{safe_id}' LIMIT 1"
+    ).result_rows
+    config = json.loads(rows[0][0]) if rows and rows[0][0] else {}
+    labels = [f"{s['locationCode']}/{s['deviceCategoryCode']}"
+              for s in (config.get("sources") or {}).get(variable) or []]
+    if len(labels) < 2:
+        return "0"
+    listed = ", ".join("'" + label.replace("'", "''") + "'" for label in labels)
+    return f"if(indexOf([{listed}], source) = 0, {len(labels) + 1}, indexOf([{listed}], source))"
+
+
+def series_query(client, sensor_id: str, variable: str, instrument: Optional[str],
+                 where: str, keys: str, columns: str) -> str:
+    """A sensor_timeseries read of `columns` (from `keys` plus `value`) under
+    `where`: one row per `keys`, the highest-priority instrument's value — or
+    only `instrument`'s rows when one is named."""
+    if instrument is not None:
+        safe_instrument = instrument.replace("'", "''")
+        return (f"SELECT {columns} FROM sensor_timeseries FINAL "
+                f"WHERE {where} AND source = '{safe_instrument}' ORDER BY {keys}")
+    rank = source_rank_sql(client, sensor_id, variable)
+    return (f"SELECT {columns} FROM ("
+            f"  SELECT {keys}, argMin(value, {rank}) AS value FROM sensor_timeseries FINAL "
+            f"  WHERE {where} GROUP BY {keys}"
+            f") ORDER BY {keys}")
+
+
 def _voronoi_window(idx: int, levels: list[float]) -> tuple[float, float]:
     """[lo, hi] band around levels[idx], bounded by midpoints to its neighbours."""
     lo = -float("inf") if idx == 0 else (levels[idx - 1] + levels[idx]) / 2
@@ -62,6 +103,7 @@ def extract_sensor_timeseries(
     to_date: str,
     depth: Optional[float] = None,
     source: Optional[str] = None,
+    instrument: Optional[str] = None,
 ) -> dict:
     """
     Read sensor time series from ClickHouse.
@@ -76,6 +118,8 @@ def extract_sensor_timeseries(
     source    : model source (e.g. "SalishSeaCast"); only used to resolve
                 the model's depth levels for a variable-depth sensor's
                 depth-window query — ignored for fixed-depth sensors
+    instrument : one instrument's series (a sensor_timeseries.source value,
+                 e.g. "CRIP.C1/CTD"); None merges them by priority
 
     Returns
     -------
@@ -110,14 +154,13 @@ def extract_sensor_timeseries(
         target_level = levels[level_idx]
         lo, hi = _voronoi_window(level_idx, levels)
 
-        result = client.query(
-            f"SELECT time, value FROM sensor_timeseries FINAL "
-            f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
-            f"  AND depth >= {lo} AND depth < {hi} "
-            f"  AND time >= toDateTime('{from_str}') "
-            f"  AND time <= toDateTime('{to_str}') "
-            f"ORDER BY time"
-        )
+        result = client.query(series_query(
+            client, safe_id, variable, instrument,
+            f"sensor_id = '{safe_id}' AND variable = '{safe_var}' "
+            f"AND depth >= {lo} AND depth < {hi} "
+            f"AND time >= toDateTime('{from_str}') AND time <= toDateTime('{to_str}')",
+            keys="time, depth", columns="time, value",
+        ))
         rows = result.result_rows
         if not rows:
             return {"time": [], "value": [], "depth": target_level}
@@ -129,9 +172,10 @@ def extract_sensor_timeseries(
     if depth is not None:
         # Find the single stored depth closest to the requested value, then
         # fetch only rows at that depth.  Two queries, both tiny.
+        instrument_where = f" AND source = '{instrument.replace(chr(39), chr(39) * 2)}'" if instrument else ""
         nearest_rows = client.query(
             f"SELECT depth FROM sensor_timeseries "
-            f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
+            f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}'{instrument_where} "
             f"ORDER BY abs(depth - {float(depth)}) LIMIT 1"
         ).result_rows
         if not nearest_rows:
@@ -140,14 +184,13 @@ def extract_sensor_timeseries(
             )
         target_depth = float(nearest_rows[0][0])
 
-        result = client.query(
-            f"SELECT time, value FROM sensor_timeseries FINAL "
-            f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
-            f"  AND depth = {target_depth} "
-            f"  AND time >= toDateTime('{from_str}') "
-            f"  AND time <= toDateTime('{to_str}') "
-            f"ORDER BY time"
-        )
+        result = client.query(series_query(
+            client, safe_id, variable, instrument,
+            f"sensor_id = '{safe_id}' AND variable = '{safe_var}' "
+            f"AND depth = {target_depth} "
+            f"AND time >= toDateTime('{from_str}') AND time <= toDateTime('{to_str}')",
+            keys="time", columns="time, value",
+        ))
         rows = result.result_rows
         if not rows:
             return {"time": [], "value": [], "depth": target_depth}
@@ -157,13 +200,12 @@ def extract_sensor_timeseries(
         return {"time": times_out, "depth": target_depth, "value": values_out}
 
     # No depth filter — return all depth levels.
-    result = client.query(
-        f"SELECT time, depth, value FROM sensor_timeseries FINAL "
-        f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
-        f"  AND time >= toDateTime('{from_str}') "
-        f"  AND time <= toDateTime('{to_str}') "
-        f"ORDER BY time, depth"
-    )
+    result = client.query(series_query(
+        client, safe_id, variable, instrument,
+        f"sensor_id = '{safe_id}' AND variable = '{safe_var}' "
+        f"AND time >= toDateTime('{from_str}') AND time <= toDateTime('{to_str}')",
+        keys="time, depth", columns="time, depth, value",
+    ))
     rows = result.result_rows
     if not rows:
         raise FileNotFoundError(

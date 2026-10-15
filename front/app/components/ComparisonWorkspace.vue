@@ -317,6 +317,9 @@ const chartRef = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
 
 function ensureChart() {
+  // The stats pane is v-if'd, so leaving it (or hitting "no matched pairs")
+  // replaces the chart div; an instance still bound to the old one draws offscreen.
+  if (chart && chart.getDom() !== chartRef.value) { chart.dispose(); chart = null }
   if (chart || !chartRef.value) return
   registerEchartsDarkTheme()
   chart = echarts.init(chartRef.value, 'dark', { renderer: 'canvas' })

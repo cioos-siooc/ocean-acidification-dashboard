@@ -8,6 +8,12 @@ per (sensor, variable) is determined with a MAX(time) query so no NC files
 are needed.  Canonical variable names are stored directly — no code-resolution
 step at query time.
 
+Each variable lists its ONC sources (device_config.sources, from the
+catalog): a site's instruments often sit on child locations (CRIP.C1,
+CRIP.C2) and come and go between deployments. Every source is stored as its
+own series, tagged in the `source` column (LOCATION/DEVICE_CATEGORY); readers
+merge them by the list's priority order.
+
 Sensors with depth -1 (profilers) take store_profiler(): each value is stored
 at the CTD's measured depth, binned to (hour, 1 m) — see PROFILER_* below.
 
@@ -38,6 +44,10 @@ BATCH_SIZE = 10_000
 # so we always overlap by this amount and let ReplacingMergeTree overwrite
 # stale rows during its background merge.
 OVERLAP_HOURS = 6
+
+# ONC's error for "a device of this category was deployed here, but not during
+# the requested time range".
+ONC_NOT_DEPLOYED = "API Error 127"
 
 # ── Variable-depth (profiler) sensors: sensors.depth == -1 ───────────────────
 # A profiling package parks at one depth and casts through the water column
@@ -79,10 +89,13 @@ def get_active_onc_sensors(ch_client, sensor_id_filter: str | None) -> list[dict
     return sensors
 
 
-def get_last_stored_time(ch_client, sensor_id: str, canonical: str) -> datetime | None:
+def get_last_stored_time(ch_client, sensor_id: str, canonical: str,
+                         source: str | None = None) -> datetime | None:
+    where = f" AND source = '{source}'" if source is not None else ""
     rows = ch_client.query(
         "SELECT max(time) FROM sensor_timeseries "
-        f"WHERE sensor_id = '{sensor_id}' AND variable = '{canonical}'"
+        f"WHERE sensor_id = '{sensor_id}' AND variable = '{canonical}'{where} "
+        "HAVING count() > 0"  # max() of no rows is the epoch, not NULL
     ).result_rows
     if rows and rows[0][0]:
         dt = rows[0][0]
@@ -194,135 +207,144 @@ class FetchError(RuntimeError):
     """An ONC request for the sensor failed; its rows are left as they were."""
 
 
+def variable_sources(device_config: dict) -> dict[str, list[tuple[str, str, str]]]:
+    """{canonical: [(locationCode, deviceCategoryCode, sensorCategoryCode)]},
+    highest priority first."""
+    return {
+        canonical: [(s["locationCode"], s["deviceCategoryCode"], s["sensorCategoryCode"]) for s in srcs]
+        for canonical, srcs in (device_config.get("sources") or {}).items()
+    }
+
+
+def fetch_hourly(location_code: str, device_category: str, codes: list[str],
+                 date_from: str | None, date_to: str) -> dict[str, dict[datetime, float]]:
+    """{sensor code: {hour: value}} — ONC's hourly means for one device
+    category at one location, NaN/missing samples dropped. Empty when nothing
+    was deployed there in the window. Paged (`allPages`): one response holds
+    at most 100k rows, and a first backfill of a site running since 2008 is
+    ~160k hours."""
+    try:
+        data = onc.getScalardataByLocation({
+            "locationCode": location_code,
+            "deviceCategoryCode": device_category,
+            "resamplePeriod": 3600,
+            "resampleType": "avg",
+            "qualityControl": "clean",
+            "sensorCategoryCodes": ",".join(codes),
+            "dateFrom": date_from,
+            "dateTo": date_to,
+        }, allPages=True)
+    except Exception as e:
+        # A 400, not an empty result, for a retired or not-yet-deployed source.
+        if ONC_NOT_DEPLOYED in str(e):
+            return {}
+        raise
+    series: dict[str, dict[datetime, float]] = {}
+    for s in data.get("sensorData") or []:
+        pts: dict[datetime, float] = {}
+        for t_str, v in zip(s.get("data", {}).get("sampleTimes", []), s.get("data", {}).get("values", [])):
+            if v is None or (isinstance(v, float) and np.isnan(v)):
+                continue
+            t = dt_to_naive_utc(t_str)
+            if t is not None:
+                pts[t] = float(v)
+        series[s.get("sensorCategoryCode")] = pts
+    return series
+
+
 def store_sensor(ch_client, sensor: dict, date_to: str):
-    """Fetch one sensor's new data up to `date_to` and insert it. Raises
-    FetchError, after trying every device category, if any ONC request failed."""
+    """Fetch new data from each of the sensor's sources up to `date_to` and
+    insert it. Raises FetchError, after trying every source, if any ONC
+    request failed."""
     sensor_id = sensor["id"]
     variables = sensor["variables"]
     device_config = sensor["device_config"]
     print(f"\nSensor: {sensor['name']} (ID: {sensor_id})")
 
-    if not device_config:
-        print("  No device_config, skipping.")
-        return
-
-    location_code = device_config.get("locationCode")
-    code_rows = device_config.get("codes", [])
-
-    # Build reverse map: ONC code → canonical name
-    code_to_canonical: dict[str, str] = {}
-    for canonical, info in variables.items():
-        if isinstance(info, dict) and info.get("name"):
-            code_to_canonical[info["name"]] = canonical
+    sources = variable_sources(device_config)
+    if not sources:
+        # Rows written before per-variable sources existed: re-import the catalog.
+        raise FetchError("device_config has no sources — run `manage_sensors.py import --overwrite`")
 
     if sensor.get("depth") == -1.0:
-        store_profiler(ch_client, sensor, location_code, code_rows, code_to_canonical, date_to)
+        store_profiler(ch_client, sensor, device_config.get("locationCode"), sources, date_to)
         return
 
+    # One request per (location, device category), for every variable it
+    # supplies, from the earliest point any of them needs. Each (variable,
+    # source) series resumes OVERLAP_HOURS before its own last stored
+    # timestamp, so recently revised ONC data overwrites any stale rows.
+    groups: dict[tuple[str, str], dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    for canonical, srcs in sources.items():
+        for loc, cat, code in srcs:
+            groups[(loc, cat)][code].append(canonical)
+
     errors: list[str] = []
-    for code_row in code_rows:
-        device_category = code_row.get("deviceCategoryCode")
-        sensor_codes = code_row.get("sensorCategoryCodes", "")
+    for (loc, cat), canonicals_by_code in groups.items():
+        label = f"{loc}/{cat}"
+        since: dict[str, datetime | None] = {}
+        for canonical in (c for cs in canonicals_by_code.values() for c in cs):
+            last = get_last_stored_time(ch_client, sensor_id, canonical, label)
+            since[canonical] = (last.astimezone(timezone.utc).replace(tzinfo=None)
+                                - timedelta(hours=OVERLAP_HOURS)) if last else None
+        start = None if None in since.values() else onc_time_str(min(since.values()))
 
-        # Determine the canonical names involved so we can find the latest stored time
-        involved_canonicals = [
-            code_to_canonical[c] for c in sensor_codes.split(",")
-            if c.strip() in code_to_canonical
-        ]
-        if not involved_canonicals:
-            print(f"  No canonical mapping for codes '{sensor_codes}', skipping.")
-            continue
-
-        # Re-fetch from OVERLAP_HOURS before the last stored timestamp so
-        # that recently revised ONC data overwrites any stale rows.
-        last_times = [get_last_stored_time(ch_client, sensor_id, c) for c in involved_canonicals]
-        valid_times = [t for t in last_times if t is not None]
-        if valid_times:
-            date_from = (min(valid_times) - timedelta(hours=OVERLAP_HOURS)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        else:
-            date_from = None
-
-        print(f"  Fetching {location_code}/{device_category}/{sensor_codes} from {date_from or 'beginning'}")
-
+        codes = sorted(canonicals_by_code)
+        print(f"  Fetching {label}/{','.join(codes)} from {start or 'beginning'}")
         try:
-            data = onc.getScalardataByLocation({
-                "locationCode": location_code,
-                "deviceCategoryCode": device_category,
-                "getLatest": True,
-                "resamplePeriod": 3600,
-                "resampleType": "avg",
-                "qualityControl": "clean",
-                "sensorCategoryCodes": sensor_codes,
-                "dateFrom": date_from,
-                "dateTo": date_to,
-            })
+            fetched = fetch_hourly(loc, cat, codes, start, date_to)
         except Exception as e:
-            # Carry on with the sensor's other device categories; raised below.
+            # Carry on with the other sources; raised below.
             print(f"  ERROR fetching ONC data: {e}")
-            errors.append(f"{device_category}/{sensor_codes}: {e}")
+            errors.append(f"{label}: {e}")
             continue
 
-        if not data.get("sensorData"):
-            print(f"  No sensorData returned.")
-            continue
-
-        for s in data["sensorData"]:
-            onc_code = s.get("sensorCategoryCode")
-            canonical = code_to_canonical.get(onc_code)
-            if not canonical:
-                print(f"  Skipping unmapped code '{onc_code}'")
-                continue
-
-            vals = s.get("data", {}).get("values", [])
-            raw_times = s.get("data", {}).get("sampleTimes", [])
-
-            rows = []
-            for t_str, v in zip(raw_times, vals):
-                if v is None or (isinstance(v, float) and np.isnan(v)):
-                    continue
-                t_dt = dt_to_naive_utc(t_str)
-                if t_dt is None:
-                    continue
-                converted = apply_conversion(float(v), canonical, variables)
-                # depth for ONC sensors comes from device position; use 0 as default
-                # and let the sensors.depth field in metadata carry the actual depth
-                rows.append([sensor_id, t_dt, 0.0, canonical, converted])
-
-            for start in range(0, len(rows), BATCH_SIZE):
-                ch_client.insert(
-                    "sensor_timeseries",
-                    rows[start:start + BATCH_SIZE],
-                    column_names=["sensor_id", "time", "depth", "variable", "value"],
-                )
-            print(f"  {onc_code} → '{canonical}': {len(rows)} point(s) inserted")
+        for code, canonicals in canonicals_by_code.items():
+            for canonical in canonicals:
+                rows = [[sensor_id, t, 0.0, canonical, apply_conversion(v, canonical, variables), label]
+                        # depth for ONC sensors comes from device position; use 0 as default
+                        # and let the sensors.depth field in metadata carry the actual depth
+                        for t, v in sorted(fetched.get(code, {}).items())
+                        if since[canonical] is None or t >= since[canonical]]
+                for i in range(0, len(rows), BATCH_SIZE):
+                    ch_client.insert(
+                        "sensor_timeseries",
+                        rows[i:i + BATCH_SIZE],
+                        column_names=["sensor_id", "time", "depth", "variable", "value", "source"],
+                    )
+                print(f"  {code} → '{canonical}': {len(rows)} point(s) inserted")
 
     if errors:
         raise FetchError("; ".join(errors))
 
 
-def store_profiler(ch_client, sensor: dict, location_code: str, code_rows: list[dict],
-                   code_to_canonical: dict[str, str], date_to: str):
+def store_profiler(ch_client, sensor: dict, location_code: str,
+                   sources: dict[str, list[tuple[str, str, str]]], date_to: str):
     """store_sensor for a variable-depth sensor: every variable at the CTD's
-    measured depth, binned by bin_profile(). Windows are fetched oldest first
-    and each is inserted before the next is requested, so a long backfill that
-    dies midway resumes from where it got to. A failed request stops the run
-    (raising FetchError) rather than skipping ahead — rows past a gap would
-    move MAX(time) beyond it and the gap would never be re-fetched."""
+    measured depth, binned by bin_profile(). Only each variable's first source
+    is used, and it must be at `location_code`, where the CTD depth comes from.
+    Windows are fetched oldest first and each is inserted before the next is
+    requested, so a long backfill that dies midway resumes from where it got
+    to. A failed request stops the run (raising FetchError) rather than
+    skipping ahead — rows past a gap would move MAX(time) beyond it and the gap
+    would never be re-fetched."""
     sensor_id = sensor["id"]
     variables = sensor["variables"]
 
-    codes_by_category: dict[str, list[str]] = {}
-    for code_row in code_rows:
-        codes = [c.strip() for c in code_row.get("sensorCategoryCodes", "").split(",")
-                 if c.strip() in code_to_canonical]
-        if codes:
-            codes_by_category[code_row.get("deviceCategoryCode")] = codes
+    code_to_canonical: dict[str, str] = {}
+    codes_by_category: dict[str, list[str]] = defaultdict(list)
+    for canonical, srcs in sources.items():
+        loc, cat, code = srcs[0]
+        if loc != location_code:
+            print(f"  '{canonical}': source {loc} isn't the profiler's location {location_code}, skipping")
+            continue
+        code_to_canonical[code] = canonical
+        codes_by_category[cat].append(code)
     if not codes_by_category:
         print("  No canonical mappings, skipping.")
         return
 
-    last_times = [get_last_stored_time(ch_client, sensor_id, code_to_canonical[c])
-                  for codes in codes_by_category.values() for c in codes]
+    last_times = [get_last_stored_time(ch_client, sensor_id, c) for c in code_to_canonical.values()]
     valid_times = [t.astimezone(timezone.utc).replace(tzinfo=None) for t in last_times if t is not None]
     date_from = floor_to_bin(min(valid_times) - timedelta(hours=OVERLAP_HOURS)) if valid_times else None
 
@@ -340,27 +362,29 @@ def store_profiler(ch_client, sensor: dict, location_code: str, code_rows: list[
             ctd = fetch_profiler_window(location_code, DEPTH_DEVICE_CATEGORY,
                                         [DEPTH_SENSOR_CODE, *codes_by_category.get(DEPTH_DEVICE_CATEGORY, [])],
                                         start, stop)
-            fetched = [ctd] + [fetch_profiler_window(location_code, cat, codes, start, stop)
-                               for cat, codes in codes_by_category.items() if cat != DEPTH_DEVICE_CATEGORY]
+            fetched = [(DEPTH_DEVICE_CATEGORY, ctd)] + [
+                (cat, fetch_profiler_window(location_code, cat, codes, start, stop))
+                for cat, codes in codes_by_category.items() if cat != DEPTH_DEVICE_CATEGORY]
         except Exception as e:
             raise FetchError(f"{start:%Y-%m-%d}–{stop:%Y-%m-%d}: {e}") from e
 
         depth_at = dict(ctd.pop(DEPTH_SENSOR_CODE, []))
         rows = []
-        for series in fetched:
+        for cat, series in fetched:
             for code, pts in series.items():
                 canonical = code_to_canonical.get(code)
                 if not canonical:
                     continue
                 samples = [(t, depth_at[t], apply_conversion(v, canonical, variables))
                            for t, v in pts if t in depth_at]
-                rows += [[sensor_id, t, d, canonical, v] for t, d, v in bin_profile(samples)]
+                rows += [[sensor_id, t, d, canonical, v, f"{location_code}/{cat}"]
+                         for t, d, v in bin_profile(samples)]
 
         for i in range(0, len(rows), BATCH_SIZE):
             ch_client.insert(
                 "sensor_timeseries",
                 rows[i:i + BATCH_SIZE],
-                column_names=["sensor_id", "time", "depth", "variable", "value"],
+                column_names=["sensor_id", "time", "depth", "variable", "value", "source"],
             )
         print(f"  {start:%Y-%m-%d}–{stop:%Y-%m-%d}: {len(depth_at)} depth sample(s) → {len(rows)} row(s)")
 

@@ -21,14 +21,17 @@ add
         canonical:source_name:unit:factor
         e.g.  temperature:temperature:C:1.0
 
-    ONC (5 fields — the 5th ties the variable to its ONC device category):
+    ONC (5 fields — the 5th is the ONC device category at --location-code):
         canonical:source_name:unit:factor:device_category
         e.g.  dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR
               temperature:temperature:C:1.0:CTD
-              salinity:salinity:PSU:1.0:CTD
 
-    The device_category field explicitly pairs each variable with the ONC
-    deviceCategoryCode used to fetch it, so there is no ambiguity.
+    A CLI-added ONC variable has one source. For several (child locations,
+    fallback instruments), describe the sensor in a catalog file instead.
+
+import
+    Upsert sensors from the catalog_*.yml files next to this script (or only
+    the --file ones), matched by name. See README "Catalog format".
 
 update
     Update one or more fields on an existing sensor (identified by --id UUID).
@@ -83,6 +86,17 @@ from ch_helpers import get_ch_client
 
 
 # ── Variable parsing ──────────────────────────────────────────────────────────
+#
+# Both the CLI and the catalogs end up as the same two JSON columns:
+#   variables     {canonical: {name, unit, conversion_factor}}; `name` is the
+#                 ERDDAP column, or the sensor code of the first ONC source.
+#   device_config ONC only: {locationCode, sources: {canonical: [
+#                 {locationCode, deviceCategoryCode, sensorCategoryCode}, …]}},
+#                 sources in priority order (onc_to_ch.py fills each hour from
+#                 the first one that has it).
+
+CATALOG_GLOB = "catalog_*.yml"
+
 
 def _parse_variable(s: str) -> tuple[str, dict, str | None]:
     """
@@ -114,30 +128,89 @@ def _build_variables_and_device_config(
     location_code: str | None,
 ) -> tuple[dict, dict]:
     """
-    Build the `variables` JSON dict and `device_config` JSON dict from the
-    parsed --variable flags.
-
-    ONC variables (5 fields) populate device_config.codes.  The device_category
-    is the explicit link between a variable and the ONC deviceCategoryCode used
-    to request it — no separate --device flag needed.
+    Build the `variables` and `device_config` JSON dicts from --variable flags.
+    An ONC variable's 5th field is its device category at `location_code`.
     """
     variables: dict = {}
-    codes: list[dict] = []
+    sources: dict[str, list[dict]] = {}
 
     for s in var_strings:
         canonical, info, device_cat = _parse_variable(s)
         variables[canonical] = info
-        if device_cat:
-            codes.append({
+        if device_cat and location_code:
+            sources[canonical] = [{
+                "locationCode": location_code,
                 "deviceCategoryCode": device_cat,
-                "sensorCategoryCodes": info["name"],
-            })
+                "sensorCategoryCode": info["name"],
+            }]
 
     device_config: dict = {}
     if location_code:
-        device_config = {"locationCode": location_code, "codes": codes}
+        device_config = {"locationCode": location_code, "sources": sources}
 
     return variables, device_config
+
+
+def _parse_onc_source(s: str) -> dict:
+    """`LOCATION/DEVICE_CATEGORY/sensor_code`, e.g. `CRIP.C1/CTD/temperature`."""
+    parts = str(s).split("/")
+    if len(parts) != 3 or not all(parts):
+        raise ValueError(f"ONC source must be LOCATION/DEVICE_CATEGORY/sensor_code, got {s!r}")
+    return {"locationCode": parts[0], "deviceCategoryCode": parts[1], "sensorCategoryCode": parts[2]}
+
+
+def catalog_variables(entry: dict) -> tuple[dict, dict]:
+    """Build the `variables` and `device_config` JSON dicts from a catalog
+    entry's `variables:` mapping. ERDDAP variables name their column with
+    `code`; ONC ones list `sources` instead."""
+    mapping = entry.get("variables") or {}
+    if not isinstance(mapping, dict):
+        raise ValueError("`variables` must be a mapping of canonical name → {unit, factor, code|sources} "
+                         "(the old one-line string list is no longer read)")
+    is_onc = entry.get("api") == "ONC"
+
+    variables: dict = {}
+    sources: dict[str, list[dict]] = {}
+    for canonical, spec in mapping.items():
+        spec = spec or {}
+        if is_onc:
+            if not spec.get("sources"):
+                raise ValueError(f"ONC variable {canonical!r} has no `sources`")
+            sources[canonical] = [_parse_onc_source(s) for s in spec["sources"]]
+            name = sources[canonical][0]["sensorCategoryCode"]
+        else:
+            if not spec.get("code"):
+                raise ValueError(f"ERDDAP variable {canonical!r} has no `code`")
+            name = spec["code"]
+        variables[canonical] = {
+            "name": name,
+            "unit": "" if spec.get("unit") is None else str(spec["unit"]),
+            "conversion_factor": float(spec.get("factor", 1.0)),
+        }
+
+    device_config: dict = {}
+    if is_onc:
+        if not entry.get("location_code"):
+            raise ValueError("ONC sensors need a `location_code`")
+        device_config = {"locationCode": entry["location_code"], "sources": sources}
+    return variables, device_config
+
+
+def load_catalogs(paths: list[Path]) -> list[dict]:
+    """Every sensor entry across `paths`, each tagged with its file. A name
+    may appear only once in all of them, since import matches sensors by name."""
+    entries: list[dict] = []
+    seen: dict[str, Path] = {}
+    for path in paths:
+        with open(path) as f:
+            catalog = yaml.safe_load(f) or {}
+        for entry in catalog.get("sensors") or []:
+            name = entry["name"]
+            if name in seen:
+                raise ValueError(f"sensor {name!r} is in both {seen[name].name} and {path.name}")
+            seen[name] = path
+            entries.append({**entry, "_file": path.name})
+    return entries
 
 
 # ── CH helpers ────────────────────────────────────────────────────────────────
@@ -189,6 +262,28 @@ def _get_sensor(ch_client, sensor_id: str) -> dict | None:
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
+# Placeholder that marks pre-`source` rows of a multi-source variable for dropping.
+DROP_UNATTRIBUTED = "__unattributed__"
+
+# `source` is the instrument a value came from (ONC: LOCATION/DEVICE_CATEGORY;
+# '' for ERDDAP). It is part of the key so every instrument at a site keeps its
+# own series; readers merge them by the catalog's priority order.
+TIMESERIES_DDL = """
+CREATE TABLE IF NOT EXISTS {name}
+(
+    sensor_id  UUID                      CODEC(ZSTD(4)),
+    time       DateTime                  CODEC(DoubleDelta, ZSTD(4)),
+    depth      Float32                   CODEC(Gorilla(4),  ZSTD(4)),
+    variable   LowCardinality(String),
+    value      Float32                   CODEC(Gorilla(4),  ZSTD(4)),
+    source     LowCardinality(String)    DEFAULT ''
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toYYYYMM(time)
+ORDER BY (sensor_id, variable, source, depth, time)
+"""
+
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS default.sensors
 (
@@ -207,18 +302,7 @@ CREATE TABLE IF NOT EXISTS default.sensors
 ENGINE = ReplacingMergeTree(updated_at)
 ORDER BY id;
 
-CREATE TABLE IF NOT EXISTS default.sensor_timeseries
-(
-    sensor_id  UUID                      CODEC(ZSTD(4)),
-    time       DateTime                  CODEC(DoubleDelta, ZSTD(4)),
-    depth      Float32                   CODEC(Gorilla(4),  ZSTD(4)),
-    variable   LowCardinality(String),
-    value      Float32                   CODEC(Gorilla(4),  ZSTD(4))
-)
-ENGINE = ReplacingMergeTree
-PARTITION BY toYYYYMM(time)
-ORDER BY (sensor_id, variable, depth, time);
-"""
+""" + TIMESERIES_DDL.format(name="default.sensor_timeseries") + ";"
 
 
 def cmd_setup(ch_client, _args):
@@ -229,6 +313,73 @@ def cmd_setup(ch_client, _args):
     print("Tables created (or already exist):")
     print("  default.sensors")
     print("  default.sensor_timeseries")
+    key = ch_client.query(
+        "SELECT sorting_key FROM system.tables WHERE database = 'default' AND name = 'sensor_timeseries'"
+    ).result_rows[0][0]
+    if "source" not in key:
+        print("sensor_timeseries predates the per-instrument key — run `migrate-source-key`.")
+
+
+def cmd_migrate_source_key(ch_client, _args):
+    """Rebuild sensor_timeseries with `source` in its sorting key (ClickHouse
+    can't add an existing column to one), copying every row. Rows stored before
+    the column existed get their variable's source when it has only one; for a
+    variable with several, nobody recorded which instrument a row came from, so
+    those rows are dropped and the next harvest re-fetches each source. Run it
+    after `import --overwrite`, with the sensors scheduler stopped."""
+    key = ch_client.query(
+        "SELECT sorting_key FROM system.tables WHERE database = 'default' AND name = 'sensor_timeseries'"
+    ).result_rows
+    if not key:
+        print("No sensor_timeseries table — run `setup`.")
+        return
+    if "source" in key[0][0]:
+        print("sensor_timeseries is already keyed by source.")
+        return
+
+    ch_client.command("ALTER TABLE default.sensor_timeseries "
+                      "ADD COLUMN IF NOT EXISTS source LowCardinality(String) DEFAULT ''")
+
+    mapping: list[list] = []
+    for sensor_id, depth, device_config in ch_client.query(
+        "SELECT id, depth, device_config FROM sensors FINAL"
+    ).result_rows:
+        sources = (json.loads(device_config) if device_config else {}).get("sources") or {}
+        for variable, srcs in sources.items():
+            # A profiler only ever harvested its first source.
+            if len(srcs) == 1 or float(depth) == -1.0:
+                mapping.append([sensor_id, variable, f"{srcs[0]['locationCode']}/{srcs[0]['deviceCategoryCode']}"])
+            else:
+                mapping.append([sensor_id, variable, DROP_UNATTRIBUTED])
+
+    ch_client.command("DROP TABLE IF EXISTS default.sensor_source_map")
+    ch_client.command("CREATE TABLE default.sensor_source_map "
+                      "(sensor_id UUID, variable String, source String) ENGINE = Memory")
+    if mapping:
+        ch_client.insert("default.sensor_source_map", mapping, column_names=["sensor_id", "variable", "source"])
+
+    ch_client.command("DROP TABLE IF EXISTS default.sensor_timeseries_new")
+    ch_client.command(TIMESERIES_DDL.format(name="default.sensor_timeseries_new"))
+    ch_client.command(f"""
+        INSERT INTO default.sensor_timeseries_new
+        SELECT t.sensor_id, t.time, t.depth, t.variable, t.value,
+               if(t.source != '', t.source, m.source)
+        FROM default.sensor_timeseries AS t
+        LEFT JOIN default.sensor_source_map AS m
+               ON t.sensor_id = m.sensor_id AND t.variable = m.variable
+        WHERE NOT (t.source = '' AND m.source = '{DROP_UNATTRIBUTED}')
+    """)
+    count = lambda t: ch_client.query(f"SELECT count() FROM default.{t}").result_rows[0][0]
+    before, after = count("sensor_timeseries"), count("sensor_timeseries_new")
+
+    ch_client.command("EXCHANGE TABLES default.sensor_timeseries AND default.sensor_timeseries_new")
+    ch_client.command("DROP TABLE IF EXISTS default.sensor_timeseries_old")
+    ch_client.command("RENAME TABLE default.sensor_timeseries_new TO default.sensor_timeseries_old")
+    ch_client.command("DROP TABLE default.sensor_source_map")
+    print(f"Rebuilt sensor_timeseries: {before} row(s) copied as {after} "
+          f"({before - after} unattributed multi-source row(s) dropped for re-fetch).")
+    print("The previous table is kept as sensor_timeseries_old; drop it once the app looks right:")
+    print("  DROP TABLE default.sensor_timeseries_old")
 
 
 def cmd_list(ch_client, _args):
@@ -295,10 +446,10 @@ def cmd_add(ch_client, args):
     _upsert(ch_client, row)
     print(f"Added sensor  {sensor_id}  ({args.name})")
     print(f"Variables:    {', '.join(variables)}")
-    if device_config.get("codes"):
-        print(f"ONC devices:  " +
-              ", ".join(f"{c['deviceCategoryCode']}→{c['sensorCategoryCodes']}"
-                        for c in device_config["codes"]))
+    if device_config.get("sources"):
+        print(f"ONC sources:  " +
+              ", ".join(f"{c['locationCode']}/{c['deviceCategoryCode']}/{c['sensorCategoryCode']}"
+                        for srcs in device_config["sources"].values() for c in srcs))
     backfill_script = "onc_to_ch.py" if args.api == "ONC" else "erddap_to_ch.py"
     print(f"\nTo backfill:  uv run python sensors/{backfill_script} --sensor-id {sensor_id}")
 
@@ -352,19 +503,23 @@ def cmd_set_active(ch_client, args, active: int):
 # ── CLI wiring ────────────────────────────────────────────────────────────────
 
 def cmd_import(ch_client, args):
-    """Batch-insert sensors from a YAML catalog file."""
-    path = Path(args.file)
-    if not path.exists():
-        print(f"ERROR: file not found: {path}", file=sys.stderr)
+    """Batch-upsert sensors from the catalog files."""
+    paths = [Path(f) for f in args.file] if args.file else \
+        sorted(Path(__file__).resolve().parent.glob(CATALOG_GLOB))
+    missing = [p for p in paths if not p.exists()]
+    if missing or not paths:
+        print(f"ERROR: no catalog file at {', '.join(map(str, missing)) or CATALOG_GLOB}", file=sys.stderr)
         sys.exit(1)
 
-    with open(path) as f:
-        catalog = yaml.safe_load(f)
-
-    entries = catalog.get("sensors", [])
+    try:
+        entries = load_catalogs(paths)
+    except (ValueError, KeyError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
     if not entries:
         print("No sensors found in catalog.")
         return
+    print(f"Reading {', '.join(p.name for p in paths)}")
 
     # Build a name→uuid index of what's already in CH
     existing = {
@@ -374,7 +529,7 @@ def cmd_import(ch_client, args):
         ).result_rows
     }
 
-    added = skipped = 0
+    added = skipped = failed = 0
     for entry in entries:
         name = entry["name"]
         if name in existing and not args.overwrite:
@@ -382,10 +537,12 @@ def cmd_import(ch_client, args):
             skipped += 1
             continue
 
-        var_strings = entry.get("variables", [])
-        variables, device_config = _build_variables_and_device_config(
-            var_strings, entry.get("location_code")
-        )
+        try:
+            variables, device_config = catalog_variables(entry)
+        except ValueError as e:
+            print(f"  ERROR {name}  ({entry['_file']}): {e}", file=sys.stderr)
+            failed += 1
+            continue
 
         source: dict = {"api": entry["api"]}
         if entry.get("source_link"):
@@ -413,9 +570,11 @@ def cmd_import(ch_client, args):
         print(f"  {verb}  {name}  ({sensor_id})")
         added += 1
 
-    print(f"\n{added} sensor(s) added/updated, {skipped} skipped.")
+    print(f"\n{added} sensor(s) added/updated, {skipped} skipped, {failed} failed.")
     if added:
         print("Run onc_to_ch.py or erddap_to_ch.py (no --sensor-id) to backfill all new sensors.")
+    if failed:
+        sys.exit(1)
 
 
 def _add_variable_args(p: argparse.ArgumentParser):
@@ -446,10 +605,13 @@ def main():
 
     sub.add_parser("setup", help="Create CH tables (safe to re-run, uses IF NOT EXISTS).")
     sub.add_parser("list", help="List all sensors.")
+    sub.add_parser("migrate-source-key",
+                   help="Rebuild sensor_timeseries keyed by source (one-off, after import --overwrite).")
 
-    imp_p = sub.add_parser("import", help="Batch-add sensors from a YAML catalog file.")
-    imp_p.add_argument("--file", default="catalog.yaml", metavar="PATH",
-                       help="Path to the catalog YAML file (default: catalog.yaml).")
+    imp_p = sub.add_parser("import", help="Batch-add sensors from the catalog_*.yml files.")
+    imp_p.add_argument("--file", action="append", metavar="PATH",
+                       help="Import only this catalog file (repeatable). "
+                            "Default: every catalog_*.yml next to this script.")
     imp_p.add_argument("--overwrite", action="store_true",
                        help="Update sensors that already exist by name.")
 
@@ -487,6 +649,8 @@ def main():
         cmd_import(ch_client, args)
     elif args.command == "setup":
         cmd_setup(ch_client, args)
+    elif args.command == "migrate-source-key":
+        cmd_migrate_source_key(ch_client, args)
     elif args.command == "list":
         cmd_list(ch_client, args)
     elif args.command == "add":

@@ -29,6 +29,8 @@ class FakeClient:
         q = " ".join(query.lower().split())
         if "from grid_ssc" in q:
             return FakeResult([self.grid_row])
+        if "select device_config from sensors" in q:
+            return FakeResult([("{}",)])  # single-source sensor: no priority order
         if "select distinct depth" in q:
             return FakeResult([(d,) for d in self.depths])
         # Must precede the table-name branches below: the coverage aggregate
