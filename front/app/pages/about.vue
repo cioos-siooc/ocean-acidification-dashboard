@@ -452,7 +452,7 @@ const sensors: Sensor[] = [
         orgClass: 'org-onc'
     },
     {
-        id: 'Bottom Boundary Layer',
+        id: 'Fraser River Delta Bottom Boundary Layer',
         organization: 'Ocean Networks Canada',
         coordinates: '49.0807, -123.3395',
         variables: 'Salinity (PSU), Temp (degC)',
