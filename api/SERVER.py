@@ -214,6 +214,7 @@ async def get_sensors():
                 GROUP BY sensor_id
             ) ts ON ts.sensor_id = s.id
             WHERE s.active = 1
+            SETTINGS join_use_nulls = 1
         """)
         sensors = []
         for row in result.result_rows:

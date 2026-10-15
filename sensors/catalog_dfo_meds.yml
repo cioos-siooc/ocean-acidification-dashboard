@@ -23,6 +23,7 @@ sensors:
     lon: -133.94
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46036"&SSTP_UQL<=2'
@@ -38,6 +39,7 @@ sensors:
     lon: -128.84
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46181"&SSTP_UQL<=2'
@@ -53,6 +55,7 @@ sensors:
     lon: -132.42
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46145"&SSTP_UQL<=2'
@@ -68,6 +71,7 @@ sensors:
     lon: -129.79
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46185"&SSTP_UQL<=2'
@@ -83,6 +87,7 @@ sensors:
     lon: -128.77
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46204"&SSTP_UQL<=2'
@@ -98,6 +103,7 @@ sensors:
     lon: -138.85
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46184"&SSTP_UQL<=2'
@@ -113,6 +119,7 @@ sensors:
     lon: -129.91
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46207"&SSTP_UQL<=2'
@@ -128,6 +135,7 @@ sensors:
     lon: -134.32
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46205"&SSTP_UQL<=2'
@@ -143,6 +151,7 @@ sensors:
     lon: -131.14
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46183"&SSTP_UQL<=2'
@@ -158,6 +167,7 @@ sensors:
     lon: -131.23
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46147"&SSTP_UQL<=2'
@@ -173,6 +183,7 @@ sensors:
     lon: -123.73
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46146"&SSTP_UQL<=2'
@@ -188,6 +199,7 @@ sensors:
     lon: -126.0
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46206"&SSTP_UQL<=2'
@@ -203,6 +215,7 @@ sensors:
     lon: -132.69
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46208"&SSTP_UQL<=2'
@@ -218,6 +231,7 @@ sensors:
     lon: -124.99
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46131"&SSTP_UQL<=2'
@@ -233,6 +247,7 @@ sensors:
     lon: -136.1
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46004"&SSTP_UQL<=2'
@@ -248,6 +263,7 @@ sensors:
     lon: -127.93
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46132"&SSTP_UQL<=2'
@@ -263,6 +279,7 @@ sensors:
     lon: -123.5
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46134"&SSTP_UQL<=2'
@@ -278,6 +295,7 @@ sensors:
     lon: -123.29
     depth: 0
     api: ERDDAP
+    inactive: true
     organization: DFO MEDS
     source_link: "https://data.cioospacific.ca/erddap/tabledap/DFO_MEDS_BUOYS"
     constraints: 'STN_ID="C46182"&SSTP_UQL<=2'
