@@ -46,7 +46,9 @@ const loading = ref(false);
 // Last data handed to `plot()`, kept for CSV export (see the export block below).
 type PlotSeries = { time?: (string | number)[]; value?: (number | null)[]; depth?: number | null } | null;
 type ClimateRow = { requested_date: string; mean: number | null; min: number | null; max: number | null };
-const lastPlot = ref<{ model: PlotSeries; climate: ClimateRow[] | null; sensor: PlotSeries } | null>(null);
+/** One instrument's own series when a multi-instrument sensor is compared (see ExplorePanel). */
+type InstrumentSeries = { id: string; label: string; time: (string | number)[]; value: (number | null)[] };
+const lastPlot = ref<{ model: PlotSeries; climate: ClimateRow[] | null; sensor: PlotSeries; instruments: InstrumentSeries[] | null } | null>(null);
 // Which legend entries are currently switched on. Read by the CSV export so a
 // download mirrors what's actually drawn. `setOption(…, true)` on every re-plot
 // resets ECharts' own legend state, so this is re-seeded there rather than kept
@@ -266,12 +268,20 @@ async function fetchAndPlot(
     }
 }
 
-function plot(modelData: any, climateData: any, sensorData: any | null) {
+/**
+ * `instruments` (optional, ExplorePanel's "Compare instruments") replaces the
+ * single merged sensor line with one line per instrument, highest priority
+ * first, and adds a panel beneath plotting each later instrument minus the
+ * first. All instrument series share one time grid (the host bins them alike),
+ * so the differences are taken index by index.
+ */
+function plot(modelData: any, climateData: any, sensorData: any | null, instruments: InstrumentSeries[] | null = null) {
     if (!chart) return;
     // Kept for CSV export: both callers (this component's own fetchAndPlot and
     // ExplorePanel) funnel through here, so this is the one place that always
     // sees what actually got drawn.
-    lastPlot.value = { model: modelData, climate: climateData, sensor: sensorData };
+    const comparing = (instruments ?? []).filter(i => i.time.length > 0 && i.value.some(v => v != null));
+    lastPlot.value = { model: modelData, climate: climateData, sensor: sensorData, instruments: comparing.length > 1 ? comparing : null };
     const tz = APP_TIMEZONE;
 
     const lat = mainStore.lastClickedMapPoint?.lat;
@@ -349,6 +359,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         push(modelData?.value);
         if (Array.isArray(climateData)) climateData.forEach(row => push([row?.mean, row?.min, row?.max]));
         if (sensorData?.value) push(sensorData.value);
+        comparing.forEach(i => push(i.value));
         if (!values.length) return 0;
         // Reduce rather than Math.max(...values)/Math.min(...values): a variable-depth
         // ("profiler") sensor can return well over 100k points for a single depth band in
@@ -366,6 +377,8 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
 
     const hasClimate = Array.isArray(climateData) && climateData.length > 0;
     const hasSensorData = sensorData && Array.isArray(sensorData.time) && sensorData.time.length > 0;
+    // Comparing needs a second instrument with data, or there is nothing to compare.
+    const hasInstruments = comparing.length > 1;
 
     // A variable-depth ("profiler") sensor queried fine but had no cast near the
     // currently selected depth in this window — distinct from "no sensor selected",
@@ -374,7 +387,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     const isProfilerNoCast = mainStore.selectedSensor?.depth === -1 && sensorData
         && Array.isArray(sensorData.time) && sensorData.time.length === 0;
 
-    if (!hasModelData && !hasClimate && !hasSensorData) {
+    if (!hasModelData && !hasClimate && !hasSensorData && !hasInstruments) {
         chart.setOption({
             graphic: [{ type: 'text', left: 'center', top: 'middle', style: { text: 'No data available', fill: 'rgba(255,255,255,0.4)', fontSize: 16 } }],
             legend: { data: [] },
@@ -527,7 +540,66 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
         });
     }
 
-    if (hasSensorData) {
+    if (hasInstruments) {
+        const palette = mainStore.colors.instruments;
+        const at = (i: InstrumentSeries) => i.time.map(t => moment.utc(t).tz(tz).format());
+        const [primary, ...others] = comparing;
+        comparing.forEach((inst, k) => {
+            const color = palette[k % palette.length];
+            seriesArr.push({
+                name: inst.label,
+                type: 'line',
+                data: at(inst).map((t, j) => [t, inst.value[j]]),
+                lineStyle: { width: 1, color, opacity: 0.85 },
+                itemStyle: { color },
+                showSymbol: false,
+                legendIcon: 'roundRect',
+            });
+        });
+        // Same series name as its instrument, so one legend click hides both.
+        others.forEach((inst, k) => {
+            const color = palette[(k + 1) % palette.length];
+            seriesArr.push({
+                name: inst.label,
+                type: 'line',
+                xAxisIndex: 1,
+                yAxisIndex: 1,
+                data: at(inst).map((t, j) => {
+                    const a = inst.value[j], b = primary!.value[j];
+                    return [t, a != null && b != null ? a - b : null];
+                }),
+                lineStyle: { width: 1, color },
+                itemStyle: { color },
+                showSymbol: false,
+            });
+        });
+
+        // Two stacked grids sharing the time axis: values above, differences below.
+        const g = gridConfig.value;
+        option.grid = [
+            { left: g.left, right: g.right, top: g.top, bottom: '34%' },
+            { left: g.left, right: g.right, height: '20%', bottom: g.bottom },
+        ];
+        option.xAxis = [
+            { ...option.xAxis, axisLabel: { show: false } },
+            { ...option.xAxis, gridIndex: 1 },
+        ];
+        option.yAxis = [
+            option.yAxis,
+            {
+                type: 'value',
+                gridIndex: 1,
+                splitLine: { show: true, lineStyle: { color: '#ffffff14' } },
+                name: `Δ vs ${primary!.label}`,
+                nameLocation: 'center',
+                nameGap: 34,
+                nameTextStyle: { color: '#e0e0e0', fontSize: 9 },
+                // ECharts' own labels: differences are small, and a fixed
+                // decimal count prints the same label on neighbouring ticks.
+                axisLabel: { color: '#e0e0e0', fontSize: 9 },
+            },
+        ];
+    } else if (hasSensorData) {
         const sensor_ts = sensorData.time.map((t: any) => moment.utc(t).valueOf());
         seriesArr.push({
             name: 'Sensor',
@@ -540,7 +612,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null) {
     }
 
     option.series = seriesArr;
-    option.legend.data = seriesArr.filter((s: any) => s.name && !s.name.startsWith('_')).map((s: any) => s.name);
+    option.legend.data = [...new Set(seriesArr.filter((s: any) => s.name && !s.name.startsWith('_')).map((s: any) => s.name as string))];
 
     chart.setOption(option, true);
     chart.resize();
@@ -649,9 +721,10 @@ if (csv) csv.register((): CsvDataset[] => {
     // Same all-null guard as the chart's own `hasModelData` — an export whose
     // model column is blank on every row is worse than no column at all.
     const withModel = !!p.model?.time?.length && p.model.value?.some((v: any) => v != null) && shown('Model');
-    const withSensor = !!p.sensor?.time?.length && shown('Sensor');
+    const instruments = p.instruments?.filter(i => shown(i.label)) ?? [];
+    const withSensor = !p.instruments && !!p.sensor?.time?.length && shown('Sensor');
     const withClimate = Array.isArray(p.climate) && p.climate.length > 0 && shown('Climatology');
-    if (!withModel && !withSensor && !withClimate) return [];
+    if (!withModel && !withSensor && !instruments.length && !withClimate) return [];
 
     const byTime = new Map<string, Record<string, unknown>>();
     const row = (iso: string) => {
@@ -675,6 +748,13 @@ if (csv) csv.register((): CsvDataset[] => {
         put(p.sensor!.time!, p.sensor!.value, 'sensor');
         columns.push({ header: 'sensor', unit: u, accessorKey: 'sensor' });
     }
+    // One column per compared instrument, named by its ONC location and device
+    // category; the plotted differences are derivable, so they aren't exported.
+    instruments.forEach((inst, k) => {
+        const key = `instrument${k}`;
+        put(inst.time, inst.value, key);
+        columns.push({ header: `sensor_${inst.id.replace('/', '_')}`, unit: u, accessorKey: key });
+    });
     if (withClimate) {
         for (const c of p.climate!) {
             const iso = csvTimestamp(c.requested_date);
@@ -710,7 +790,7 @@ if (csv) csv.register((): CsvDataset[] => {
             .sort((a, b) => String(a.time).localeCompare(String(b.time))),
         omitDatasetLine: true,
         meta: csvMeta(csv.context.value, [
-            ...(withSensor && sensorName ? [['sensor', sensorName] as [string, unknown]] : []),
+            ...((withSensor || instruments.length) && sensorName ? [['sensor', sensorName] as [string, unknown]] : []),
             ...(withClimate ? [
                 ['note', 'climatology is one row per calendar day at noon UTC, so its rows sit on their own timestamps rather than the model/sensor ones'] as [string, unknown],
             ] : []),

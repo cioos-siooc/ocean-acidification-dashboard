@@ -13,10 +13,11 @@ CREATE TABLE IF NOT EXISTS default.sensors
     longitude     Float64,
     depth         Float32,      -- metres; -1 = variable-depth sensor
     variables     String,       -- JSON: {canonical: {name, unit, conversion_factor}}
-    device_config String,       -- JSON: ONC locationCode / codes config
+    device_config String,       -- JSON: ONC {locationCode, sources: {canonical: [{locationCode, deviceCategoryCode, sensorCategoryCode}]}}
     source        String,       -- JSON: {type: "ERDDAP"|"ONC", link: "..."}
     active        UInt8,
-    updated_at    DateTime DEFAULT now()
+    updated_at    DateTime DEFAULT now(),
+    organization  String DEFAULT ''
 )
 ENGINE = ReplacingMergeTree(updated_at)
 ORDER BY id;
@@ -34,8 +35,12 @@ CREATE TABLE IF NOT EXISTS default.sensor_timeseries
     time       DateTime                  CODEC(DoubleDelta, ZSTD(4)),
     depth      Float32                   CODEC(Gorilla(4),  ZSTD(4)),
     variable   LowCardinality(String),
-    value      Float32                   CODEC(Gorilla(4),  ZSTD(4))
+    value      Float32                   CODEC(Gorilla(4),  ZSTD(4)),
+    source     LowCardinality(String)    DEFAULT ''   -- instrument, e.g. ONC "CRIP.C1/CTD"; '' for ERDDAP
 )
 ENGINE = ReplacingMergeTree
 PARTITION BY toYYYYMM(time)
-ORDER BY (sensor_id, variable, depth, time);
+ORDER BY (sensor_id, variable, source, depth, time);
+
+-- A table created before `source` was in the key is rebuilt by
+-- `sensors/manage_sensors.py migrate-source-key`.

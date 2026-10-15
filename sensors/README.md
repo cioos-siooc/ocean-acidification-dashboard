@@ -22,7 +22,14 @@ docker compose -f docker-compose.prod.api.yml build sensors
 
 ### 2. Create ClickHouse tables
 
-Safe to re-run on any machine — uses `IF NOT EXISTS`.
+Safe to re-run on any machine — uses `IF NOT EXISTS`. It warns when an existing `sensor_timeseries` predates the per-instrument key; rebuild that one once, after `import --overwrite` and with `sensors-scheduler` stopped:
+
+```bash
+docker compose -f docker-compose.prod.api.yml run --rm sensors \
+  uv run python manage_sensors.py migrate-source-key
+```
+
+It copies every row into a table keyed by `source`, tagging old rows with their variable's source when it has only one. Old rows of a multi-source variable can't be attributed, so they are dropped and the next harvest re-fetches each source. The previous table is kept as `sensor_timeseries_old` until you drop it.
 
 ```bash
 docker compose -f docker-compose.prod.api.yml run --rm sensors \
@@ -33,11 +40,11 @@ docker compose -f docker-compose.prod.api.yml run --rm sensors \
 
 ## Discovering sensors
 
-Before adding a sensor, use these helper scripts to look up what's available and generate a ready-to-paste `catalog.yaml` entry (run locally with `uv run`, not inside the container).
+Before adding a sensor, use these helper scripts to look up what's available and generate a catalog entry to paste into the matching `catalog_*.yml` file (run locally with `uv run`, not inside the container).
 
 ### ONC locations: `discover_location.py`
 
-Looks up an ONC `locationCode` and prints the sensor variables available there, mapped to canonical names via the `CANONICAL` dict in the script.
+Looks up an ONC `locationCode` and its child locations (e.g. `CRIP` → `CRIP.C1`, `CRIP.C2`, `CRIP.O1`) and prints the variables available there, mapped to canonical names via the `CANONICAL` dict in the script. Each variable lists every instrument that reports it as `sources`, most recently deployed first; review that order before pasting.
 
 ```bash
 cd sensors
@@ -74,46 +81,84 @@ Progress messages go to stderr and the catalog YAML goes to stdout, so redirect 
 uv run python discover_erddap.py https://catalogue.hakai.org/erddap --filter buoy > candidates.yaml
 ```
 
-Review the generated YAML (remove variables you don't want, double-check dissolved-oxygen unit conversion factors) before pasting into `sensors/catalog.yaml`.
+Review the generated YAML (remove variables you don't want, double-check dissolved-oxygen unit conversion factors) before pasting into a `sensors/catalog_*.yml` file.
 
 ---
 
 ## Adding sensors
 
-### Preferred: catalog file (batch)
+### Preferred: catalog files (batch)
 
-Edit `sensors/catalog.yaml` and add entries for every sensor you want to track.  YAML anchors (`&name` / `*name`) let you define a shared variable set once and reuse it across all sensors with the same instruments — most standard VENUS/NEPTUNE stations share the same CTD + OXYSENSOR variables.
+Every sensor lives in exactly one catalog file, one per harvest source:
+
+| File | Harvested by |
+|---|---|
+| `catalog_ONC.yml` | `onc_to_ch.py` |
+| `catalog_hakai.yml`, `catalog_uw.yml`, `catalog_dfo_meds.yml` | `erddap_to_ch.py` |
+
+A new ERDDAP provider gets its own `catalog_<provider>.yml`. `manage_sensors.py import` reads every `catalog_*.yml` (a sensor name may appear only once across them), and the harvesters read what it wrote to the `sensors` table.
+
+#### Catalog format
 
 ```yaml
-_venus_standard: &venus_standard
-  - "dissolved_oxygen:oxygen_corrected:ml/L:44.66:OXYSENSOR"
-  - "temperature:temperature:C:1.0:CTD"
-  - "salinity:salinity:PSU:1.0:CTD"
-
 sensors:
-  - name: "Strait of Georgia East"
-    lat: 49.042635
-    lon: -123.317605
-    depth: 167.14
-    source_type: ONC
-    location_code: SEVIP
-    variables: *venus_standard
+  - name: "Campbell River Underwater Network"
+    lat: 50.020757
+    lon: -125.23537
+    depth: 8.248571
+    api: ONC
+    organization: ONC
+    location_code: CRIP              # the site; its Data Search page and profiler depth source
+    source_link: "https://data.oceannetworks.ca/DataSearch?location=CRIP"
+    variables:
+      temperature:
+        unit: C
+        factor: 1.0
+        sources:                     # LOCATION/DEVICE_CATEGORY/sensor_code, priority order
+        - CRIP.C1/CTD/temperature
+        - CRIP/WETLABS_WQM/temperature
+        - CRIP.C2/CTD/temperature
+      chlorophyll:
+        unit: µg/L
+        factor: 1.0
+        sources: [CRIP/FLUOROMETER/chlorophyll]
+
+  - name: "Hakai KC Buoy"
+    api: ERDDAP
+    source_link: "https://catalogue.hakai.org/erddap/tabledap/HakaiKCBuoy1hour"
+    # …lat, lon, depth, organization
+    variables:
+      temperature:
+        code: WaterTemp              # the ERDDAP column
+        unit: C
+        factor: 1.0
 ```
 
-Then import the whole file in one command:
+| Field | Description |
+|---|---|
+| variable key | Canonical name used throughout the system (e.g. `dissolved_oxygen`) |
+| `unit` | Display unit string (e.g. `ml/L`) |
+| `factor` | Raw value is multiplied by this before storage — `1.0` if no conversion is needed |
+| `code` | ERDDAP only: the dataset's column. `time`/`depth` entries rename the axis columns; a `depth` with `unit: dbar` is pressure, converted at ingestion |
+| `sources` | ONC only: `LOCATION/DEVICE_CATEGORY/sensor_code` for each instrument that reports the variable, highest priority first. The code can differ per instrument (e.g. `oxygen` on a WQM, `oxygen_corrected` on an optode) |
+
+**Several sources.** ONC sites often have instruments on child locations (`CRIP.C1`, `CRIP.C2`) that come and go between deployments. `onc_to_ch.py` stores every source as its own series, tagged in `sensor_timeseries.source` (`CRIP.C1/CTD`; part of the table key) and resumed from its own last timestamp. A source with no deployment in the requested window is skipped silently. Readers merge them: `/sensorTimeseries` and `/depthProfile` give each timestamp the value of the first source in the list that has one, and `/sensorTimeseries` with `instrument` returns one source's series, which Explore's "Compare instruments" toggle plots side by side. Profilers (`depth: -1`) harvest only each variable's first source, which must be at `location_code`.
+
+YAML anchors (`&name` / `*name`) work for variable sets shared by several sensors.
+
+Import all catalogs in one command (the image carries the catalogs it was built with; mount an edited file over its copy to use it without a rebuild):
 
 ```bash
 docker compose -f docker-compose.prod.api.yml run --rm \
-  -v $(pwd)/sensors/catalog.yaml:/app/catalog.yaml \
+  -v $(pwd)/sensors/catalog_ONC.yml:/app/catalog_ONC.yml \
   sensors uv run python manage_sensors.py import
 
-# --overwrite updates sensors that already exist by name
-docker compose -f docker-compose.prod.api.yml run --rm \
-  -v $(pwd)/sensors/catalog.yaml:/app/catalog.yaml \
-  sensors uv run python manage_sensors.py import --overwrite
+# --overwrite updates sensors that already exist by name; --file limits it to one catalog
+docker compose -f docker-compose.prod.api.yml run --rm sensors \
+  uv run python manage_sensors.py import --overwrite --file catalog_ONC.yml
 ```
 
-The import is idempotent by name — sensors already in CH are skipped unless `--overwrite` is passed.  After importing, backfill all new sensors at once:
+The import is idempotent by name — sensors already in CH are skipped unless `--overwrite` is passed. Edit a sensor in its catalog and re-import with `--overwrite`, rather than with `update`, so the catalog stays the record. After importing, backfill all new sensors at once:
 
 ```bash
 docker compose -f docker-compose.prod.api.yml run --rm sensors \
@@ -128,7 +173,7 @@ Full ONC location list: https://wiki.oceannetworks.ca/spaces/O2A/pages/49447553/
 
 ### ONC sensor
 
-The `--variable` format for ONC is `canonical:onc_code:unit:conversion_factor:device_category`.  The 5th field ties the variable to the ONC `deviceCategoryCode` used to fetch it — no separate device flag needed.
+The `--variable` format for ONC is `canonical:onc_code:unit:conversion_factor:device_category`.  The 5th field is the ONC `deviceCategoryCode` at `--location-code` — a single source. For several, or a child location, use the catalog.
 
 ```bash
 docker compose -f docker-compose.prod.api.yml run --rm sensors \
@@ -252,18 +297,6 @@ docker compose -f docker-compose.prod.api.yml run --rm sensors \
 docker compose -f docker-compose.prod.api.yml run --rm sensors \
   uv run python backfill_onc_source.py --force     # overwrite existing description/link too
 ```
-
----
-
-## Variable format
-
-| Field | Description |
-|---|---|
-| `canonical` | Name used throughout the system (e.g. `dissolved_oxygen`) |
-| `source_name` | Column / sensor-category code in ERDDAP or ONC (e.g. `oxygen_corrected`) |
-| `unit` | Display unit string (e.g. `ml/L`) |
-| `conversion_factor` | Raw value is multiplied by this before storage — use `1.0` if no conversion needed |
-| `device_category` | ONC only: `deviceCategoryCode` that supplies this variable (e.g. `OXYSENSOR`, `CTD`) |
 
 ---
 

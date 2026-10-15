@@ -18,7 +18,7 @@ COPY sensors/pyproject.toml ./
 RUN uv sync --no-dev
 
 COPY sensors/*.py ./
-COPY sensors/catalog.yaml ./
+COPY sensors/catalog_*.yml ./
 
 # Allow any UID (e.g. host UID passed via docker-compose user:) to run uv
 RUN chmod -R a+rwX /app

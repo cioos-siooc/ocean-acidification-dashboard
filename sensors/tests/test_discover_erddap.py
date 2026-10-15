@@ -1,3 +1,5 @@
+import yaml
+
 from discover_erddap import AXIS_VARS, _map_variables
 
 
@@ -23,9 +25,8 @@ def test_pressure_only_dataset_emits_depth_line_with_dbar_unit():
     }
     variable_lines, _, _, pressure_col = _map_variables(v_attrs, show_unmapped=False)
 
-    depth_lines = [l for l in variable_lines if l.strip().startswith('- "depth:')]
-    assert len(depth_lines) == 1
-    assert f'"depth:{pressure_col}:dbar:1.0"' in depth_lines[0]
+    variables = yaml.safe_load("\n".join(variable_lines))
+    assert variables["depth"] == {"code": pressure_col, "unit": "dbar", "factor": 1.0}
 
 
 def test_literal_depth_variable_still_detected_and_no_pressure_line_emitted():
@@ -37,7 +38,7 @@ def test_literal_depth_variable_still_detected_and_no_pressure_line_emitted():
 
     assert has_depth_var is True
     assert pressure_col is None
-    assert not any(l.strip().startswith('- "depth:') for l in variable_lines)
+    assert "depth" not in yaml.safe_load("\n".join(variable_lines))
 
 
 def test_fixed_depth_dataset_has_neither_axis():

@@ -28,7 +28,10 @@ sensors:
     constraints: 'STN_ID="C46036"&SSTP_UQL<=2'
     description: "Offshore Pacific — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46181"
     lat: 53.82
@@ -40,7 +43,10 @@ sensors:
     constraints: 'STN_ID="C46181"&SSTP_UQL<=2'
     description: "North coast — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46145"
     lat: 54.38
@@ -52,7 +58,10 @@ sensors:
     constraints: 'STN_ID="C46145"&SSTP_UQL<=2'
     description: "Hecate Strait — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46185"
     lat: 52.42
@@ -64,7 +73,10 @@ sensors:
     constraints: 'STN_ID="C46185"&SSTP_UQL<=2'
     description: "North coast — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46204"
     lat: 51.38
@@ -76,7 +88,10 @@ sensors:
     constraints: 'STN_ID="C46204"&SSTP_UQL<=2'
     description: "Central coast — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46184"
     lat: 53.92
@@ -88,7 +103,10 @@ sensors:
     constraints: 'STN_ID="C46184"&SSTP_UQL<=2'
     description: "Offshore Pacific — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46207"
     lat: 50.88
@@ -100,7 +118,10 @@ sensors:
     constraints: 'STN_ID="C46207"&SSTP_UQL<=2'
     description: "North Vancouver Island — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46205"
     lat: 54.19
@@ -112,7 +133,10 @@ sensors:
     constraints: 'STN_ID="C46205"&SSTP_UQL<=2'
     description: "Offshore Pacific — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46183"
     lat: 53.57
@@ -124,7 +148,10 @@ sensors:
     constraints: 'STN_ID="C46183"&SSTP_UQL<=2'
     description: "Hecate Strait — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46147"
     lat: 51.83
@@ -136,7 +163,10 @@ sensors:
     constraints: 'STN_ID="C46147"&SSTP_UQL<=2'
     description: "Offshore Haida Gwaii — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46146"
     lat: 49.34
@@ -148,7 +178,10 @@ sensors:
     constraints: 'STN_ID="C46146"&SSTP_UQL<=2'
     description: "Strait of Georgia — inside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46206"
     lat: 48.83
@@ -160,7 +193,10 @@ sensors:
     constraints: 'STN_ID="C46206"&SSTP_UQL<=2'
     description: "Outer shelf off Vancouver Island — inside the model bounding box but probably beyond the curvilinear grid"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46208"
     lat: 52.51
@@ -172,7 +208,10 @@ sensors:
     constraints: 'STN_ID="C46208"&SSTP_UQL<=2'
     description: "Offshore Haida Gwaii — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46131"
     lat: 49.91
@@ -184,7 +223,10 @@ sensors:
     constraints: 'STN_ID="C46131"&SSTP_UQL<=2'
     description: "Northern Strait of Georgia — inside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46004"
     lat: 50.93
@@ -196,7 +238,10 @@ sensors:
     constraints: 'STN_ID="C46004"&SSTP_UQL<=2'
     description: "Offshore Pacific — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46132"
     lat: 49.74
@@ -208,7 +253,10 @@ sensors:
     constraints: 'STN_ID="C46132"&SSTP_UQL<=2'
     description: "West Vancouver Island shelf — outside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46134"
     lat: 48.65
@@ -220,7 +268,10 @@ sensors:
     constraints: 'STN_ID="C46134"&SSTP_UQL<=2'
     description: "Southern Strait of Georgia — inside the SalishSeaCast domain"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0
 
   - name: "C46182"
     lat: 49.48
@@ -232,4 +283,7 @@ sensors:
     constraints: 'STN_ID="C46182"&SSTP_UQL<=2'
     description: "Howe Sound approaches — inside the SalishSeaCast domain (short record, 1989-1991)"
     variables:
-    - "temperature:SSTP:C:1.0"
+      temperature:
+        code: SSTP
+        unit: C
+        factor: 1.0

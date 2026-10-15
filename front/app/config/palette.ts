@@ -13,6 +13,9 @@ export const material = {
     orange: { lighten2: '#ffb74d' },
     yellow: { base: '#ffeb3b', accent2: '#ffff00' },
     blue:   { darken2: '#1976d2' },
+    amber:  { lighten2: '#ffd54f' },
+    cyan:   { lighten2: '#4dd0e1' },
+    purple: { lighten3: '#ce93d8' },
 } as const
 
 export default material

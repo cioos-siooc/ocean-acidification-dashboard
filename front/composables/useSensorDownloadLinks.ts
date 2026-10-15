@@ -14,7 +14,9 @@
 // has no equivalent direct-download URL — Oceans 3.0 is a cart/order flow that
 // needs an account. The best we can do is deep-link each variable to its
 // instrument: `?location=X&deviceCategory=Y` opens Data Search with that
-// instrument selected and its "Select This Data Source" button ready.
+// instrument selected and its "Select This Data Source" button ready. A
+// variable with several sources links its first (highest-priority) one, which
+// may sit on a child location (e.g. `CRIP.C1`).
 
 const ONC_DATA_SEARCH = 'https://data.oceannetworks.ca/DataSearch';
 
@@ -22,7 +24,8 @@ export interface SensorSourceLike {
     depth: number;
     // `{canonical: {name, unit, conversion_factor}}` as stored in CH `sensors.variables`.
     variables: Record<string, any>;
-    // ONC only: `{locationCode, codes: [{deviceCategoryCode, sensorCategoryCodes}]}`.
+    // ONC only: `{locationCode, sources: {canonical: [{locationCode, deviceCategoryCode, sensorCategoryCode}]}}`,
+    // each list in priority order (see sensors/onc_to_ch.py).
     device_config?: Record<string, any> | null;
     source?: { api?: string; link?: string } | null;
 }
@@ -115,27 +118,17 @@ function oncDownloads(sensor: SensorSourceLike, link: string, only?: string[]): 
     const dataset = link || (locationCode ? `${ONC_DATA_SEARCH}?location=${encodeURIComponent(locationCode)}` : '');
     if (!locationCode) return { api: 'ONC', dataset, variables: [] };
 
-    // `codes` maps instruments to the sensors they carry, so invert it to find
-    // the instrument that reports a given variable. `sensorCategoryCodes` is a
-    // comma-separated list in the ONC catalogue's own format.
-    const instrumentBySensorCode = new Map<string, string>();
-    for (const entry of (config.codes ?? []) as Array<Record<string, string>>) {
-        const deviceCategory = entry?.deviceCategoryCode;
-        if (!deviceCategory) continue;
-        for (const code of String(entry.sensorCategoryCodes ?? '').split(',')) {
-            const trimmed = code.trim();
-            if (trimmed) instrumentBySensorCode.set(trimmed, deviceCategory);
-        }
-    }
+    const sources = (config.sources ?? {}) as Record<string, Array<Record<string, string>>>;
 
     const variables = dataVariables((sensor.variables ?? {}) as Record<string, { name?: string }>, only)
         .map(([canonical, sourceName]) => {
-            const deviceCategory = instrumentBySensorCode.get(sourceName);
+            const primary = sources[canonical]?.[0];
             // Every variable stays listed even without an instrument match — the
             // row is the sensor's variable list first and a link second. Such a
             // variable just gets no link; the station link covers it.
-            if (!deviceCategory) return { canonical, sourceName };
-            const query = `location=${encodeURIComponent(locationCode)}&deviceCategory=${encodeURIComponent(deviceCategory)}`;
+            if (!primary?.deviceCategoryCode) return { canonical, sourceName };
+            const location = primary.locationCode || locationCode;
+            const query = `location=${encodeURIComponent(location)}&deviceCategory=${encodeURIComponent(primary.deviceCategoryCode)}`;
             return { canonical, sourceName, page: `${ONC_DATA_SEARCH}?${query}` };
         });
 

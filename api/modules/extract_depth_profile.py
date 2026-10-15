@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from modules.clickhouse_helpers import get_ch_client
+from modules.extractSensorTimeseries import series_query
 from modules.extractTimeseries import (
     ALLOWED_VARIABLES,
     DATA_TABLE_BY_SOURCE,
@@ -264,12 +265,12 @@ def extract_depth_profile(
         # ── SENSOR: raw casts, snapped to nearest model level + time bucket ───────
         safe_var = var.replace("'", "''")
         safe_id = str(sensor_id).replace("'", "")
-        sensor_rows = client.query(
-            f"SELECT time, depth, value FROM sensor_timeseries FINAL "
-            f"WHERE sensor_id = '{safe_id}' AND variable = '{safe_var}' "
-            f"  AND time >= toDateTime('{from_str}') AND time <= toDateTime('{to_str}') "
-            f"ORDER BY time"
-        ).result_rows
+        sensor_rows = client.query(series_query(
+            client, safe_id, var, None,
+            f"sensor_id = '{safe_id}' AND variable = '{safe_var}' "
+            f"AND time >= toDateTime('{from_str}') AND time <= toDateTime('{to_str}')",
+            keys="time, depth", columns="time, depth, value",
+        )).result_rows
 
         # Group raw casts landing in the same (level, hour) cell so a burst of
         # readings from one pass doesn't get flattened by simple overwrite.

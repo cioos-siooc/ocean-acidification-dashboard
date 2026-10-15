@@ -28,6 +28,9 @@ function createInitialState() {
                 shadowBlur: 3
             },
             stats: colors.blue.darken2,
+            // One per instrument when a sensor's instruments are compared, in
+            // priority order; the first matches the single merged sensor line.
+            instruments: [colors.green.lighten3, colors.amber.lighten2, colors.cyan.lighten2, colors.purple.lighten3],
         },
 
         dfnDays: 14, // days from now for climate timeseries
