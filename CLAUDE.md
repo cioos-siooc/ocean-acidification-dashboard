@@ -96,6 +96,7 @@ Nuxt 4 + Nuxt UI v4 (Tailwind v4 + Reka UI) + Pinia. Vuetify has been fully remo
 - `app/components/`, `app/stores/main.ts`, `composables/` (map-layer logic like `useBuoyLayer`/`useStationsInteraction`, and data fetching).
 - `app/config/app.ts` — domain constants (timezone, map extent/zoom/style); `app/config/palette.ts` — Material palette values charts use. Per-environment values go in `runtimeConfig` (`NUXT_PUBLIC_API_BASE_URL`, `NUXT_PUBLIC_MAPBOX_TOKEN`, `NUXT_PUBLIC_POSTHOG_KEY`, `NUXT_PUBLIC_POSTHOG_HOST`).
 - Dark-only: `colorMode` pinned in `nuxt.config.ts`; light mode is unverified.
+- Model raster tiles are **value-packed**, not colour-coded (24-bit `(value−base)/precision` in RGB, alpha 0 = no data, lossless WebP); colours come from the layer's `raster-color`. The "Cursor Value" overlay (`composables/useRasterProbe.ts`) decodes the same image client-side for the hover readout — keep tiles lossless and `base` 0 or it breaks.
 
 **UI conventions.** Nuxt UI components (`UButton`, `UModal`, `USelectMenu`, `UInput`, `UTabs`, `UPopover`, `UBadge`, `UAlert`, `USeparator`, `UTable`, `UCalendar`) for anything interactive; plain elements + Tailwind for layout and styled surfaces (no need to force panels into a card component). Icons: `<UIcon name="i-mdi-foo" />` / `icon` props, MDI bundled locally via `@iconify-json/mdi` (never the remote Iconify API). Shared primitives in `app/components/ui/`: `SegmentedControl.vue` (single-select button row with radiogroup semantics + arrow keys — use it instead of hand-rolling one) and `DownloadButton.vue`.
 

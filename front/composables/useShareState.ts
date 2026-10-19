@@ -78,6 +78,7 @@ export interface SharedState {
         bc?: boolean   // bathymetry contours
         ml?: boolean   // map labels
         cc?: boolean   // cursor coords
+        cv?: boolean   // cursor value
         vp?: boolean   // vertical profile drawer
         qm?: 'point' | 'area'
         ar?: boolean   // no longer written or read: it only means "Auto Color request in flight"
@@ -171,6 +172,7 @@ export function captureShareState(): SharedState {
             bc: s.showBathymetryContours,
             ml: s.showMapLabels,
             cc: s.showCursorCoords,
+            cv: s.showCursorValue,
             vp: s.isVerticalProfileOpen,
             qm: s.queryMode,
         },
@@ -228,6 +230,7 @@ export function applyShareState(state: SharedState): void {
         if (ui.bc != null) s.setShowBathymetryContours(ui.bc)
         if (ui.ml != null) s.setShowMapLabels(ui.ml)
         if (ui.cc != null) s.setShowCursorCoords(ui.cc)
+        if (ui.cv != null) s.setShowCursorValue(ui.cv)
         if (ui.vp != null) s.setIsVerticalProfileOpen(ui.vp)
         if (ui.qm) s.queryMode = ui.qm
     }

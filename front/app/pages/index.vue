@@ -157,13 +157,14 @@
         <ColormapBar class="m-2" />
       </div>
 
-      <!-- Cursor coordinate readout, follows the mouse over the map -->
+      <!-- Cursor readout (coordinates and/or model value), follows the mouse over the map -->
       <div
         class="bg-elevated rounded-lg cursor-coord-label"
-        v-if="mainStore.showCursorCoords && mouseCoords.visible"
+        v-if="mouseCoords.visible && (mainStore.showCursorCoords || cursorValueText)"
         :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }"
       >
-        {{ mouseCoords.lat?.toFixed(5) }}, {{ mouseCoords.lng?.toFixed(5) }}
+        <div v-if="cursorValueText" class="cursor-value">{{ cursorValueText }}</div>
+        <div v-if="mainStore.showCursorCoords">{{ mouseCoords.lat?.toFixed(5) }}, {{ mouseCoords.lng?.toFixed(5) }}</div>
       </div>
     </div>
 
@@ -327,6 +328,8 @@ import SegmentedControl from '../components/ui/SegmentedControl.vue'
 
 import { useMainStore } from '../stores/main'
 import { trackEvent } from '~~/composables/useAnalytics'
+import { useRasterProbe } from '~~/composables/useRasterProbe'
+import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 
 const queryModeItems = [
     { value: 'point', label: 'Point', icon: 'i-mdi-map-marker', title: 'Point query' },
@@ -497,6 +500,29 @@ const spiderfy = ref<{
 const bounds = MAP_BOUNDS;
 
 const mouseCoords = ref<{ lng: number | null, lat: number | null, x: number, y: number, visible: boolean }>({ lng: null, lat: null, x: 0, y: 0, visible: false });
+
+// "Cursor Value": decode the model layer's own value-packed image (see useRasterProbe)
+// and read it under the mouse. Only fetched/decoded while the toggle is on.
+const rasterProbe = useRasterProbe();
+const { formatDisplayValue, toDisplayValue } = useVariableRegistry();
+// Set by updatePngOverlay — the image currently on the model layer.
+const probeImage = ref<{ url: string, varName: string, precision: number, bounds: [number, number, number, number] } | null>(null);
+
+watch([probeImage, () => mainStore.showCursorValue], ([img, on]) => {
+    if (!on || !img) return rasterProbe.clear();
+    rasterProbe.load(img.url, img.precision, img.bounds);
+});
+
+const cursorValueText = computed(() => {
+    if (!mainStore.showCursorValue || !mainStore.showModelLayer) return '';
+    const img = probeImage.value;
+    const g = rasterProbe.grid.value;
+    const { lng, lat } = mouseCoords.value;
+    if (!img || !g || g.url !== img.url || lng == null || lat == null) return '';
+    const v = rasterProbe.sample(lng, lat);
+    if (v == null) return '';
+    return formatDisplayValue(img.varName, toDisplayValue(img.varName, v), { unit: true });
+});
 
 const sensorData = ref<{ time: string, value: number }[]>([])
 
@@ -1385,6 +1411,12 @@ async function updatePngOverlay(sourceId = 'png-image', layerId = 'png-image-lay
 
     const paint = pngRasterPaint();
 
+    probeImage.value = {
+        url: pngPath, varName,
+        precision: mainStore.variables.find(v => v.var === varName)?.precision ?? 0.1,
+        bounds: [lonmin, latmin, lonmax, latmax],
+    };
+
     beginMapLayerLoad(pngPath);
     if (map.getSource(sourceId)) {
         map.getSource(sourceId)?.updateImage({
@@ -2080,6 +2112,11 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
   font-size: 11px;
   color: #ccc;
   white-space: nowrap;
+}
+
+.cursor-value {
+  color: #fff;
+  font-weight: 600;
 }
 </style>
 

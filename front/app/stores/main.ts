@@ -105,6 +105,7 @@ function createInitialState() {
         queryMode: 'point' as 'point' | 'area',
 
         showCursorCoords: false,
+        showCursorValue: false,
 
         isVerticalProfileOpen: true,
 
@@ -258,6 +259,10 @@ export const useMainStore = defineStore('main', {
 
         setShowCursorCoords(value: boolean) {
             this.showCursorCoords = value;
+        },
+
+        setShowCursorValue(value: boolean) {
+            this.showCursorValue = value;
         },
 
         setColormaps(colormaps: Record<string, any>) {

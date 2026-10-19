@@ -92,6 +92,20 @@
         <span class="overlay-btn__label">Cursor Coordinates</span>
       </UButton>
 
+      <!-- CURSOR VALUE (model value under the mouse) -->
+      <UButton
+        class="m-1 overlay-btn"
+        :variant="showCursorValue ? 'solid' : 'ghost'"
+        :color="showCursorValue ? 'primary' : ''"
+        @click="mainStore.setShowCursorValue(!showCursorValue)"
+      >
+        <UIcon
+          :name="showCursorValue ? 'i-mdi-eyedropper' : 'i-mdi-eyedropper-variant'"
+          class="size-[16px]"
+        />
+        <span class="overlay-btn__label">Cursor Value</span>
+      </UButton>
+
       <!-- VERTICAL PROFILE -->
       <UButton
         class="m-1 overlay-btn"
@@ -176,6 +190,8 @@ const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
 const showMapLabels = computed(() => mainStore.showMapLabels);
 
 const showCursorCoords = computed(() => mainStore.showCursorCoords);
+
+const showCursorValue = computed(() => mainStore.showCursorValue);
 
 const isControlPanelOpen = computed(() => mainStore.isControlPanelOpen);
 
