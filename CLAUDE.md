@@ -54,6 +54,7 @@ FastAPI app in `SERVER.py`. Blocking work runs in a `ProcessPoolExecutor` via `r
 | `POST /extractTimeseries` | `modules/extractTimeseries.py` |
 | `POST /getProfile` | `modules/extract_profile.py` — vertical profile at a point/time; `bin_mode` hourly/daily/monthly (daily/monthly read `SalishSeaCast_daily` means) |
 | `POST /depthProfile` | `modules/extract_depth_profile.py` — time-depth (Hovmöller) grid for `depth/TimeDepthHeatmap.vue`, optionally with a variable-depth sensor's casts binned onto it. Returns `grid` (`lat`/`lon`/`distanceKm` of the answering cell) |
+| `POST /gridCell` | `modules/grid_cell.py` — nearest model cell + its water depth `h` (null for sources without a bottom layer); `selectSensor` uses it to put a near-seabed sensor on LiveOcean's bottom layer (`composables/useGridCell.ts`'s `pickSensorLevel`) |
 | `POST /getMinMax` | `modules/extractMinMax.py` |
 | `POST /sensorTimeseries` | `modules/extractSensorTimeseries.py` |
 | `POST /extract_climateTimeseries` | `modules/extract_climate_timeseries.py` |

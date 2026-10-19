@@ -24,6 +24,7 @@ from modules.extractSensorTimeseries import extract_sensor_timeseries
 from modules.extract_depth_profile import extract_depth_profile
 from modules.extract_cross_section import extract_cross_section
 from modules.extract_image import generate_image
+from modules.grid_cell import grid_cell
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
 from modules.sync_hourly import import_native_file, import_daily_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
 from modules import sync_liveocean
@@ -327,6 +328,25 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: 
             raise HTTPException(status_code=500, detail=str(exc))
 
 #######################################
+
+class gridCellRequest(BaseModel):
+    source: str
+    lat: float
+    lon: float
+
+@app.post("/gridCell")
+async def get_grid_cell(request: gridCellRequest):
+    """The model cell nearest (lat, lon): {lat, lon, distanceKm, h}. `h` is the
+    cell's water depth (m) for sources with a bottom layer, else null — the
+    frontend uses it to snap a near-seabed sensor to "bottom"."""
+    try:
+        return await run_in_threadpool(grid_cell, request.source, request.lat, request.lon)
+    except OutsideDomainError as exc:
+        return _outside_domain_response(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 class depthProfileRequest(BaseModel):
     source: str

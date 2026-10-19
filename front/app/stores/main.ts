@@ -2,6 +2,7 @@ import type moment from 'moment';
 import { defineStore } from 'pinia'
 import colors from '@/config/palette';
 import { trackEvent } from '~~/composables/useAnalytics';
+import { fetchGridCell, pickSensorLevel } from '~~/composables/useGridCell';
 
 // Depths are plain numbers (the WebP filename stem too, e.g. 18.0 -> "18.0.webp")
 // — -1 is the synthetic bottom-layer sentinel ("bottom.webp").
@@ -309,45 +310,52 @@ export const useMainStore = defineStore('main', {
          * Select a sensor: snap to closest available depth and set as active sensor.
          * Can be called from any component (sensorInfo, map click handler, etc.)
          */
-        selectSensor(sensor_id: string, depth: number) {
+        async selectSensor(sensor_id: string, depth: number) {
             console.log("Selecting sensor", sensor_id, "at depth", depth);
-            // depth === -1 here is the sensor registry's "profiles the water column"
-            // sentinel (see sensorComparison.vue's isVariableDepth) — a different meaning
-            // than the model's own -1 "bottom" pseudo-level in `depthsArray` below. There's
-            // no single fixed depth to snap the model view to for a profiler, so skip it;
-            // the model's currently-selected depth is left untouched.
-            if (depth !== -1) {
-                const variable = this.selected_variable.var;
-                const depthsArray = this.variables.find((v) => v.source === this.selected_variable.source && v.var === variable)?.depths;
-                const closestDepth = depthsArray
-                    ? [...depthsArray].sort((a, b) => Math.abs(a - depth) - Math.abs(b - depth))
-                    : [];
-                if (closestDepth.length > 0) {
-                    const newDepthNc = closestDepth[0] ?? null;
-                    const newDepth = newDepthNc !== null ? formatDepthLabel(newDepthNc) : null;
-                    if (newDepth && newDepth !== this.selected_variable.depth) {
-                        // Name both numbers and what moved. "Switched to closest
-                        // available depth: 441.5m" left the user staring at a
-                        // sensor card reading 1257 m and a map box reading
-                        // 441.5 m with nothing connecting them — and never said
-                        // it was the *map layer* that moved, not the sensor.
-                        this.snackMessages.push({
-                            color: 'warning',
-                            // Rounded as `composables/useSensorFormat.ts`'s `depth2txt` rounds it:
-                            // this line exists to be compared against the sensor
-                            // card, and the raw float (1256.830810546875) reads
-                            // as a third, unrelated number.
-                            text: `Map layer moved to ${newDepth} m — the nearest model level to this sensor's ${depth.toFixed(0)} m`,
-                        });
-                        this.updateSelectedVariable({ depth: newDepth, depth_nc: newDepthNc });
-                    }
-                }
-            }
             // Deliberately does not navigate. The sensor's series appears overlaid
             // on Explore's timeseries, which is the map-synced answer to "what did
             // I just click"; opening a fullscreen workspace would cover the map the
             // user is still working with.
             this.setSelectedSensor({ id: sensor_id, depth: depth });
+            // depth === -1 here is the sensor registry's "profiles the water column"
+            // sentinel (see sensorComparison.vue's isVariableDepth) — a different meaning
+            // than the model's own -1 "bottom" pseudo-level in `levels` below. There's
+            // no single fixed depth to snap the model view to for a profiler, so skip it;
+            // the model's currently-selected depth is left untouched.
+            if (depth === -1) return;
+            const source = this.selected_variable.source;
+            const levels = this.variables.find((v) => v.source === source && v.var === this.selected_variable.var)?.depths;
+            if (!levels?.length) return;
+
+            // A model with a bottom layer needs the seabed depth here to tell a
+            // near-bottom sensor from one in mid-water.
+            let seabed: number | null = null;
+            const sensor = this.sensors.find(s => s.id === sensor_id);
+            if (levels.includes(-1) && sensor) {
+                try {
+                    seabed = (await fetchGridCell(source, sensor.latitude, sensor.longitude)).h;
+                } catch {
+                    // Outside the domain or unreachable: nearest fixed level.
+                }
+                // Another sensor (or model) was picked while this one resolved.
+                if (this.selectedSensor?.id !== sensor_id || this.selected_variable.source !== source) return;
+            }
+
+            const newDepthNc = pickSensorLevel(depth, levels, seabed);
+            const newDepth = newDepthNc !== null ? formatDepthLabel(newDepthNc) : null;
+            if (!newDepth || newDepth === this.selected_variable.depth) return;
+            // Name both numbers and what moved: a sensor card reading 1257 m and
+            // a map box reading 441.5 m with nothing connecting them reads as a
+            // bug, and it's the *map layer* that moved, not the sensor. Sensor
+            // depth rounded as `composables/useSensorFormat.ts`'s `depth2txt` does.
+            const sensorTxt = `${depth.toFixed(0)} m`;
+            this.snackMessages.push({
+                color: 'warning',
+                text: newDepthNc === -1
+                    ? `Map layer moved to the bottom layer — this sensor's ${sensorTxt} is near the model seabed here (${seabed!.toFixed(0)} m)`
+                    : `Map layer moved to ${newDepth} m — the nearest model level to this sensor's ${sensorTxt}`,
+            });
+            this.updateSelectedVariable({ depth: newDepth, depth_nc: newDepthNc });
         },
 
         setLastClickedMapPoint(point: { lat: number, lng: number } | null) {

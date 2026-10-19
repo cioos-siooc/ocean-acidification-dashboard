@@ -3,7 +3,9 @@
 Nothing is downloaded whole. layers.nc is NetCDF4/HDF5 chunked one time step
 per chunk, and the S3 host honours HTTP Range requests, so netCDF-C's
 `#mode=bytes` reads exactly the steps asked for — ~1 GB of a 3 GB file for a
-day-0 slice. The steps are written to one compact local NetCDF per run
+day-0 slice. A run already in the local mirror (LO_ARCHIVE_DIR) is read from
+disk instead. Only the variables the pipeline needs (config.READ_VARIABLES)
+are read. The steps are written to one compact local NetCDF per run
 (canonical variable names, float32, dims (time, depth, eta, xi)) that the
 compute/image/ingest steps then work from.
 """
@@ -21,8 +23,8 @@ import pandas as pd
 import requests
 
 from .config import (
-    ALL_VARIABLES, ARCHIVE_START, GRID_TABLE, LEVELS, LO_BASE_URL, NATIVE_VARIABLES,
-    NC_BASE_DIR, STEPS_PER_DAY, STEPS_PER_RUN,
+    ALL_VARIABLES, ARCHIVE_START, GRID_TABLE, LEVELS, LO_ARCHIVE_DIR, LO_BASE_URL,
+    NATIVE_VARIABLES, NC_BASE_DIR, READ_VARIABLES, STEPS_PER_DAY, STEPS_PER_RUN,
     STATUS_DOWNLOADING, STATUS_FAILED_DOWNLOAD, STATUS_SUCCESS_DOWNLOAD,
 )
 from .db import known_runs, pending_runs, seed_runs, set_status
@@ -36,11 +38,26 @@ def run_url(run_date: date) -> str:
     return f'{LO_BASE_URL}/f{run_date:%Y.%m.%d}/layers.nc'
 
 
+def local_path(run_date: date) -> Optional[str]:
+    """The run's layers.nc in the local mirror, if it's there."""
+    if not LO_ARCHIVE_DIR:
+        return None
+    path = os.path.join(LO_ARCHIVE_DIR, f'f{run_date:%Y.%m.%d}', 'layers.nc')
+    return path if os.path.isfile(path) else None
+
+
+def run_source(run_date: date) -> str:
+    return local_path(run_date) or run_url(run_date)
+
+
 def nc_path(run_date: date, nc_dir: str = NC_BASE_DIR) -> str:
     return os.path.join(nc_dir, f'LiveOcean_{run_date:%Y%m%d}.nc')
 
 
-def _open_remote(run_date: date, retries: int = 3) -> netCDF4.Dataset:
+def _open_run(run_date: date, retries: int = 3) -> netCDF4.Dataset:
+    local = local_path(run_date)
+    if local:
+        return netCDF4.Dataset(local)
     url = run_url(run_date) + '#mode=bytes'
     for attempt in range(1, retries + 1):
         try:
@@ -54,7 +71,10 @@ def _open_remote(run_date: date, retries: int = 3) -> netCDF4.Dataset:
 
 
 def is_available(run_date: date) -> bool:
-    """A 2-byte range GET: 206 means the run is published (403 otherwise)."""
+    """In the local mirror, or a 2-byte range GET answers 206 (403 when the
+    run isn't published)."""
+    if local_path(run_date):
+        return True
     try:
         resp = requests.get(run_url(run_date), headers={'Range': 'bytes=0-1'}, timeout=30)
     except requests.RequestException:
@@ -134,7 +154,7 @@ def ensure_grid(client) -> None:
             break
     else:
         raise RuntimeError('No LiveOcean run in the last 10 days to build the grid from')
-    ds = _open_remote(run_date)
+    ds = _open_run(run_date)
     try:
         lon = np.asarray(ds['lon_rho'][:], dtype=np.float64)
         lat = np.asarray(ds['lat_rho'][:], dtype=np.float64)
@@ -188,13 +208,13 @@ def download_run(client, run_date: date, steps: int, nc_dir: str = NC_BASE_DIR) 
     out = nc_path(run_date, nc_dir)
     tmp = out + '.part'
     os.makedirs(nc_dir, exist_ok=True)
-    src = _open_remote(run_date)
+    src = _open_run(run_date)
     try:
         src.set_auto_mask(True)
         steps = min(steps, src.dimensions['ocean_time'].size)
         levels = [lvl for lvl in LEVELS if f'temp_{lvl}' in src.variables]
         if not levels:
-            raise RuntimeError(f'No recognised levels in {run_url(run_date)}')
+            raise RuntimeError(f'No recognised levels in {run_source(run_date)}')
         depths = [LEVELS[lvl] for lvl in levels]
         ny, nx = src.dimensions['eta_rho'].size, src.dimensions['xi_rho'].size
 
@@ -207,8 +227,8 @@ def download_run(client, run_date: date, steps: int, nc_dir: str = NC_BASE_DIR) 
         else:
             lon, lat, mask, h = load_grid_arrays(client, (ny, nx))
 
-        logger.info('Downloading run %s: %d steps x %d levels (%s)', run_date, steps,
-                    len(levels), ','.join(levels))
+        logger.info('Downloading run %s from %s: %d steps x %d levels (%s), %s', run_date,
+                    run_source(run_date), steps, len(levels), ','.join(levels), ','.join(READ_VARIABLES))
         with netCDF4.Dataset(tmp, 'w') as dst:
             dst.createDimension('time', steps)
             dst.createDimension('depth', len(depths))
@@ -224,11 +244,14 @@ def download_run(client, run_date: date, steps: int, nc_dir: str = NC_BASE_DIR) 
             dst.createVariable('h', 'f4', ('eta', 'xi'), zlib=True, complevel=1)[:] = h
             dst.run_date = run_date.isoformat()
             dst.source_url = run_url(run_date)
+            dst.variables_read = ','.join(READ_VARIABLES)
 
             for var in ALL_VARIABLES:
                 dst.createVariable(var, 'f4', ('time', 'depth', 'eta', 'xi'), zlib=True, complevel=1,
                                    chunksizes=(1, 1, ny, nx), fill_value=np.float32(np.nan))
             for stem, var in NATIVE_VARIABLES.items():
+                if var not in READ_VARIABLES:
+                    continue
                 for k, lvl in enumerate(levels):
                     a = _read_field(src, f'{stem}_{lvl}', steps)
                     a[:, ~mask] = np.nan

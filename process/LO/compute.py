@@ -14,6 +14,9 @@
    needs LiveOcean's full-precision pH, not a rounded copy. TA/DIC are stored
    in mmol/m³ like SalishSeaCast's, using in-situ density.
 
+The carbonate solve is skipped when LO_VARIABLES selects none of its outputs
+(config.NEEDS_CARBONATE); the TEOS-10 conversion always runs.
+
 Parallelised over (time step, level) pairs with spawned workers; each worker
 reads its slice from the run's NetCDF and returns results through a .npz in
 a temp dir, and the parent writes them back (one writer, no HDF5 contention).
@@ -30,14 +33,15 @@ import netCDF4
 import numpy as np
 
 from .config import (
-    BOTTOM_DEPTH,
+    BOTTOM_DEPTH, NEEDS_CARBONATE,
     STATUS_COMPUTING, STATUS_FAILED_COMPUTE, STATUS_SUCCESS_COMPUTE,
 )
 from .db import pending_runs, set_status
 
 logger = logging.getLogger('LiveOcean.compute')
 
-_OUTPUTS = ('temperature', 'salinity', 'omega_cal', 'total_alkalinity', 'dissolved_inorganic_carbon')
+_TS_OUTPUTS = ('temperature', 'salinity')
+_CARBONATE_OUTPUTS = ('omega_cal', 'total_alkalinity', 'dissolved_inorganic_carbon')
 
 
 def _worker(task: dict) -> str:
@@ -45,15 +49,15 @@ def _worker(task: dict) -> str:
     import gsw
     import netCDF4 as nc
     import numpy as np
-    import PyCO2SYS as pyco2
 
-    ti, di = task['ti'], task['di']
+    ti, di, carbonate = task['ti'], task['di'], task['carbonate']
     with nc.Dataset(task['path']) as ds:
         ds.set_auto_mask(False)
         depth = float(ds['depth'][di])
         lon = ds['lon'][:]; lat = ds['lat'][:]
         pt = ds['temperature'][ti, di]; sp = ds['salinity'][ti, di]
-        ph = ds['ph_total'][ti, di]; om = ds['omega_arag'][ti, di]
+        if carbonate:
+            ph = ds['ph_total'][ti, di]; om = ds['omega_arag'][ti, di]
         h = ds['h'][:] if depth == BOTTOM_DEPTH else None
 
     # T/S convert wherever they're valid; the carbonate solve additionally
@@ -70,9 +74,11 @@ def _worker(task: dict) -> str:
         sp_v, pt_v = sp.ravel()[idx].astype(np.float64), pt.ravel()[idx].astype(np.float64)
         sa = gsw.SA_from_SP(sp_v, p, lon_v, lat_v)
         ct = gsw.CT_from_pt(sa, pt_v)
-        out.update(temperature=ct, salinity=sa, omega_cal=nan.copy(),
-                   total_alkalinity=nan.copy(), dissolved_inorganic_carbon=nan.copy())
+        out.update(temperature=ct, salinity=sa)
 
+    if n and carbonate:
+        import PyCO2SYS as pyco2
+        out.update(omega_cal=nan.copy(), total_alkalinity=nan.copy(), dissolved_inorganic_carbon=nan.copy())
         ph_v, om_v = ph.ravel()[idx].astype(np.float64), om.ravel()[idx].astype(np.float64)
         carb = np.isfinite(ph_v) & np.isfinite(om_v) & (om_v > 0) & (sp_v > 0)
         if carb.any():
@@ -101,7 +107,7 @@ def compute_run(path: str, workers: int = 4) -> None:
         shape = (ds.dimensions['eta'].size, ds.dimensions['xi'].size)
 
     with tempfile.TemporaryDirectory(prefix='lo_compute_') as tmpdir:
-        tasks = [{'path': path, 'ti': ti, 'di': di, 'tmpdir': tmpdir}
+        tasks = [{'path': path, 'ti': ti, 'di': di, 'tmpdir': tmpdir, 'carbonate': NEEDS_CARBONATE}
                  for ti in range(n_t) for di in range(n_d)]
         logger.info('Computing %s: %d step x level tasks on %d workers', path, len(tasks), workers)
         ctx = multiprocessing.get_context('spawn')
@@ -112,7 +118,7 @@ def compute_run(path: str, workers: int = 4) -> None:
             for task, res_path in zip(tasks, results):
                 res = np.load(res_path)
                 idx = res['idx']
-                for var in _OUTPUTS:
+                for var in _TS_OUTPUTS + (_CARBONATE_OUTPUTS if NEEDS_CARBONATE else ()):
                     field = np.full(shape[0] * shape[1], np.nan, dtype=np.float32)
                     if idx.size:
                         field[idx] = res[var]

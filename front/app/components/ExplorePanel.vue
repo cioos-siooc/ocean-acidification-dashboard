@@ -113,7 +113,7 @@
             :forecast-from="showingSensor ? null : currentSource?.forecastFrom" />
           <!-- Out-of-domain already has the alert above; repeating it across the
                plot labels a chart that is drawing real sensor data as empty. -->
-          <div v-if="!depthHasData && !loading && !outOfDomain" class="line-empty">{{ emptyLineMessage }}</div>
+          <div v-if="!depthHasData && !showBottom && !loading && !outOfDomain" class="line-empty">{{ emptyLineMessage }}</div>
         </div>
 
         <div v-if="loading" class="loading-overlay">
@@ -133,6 +133,7 @@ import { resolveColormap } from '~~/composables/useColormapResolver'
 import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, floorToBin, holdModelSteps, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { fetchClimateTimeseries } from '~~/composables/useClimateTimeseries'
 import { getSensorTimeseries } from '~~/composables/useSensorTimeseries'
+import { fetchModelTimeseries } from '~~/composables/useModelTimeseries'
 import { csvMeta, csvTimestamp, provideCsvExport, type CsvContext, type CsvDataset } from '~~/composables/useCsvExport'
 import { sensorSourceUrl } from '~~/composables/useSensorDownloadLinks'
 import DownloadButton from './ui/DownloadButton.vue'
@@ -510,6 +511,7 @@ async function fetchWindow() {
   loading.value = true
   loadError.value = null
   outOfDomain.value = null
+  const bottom = fetchBottomSeries(reqId)
   try {
     const resp = await fetchDepthProfile({
       source: src,
@@ -537,10 +539,37 @@ async function fetchWindow() {
     grid.value = depths.value.map(() => Array(binCount.value).fill(null))
     sensorGrid.value = null
   } finally {
+    await bottom
     if (reqId === fetchSeq) loading.value = false
     updateLineChart()
   }
 }
+
+// ── BOTTOM LAYER — LiveOcean also outputs each column's bottom-most cell
+// (depth -1). It has no fixed depth, so it isn't a row of the time-depth grid;
+// the single-depth chart fetches it on its own, binned onto the same bins.
+// It's plotted only when "bottom" is the selected depth: a fixed level below
+// the seabed here reads as "no data", not as the bottom layer in disguise.
+const hasBottomLayer = computed(() => varMeta.value?.depths?.includes(-1) ?? false)
+const bottomSeries = ref<(number | null)[] | null>(null)
+
+async function fetchBottomSeries(reqId: number) {
+  const p = point.value
+  if (!hasBottomLayer.value || !p) { bottomSeries.value = null; return }
+  const mode = binMode.value
+  const starts = binStarts.value
+  try {
+    const resp = await fetchModelTimeseries({
+      source: source.value, variable: varId.value, depth: -1, lat: p.lat, lon: p.lng,
+      fromDate: toApiIso(windowStart.value), toDate: toApiIso(windowEnd.value),
+    })
+    if (reqId === fetchSeq) bottomSeries.value = binSeries(resp.time, resp.value, mode, starts)
+  } catch {
+    if (reqId === fetchSeq) bottomSeries.value = null  // the grid's levels still plot
+  }
+}
+
+const showBottom = computed(() => hasBottomLayer.value && mainStore.selected_variable.depth_nc === -1)
 
 // Only fetch while the tab is actually on screen — this sits in a v-show'd
 // footer pane alongside three other tabs, and a map click would otherwise
@@ -693,7 +722,12 @@ const contextItems = computed<ContextItem[]>(() => {
       title: outOfDomain.value.message,
     })
   } else if (!showSection.value) {
-    if (!depthHasData.value) {
+    if (showBottom.value) {
+      const has = bottomSeries.value?.some(v => v != null) ?? false
+      items.push(has
+        ? { label: 'Model', value: 'bottom', title: "The model's bottom layer: the deepest cell of the water column here." }
+        : { label: 'Model', value: 'bottom — no data', tone: 'muted', title: 'The model has no bottom-layer values here.' })
+    } else if (!depthHasData.value) {
       items.push({ label: 'Model', value: `${depthLabel.value} — no data`, tone: 'muted', title: `The model has no values at ${depthLabel.value} here.` })
     } else if (depthSnappedFromMap.value) {
       // The one remaining way the chart's depth and the map box's depth can
@@ -763,7 +797,7 @@ const csvContext = computed<CsvContext | null>(() => {
     variableName: varName.value,
     unit: displayUnit(varId.value),
     // A section spans the whole water column, so no single depth describes it.
-    depth: showSection.value ? null : (depths.value[selectedDepthIdx.value] ?? null),
+    depth: showSection.value ? null : showBottom.value ? -1 : (depths.value[selectedDepthIdx.value] ?? null),
     locationLabel: `${Math.abs(point.value.lat).toFixed(3)}${point.value.lat >= 0 ? 'N' : 'S'} ${Math.abs(point.value.lng).toFixed(3)}${point.value.lng >= 0 ? 'E' : 'W'}`,
     latitude: point.value.lat,
     longitude: point.value.lng,
@@ -830,6 +864,9 @@ csvExport.register((): CsvDataset[] => {
  * explicit cell click does that.
  */
 function snapDepthToData(g: (number | null)[][]) {
+  // A model with a real bottom layer offers it as a depth of its own; a level
+  // below the seabed there just has no data.
+  if (hasBottomLayer.value) return
   if (g[selectedDepthIdx.value]?.some(v => v != null)) return
   for (let i = g.length - 1; i >= 0; i--) {
     if (g[i]?.some(v => v != null)) { selectedDepthIdx.value = i; return }
@@ -845,7 +882,7 @@ watch(() => mainStore.selected_variable.depth_nc, (d) => {
   selectedDepthIdx.value = nearestLevelIdx(d, depths.value)
 })
 
-watch([selectedDepthIdx, viewMode], updateLineChart)
+watch([selectedDepthIdx, viewMode, showBottom], updateLineChart)
 
 // Kept here rather than beside the section fetch: this names `selectedDepthIdx`,
 // and a watcher's source array is evaluated during setup, so it has to come
@@ -935,14 +972,15 @@ async function updateLineChart() {
   const bins = binStarts.value
     .map((b, bi) => ({ b, bi }))
     .filter(({ b }) => step <= 1 || b.getUTCHours() % step === 0)
+  const row = showBottom.value ? bottomSeries.value : grid.value[d]
   const model = {
     time: bins.map(({ b }) => b.toISOString()),
-    value: bins.map(({ bi }) => grid.value[d]?.[bi] ?? null),
+    value: bins.map(({ bi }) => row?.[bi] ?? null),
   }
 
   let clim: any = null
   // No climatology for a source whose record is too short (LiveOcean).
-  if (point.value && depths.value[d] != null && hasCapability('climatology')) {
+  if (point.value && depths.value[d] != null && !showBottom.value && hasCapability('climatology')) {
     try {
       // Pad a day on each side: the API places each calendar day's point at
       // noon UTC (extract_climate_timeseries.py), but the chart's axis bounds
@@ -1186,6 +1224,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Sits under the chart's own centred "No data available", not on top of it. */
+  padding-top: 44px;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.3);
   pointer-events: none;

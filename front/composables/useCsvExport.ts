@@ -161,9 +161,12 @@ export function coord(value: number | null | undefined): number | null {
     return value == null || !Number.isFinite(value) ? null : Math.round(value * 1e5) / 1e5
 }
 
-function depthLabel(depth: number | null | undefined): string | null {
+// -1 is a profiler's "variable depth" for a sensor, but the bottom layer for
+// a model (LiveOcean's depth -1 rows).
+function depthLabel(depth: number | null | undefined, source?: string): string | null {
     if (depth == null) return null
-    return depth === -1 ? 'variable (profiler)' : `${roundDepth(depth)} m`
+    if (depth === -1) return source === 'model' ? 'bottom' : 'variable (profiler)'
+    return `${roundDepth(depth)} m`
 }
 
 /** Calendar-day part of an ISO string — filenames don't need the clock time. */
@@ -186,7 +189,7 @@ export function csvDatasetFilename(dataset: CsvDataset, ctx: CsvContext | null):
         dataset.slug,
         ctx?.variable,
         ctx?.locationLabel,
-        ctx?.depth == null ? null : (ctx.depth === -1 ? 'profile' : `${roundDepth(ctx.depth)}m`),
+        ctx?.depth == null ? null : (ctx.depth === -1 ? (ctx.source === 'model' ? 'bottom' : 'profile') : `${roundDepth(ctx.depth)}m`),
         from,
         to === from ? null : to,
     ])
@@ -208,7 +211,7 @@ export function csvMeta(ctx: CsvContext | null, extra: CsvMetaEntry[] = []): Csv
         ['source', ctx.sourceLabel],
         ['source_url', ctx.sourceUrl],
         ['variable', ctx.variableName],
-        ['depth', depthLabel(ctx.depth)],
+        ['depth', depthLabel(ctx.depth, ctx.source)],
         // `locationLabel` deliberately has no line of its own — it's a display
         // string ('49.283N 123.121W', a sensor name) that the coordinates below
         // and the `source` line already state, and it still names the file.

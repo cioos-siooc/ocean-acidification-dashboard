@@ -24,7 +24,7 @@ import numpy as np
 from shared.variable_config import load_variable_config
 
 from .config import (
-    ALL_VARIABLES, BOTTOM_DEPTH, IMAGE_BASE_DIR,
+    BOTTOM_DEPTH, IMAGE_BASE_DIR, IMAGE_DEPTHS, VARIABLES,
     STATUS_FAILED_IMAGE, STATUS_IMAGING, STATUS_SUCCESS_IMAGE,
 )
 from .db import pending_runs, set_status, superseded_days
@@ -85,9 +85,10 @@ def step_day(epoch_seconds: float) -> date:
 
 def image_run(path: str, image_dir: str = IMAGE_BASE_DIR, workers: Optional[int] = None,
               variables: Optional[list[str]] = None, skip_days: Iterable[date] = ()) -> int:
-    """Render every tile of the run, except steps on `skip_days` (valid days
-    a newer run already owns — their tiles are that run's)."""
-    variables = variables or ALL_VARIABLES
+    """Render the run's tiles for LO_VARIABLES x LO_IMAGE_DEPTHS, except
+    steps on `skip_days` (valid days a newer run already owns — their tiles
+    are that run's)."""
+    variables = variables or VARIABLES
     skip = set(skip_days)
     with netCDF4.Dataset(path) as ds:
         times = ds['time'][:]
@@ -95,7 +96,7 @@ def image_run(path: str, image_dir: str = IMAGE_BASE_DIR, workers: Optional[int]
     tasks = [
         (var, ti, di, os.path.join(image_dir, var, dt_folder(t), f'{depth_label(d)}.webp'))
         for ti, t in enumerate(times) if step_day(t) not in skip
-        for di, d in enumerate(depths) for var in variables
+        for di, d in enumerate(depths) if d in IMAGE_DEPTHS for var in variables
     ]
     if not tasks:
         logger.info('Imaging %s: every step is owned by a newer run — nothing to render', path)
@@ -104,7 +105,8 @@ def image_run(path: str, image_dir: str = IMAGE_BASE_DIR, workers: Optional[int]
     # inherit them instead of each building its own and racing to save it.
     _init_worker(path)
     _render(*tasks[0])
-    workers = workers or max(1, (os.cpu_count() or 2) - 1)
+    # No more workers than tiles: each one loads the run's lon/lat first.
+    workers = min(workers or max(1, (os.cpu_count() or 2) - 1), len(tasks))
     logger.info('Imaging %s: %d tiles on %d workers', path, len(tasks), workers)
     with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker, initargs=(path,)) as pool:
         written = [p for p in pool.map(_render, *zip(*tasks[1:]), chunksize=8) if p]

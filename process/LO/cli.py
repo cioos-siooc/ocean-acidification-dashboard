@@ -5,7 +5,7 @@ Usage (from the process/ directory):
   python -m LO.cli download [--date YYYY-MM-DD] [--limit N] [--force]
   python -m LO.cli compute  [--date YYYY-MM-DD] [--limit N] [--workers N] [--force]
   python -m LO.cli image    [--date YYYY-MM-DD] [--limit N] [--workers N] [--force]
-  python -m LO.cli ingest   [--date YYYY-MM-DD] [--limit N] [--force]
+  python -m LO.cli ingest   [--date YYYY-MM-DD] [--limit N] [--workers N] [--force]
   python -m LO.cli sync     [--date YYYY-MM-DD] [--limit N] [--force]
   python -m LO.cli run      [--date YYYY-MM-DD] [--limit N] [--workers N] [--force]
                             [--init-days N] [--backfill [--from YYYY-MM-DD]]
@@ -99,6 +99,11 @@ def _sweep_stage(client, stage: str, limit: int, workers=None) -> None:
         runs = sorted(runs, key=lambda r: r['run_date'])  # newer imports land last
     if not runs:
         logger.info('No LiveOcean runs pending %s', stage)
+    if stage == 'ingest':
+        from .config import INGEST_WORKERS
+        from .ingest import ingest_runs
+        ingest_runs(client, runs, min(workers or 1, INGEST_WORKERS))
+        return
     for run in runs:
         _stage_fn(stage)(client, run, **_stage_kwargs(stage, workers))
 
@@ -234,7 +239,7 @@ def main(argv=None) -> None:
     ):
         p = sub.add_parser(stage, help=help_)
         _add_date(p); _add_limit(p); _add_force(p)
-        if stage in ('compute', 'image'):
+        if stage in ('compute', 'image', 'ingest'):
             _add_workers(p)
         p.set_defaults(func=_make_stage_cmd(stage))
 

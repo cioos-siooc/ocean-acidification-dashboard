@@ -8,15 +8,20 @@ one REPLACE PARTITION (shared/liveocean_schema.py), and LiveOcean_days
 records the run as the day's owner. Re-running ingest for a run is therefore
 idempotent: it rebuilds the same partitions.
 
+Only the variables in LO_VARIABLES are written; the rest of the row's columns
+take their default (NaN — see shared/liveocean_schema.py).
+
 The trailing 00Z step of a 19-step run lands alone in its day's partition
 (no daily row) until the next run brings the full day.
 """
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import warnings
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from concurrent.futures import ProcessPoolExecutor
+from datetime import date, datetime, timedelta, timezone
 
 import netCDF4
 import numpy as np
@@ -25,7 +30,7 @@ import pandas as pd
 from shared import liveocean_schema as los
 
 from .config import (
-    ALL_VARIABLES, DAILY_TABLE, DATA_TABLE, STEPS_PER_DAY,
+    DAILY_TABLE, DATA_TABLE, STEPS_PER_DAY, VARIABLES,
     STATUS_FAILED_INGEST, STATUS_INGESTING, STATUS_SUCCESS_INGEST,
 )
 from .db import pending_runs, set_status, superseded_days
@@ -75,12 +80,13 @@ def ingest_run(client, path: str, run_date: date, skip_days: set[date] = frozens
 
             day_rows = 0
             for ti in steps:
-                fields = {var: ds[var][ti][:, eta, xi].ravel() for var in ALL_VARIABLES}
+                # A row exists where temperature is valid, whatever is ingested.
+                fields = {var: ds[var][ti][:, eta, xi].ravel() for var in {*VARIABLES, 'temperature'}}
                 valid = np.isfinite(fields['temperature'])
                 day_rows += _insert(client, los.staging_table(DATA_TABLE), {
                     'time': _utc(times[ti]),
                     'depth': dep[valid], 'gridX': gx[valid], 'gridY': gy[valid],
-                    **{f'{var}_q': los.quantize(var, fields[var][valid]) for var in ALL_VARIABLES},
+                    **{f'{var}_q': los.quantize(var, fields[var][valid]) for var in VARIABLES},
                     'run_date': run_date,
                 })
 
@@ -92,13 +98,15 @@ def ingest_run(client, path: str, run_date: date, skip_days: set[date] = frozens
                 # seabed) warns; those cells are dropped right after.
                 with warnings.catch_warnings():
                     warnings.simplefilter('ignore', RuntimeWarning)
-                    for var in ALL_VARIABLES:
+                    for var in {*VARIABLES, 'temperature'}:
                         block = ds[var][steps[0]:steps[-1] + 1][:, :, eta, xi].reshape(len(steps), -1)
+                        if var == 'temperature':
+                            valid = np.isfinite(block).any(axis=0)
+                        if var not in VARIABLES:
+                            continue
                         stats[f'{var}_mean'] = np.nanmean(block, axis=0)
                         stats[f'{var}_min'] = np.nanmin(block, axis=0)
                         stats[f'{var}_max'] = np.nanmax(block, axis=0)
-                        if var == 'temperature':
-                            valid = np.isfinite(block).any(axis=0)
                 daily_rows = _insert(client, los.staging_table(DAILY_TABLE), {
                     'time': day,
                     'depth': dep[valid], 'gridX': gx[valid], 'gridY': gy[valid],
@@ -128,6 +136,47 @@ def ingest(client, run: dict) -> bool:
     set_status(client, run_date, STATUS_SUCCESS_INGEST, attempts=0)
     logger.info('Ingest complete for run %s: %d rows', run_date, n)
     return True
+
+
+def _run_days(run: dict) -> set[date]:
+    """Valid days a run's steps cover (19 steps: day 0 .. day 3 00Z)."""
+    n_days = -(-int(run['steps']) // STEPS_PER_DAY)
+    return {run['run_date'] + timedelta(days=k) for k in range(n_days)}
+
+
+def _ingest_worker(run: dict) -> bool:
+    from .db import get_client
+    client = get_client()
+    try:
+        return ingest(client, run)
+    finally:
+        client.close()
+
+
+def ingest_runs(client, runs: list[dict], workers: int = 1) -> None:
+    """Ingest several runs, `workers` at a time. Building a day's rows is
+    single-threaded Python and ClickHouse is mostly idle meanwhile, so runs
+    are loaded in parallel — but only when no two of them cover the same
+    valid day, so the latest-wins order between overlapping runs (newest
+    first, older ones then skip its days) still holds; otherwise one by one."""
+    seen: set[date] = set()
+    disjoint = True
+    for run in runs:
+        days = _run_days(run)
+        disjoint &= not (days & seen)
+        seen |= days
+    if workers <= 1 or len(runs) <= 1 or not disjoint:
+        if workers > 1 and not disjoint:
+            logger.info('Runs cover overlapping days — ingesting one at a time')
+        for run in runs:
+            ingest(client, run)
+        return
+    logger.info('Ingesting %d runs on %d workers', len(runs), workers)
+    # spawn, not fork: earlier stages of the same `run` opened HDF5 files in
+    # this process, and forked HDF5 state isn't safe to reuse.
+    ctx = multiprocessing.get_context('spawn')
+    with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as pool:
+        list(pool.map(_ingest_worker, runs))
 
 
 def process_pending_ingests(client, limit: int = 10) -> None:

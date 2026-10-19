@@ -29,6 +29,9 @@ DAILY_TABLE = _SRC['daily_table']   # LiveOcean_daily
 STATUS_TABLE = 'LiveOcean_status'
 
 LO_BASE_URL = os.getenv('LO_BASE_URL', 'https://s3.kopah.uw.edu/liveocean-share')
+# Optional local mirror laid out like the archive (fYYYY.MM.DD/layers.nc).
+# A run found there is read from disk; the rest still come from LO_BASE_URL.
+LO_ARCHIVE_DIR = os.getenv('LO_ARCHIVE_DIR', '')
 
 # Earliest run worth asking for: f2025.07.13/14 exist but aren't readable
 # netCDF, f2025.07.15 is the first good one.
@@ -60,6 +63,22 @@ ALL_VARIABLES: list[str] = list(_SRC['variables'])
 assert set(ALL_VARIABLES) == set(NATIVE_VARIABLES.values()) | set(COMPUTE_VARIABLES), \
     'variable_config.yml LiveOcean.variables out of step with LO/config.py'
 
+# LO_VARIABLES (comma-separated, default all) limits what the pipeline
+# downloads, renders and ingests — e.g. `temperature` for a quick backfill.
+# Unprocessed variables stay empty in ClickHouse (their columns default to
+# NaN); re-running a run later with more variables replaces its days whole.
+VARIABLES: list[str] = [v.strip() for v in os.getenv('LO_VARIABLES', '').split(',') if v.strip()] or ALL_VARIABLES
+assert set(VARIABLES) <= set(ALL_VARIABLES), f'LO_VARIABLES: unknown variable(s) {set(VARIABLES) - set(ALL_VARIABLES)}'
+
+# Inputs each output needs from layers.nc. Temperature and salinity are always
+# read: TEOS-10 needs both, and a row exists where temperature is valid.
+_CARBONATE_INPUTS = {'temperature', 'salinity', 'ph_total', 'omega_arag'}
+NEEDS_CARBONATE = bool(set(VARIABLES) & set(COMPUTE_VARIABLES))
+READ_VARIABLES: list[str] = [
+    v for v in NATIVE_VARIABLES.values()
+    if v in VARIABLES or v in ('temperature', 'salinity') or (NEEDS_CARBONATE and v in _CARBONATE_INPUTS)
+]
+
 # layers.nc level suffix -> stored depth (m). "surface" is 0 and "bottom" the
 # -1 sentinel the frontend already knows (stores/main.ts formatDepthLabel).
 # Runs before 2025-12-29 only carry surface/10/20/30/50/bottom; whatever a
@@ -70,6 +89,14 @@ LEVELS: dict[str, float] = {
     '2000': 2000.0, '2500': 2500.0, 'bottom': -1.0,
 }
 BOTTOM_DEPTH = -1.0
+
+# LO_IMAGE_DEPTHS (comma-separated level names from LEVELS, default all)
+# limits which levels get pre-rendered tiles, e.g. `surface` for a backfill.
+# Tiles for the other levels are rendered on demand by GET /png from
+# ClickHouse (api/modules/extract_image.py) and cached there.
+IMAGE_DEPTHS: list[float] = [
+    LEVELS[name.strip()] for name in os.getenv('LO_IMAGE_DEPTHS', '').split(',') if name.strip()
+] or list(LEVELS.values())
 
 # Approximate seawater density for TA/DIC unit conversion (µmol/kg -> mmol/m³),
 # same constant SSC/compute.py uses in the other direction.
@@ -86,6 +113,11 @@ IMAGE_BASE_DIR = os.getenv('LO_IMAGE_DIR', '/opt/data/LiveOcean/images')
 SYNC_STAGING_DIR = os.getenv('LO_SYNC_STAGING_DIR', '/opt/data/LiveOcean/sync_staging')
 
 MAX_RETRY_ATTEMPTS = int(os.getenv('LO_MAX_RETRY_ATTEMPTS', '3'))
+
+# Runs ingested in parallel by a sweep (see ingest.ingest_runs), capped by
+# --workers. Each worker holds about a day of one run in memory (~1-2 GB with
+# all variables).
+INGEST_WORKERS = int(os.getenv('LO_INGEST_WORKERS', '6'))
 
 # ---------------------------------------------------------------------------
 # Status — one row per run_date in LiveOcean_status (the run file is the unit)

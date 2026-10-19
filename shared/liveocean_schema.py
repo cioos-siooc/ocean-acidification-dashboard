@@ -42,7 +42,8 @@ def staging_table(table: str) -> str:
 # rounded Float32), with NaN as QUANT_NULL. Each `<col>_q` has a Float32
 # ALIAS under the variable's own name that scales it back on read, so every
 # reader queries `temperature`, `ph_total_mean`, … exactly as for
-# SalishSeaCast. ALIAS columns aren't in `SELECT *`, so the Native sync
+# SalishSeaCast. A column left out of an insert (LO_VARIABLES) defaults to
+# QUANT_NULL, so it reads as NaN, not 0. ALIAS columns aren't in `SELECT *`, so the Native sync
 # export carries only the integers.
 #
 # The scale is baked into the table at creation: changing a variable's
@@ -78,7 +79,7 @@ def _var_cols(cols: Iterable[str]) -> str:
     lines = []
     for c in cols:
         scale = 10 ** decimals(_base_var(c))
-        lines.append(f'{c}_q Int32 CODEC(T64, ZSTD(6)),')
+        lines.append(f'{c}_q Int32 DEFAULT {QUANT_NULL} CODEC(T64, ZSTD(6)),')
         lines.append(f'{c} Float32 ALIAS if({c}_q = {QUANT_NULL}, nan, toFloat32({c}_q / {scale})),')
     return '\n    '.join(lines)
 
