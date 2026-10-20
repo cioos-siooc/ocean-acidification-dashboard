@@ -420,8 +420,8 @@ export const useMainStore = defineStore('main', {
 
         // No analytics event here, unlike the setters above — this fires on
         // every bin-mode toggle click, a display-density choice rather than a
-        // discrete user action worth counting (same reasoning PostHog's own
-        // exclusions use for high-frequency, non-navigational state changes).
+        // discrete user action worth counting (same reasoning as the other
+        // exclusions for high-frequency, non-navigational state changes).
         setExploreBinMode(mode: 'hourly' | 'daily' | 'monthly') {
             this.exploreBinMode = mode;
         },

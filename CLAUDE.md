@@ -94,7 +94,7 @@ Nuxt 4 + Nuxt UI v4 (Tailwind v4 + Reka UI) + Pinia. Vuetify has been fully remo
 - `app/pages/index.vue` — main MapboxGL page. Raster/vector-tile and time-animation logic lives **inline** here (no composables for it).
 - `app/pages/caseStudy/` — standalone narrative pages built from static chart exports (`public/images/case-studies/`), not live data.
 - `app/components/`, `app/stores/main.ts`, `composables/` (map-layer logic like `useBuoyLayer`/`useStationsInteraction`, and data fetching).
-- `app/config/app.ts` — domain constants (timezone, map extent/zoom/style); `app/config/palette.ts` — Material palette values charts use. Per-environment values go in `runtimeConfig` (`NUXT_PUBLIC_API_BASE_URL`, `NUXT_PUBLIC_MAPBOX_TOKEN`, `NUXT_PUBLIC_POSTHOG_KEY`, `NUXT_PUBLIC_POSTHOG_HOST`).
+- `app/config/app.ts` — domain constants (timezone, map extent/zoom/style); `app/config/palette.ts` — Material palette values charts use. Per-environment values go in `runtimeConfig` (`NUXT_PUBLIC_API_BASE_URL`, `NUXT_PUBLIC_MAPBOX_TOKEN`, `NUXT_PUBLIC_UMAMI_WEBSITE_ID`, `NUXT_PUBLIC_UMAMI_HOST`).
 - Dark-only: `colorMode` pinned in `nuxt.config.ts`; light mode is unverified.
 - Model raster tiles are **value-packed**, not colour-coded (24-bit `(value−base)/precision` in RGB, alpha 0 = no data, lossless WebP); colours come from the layer's `raster-color`. The "Cursor Value" overlay (`composables/useRasterProbe.ts`) decodes the same image client-side for the hover readout — keep tiles lossless and `base` 0 or it breaks.
 
@@ -132,12 +132,10 @@ Nuxt 4 + Nuxt UI v4 (Tailwind v4 + Reka UI) + Pinia. Vuetify has been fully remo
 
 `selectSensor` in `stores/main.ts` deliberately doesn't switch panes (it would throw a dialog over the map on every buoy click); the sensor overlays on Explore's timeseries instead. `sensorInfo.vue` is, despite its name, the left-panel sensor list in `controlPanel.vue` (plus a metadata dialog and heatmap dialog); it scrolls the selected sensor into view. Client-side stats: `composables/useAnalysisStatistics.ts`.
 
-### Usage Analytics (PostHog)
-PostHog **Cloud** (deliberately not self-hosted) is the only analytics tool. Capture is a silent no-op when the key is unset.
-- **API** (`api/modules/posthog_helpers.py`, `POSTHOG_API_KEY`/`POSTHOG_HOST`): `capture_event(http_request, event, properties)` on successful `sensorTimeseries`, `depthProfile`, `extractTimeseries`, `extract_climateTimeseries`, `getMinMax`, `getProfile`, `analysis/timeseries`. Tile and `/admin/sync*` routes are excluded.
-- **Frontend** (`app/plugins/posthog.client.ts` + `composables/useAnalytics.ts`'s `trackEvent()`): custom events only — no autocapture, no session replay. Events: `sensor_selected`, `model_point_queried`, `model_eval_requested`, `tab_switched` / `query_mode_changed` (in `main.ts` store actions), `variable_changed`, `share_link_created`. Don't instrument auto-firing paths (`getMinMax`'s `autorange()`, Analysis `scheduleAutoRun`).
-- **Identity**: the plugin sets `axios.defaults.headers.common['X-PostHog-Distinct-Id']` (no shared axios instance exists, so all calls get it); `SERVER.py`'s `_stamp_request_start_time` middleware stores it in `request.state.distinct_id`, and `capture_event` falls back to IP when absent. `disable_geoip` stays IP-based.
-- **Gotcha**: env var changes need `docker compose up -d --force-recreate front api` (a `restart` keeps old env). On Vercel, `vercel.json` disables git auto-deploy — trigger a manual deploy after changing env vars.
+### Usage Analytics (Umami)
+Umami on the shared CIOOS Pacific server (https://analytics.cioospacific.ca) is the only analytics tool, **frontend-only** — the API sends nothing (Umami drops bot User-Agents, so server-side events would only re-log browser clicks). No-op when `NUXT_PUBLIC_UMAMI_WEBSITE_ID` is unset.
+- `app/plugins/umami.client.ts` injects the tracker (`data-exclude-hash` keeps `#s=` share payloads out of pageview URLs); `composables/useAnalytics.ts`'s `trackEvent()` calls `window.umami?.track`. Events: `sensor_selected`, `model_point_queried`, `tab_switched` / `query_mode_changed` / `analysis_source_changed` / `explore_view_changed` (in `main.ts` store actions), `variable_changed`, `share_link_created`. Don't instrument auto-firing paths (`getMinMax`'s `autorange()`, Analysis `scheduleAutoRun`, bin-mode toggles).
+- **Gotcha**: env var changes need `docker compose up -d --force-recreate front` (a `restart` keeps old env). On Vercel, `vercel.json` disables git auto-deploy — trigger a manual deploy after changing env vars.
 
 ## Python Environment
 `process/`, `scripts/` use **uv** (`pyproject.toml` + `uv.lock`); `api/` uses pip + `requirements.txt`. Each has its own `.venv`.

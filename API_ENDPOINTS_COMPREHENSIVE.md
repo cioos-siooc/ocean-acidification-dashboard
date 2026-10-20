@@ -15,9 +15,6 @@ in `SERVER.py` and is *not* served — it is omitted here.
   (default 120s).
 - **Out-of-domain / no-data errors** (e.g. "N km from the nearest grid point", "Grid table is
   empty", "No data available…") are returned as **400**, not 500.
-- **Usage analytics**: Every endpoint except tile-serving (`/png`, `/vector`, `/raster_tiles`) and
-  the `/admin/*` sync routes fires a PostHog `capture_event` on success (see
-  `api/modules/posthog_helpers.py`).
 - **Data source**: SalishSeaCast (SSC) is the only supported `source`; requests with any other
   source return **400**. LiveOcean support was removed.
 - **Storage**: model timeseries/grid/sensors live in **ClickHouse**; variable + colormap metadata
@@ -200,4 +197,3 @@ sync log. Same request shape, same bearer-token auth, same server-derived stagin
 | `modules/variables.py` | Variable metadata |
 | `modules/sync_hourly.py` | `/admin/sync{Hourly,Daily}` importers |
 | `modules/clickhouse_helpers.py` | ClickHouse client (local/remote selection) |
-| `modules/posthog_helpers.py` | Usage-analytics event capture |

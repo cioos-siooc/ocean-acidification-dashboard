@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 import os
 import logging
 import asyncio
-import time
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 import json
@@ -26,7 +25,6 @@ from modules.extract_cross_section import extract_cross_section
 from modules.extract_image import generate_image
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
 from modules.sync_hourly import import_native_file, import_daily_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
-from modules.posthog_helpers import capture_event
 from modules import response_cache
 
 async def run_in_process(func, *args, **kwargs):
@@ -97,11 +95,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Silence posthog's feature-flag warning noise (we don't use feature flags,
-# only event capture, so its local-evaluation poller has nothing to do).
-logging.getLogger("posthog").setLevel(logging.ERROR)
-
-
 app = FastAPI()
 
 # Add CORS middleware
@@ -114,17 +107,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@app.middleware("http")
-async def _stamp_request_start_time(request: Request, call_next):
-    """Stamps a start time so posthog_helpers.capture_event can report
-    duration_ms without every handler having to time itself. Also stashes the
-    frontend-supplied PostHog distinct_id (if any), letting posthog_helpers
-    correlate frontend/backend events without every capture_event call site
-    needing to know about the header."""
-    request.state.start_time = time.perf_counter()
-    request.state.distinct_id = request.headers.get("x-posthog-distinct-id", "").strip() or None
-    return await call_next(request)
 
 # Explicit PNG route that sets cache-control for compatibility with Mapbox and browsers
 SSC_IMAGE_DIR = os.environ.get("SSC_IMAGE_DIR", "/opt/data/SalishSeaCast/images")
@@ -266,7 +248,7 @@ class sensorTimeseriesRequest(BaseModel):
     instrument: Optional[str] = None  # one instrument's series (sensor_timeseries.source); None = merged by priority
 
 @app.post("/sensorTimeseries")
-async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: Request):
+async def get_sensor_timeseries(request: sensorTimeseriesRequest):
     """Return sensor telemetry from ClickHouse sensor_timeseries.
 
     Accepts a canonical variable name and queries CH directly — no
@@ -278,10 +260,6 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: 
     key = response_cache.make_key("sensorTimeseries", request)
     cached = response_cache.get_sensor(key)
     if cached is not None:
-        capture_event(http_request, "sensor_timeseries", {
-            "sensorId": request.sensorId, "modelVariable": request.modelVariable,
-            "fromDate": request.fromDate, "toDate": request.toDate, "depth": request.depth,
-        })
         return cached
     async with extract_slot("sensorTimeseries"):
         try:
@@ -299,10 +277,6 @@ async def get_sensor_timeseries(request: sensorTimeseriesRequest, http_request: 
                 timeout=THREADPOOL_TIMEOUT,
             )
             response_cache.set_sensor(key, result)
-            capture_event(http_request, "sensor_timeseries", {
-                "sensorId": request.sensorId, "modelVariable": request.modelVariable,
-                "fromDate": request.fromDate, "toDate": request.toDate, "depth": request.depth,
-            })
             return result
         except HTTPException:
             raise
@@ -333,7 +307,7 @@ class depthProfileRequest(BaseModel):
     binMode: Optional[Literal["hourly", "daily", "monthly"]] = None
 
 @app.post("/depthProfile")
-async def get_depth_profile(request: depthProfileRequest, http_request: Request):
+async def get_depth_profile(request: depthProfileRequest):
     """Build the model's time-depth (Hovmöller) grid at the cell nearest
     (lat, lon), optionally alongside a variable-depth sensor's casts binned
     onto that same grid — the Depth tab's model view and the Comparison tab's
@@ -349,11 +323,6 @@ async def get_depth_profile(request: depthProfileRequest, http_request: Request)
     key = response_cache.make_key("depthProfile", request)
     cached = response_cache.get_sensor(key) if is_sensor else response_cache.get_model(key)
     if cached is not None:
-        capture_event(http_request, "depth_profile", {
-            "mode": "sensor" if request.sensorId else "model",
-            "sensorId": request.sensorId, "source": request.source, "var": request.var,
-            "fromDate": request.fromDate, "toDate": request.toDate, "resolution": resolution,
-        })
         return cached
     async with extract_slot("depthProfile"):
         try:
@@ -377,11 +346,6 @@ async def get_depth_profile(request: depthProfileRequest, http_request: Request)
             else:
                 response_cache.set_model(key, result)
             logger.info(f"FINISH depthProfile: {request.var}, sensor={request.sensorId} - returned {len(result.get('depths', []))} depths x {len(result.get('time', []))} bins")
-            capture_event(http_request, "depth_profile", {
-                "mode": "sensor" if request.sensorId else "model",
-                "sensorId": request.sensorId, "source": request.source, "var": request.var,
-                "fromDate": request.fromDate, "toDate": request.toDate, "resolution": resolution,
-            })
             return result
         except HTTPException:
             raise
@@ -415,7 +379,7 @@ class crossSectionRequest(BaseModel):
     binMode: Literal["hourly", "daily", "monthly"]
 
 @app.post("/crossSection")
-async def get_cross_section(request: crossSectionRequest, http_request: Request):
+async def get_cross_section(request: crossSectionRequest):
     """Build the model's depth-vs-distance grid along an arbitrary drawn
     polyline, at one time snapshot — the Cross-Section tab's spatial
     counterpart to the Depth tab's time-depth view.
@@ -431,10 +395,6 @@ async def get_cross_section(request: crossSectionRequest, http_request: Request)
     key = response_cache.make_key("crossSection", request)
     cached = response_cache.get_model(key)
     if cached is not None:
-        capture_event(http_request, "cross_section_queried", {
-            "source": request.source, "var": request.var, "dt": request.dt,
-            "binMode": request.binMode, "vertex_count": len(request.vertices),
-        })
         return cached
     async with extract_slot("crossSection"):
         try:
@@ -454,11 +414,6 @@ async def get_cross_section(request: crossSectionRequest, http_request: Request)
                 f"FINISH crossSection: {request.var} - returned {len(result.get('depths', []))} depths "
                 f"x {len(result.get('distances_km', []))} samples"
             )
-            capture_event(http_request, "cross_section_queried", {
-                "source": request.source, "var": request.var, "dt": request.dt,
-                "binMode": request.binMode, "vertex_count": len(request.vertices),
-                "distance_km": result["distances_km"][-1] if result.get("distances_km") else None,
-            })
             return result
         except HTTPException:
             raise
@@ -616,7 +571,7 @@ class timeseriesRequest(BaseModel):
     toDate: str
 
 @app.post("/extractTimeseries")
-async def fn_extract_timeseries(request: timeseriesRequest, http_request: Request):
+async def fn_extract_timeseries(request: timeseriesRequest):
     has_polygon = bool(request.polygon) and len(request.polygon) >= 3
     has_point = request.lat is not None and request.lon is not None
     if not has_polygon and not has_point:
@@ -632,12 +587,6 @@ async def fn_extract_timeseries(request: timeseriesRequest, http_request: Reques
     key = response_cache.make_key("extractTimeseries", request)
     cached = response_cache.get_model(key)
     if cached is not None:
-        capture_event(http_request, "extract_timeseries", {
-            "source": request.source, "var": request.var,
-            "lat": request.lat, "lon": request.lon,
-            "polygon": has_polygon, "depth": request.depth,
-            "fromDate": request.fromDate, "toDate": request.toDate,
-        })
         return cached
     async with extract_slot("extractTimeseries"):
         try:
@@ -669,12 +618,6 @@ async def fn_extract_timeseries(request: timeseriesRequest, http_request: Reques
                 request.toDate,
                 len(payload.get("time", [])),
             )
-            capture_event(http_request, "extract_timeseries", {
-                "source": request.source, "var": request.var,
-                "lat": request.lat, "lon": request.lon,
-                "polygon": has_polygon, "depth": request.depth,
-                "fromDate": request.fromDate, "toDate": request.toDate,
-            })
             return payload
         except OutsideDomainError as exc:
             return _outside_domain_response(exc)
@@ -705,15 +648,11 @@ class climate_timeseriesRequest(BaseModel):
     bin_mode: str = 'daily'
 
 @app.post("/extract_climateTimeseries")
-async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_request: Request):
+async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest):
     logger.info(f"START extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}, bin_mode={request.bin_mode}")
     key = response_cache.make_key("extract_climateTimeseries", request)
     cached = response_cache.get_model(key)
     if cached is not None:
-        capture_event(http_request, "extract_climate_timeseries", {
-            "var": request.var, "lat": request.lat, "lon": request.lon,
-            "depth": request.depth, "fromDate": request.fromDate, "toDate": request.toDate,
-        })
         return cached
     try:
         result = await run_in_threadpool(
@@ -728,10 +667,6 @@ async def fn_extract_ClimateTimeseries(request: climate_timeseriesRequest, http_
 
         response_cache.set_model(key, result)
         logger.info(f"FINISH extract_climateTimeseries: {request.var} lat={request.lat}, lon={request.lon}, depth={request.depth}, fromDate={request.fromDate}, toDate={request.toDate}")
-        capture_event(http_request, "extract_climate_timeseries", {
-            "var": request.var, "lat": request.lat, "lon": request.lon,
-            "depth": request.depth, "fromDate": request.fromDate, "toDate": request.toDate,
-        })
         return result
     except HTTPException:
         raise
@@ -755,16 +690,12 @@ class minmaxRequest(BaseModel):
     west: Optional[float] = None
 
 @app.post("/getMinMax")
-async def fn_get_minmax(request: minmaxRequest, http_request: Request):
+async def fn_get_minmax(request: minmaxRequest):
     """Extract min and max values for a variable at a specific datetime and depth."""
     logger.info(f"START getMinMax: source={request.source}, var={request.var}, dt={request.dt}, depth={request.depth}")
     key = response_cache.make_key("getMinMax", request)
     cached = response_cache.get_model(key)
     if cached is not None:
-        capture_event(http_request, "get_minmax", {
-            "source": request.source, "var": request.var,
-            "dt": request.dt, "depth": request.depth, "bin_mode": request.bin_mode,
-        })
         return cached
     async with extract_slot("getMinMax"):
         try:
@@ -793,10 +724,6 @@ async def fn_get_minmax(request: minmaxRequest, http_request: Request):
             result = {"min": min_val, "max": max_val}
             response_cache.set_model(key, result)
             logger.info(f"FINISH getMinMax: source={request.source}, var={request.var}, range=[{min_val}, {max_val}]")
-            capture_event(http_request, "get_minmax", {
-                "source": request.source, "var": request.var,
-                "dt": request.dt, "depth": request.depth, "bin_mode": request.bin_mode,
-            })
             return result
         except HTTPException:
             raise
@@ -821,15 +748,11 @@ class profileRequest(BaseModel):
     bin_mode: str = "hourly"
 
 @app.post("/getProfile")
-async def fn_get_profile(request: profileRequest, http_request: Request):
+async def fn_get_profile(request: profileRequest):
     logger.info(f"START getProfile: source={request.source}, var={request.var}, lat={request.lat}, lng={request.lng}, dt={request.dt}, bin_mode={request.bin_mode}")
     key = response_cache.make_key("getProfile", request)
     cached = response_cache.get_model(key)
     if cached is not None:
-        capture_event(http_request, "get_profile", {
-            "source": request.source, "var": request.var or "temperature", "lat": request.lat,
-            "lng": request.lng, "dt": request.dt, "bin_mode": request.bin_mode,
-        })
         return cached
     async with extract_slot("getProfile"):
         try:
@@ -856,9 +779,6 @@ async def fn_get_profile(request: profileRequest, http_request: Request):
             )
             response_cache.set_model(key, profile)
             logger.info(f"FINISH getProfile: source={source}, var={var}, lat={lat}, lng={lng}, dt={dt}, bin_mode={bin_mode} - returned {len(profile)} points")
-            capture_event(http_request, "get_profile", {
-                "source": source, "var": var, "lat": lat, "lng": lng, "dt": dt, "bin_mode": bin_mode,
-            })
             return profile
         except HTTPException:
             raise
@@ -902,7 +822,7 @@ class AnalysisRequest(BaseModel):
 # STREAMLINED ENDPOINT
 # ==============================================================================
 @app.post("/analysis/timeseries")
-async def analysis_timeseries(request: AnalysisRequest, http_request: Request):
+async def analysis_timeseries(request: AnalysisRequest):
     """Daily Timeseries for Analysis Builder.
 
     Accepts either:
@@ -914,11 +834,6 @@ async def analysis_timeseries(request: AnalysisRequest, http_request: Request):
     key = response_cache.make_key("analysis_timeseries", request)
     cached = response_cache.get_model(key)
     if cached is not None:
-        capture_event(http_request, "analysis_timeseries", {
-            "variable": request.primaryMetric.variable, "stat": request.primaryMetric.stat,
-            "depth": request.depth, "mode": "polygon" if (request.polygon and len(request.polygon) >= 3) else "point",
-            "yearRange": request.temporal.get("yearRange"),
-        })
         return cached
     try:
         has_polygon = request.polygon and len(request.polygon) >= 3
@@ -961,11 +876,6 @@ async def analysis_timeseries(request: AnalysisRequest, http_request: Request):
             year_range=request.temporal["yearRange"],
         )
         response_cache.set_model(key, result)
-        capture_event(http_request, "analysis_timeseries", {
-            "variable": request.primaryMetric.variable, "stat": request.primaryMetric.stat,
-            "depth": request.depth, "mode": "polygon" if has_polygon else "point",
-            "yearRange": request.temporal.get("yearRange"),
-        })
         return result
 
     except HTTPException:
