@@ -27,6 +27,12 @@ git tags; the dates below are the last commit on each version branch.
   two-column CSV, with `latitude`/`longitude` on their own rows and units moved to a
   second header row instead of being baked into column names.
 - Legend swatches pinned to one style app-wide via the shared ECharts dark theme.
+- **Usage analytics moved to Umami** — the frontend now reports to the shared CIOOS
+  Pacific Umami server (`NUXT_PUBLIC_UMAMI_WEBSITE_ID`); same custom events as before.
+
+### Removed
+- **PostHog** on both frontend (`posthog-js`, `X-PostHog-Distinct-Id` header) and API
+  (`posthog_helpers.py`, per-endpoint `capture_event`); the API no longer sends analytics.
 
 ## [0.4.1-nuxtui] — 2026-08-28
 

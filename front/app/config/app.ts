@@ -4,7 +4,7 @@
  * These describe fixed properties of *what this app is* — a Salish Sea /
  * BC-coast dashboard — as opposed to per-environment settings, which belong
  * in `runtimeConfig` (see `nuxt.config.ts`: API base URL, Mapbox token,
- * PostHog keys). Rule of thumb: if it changes between dev and prod it is
+ * Umami website ID). Rule of thumb: if it changes between dev and prod it is
  * runtime config; if changing it would mean the app covers a different
  * place, it belongs here.
  */

@@ -44,8 +44,8 @@ export default defineNuxtConfig({
       mapboxToken: process.env.NUXT_PUBLIC_MAPBOX_TOKEN || '',
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || '',
       version: process.env.NUXT_PUBLIC_VERSION || '',
-      posthogKey: process.env.NUXT_PUBLIC_POSTHOG_KEY || '',
-      posthogHost: process.env.NUXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com',
+      umamiWebsiteId: process.env.NUXT_PUBLIC_UMAMI_WEBSITE_ID || '',
+      umamiHost: process.env.NUXT_PUBLIC_UMAMI_HOST || 'https://analytics.cioospacific.ca',
     },
   },
 })
