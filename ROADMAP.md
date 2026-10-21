@@ -3,7 +3,7 @@
 Feature ideas and planned work for OceanECO. Shipped items move to [CHANGELOG.md](CHANGELOG.md);
 detailed designs live in [notes/](notes/).
 
-## Next (v1.2 candidates)
+## Next (v1.1 candidates)
 
 ### Polygon / region queries
 Draw an area (not just a Cross-Section line) and get area-averaged timeseries plus exposure stats,
