@@ -145,3 +145,6 @@ When asked to log a new version or update changes:
 - Update `CHANGELOG.md` (Keep a Changelog: Added, Changed, Fixed).
 - Bump the version in `package.json` per SemVer.
 - Summarize key user-facing updates in ≤3 bullets.
+
+## Roadmap
+Feature ideas and planned work live in `ROADMAP.md` (Next / Later / Parked). When a roadmap item ships, remove it there and log it in `CHANGELOG.md`.
