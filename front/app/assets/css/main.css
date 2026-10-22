@@ -104,3 +104,10 @@ samp,
 .text-monospace {
   font-family: var(--font-mono);
 }
+
+/* "On" state for toggle buttons outside SegmentedControl (filter, compare). */
+.oe-on {
+  color: var(--ui-text) !important;
+  background: var(--ui-bg-elevated) !important;
+  box-shadow: inset 0 -2px 0 var(--ui-primary), inset 0 0 0 1px var(--ui-border-accented) !important;
+}

@@ -42,6 +42,22 @@ export function useVariableRegistry() {
         return labels.value.get(varId) ?? var2name(varId);
     }
 
+    // var -> compact label (config `short`, e.g. "Temp", "DO", "Ω arag") for
+    // dense spots like the sensor list and the point snapshot. Falls back to
+    // the full label.
+    const shorts = computed(() => {
+        const map = new Map<string, string>();
+        for (const v of mainStore.variables) {
+            const short = (v as { short?: string }).short;
+            if (v?.var && short) map.set(v.var, short);
+        }
+        return map;
+    });
+
+    function variableShort(varId: string): string {
+        return shorts.value.get(varId) ?? variableLabel(varId);
+    }
+
     // var -> unit (e.g. "°C", "mmol/m³"), same config-sourced list as `labels`.
     // Unitless variables (pH, Omega) resolve to '' — callers skip the suffix rather
     // than rendering an empty parenthetical.
@@ -138,7 +154,7 @@ export function useVariableRegistry() {
     }
 
     return {
-        labels, isModelVariable, variableLabel, variableUnit, modelVariablesOf,
+        labels, isModelVariable, variableLabel, variableShort, variableUnit, modelVariablesOf,
         variableAltUnits, displayUnit, toDisplayValue, toCanonicalValue,
         variableDecimals, formatDisplayValue,
     };

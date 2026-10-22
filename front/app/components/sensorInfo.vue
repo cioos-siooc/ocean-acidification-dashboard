@@ -1,23 +1,25 @@
 <template>
-    <div class="rounded-lg m-0 p-0 h-full flex flex-col min-h-0">
-        <div class="px-4 py-3 flex-1 min-h-0 flex flex-col">
-            <div v-if="sensors.length === 0">
-                No sensors found.
-            </div>
-            <div v-else class="flex-1 min-h-0 flex flex-col">
-                <!-- FILTERS -->
-                <!-- Search stays on the surface (it's the one control used on most
-                     visits); the two dropdowns live in a popover so the sensor list
-                     starts higher up the panel. The badge is what tells the user a
-                     filter is on while the popover is shut. -->
-                <div class="flex items-center gap-1 p-1 shrink-0">
+    <div class="sensors">
+        <div v-if="sensors.length === 0" class="p-4 text-muted">No sensors found.</div>
+        <template v-else>
+            <!-- Search, filters and sort stay pinned; only the list scrolls. The
+                 two dropdown filters live in a popover so the list starts higher,
+                 and the badge says a filter is on while it's shut. -->
+            <div class="sensors__head">
+                <div class="flex items-center justify-between">
+                    <span class="oe-label">Sensors · {{ filteredSensors.length }}</span>
+                    <USelect v-model="sortMode" :items="sortItems" size="xs" variant="ghost"
+                        class="sensors__sort" aria-label="Sort sensors" />
+                </div>
+                <div class="flex items-center gap-1">
                     <UInput v-model="searchQuery" icon="i-mdi-magnify" placeholder="Search sensors" size="sm" class="grow" />
                     <UPopover v-model:open="showFilters" :content="{ side: 'bottom', align: 'end' }">
                         <UButton
-                            :variant="activeFilterCount ? 'solid' : 'ghost'"
-                            :color="activeFilterCount ? 'primary' : 'neutral'"
+                            variant="outline"
+                            color="neutral"
                             size="sm"
                             class="shrink-0 relative"
+                            :class="activeFilterCount ? 'oe-on' : ''"
                             aria-label="Filter sensors"
                             title="Filter sensors"
                         >
@@ -47,66 +49,54 @@
                         </template>
                     </UPopover>
                 </div>
+            </div>
 
-                <div v-if="filteredSensors.length === 0" class="text-center text-muted p-4">
-                    No sensors match your filters.
-                </div>
+            <div v-if="filteredSensors.length === 0" class="text-center text-muted p-4">
+                No sensors match your filters.
+            </div>
 
-                <!-- SENSOR LIST -->
-                <!-- Only this list scrolls; the search + filter row above it stays
-                     pinned at the top of the Sensors block. -->
-                <div v-else class="flex-1 min-h-0 overflow-y-auto">
-                <div v-for="(sensor, i) in filteredSensors" :key="sensor.id" :ref="setSensorRef(sensor.id)"
-                    role="button" tabindex="0" @click="selectSensor(sensor.id)" @keydown.enter="selectSensor(sensor.id)"
-                    class="rounded my-2 px-3 py-2 cursor-pointer hover:bg-white/5"
-                    :class="sensor.id === selectedSensor?.id ? 'ring-1 ring-yellow-400' : ''"
-                    :style="{ backgroundColor: '#33333399' }">
-                    <div class="ml-4 flex items-center gap-1">
-                        <UBadge v-if="sensor.organization" color="primary" variant="solid" size="xs"
-                            class="rounded-sm px-1.5 py-0 text-[10px] leading-4 font-semibold tracking-wide bg-(--ui-color-primary-700) text-white">
-                            {{ sensor.organization }}
-                        </UBadge>
-                        <div class="grow" />
-                        <UButton v-if="sensor.id === selectedSensor?.id && selectedInstruments.length > 1" size="xs" class="p-0.5"
-                            :variant="compareInstruments ? 'soft' : 'ghost'" :color="compareInstruments ? 'primary' : 'neutral'"
-                            :aria-pressed="compareInstruments" aria-label="Compare instruments"
-                            :title="`Plot each of the ${selectedInstruments.length} instruments that measure ${variableLabel(selectedVar)} here, with their differences`"
-                            @click.stop="toggleCompareInstruments">
-                            <UIcon name="i-mdi-compare-horizontal" class="size-[14px]" />
-                        </UButton>
-                        <UButton v-if="sensor.id === selectedSensor?.id" variant="ghost" size="xs" color="neutral" class="p-0.5"
-                            aria-label="Compare with model" @click.stop="mainStore.setActiveBottomTab('comparison')">
-                            <UIcon name="i-mdi-chart-bar" class="size-[14px]" />
-                        </UButton>
-                        <UButton variant="ghost" size="xs" color="neutral" class="p-0.5"
-                            aria-label="Sensor details" @click.stop="openInfoDialog(sensor)">
-                            <UIcon name="i-mdi-information-outline" class="size-[14px]" />
-                        </UButton>
-                    </div>
+            <div v-else class="sensors__list">
+                <div v-for="sensor in sortedSensors" :key="sensor.id" :ref="setSensorRef(sensor.id)"
+                    role="button" tabindex="0" class="srow" :class="{ 'srow--on': sensor.id === selectedSensor?.id }"
+                    @click="selectSensor(sensor.id)" @keydown.enter="selectSensor(sensor.id)">
+                    <span class="srow__dot" :class="`srow__dot--${statusOf(sensor)}`" :title="statusTitle(sensor)" />
+                    <span class="srow__name">{{ sensor.name }}</span>
+                    <span class="srow__depth oe-num">{{ shortDepth(sensor) }}</span>
 
-                    <div class="text-sm leading-5">
-                        <UIcon name="i-mdi-circle" :style="{ color: sensorStatusColor(sensor) }" class="size-[12px]" />
-                        {{ sensor.name }}
-                    </div>
+                    <span class="srow__sub oe-num">
+                        <span>{{ sensor.organization }}</span>
+                        <span class="srow__vars">{{ shortVars(sensor) }}<template v-if="isProfiler(sensor)"> · profiler</template></span>
+                        <span v-if="distanceOf(sensor)">{{ distanceOf(sensor) }}</span>
+                        <span class="srow__age" :title="sensor.latest_data_at ? `Last reading ${new Date(sensor.latest_data_at).toLocaleString('en-CA')}` : undefined">{{ ageOf(sensor) }}</span>
+                    </span>
 
-                    <div class="ml-4 text-[11px] leading-4 font-medium text-muted">
-                        <div>{{ depth2txt(sensor) }} · {{ coordTxt(sensor.latitude, sensor.longitude) }}</div>
-                        <div>{{ formatDataRange(sensor) }}</div>
-
-                        <div class="mt-1.5 flex flex-wrap gap-1">
-                            <UBadge size="xs" color="neutral" variant="subtle" class="rounded-full" v-for="varKey in modelVariablesOf(sensor.variables)" :key="varKey"
-                                :title="instrumentCount(sensor, varKey) > 1 ? `${instrumentCount(sensor, varKey)} instruments measure this here` : undefined">
-                                {{ variableLabel(varKey) }}
-                                <span v-if="instrumentCount(sensor, varKey) > 1" class="inline-flex items-center opacity-70">
-                                    <UIcon name="i-mdi-layers-outline" class="size-[11px]" />{{ instrumentCount(sensor, varKey) }}
-                                </span>
-                            </UBadge>
+                    <!-- The selected sensor expands with what a name and depth can't say. -->
+                    <div v-if="sensor.id === selectedSensor?.id" class="srow__detail" @click.stop>
+                        <div class="srow__kv">
+                            <span>Coverage</span><span class="oe-num">{{ formatDataRange(sensor) }}</span>
+                            <span>Position</span><span class="oe-num">{{ coordTxt(sensor.latitude, sensor.longitude) }}</span>
+                            <span>Depth</span><span>{{ depth2txt(sensor) }}</span>
+                            <span>Measures</span>
+                            <span>
+                                <template v-for="(varKey, k) in modelVariablesOf(sensor.variables)" :key="varKey">
+                                    <span v-if="k">, </span>{{ variableLabel(varKey) }}<span v-if="instrumentCount(sensor, varKey) > 1"
+                                        class="text-muted" :title="`${instrumentCount(sensor, varKey)} instruments measure this here`"> ×{{ instrumentCount(sensor, varKey) }}</span>
+                                </template>
+                            </span>
+                        </div>
+                        <div class="srow__acts">
+                            <UButton size="xs" variant="outline" color="neutral" icon="i-mdi-information-outline" @click="openInfoDialog(sensor)">Details</UButton>
+                            <UButton size="xs" variant="outline" color="neutral" icon="i-mdi-chart-bar" @click="mainStore.setActiveBottomTab('comparison')">Compare with model</UButton>
+                            <UButton v-if="selectedInstruments.length > 1" size="xs" variant="outline" color="neutral"
+                                icon="i-mdi-compare-horizontal" :class="compareInstruments ? 'oe-on' : ''"
+                                :aria-pressed="compareInstruments"
+                                :title="`Plot each of the ${selectedInstruments.length} instruments that measure ${variableLabel(selectedVar)} here, with their differences`"
+                                @click="toggleCompareInstruments">Instruments</UButton>
                         </div>
                     </div>
                 </div>
-                </div>
             </div>
-        </div>
+        </template>
     </div>
 
 
@@ -128,8 +118,7 @@
 import { useMainStore } from '@/stores/main';
 import { storeToRefs } from 'pinia';
 import { ref, computed, watch, nextTick, type ComponentPublicInstance } from 'vue';
-import colors from '@/config/palette';
-import { sensorStatusColor } from '~~/composables/useSensorStatus';
+import { sensorIsRealtime } from '~~/composables/useSensorStatus';
 import { coordTxt, depth2txt, formatDataRange } from '~~/composables/useSensorFormat';
 import SensorInfoDialog from './SensorInfoDialog.vue';
 import { useVariableRegistry } from '~~/composables/useVariableRegistry';
@@ -140,7 +129,7 @@ import { useViewState } from '~~/composables/useViewState';
 const mainStore = useMainStore();
 // Labels and the "is this a variable we show?" test both come from
 // variable_config.yml — see useVariableRegistry for why they share a source.
-const { variableLabel, isModelVariable, modelVariablesOf } = useVariableRegistry();
+const { variableLabel, variableShort, modelVariablesOf } = useVariableRegistry();
 
 type Sensor = typeof mainStore.sensors[number];
 
@@ -203,6 +192,81 @@ const variableOptions = computed(() => {
 const filteredSensors = computed(() =>
     [...mainStore.filteredSensors].sort((a, b) => a.active === b.active ? 0 : a.active ? -1 : 1)
 );
+// Default order puts live sensors first; "Nearest" measures from the last
+// clicked point (or the selected sensor, which becomes that point).
+type SortMode = 'status' | 'distance' | 'name';
+const sortMode = ref<SortMode>('status');
+const sortItems = computed(() => [
+    { label: 'Live first', value: 'status' },
+    { label: 'Nearest', value: 'distance', disabled: !mainStore.lastClickedMapPoint },
+    { label: 'A–Z', value: 'name' },
+]);
+
+function distanceKm(sensor: Sensor): number | null {
+    const p = mainStore.lastClickedMapPoint;
+    if (!p) return null;
+    const rad = Math.PI / 180;
+    const dLat = (sensor.latitude - p.lat) * rad;
+    const dLng = (sensor.longitude - p.lng) * rad;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(p.lat * rad) * Math.cos(sensor.latitude * rad) * Math.sin(dLng / 2) ** 2;
+    return 2 * 6371 * Math.asin(Math.sqrt(h));
+}
+
+const statusRank = (s: Sensor) => (statusOf(s) === 'live' ? 0 : statusOf(s) === 'historic' ? 1 : 2);
+const sortedSensors = computed(() => {
+    const list = [...filteredSensors.value];
+    if (sortMode.value === 'name') return list.sort((a, b) => a.name.localeCompare(b.name));
+    if (sortMode.value === 'distance' && mainStore.lastClickedMapPoint) {
+        return list.sort((a, b) => (distanceKm(a) ?? Infinity) - (distanceKm(b) ?? Infinity));
+    }
+    return list.sort((a, b) => statusRank(a) - statusRank(b));
+});
+
+/** live: reading within REALTIME_THRESHOLD_MS; historic: active, older data only; inactive. */
+function statusOf(sensor: Sensor): 'live' | 'historic' | 'inactive' {
+    if (!sensor.active) return 'inactive';
+    return sensorIsRealtime(sensor) ? 'live' : 'historic';
+}
+
+function statusTitle(sensor: Sensor): string {
+    return { live: 'Live: data in the last 14 days', historic: 'Active, historical data only', inactive: 'Inactive' }[statusOf(sensor)];
+}
+
+function isProfiler(sensor: Sensor): boolean {
+    return sensor.depth == null || sensor.depth < 0;
+}
+
+/** Depth for the narrow right-hand column; depth2txt has the long form. */
+function shortDepth(sensor: Sensor): string {
+    if (isProfiler(sensor)) {
+        return sensor.depth_min != null && sensor.depth_max != null
+            ? `${sensor.depth_min.toFixed(0)}–${sensor.depth_max.toFixed(0)} m` : 'profiler';
+    }
+    return depth2txt(sensor);
+}
+
+function shortVars(sensor: Sensor): string {
+    return modelVariablesOf(sensor.variables).map(v => variableShort(v)).join(' ');
+}
+
+function distanceOf(sensor: Sensor): string {
+    const d = distanceKm(sensor);
+    if (d == null) return '';
+    if (d < 0.5) return 'here';
+    return d < 10 ? `${d.toFixed(1)} km` : `${Math.round(d)} km`;
+}
+
+/** Time since the last reading, compact: "3 h", "12 d", or the month for older records. */
+function ageOf(sensor: Sensor): string {
+    if (!sensor.latest_data_at) return '';
+    const ms = Date.now() - new Date(sensor.latest_data_at).getTime();
+    const h = ms / 3_600_000;
+    if (h < 1) return 'now';
+    if (h < 48) return `${Math.round(h)} h`;
+    if (h < 24 * 60) return `${Math.round(h / 24)} d`;
+    return new Date(sensor.latest_data_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short' });
+}
+
 const depthDialogSensor = ref<typeof mainStore.sensors[number] | null>(null);
 const depthDialogOpen = computed({
     get: () => depthDialogSensor.value !== null,
@@ -262,7 +326,127 @@ function openInfoDialog(sensor: typeof mainStore.sensors[number]) {
 </script>
 
 <style scoped>
-.gap-1 {
+.sensors {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.sensors__head {
+    display: grid;
+    gap: 8px;
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--ui-border);
+    flex-shrink: 0;
+}
+
+.sensors__sort {
+    width: auto;
+    min-width: 0;
+    margin-right: -8px;
+    font-size: 11px;
+}
+
+.sensors__list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.srow {
+    display: grid;
+    grid-template-columns: 8px 1fr auto;
+    gap: 2px 8px;
+    align-items: center;
+    padding: 7px 14px;
+    border-bottom: 1px solid var(--ui-border-muted);
+    cursor: pointer;
+}
+
+.srow:hover {
+    background: var(--ui-bg-elevated);
+}
+
+.srow:focus-visible {
+    outline: 2px solid var(--ui-primary);
+    outline-offset: -2px;
+}
+
+.srow--on,
+.srow--on:hover {
+    background: var(--ui-bg-elevated);
+    box-shadow: inset 2px 0 0 var(--ui-primary);
+    padding-bottom: 10px;
+}
+
+.srow__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+
+.srow__dot--live { background: var(--oe-live); }
+.srow__dot--historic { box-shadow: inset 0 0 0 1.3px var(--oe-stale); }
+.srow__dot--inactive { background: var(--ui-text-dimmed); opacity: 0.6; }
+
+.srow__name {
+    font-size: 12.5px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.srow__depth {
+    font-size: 11px;
+    color: var(--ui-text-muted);
+}
+
+.srow__sub {
+    grid-column: 2 / 4;
+    display: flex;
+    gap: 8px;
+    font-size: 10.5px;
+    color: var(--ui-text-muted);
+    min-width: 0;
+}
+
+.srow__vars {
+    color: var(--ui-text-toned);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.srow__age {
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.srow__detail {
+    grid-column: 2 / 4;
+    display: grid;
+    gap: 8px;
+    margin-top: 6px;
+    cursor: default;
+}
+
+.srow__kv {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 3px 8px;
+    font-size: 11px;
+}
+
+.srow__kv > span:nth-child(odd) {
+    color: var(--ui-text-muted);
+}
+
+.srow__acts {
+    display: flex;
+    flex-wrap: wrap;
     gap: 4px;
 }
 </style>

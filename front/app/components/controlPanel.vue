@@ -1,19 +1,9 @@
 <template>
-    <aside v-show="isOpen" class="control-panel p-2 absolute left-0 top-0 h-full bg-default border-r border-default"
+    <aside v-show="isOpen" class="control-panel absolute left-0 top-0 h-full bg-muted border-r border-default"
         :style="{ width: mainStore.controlPanel_width + 'px', zIndex: 999 }">
-        <!-- <div class="flex flex-wrap -m-3">
-            <div class="p-3 w-1/12">
-                <UButton variant="ghost" class="shrink-0">
-                     <UIcon name="i-mdi-chevron-left" />
-                </UButton>
-            </div>
-        </div> -->
-
-        <div class="variables-block">
+        <div class="variables-block border-b border-default">
             <variables />
         </div>
-
-        <USeparator class="my-2" />
 
         <div class="sensors-block">
             <sensorInfo />

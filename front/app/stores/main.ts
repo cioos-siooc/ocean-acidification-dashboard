@@ -34,7 +34,7 @@ function createInitialState() {
         },
 
         dfnDays: 14, // days from now for climate timeseries
-        variables: [] as Array<{ var: string, name: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number], alt_units?: Array<{ unit: string, scale: number, offset?: number }> }>,
+        variables: [] as Array<{ var: string, name: string, short?: string, source: string, dts: number[], colormap: string | null, colormapMin: number, colormapMax: number, depths: number[], precision: number, bounds: [number, number, number, number], alt_units?: Array<{ unit: string, scale: number, offset?: number }> }>,
         selected_variable: { var: '', source: '', dt: null as moment.Moment | null, depth: null as string | null, depth_nc: null as number | null, precision: null as number | null, colormap: null as string | null, colormapMin: null as number | null, colormapMax: null as number | null, colormapStops: [null, null, null] as (number | null)[] },
 
         // var -> chosen display unit. Absent means "show the canonical unit"

@@ -1,53 +1,47 @@
 <template>
-  <div class="bg-elevated rounded-lg colorbar" v-if="selectedVariableName">
-    <div class="label">
-      <!-- VARIABLES -->
-      <UFormField label="Field" class="my-4">
-        <USelectMenu v-model="selectedVarName" :items="variableItems" :disabled="variableItems.length === 0"
-          label-key="label" value-key="var" class="w-full" />
-      </UFormField>
-
-      <!-- SOURCES -->
-      <UFormField label="Model Source" class="my-4">
-        <USelectMenu v-model="selectedSource" :items="sourceItems" label-key="label" value-key="source"
-          :disabled="sourceItems.length === 0" class="w-full">
-          <template #leading>
-            <UButton variant="ghost" class="size-[12px] p-0 justify-center shrink-0" @click.stop="showSourceInfo = !showSourceInfo" title="About this data source">
-              <UIcon name="i-mdi-information-variant" :style="{ color: colors.yellow.base }" class="size-[12px]" />
-            </UButton>
-          </template>
-        </USelectMenu>
-      </UFormField>
-
-      <!-- DEPTHS -->
-      <UFormField label="Depth" class="my-4">
-        <USelectMenu v-if="depths && depths.length > 0" v-model="selectedDepth" :items="depths"
-          label-key="title" value-key="value" :disabled="!depths || depths.length === 0" class="w-full">
-          <template #trailing>
-            <UButton variant="ghost" class="size-[12px] p-0 justify-center shrink-0" @click.stop="deeper" title="Deeper depth selection">
-              <UIcon name="i-mdi-arrow-down" :style="{ color: colors.orange.lighten2 }" class="size-[10px]" />
-            </UButton>
-            <UButton variant="ghost" class="size-[12px] p-0 justify-center shrink-0" @click.stop="shallower" title="Shallower depth selection">
-              <UIcon name="i-mdi-arrow-up" :style="{ color: colors.green.lighten2 }" class="size-[10px]" />
-            </UButton>
-          </template>
-        </USelectMenu>
-      </UFormField>
-
-      <!-- COLORBAR -->
-      <!-- <ColormapBar /> -->
-
-      <!-- <div class="flex items-center gap-2 m-0 p-0" style="min-height:24px">
-        <div class="grow" />
-        <UButton variant="ghost" size="xs" class="shrink-0 m-0 p-0" @click="showSettings = !showSettings">
-          <IconsConfig />
-        </UButton>
-        <UButton variant="solid" size="xs" class="shrink-0 m-0 p-0" :disabled="!selectedVariableName || selectedVariableName === 'bathymetry' || mainStore.autoRangeDisabled" @click="autorange" title="Auto-range colorbar to data range">
-          <IconsAutorange />
-        </UButton>
-      </div> -->
+  <div class="vars" v-if="selectedVariableName">
+    <div class="vars__field">
+      <label class="oe-label" for="field-select">Field</label>
+      <USelectMenu id="field-select" v-model="selectedVarName" :items="variableItems" :disabled="variableItems.length === 0"
+        label-key="label" value-key="var" size="sm" class="w-full">
+        <template #trailing>
+          <span v-if="selectedUnit" class="vars__meta">{{ selectedUnit }}</span>
+          <UIcon name="i-mdi-chevron-down" class="size-[14px] text-dimmed" />
+        </template>
+      </USelectMenu>
     </div>
 
+    <div class="vars__field">
+      <div class="flex items-center justify-between">
+        <label class="oe-label" for="source-select">Source</label>
+        <button type="button" class="vars__info" title="About this data source" @click="showSourceInfo = !showSourceInfo">
+          About
+        </button>
+      </div>
+      <USelectMenu id="source-select" v-model="selectedSource" :items="sourceItems" label-key="label" value-key="source"
+        :disabled="sourceItems.length === 0" size="sm" class="w-full" />
+    </div>
+
+    <!-- Depth stays a dropdown: the model has dozens of levels. The steppers
+         walk one level at a time, which is how depth is usually explored. -->
+    <div v-if="depths && depths.length > 0" class="vars__field">
+      <div class="flex items-center justify-between">
+        <label class="oe-label" for="depth-select">Depth</label>
+        <span class="vars__meta oe-num" v-if="depthIndex >= 0">level {{ depthIndex + 1 }} / {{ depths.length }}</span>
+      </div>
+      <div class="flex items-stretch">
+        <USelectMenu id="depth-select" v-model="selectedDepth" :items="depths" label-key="title" value-key="value"
+          size="sm" class="grow oe-num" :ui="{ base: 'rounded-e-none' }" />
+        <div class="vars__step">
+          <button type="button" :disabled="depthIndex <= 0" title="Shallower level" aria-label="Shallower level" @click="shallower">
+            <UIcon name="i-mdi-chevron-up" class="size-[14px]" />
+          </button>
+          <button type="button" :disabled="depthIndex >= depths.length - 1" title="Deeper level" aria-label="Deeper level" @click="deeper">
+            <UIcon name="i-mdi-chevron-down" class="size-[14px]" />
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <UModal v-model:open="showSourceInfo" :ui="{ content: 'max-w-[50vw]' }">
@@ -65,11 +59,10 @@ import { computed, toRef, ref, watch } from 'vue';
 import moment from 'moment-timezone';
 import { useVariableRegistry } from '~~/composables/useVariableRegistry';
 import { trackEvent } from '~~/composables/useAnalytics';
-import colors from '@/config/palette'
 
 import { useMainStore, formatDepthLabel } from '../stores/main'
 const mainStore = useMainStore();
-const { variableLabel } = useVariableRegistry();
+const { variableLabel, displayUnit } = useVariableRegistry();
 
 const emit = defineEmits<{
   (e: 'autorange'): void;
@@ -209,6 +202,8 @@ const selectedDepth = computed({
 })
 
 const selectedVariableName = computed(() => mainStore.selected_variable.var);
+const selectedUnit = computed(() => selectedVariableName.value ? displayUnit(selectedVariableName.value) : '');
+const depthIndex = computed(() => depths.value.findIndex(d => d.value === selectedDepth.value));
 
 ///////////////////////////////////  WATCHERS  ///////////////////////////////////
 
@@ -239,48 +234,59 @@ function shallower() {
 
 
 <style scoped>
-.colorbar {
+.vars {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px;
+}
 
+.vars__field {
+  display: grid;
+  gap: 5px;
+}
 
-  padding: 6px 8px;
-  /* background: rgba(255, 255, 255, 0.9); */
-  border-radius: 6px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-
-  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue';
+.vars__meta {
   font-size: 11px;
+  color: var(--ui-text-muted);
 }
 
-.label {
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
-.label-text {
-  font-weight: 600;
-}
-
-.colormap-item {
-  display: flex;
-  align-items: center;
-}
-
-.colormap-selection {
-  display: flex;
-  align-items: center;
-}
-
-.mini-bar {
-  display: inline-block;
-}
-
-.colormap-label {
+.vars__info {
   font-size: 11px;
+  color: var(--ui-text-muted);
+  cursor: pointer;
 }
-</style>
 
-<style lang="css">
-.v-number-input__control {
-  width: 14px;
+.vars__info:hover {
+  color: var(--ui-text);
+}
+
+.vars__step {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  border: 1px solid var(--ui-border-accented);
+  border-left: 0;
+  border-radius: 0 var(--ui-radius) var(--ui-radius) 0;
+}
+
+.vars__step button {
+  width: 24px;
+  display: grid;
+  place-items: center;
+  color: var(--ui-text-muted);
+  cursor: pointer;
+}
+
+.vars__step button + button {
+  border-top: 1px solid var(--ui-border-accented);
+}
+
+.vars__step button:hover:not(:disabled) {
+  color: var(--ui-text);
+  background: var(--ui-bg-elevated);
+}
+
+.vars__step button:disabled {
+  color: var(--ui-text-dimmed);
+  cursor: not-allowed;
 }
 </style>

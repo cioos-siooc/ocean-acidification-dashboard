@@ -58,6 +58,7 @@ def _get_ssc_variables() -> List[Dict]:
         {
             "var": var,
             "name": meta.get('name', var),
+            "short": meta.get('short', meta.get('name', var)),
             "dts": dts,
             "colormapMin": meta['colormapMin'],
             "colormapMax": meta['colormapMax'],
