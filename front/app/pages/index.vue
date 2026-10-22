@@ -30,8 +30,8 @@
         :style="{
           left:
             (mainStore.isControlPanelOpen
-              ? mainStore.controlPanel_width + overlayGap + 50
-              : overlayGap + 50) + 'px',
+              ? mainStore.controlPanel_width + overlayGap + 200
+              : overlayGap + 200) + 'px',
           transition: 'left 0.3s ease',
         }"
       />
@@ -133,28 +133,10 @@
         </div>
       </div>
 
-      <div
-        class="px-2 pt-2"
-        style="
-          width: 250px;
-          position: absolute;
-          bottom: 0;
-          z-index: 999;
-          background-color: #11111199;
-          border-top-left-radius: 20px;
-          border-top-right-radius: 20px;
-          margin: auto;
-          right: 0;
-        "
-        :style="{
-          left:
-            (mainStore.isControlPanelOpen
-              ? mainStore.controlPanel_width + overlayGap + 50
-              : overlayGap + 50) + 'px',
-          transition: 'left 0.3s ease',
-        }"
-      >
-        <ColormapBar class="m-2" />
+      <!-- Colour legend for the raster layer, bottom-right like the layer
+           readout's bottom-left. -->
+      <div class="map-legend" :style="{ right: (drawerOpen ? 300 : 0) + overlayGap + 'px', bottom: overlayGap + 'px' }">
+        <ColormapBar />
       </div>
 
       <!-- Cursor readout (coordinates and/or model value), follows the mouse over the map -->
@@ -1923,6 +1905,16 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
 .overlay {
   position: absolute;
   z-index: 998;
+}
+
+.map-legend {
+  position: absolute;
+  z-index: 998;
+  width: 300px;
+  padding: 8px 10px 4px;
+  background: rgba(19, 22, 26, 0.94);
+  border: 1px solid var(--ui-border);
+  transition: right 0.3s ease;
 }
 
 .spiderfy-node {

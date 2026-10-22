@@ -1,11 +1,11 @@
 <template>
-    <div style="display: flex; align-items: flex-end; gap: 6px;">
+    <div style="display: flex; align-items: flex-end; gap: 8px;">
         <div style="flex: 1; min-width: 0;">
             <div class="bar" :style="barStyle"></div>
-            <div class="ticks">
-                <div class="tick left text-[11px] font-medium">{{ displayMin?.toFixed(precisionDigits) }}</div>
-                <div class="tick center text-[11px] font-medium">{{ colormapAvg }}</div>
-                <div class="tick right text-[11px] font-medium">{{ displayMax?.toFixed(precisionDigits) }}</div>
+            <!-- Rounded ticks placed at their true position on the ramp, rather
+                 than the raw min/mid/max of the colour range (0.01 · 12.51 · 25.00). -->
+            <div class="ticks oe-num">
+                <span v-for="t in ticks" :key="t.value" class="tick" :style="{ left: t.pct + '%' }">{{ t.label }}</span>
             </div>
         </div>
         <div style="flex: 0 0 auto; padding-bottom: 2px;">
@@ -54,12 +54,24 @@ const colormapMin = computed(() => selectedVariable.value.colormapMin);
 const colormapMax = computed(() => selectedVariable.value.colormapMax);
 const displayMin = computed(() => toDisplayValue(selectedVariable.value.var, colormapMin.value));
 const displayMax = computed(() => toDisplayValue(selectedVariable.value.var, colormapMax.value));
-const precisionDigits = computed(() => -Math.log10(selectedVariable.value.precision));
-const colormapAvg = computed(() => {
-    if (!colormapMin.value || !colormapMax.value) return '';
-    const avg = (colormapMin.value + colormapMax.value) / 2;
-    return toDisplayValue(selectedVariable.value.var, avg)?.toFixed(precisionDigits.value);
+// "Nice" ticks (1, 2, 2.5 or 5 × 10^n steps) over the colour range, in the
+// display unit, positioned by where they fall on the ramp.
+const ticks = computed(() => {
+    const lo = displayMin.value, hi = displayMax.value;
+    if (lo == null || hi == null || !(hi > lo)) return [];
+    const raw = (hi - lo) / 5;
+    const mag = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 2.5, 5, 10].map(f => f * mag).find(st => st >= raw) ?? raw;
+    const decimals = Math.max(0, -Math.floor(Math.log10(step) + 1e-9) + (step / mag === 2.5 ? 1 : 0));
+    const out: { value: number; label: string; pct: number }[] = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-6; v += step) {
+        const pct = (v - lo) / (hi - lo) * 100;
+        if (pct < 2 || pct > 98) continue;
+        out.push({ value: v, label: v.toFixed(decimals), pct });
+    }
+    return out;
 });
+
 
 const selectedColormap = computed(() => selectedVariable.value.colormap);
 const colormaps = computed(() => mainStore.colormaps);
@@ -75,26 +87,28 @@ const barStyle = computed(() => {
 
 <style scoped>
 .bar {
-    height: 14px;
-    border-radius: 4px;
-    border: 1px solid rgba(0, 0, 0, 0.08);
+    height: 8px;
 }
 
 .ticks {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 6px;
+    position: relative;
+    height: 14px;
+    margin-top: 3px;
 }
 
 .tick {
-    color: #ccc;
+    position: absolute;
+    transform: translateX(-50%);
+    font-size: 10.5px;
+    color: var(--ui-text-muted);
+    white-space: nowrap;
 }
 
 .unit-label {
     display: inline-flex;
     align-items: center;
-    font-size: x-small;
-    color: #aaa;
+    font-size: 11px;
+    color: var(--ui-text-muted);
 }
 
 .unit-label--clickable {
@@ -105,6 +119,6 @@ const barStyle = computed(() => {
 }
 
 .unit-label--clickable:hover {
-    color: #e0e0e0;
+    color: var(--ui-text);
 }
 </style>

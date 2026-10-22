@@ -6,5 +6,12 @@ export default defineAppConfig({
       primary: 'ochre',
       neutral: 'graphite',
     },
+    // One accent: buttons are neutral unless a caller asks for `primary`
+    // (the main action of a dialog, say), so ochre keeps meaning "selected".
+    button: {
+      defaultVariants: {
+        color: 'neutral',
+      },
+    },
   },
 })

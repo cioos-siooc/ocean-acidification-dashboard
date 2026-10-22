@@ -19,7 +19,9 @@ html {
   color-scheme: dark;
 }
 
-@theme {
+/* `static`: Nuxt UI reads these palettes through runtime var() references
+   (app.config.ts), which Tailwind can't see, so it would otherwise drop them. */
+@theme static {
   --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 

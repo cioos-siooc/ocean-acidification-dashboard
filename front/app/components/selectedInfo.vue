@@ -1,32 +1,19 @@
 <template>
-  <div class="colorbar bg-elevated" style="max-width:200px; width:fit-content;">
-    <div class="flex flex-wrap my-0 mx-2 p-0">
-      <!-- Says whose depth this is. Without it the box reads as a description
-           of whatever the user just clicked, and a sensor at 1257 m sitting
-           beside a model level at 441.5 m looks like a contradiction rather
-           than two different things. This box only ever describes the raster
-           layer the map is painting. -->
-      <div class="w-full m-0 p-0 layer-label" style="height:16px">
-        <span>MAP LAYER &middot; {{ selectedVariable.source }}</span>
-      </div>
-
-      <div class="w-full m-0 p-0" style="height:20px">
-        <span>{{ variableLabel(selectedVariable.var) }}</span>
-      </div>
-
-      <div class="w-full m-0 p-0" style="height:20px">
-        <span>{{ formattedDt }}</span>
-      </div>
-      <div class="w-full m-0 p-0" style="height:20px">
-        <span>Depth {{ selectedVariable.depth }}{{ selectedVariable.depth && !isNaN(Number(selectedVariable.depth)) ? ' m' : '' }}</span>
-      </div>
-
+  <div class="colorbar readout">
+    <!-- Says whose depth this is. Without it the box reads as a description
+         of whatever the user just clicked, and a sensor at 1257 m sitting
+         beside a model level at 441.5 m looks like a contradiction rather
+         than two different things. This box only ever describes the raster
+         layer the map is painting. -->
+    <div class="readout__head">Map layer · {{ selectedVariable.source }}</div>
+    <div class="readout__grid oe-num">
+      <span class="k">Field</span><span>{{ variableLabel(selectedVariable.var) }}</span>
+      <span class="k">Time</span><span>{{ formattedDt }}</span>
+      <span class="k">Depth</span><span>{{ selectedVariable.depth }}{{ selectedVariable.depth && !isNaN(Number(selectedVariable.depth)) ? ' m' : '' }}</span>
       <!-- The layer is as empty as the chart at a point the model does not
            reach; saying so here stops the depth above from looking like a
            reading taken at the selected location. -->
-      <div v-if="outsideDomain" class="w-full m-0 p-0 layer-empty" style="height:20px">
-        <span>no model data here</span>
-      </div>
+      <template v-if="outsideDomain"><span class="k">Point</span><span class="layer-empty">no model data here</span></template>
     </div>
 
     <!-- Only set once a tile request outlasts index.vue's show delay, so fast
@@ -84,15 +71,36 @@ const formattedDt = computed(() => {
 <style scoped>
 .colorbar {
   position: absolute;
-  padding: 3px;
   width: fit-content;
+  max-width: 280px;
   transition: left 0.3s ease;
-  border-radius: 6px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-  /* font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue'; */
-  font-family: monospace;
-  font-size: 11px;
-  color: #ccc;
+  padding: 7px 10px;
+  background: rgba(19, 22, 26, 0.94);
+  border: 1px solid var(--ui-border);
+  font-size: 11.5px;
+  color: var(--ui-text);
+}
+
+.readout__head {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ui-text-muted);
+  margin-bottom: 4px;
+}
+
+.readout__grid {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 12px;
+}
+
+.readout__grid .k {
+  color: var(--ui-text-muted);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 /* A bright arc chasing around the box's border: a rotating conic gradient,
@@ -114,8 +122,7 @@ const formattedDt = computed(() => {
 .loading-ring {
   position: absolute;
   inset: 0;
-  padding: 3px;
-  border-radius: 6px;
+  padding: 2px;
   background: conic-gradient(from var(--loading-angle), transparent 0 55%, #22d3ee 85%, #e0fbff 97%, transparent 100%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
@@ -127,13 +134,7 @@ const formattedDt = computed(() => {
   to { --loading-angle: 360deg; }
 }
 
-.layer-label {
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  color: #888;
-}
-
 .layer-empty {
-  color: rgb(251, 191, 36);
+  color: var(--ui-primary);
 }
 </style>

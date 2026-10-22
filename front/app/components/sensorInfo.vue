@@ -412,7 +412,13 @@ function openInfoDialog(sensor: typeof mainStore.sensors[number]) {
     min-width: 0;
 }
 
-.srow__vars {
+.srow__sub > span {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.srow__sub > .srow__vars {
+    flex-shrink: 1;
     color: var(--ui-text-toned);
     overflow: hidden;
     text-overflow: ellipsis;

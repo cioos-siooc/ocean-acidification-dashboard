@@ -3,7 +3,7 @@
     <div class="grow" />
     <template v-if="!hideDatePicker">
       <UPopover v-model:open="datePickerOpen">
-  <UButton variant="solid" class="size-[20px] p-0 justify-center shrink-0" :title="'Jump to date'"><UIcon name="i-mdi-calendar" class="size-[14px]" /></UButton>
+  <UButton variant="outline" color="neutral" class="size-[24px] p-0 justify-center shrink-0" :title="'Jump to date'"><UIcon name="i-mdi-calendar" class="size-[14px]" /></UButton>
   <template #content>
     <div class="bg-elevated rounded-lg">
               <UCalendar v-model="pickedCalendarDate" :min-value="minCalendarDate" :max-value="maxCalendarDate"
@@ -20,17 +20,17 @@
       <USeparator orientation="vertical" class="mx-2" style="height: 24px" />
     </template>
 
-    <UButton variant="solid" class="size-[20px] p-0 justify-center shrink-0" :title="`Back one ${unitLabel}`" @click="stepBackward"><UIcon name="i-mdi-skip-previous" class="size-[14px]" /></UButton>
-    <UButton variant="solid" class="size-[20px] p-0 justify-center shrink-0" :title="playing ? 'Pause' : 'Play'" @click="togglePlay">
+    <UButton variant="outline" color="neutral" class="size-[24px] p-0 justify-center shrink-0" :title="`Back one ${unitLabel}`" @click="stepBackward"><UIcon name="i-mdi-skip-previous" class="size-[14px]" /></UButton>
+    <UButton variant="outline" color="neutral" class="size-[24px] p-0 justify-center shrink-0" :title="playing ? 'Pause' : 'Play'" @click="togglePlay">
       <UIcon name="i-mdi-play" class="size-[14px]" v-if="!playing" />
       <UIcon name="i-mdi-pause" class="size-[14px]" v-else />
     </UButton>
-    <UButton variant="solid" class="size-[20px] p-0 justify-center shrink-0" :title="`Forward one ${unitLabel}`" @click="stepForward"><UIcon name="i-mdi-skip-next" class="size-[14px]" /></UButton>
+    <UButton variant="outline" color="neutral" class="size-[24px] p-0 justify-center shrink-0" :title="`Forward one ${unitLabel}`" @click="stepForward"><UIcon name="i-mdi-skip-next" class="size-[14px]" /></UButton>
 
     <USeparator orientation="vertical" class="mx-2" style="height: 24px" />
 
     <UPopover>
-  <UButton variant="solid" class="size-[20px] p-0 justify-center shrink-0" :title="`Speed: x${speed}`"><UIcon name="i-mdi-speedometer" class="size-[14px]" /></UButton>
+  <UButton variant="outline" color="neutral" class="size-[24px] p-0 justify-center shrink-0" :title="`Speed: x${speed}`"><UIcon name="i-mdi-speedometer" class="size-[14px]" /></UButton>
   <template #content>
     <div class="py-1">
             <div v-for="s in speeds" :key="s" role="button" tabindex="0" @click="setSpeed(s)"
