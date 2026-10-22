@@ -16,10 +16,11 @@
       :title="item.title ?? item.label"
       :icon="item.icon"
       :size="size"
-      :color="item.value === modelValue ? color : 'neutral'"
-      :variant="item.value === modelValue ? 'solid' : unselectedVariant"
+      color="neutral"
+      variant="outline"
       :class="[
-        'justify-center',
+        'justify-center seg',
+        item.value === modelValue && 'seg--on',
         block && 'flex-1',
         itemClass,
         // Joined-bar styling only makes sense on a single row: collapse the
@@ -40,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 
 export interface SegmentedItem {
   value: string | number
@@ -56,8 +57,10 @@ const props = withDefaults(defineProps<{
   modelValue: string | number
   items: SegmentedItem[]
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+  /** Kept for existing callers; see `variant`. */
   color?: 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error' | 'neutral'
-  /** Look of the *unselected* segments. 'tonal' mirrors Vuetify's tonal toggle. */
+  /** Kept for existing callers; the v2 theme draws every segment the same way
+   *  (hairline outline, selected = raised with an accent underline). */
   variant?: 'tonal' | 'outline'
   disabled?: boolean
   /** Stretch to fill the row, segments sharing width equally. */
@@ -80,7 +83,6 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [string | number] }>()
 
 const root = ref<HTMLElement | null>(null)
-const unselectedVariant = computed(() => (props.variant === 'outline' ? 'outline' : 'subtle'))
 
 function select(item: SegmentedItem) {
   // Mandatory by design (mirrors v-btn-toggle's `mandatory`): re-clicking the
@@ -110,3 +112,24 @@ function onKeydown(e: KeyboardEvent, index: number) {
   root.value?.querySelectorAll<HTMLElement>('[role="radio"]')[target.i]?.focus()
 }
 </script>
+
+<style scoped>
+/* Instrument look: one accent, used only to mark the selection. */
+.seg {
+  color: var(--ui-text-muted);
+  background: transparent;
+}
+
+.seg:hover:not(:disabled) {
+  color: var(--ui-text);
+  background: var(--ui-bg-elevated);
+}
+
+.seg--on,
+.seg--on:hover:not(:disabled) {
+  color: var(--ui-text);
+  background: var(--ui-bg-elevated);
+  /* Replaces the outline variant's ring shadow, so redraw the hairline too. */
+  box-shadow: inset 0 -2px 0 var(--ui-primary), inset 0 0 0 1px var(--ui-border-accented);
+}
+</style>

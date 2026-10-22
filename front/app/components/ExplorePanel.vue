@@ -10,6 +10,15 @@
 
     <template v-else>
       <div class="flex items-center mb-2" style="gap:8px;">
+        <!-- Which record this pane shows. Navigation between panes lives in the
+             header (AppNav.vue); these are Explore's own sub-views. -->
+        <SegmentedControl
+          :model-value="viewMode"
+          :items="exploreSubViews"
+          size="xs"
+          aria-label="Explore view"
+          @update:model-value="(v) => mainStore.setExploreView(v as typeof viewMode.value)"
+        />
         <SegmentedControl
           v-model="binMode"
           :items="binModeItems"
@@ -17,8 +26,6 @@
           :disabled="loading"
           aria-label="Time bin resolution"
         />
-        <!-- Which sub-view (Timeseries / Model depth / Sensor depth) is showing
-             is picked from the footer's nav rail now, not a toggle in here. -->
         <UIcon name="i-mdi-loading" class="animate-spin size-[14px] text-teal-400" v-if="loading" />
 
         <div class="grow" />
@@ -148,9 +155,9 @@ import { toCalendarDate, fromCalendarDate } from '~~/composables/useCalendarDate
  * Explore: the one footer pane that is tied to the map.
  *
  * It reads the map's coordinate, depth and clock, and offers three ways to look
- * at that point over a shared, paged time window — picked from a sub-list under
- * "Explore" in the footer's nav rail (`mainStore.exploreView`), not a toggle in
- * this component:
+ * at that point over a shared, paged time window — picked from the toggle at
+ * the left of this pane's toolbar (`mainStore.exploreView`, kept on the store
+ * because other components switch it too):
  *   series       — the single-depth timeseries: model and sensor overlaid at
  *                  the selected depth, plus the climatology envelope and
  *                  day/night shading
@@ -381,6 +388,20 @@ const sensorMeta = computed(() => {
 })
 
 const viewMode = computed(() => mainStore.exploreView)
+// Sensor depth is always listed but disabled until a profiler is selected —
+// the same `selectedProfilerSensorId` the section fetch keys off, so the
+// toggle and the panel never disagree about whether it's available.
+const exploreSubViews = computed(() => {
+  const hasProfiler = !!mainStore.selectedProfilerSensorId
+  return [
+    { value: 'series', label: 'Timeseries' },
+    { value: 'model-depth', label: 'Model depth' },
+    {
+      value: 'sensor-depth', label: 'Sensor depth', disabled: !hasProfiler,
+      title: hasProfiler ? "The sensor's own depth section" : 'Select a profiling sensor first',
+    },
+  ]
+})
 // Losing the profiler strands sensor-depth with nothing to draw.
 watch(hasSensorGrid, (has) => { if (!has && viewMode.value === 'sensor-depth') mainStore.setExploreView('model-depth') })
 

@@ -1,24 +1,18 @@
 <template>
   <UApp>
   <div class="h-screen flex flex-col overflow-hidden bg-default text-default">
-    <header class="flex items-center gap-3 px-5 h-12 shrink-0 bg-elevated border-b border-default">
-      <div class="flex items-center" style="flex-shrink:0;">
-        <iconsOceanECOLogo :size="40" :loop="false" style="display:block;" />
-      </div>
+    <header class="app-header">
+      <NuxtLink to="/" class="app-brand">
+        <iconsOceanECOLogo :size="22" :loop="false" style="display:block;" />
+        <span class="app-brand__name">OceanECO</span>
+        <span class="app-brand__ver oe-num">v{{ versionLabel }}</span>
+      </NuxtLink>
 
-      <div class="flex items-center min-w-0">
-        <span class="">OceanECO</span>
-        <span class="text-xs font-medium mx-2" style="font-family: monospace">v{{ versionLabel }}</span>
-      </div>
+      <AppNav v-if="route.path === '/'" />
 
-      <a href="https://cioospacific.ca/" target="_blank" rel="noopener noreferrer" class="logo-link"
-        style="position: absolute; left: 50%; transform: translateX(-50%);">
-        <img src="/cioos_pacific.png" alt="OA Logo" class="logo-icon" />
-      </a>
+      <div class="grow" />
 
-      <!-- Optional: Add menu items here -->
-      <!-- FEEDBACK FORM -->
-      <UButton variant="ghost" href="https://docs.google.com/forms/d/e/1FAIpQLSdGiIclM5wvIbPReZydsXKiRBXbZsQVEdoQPlA0EruKIoNJkg/viewform?usp=dialog" target="_blank" rel="noopener noreferrer">
+      <UButton variant="ghost" color="neutral" size="xs" href="https://docs.google.com/forms/d/e/1FAIpQLSdGiIclM5wvIbPReZydsXKiRBXbZsQVEdoQPlA0EruKIoNJkg/viewform?usp=dialog" target="_blank" rel="noopener noreferrer">
         Feedback
       </UButton>
 
@@ -29,10 +23,11 @@
         <UButton variant="ghost">Case Studies</UButton>
       </NuxtLink> -->
 
-      <NuxtLink to="/about" target="_blank">
-        <UButton variant="ghost">About</UButton>
-      </NuxtLink>
+      <UButton variant="ghost" color="neutral" size="xs" to="/about" target="_blank">About</UButton>
 
+      <a href="https://cioospacific.ca/" target="_blank" rel="noopener noreferrer" class="partner-link" title="CIOOS Pacific">
+        <img src="/cioos_pacific.png" alt="CIOOS Pacific" class="partner-logo" />
+      </a>
     </header>
 
     <NuxtRouteAnnouncer />
@@ -52,7 +47,9 @@ import { useRuntimeConfig } from '#app'
 import { useMainStore, formatDepthLabel } from './stores/main'
 import { readShareHash, decodeShareState, applyShareState, applySharedVariable } from '~~/composables/useShareState'
 import ShareButton from './components/ShareButton.vue'
+import AppNav from './components/AppNav.vue'
 const mainStore = useMainStore();
+const route = useRoute();
 const config = useRuntimeConfig();
 // NUXT_PUBLIC_* env values are JSON-parsed at runtime, so "1.0" arrives as the number 1.
 const versionLabel = computed(() => {
@@ -195,43 +192,53 @@ async function getColormaps() {
 }
 </script>
 
-<style>
-/* Inter is self-hosted by @nuxt/fonts (pulled in by @nuxt/ui) — it picks the
-   family up from this declaration and the --font-sans theme token, so there is
-   no external stylesheet request. The old rule here also enumerated a long list
-   of .v-application/.text-* Vuetify selectors that no longer exist. */
-html,
-body {
-  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
-}
-
-/* Preserve monospace for code and specific monospace classes */
-code,
-pre,
-kbd,
-samp,
-.text-monospace {
-  font-family: monospace;
-}
-</style>
-
 <style scoped>
-.logo-link {
+/* Fonts and base type live in assets/css/main.css with the other tokens. */
+.app-header {
   display: flex;
   align-items: center;
-  text-decoration: none;
-  cursor: pointer;
+  gap: 12px;
+  height: 36px;
+  padding: 0 12px 0 14px;
+  flex-shrink: 0;
+  background: var(--ui-bg-muted);
+  border-bottom: 1px solid var(--ui-border);
 }
 
-.logo-icon {
-  height: 32px;
-  /* width: 40px; */
-  margin-right: 16px;
-  border-radius: 4px;
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 12px;
 }
 
-.logo-icon:hover {
-  opacity: 0.8;
+.app-brand__name {
+  font-weight: 600;
+  font-size: 13.5px;
+  letter-spacing: 0.02em;
+}
+
+.app-brand__ver {
+  font-size: 11px;
+  color: var(--ui-text-muted);
+}
+
+.partner-link {
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+  padding-left: 12px;
+  border-left: 1px solid var(--ui-border);
+}
+
+/* The partner mark sits quietly in the corner rather than centre stage. */
+.partner-logo {
+  height: 20px;
+  opacity: 0.7;
   transition: opacity 0.2s;
+}
+
+.partner-link:hover .partner-logo {
+  opacity: 1;
 }
 </style>

@@ -11,15 +11,13 @@ export default defineNuxtConfig({
     }
   },
   css: ['~/assets/css/main.css'],
-  // Inter is self-hosted by @nuxt/fonts (registered by @nuxt/ui) instead of
-  // render-blocking on fonts.googleapis.com. Weights match what the old
-  // stylesheet requested.
+  // Self-hosted by @nuxt/fonts (registered by @nuxt/ui) instead of
+  // render-blocking on fonts.googleapis.com. Plex Sans is the UI face, Plex
+  // Mono is for every number (see the tokens in assets/css/main.css).
   fonts: {
     families: [
-      { name: 'Inter', provider: 'google', weights: [300, 400, 500, 600, 700] },
-      // index.vue's monospace UI labels — this was a raw @import of a Google
-      // Fonts stylesheet inside a <style> block, which self-hosting never saw.
-      { name: 'Roboto Mono', provider: 'google', weights: [400, 500, 700] },
+      { name: 'IBM Plex Sans', provider: 'google', weights: [400, 500, 600] },
+      { name: 'IBM Plex Mono', provider: 'google', weights: [400, 500] },
     ],
   },
   nitro: {

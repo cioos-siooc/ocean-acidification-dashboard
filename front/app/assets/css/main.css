@@ -1,28 +1,106 @@
 /*
- * Tailwind v4 + Nuxt UI entry point.
+ * Tailwind v4 + Nuxt UI entry point, and the "Instrument" design tokens (v2).
  *
- * MIGRATION NOTE: while Vuetify and Nuxt UI coexist on this branch, Tailwind's
- * preflight is active and does reset bare elements (button, h1-h6, ul, table...).
- * Vuetify styles almost everything through .v-* classes, so its components are
- * largely unaffected, but hand-written scoped CSS that leaned on browser
- * defaults will shift. That breakage is intentional and useful: it marks what
- * still needs converting. Delete this note once Vuetify is gone.
+ * The look rests on a handful of shared rules rather than per-component styling:
+ *   - two families: IBM Plex Sans for UI, IBM Plex Mono for every number
+ *   - one accent (ochre) for selection and the primary action; data series and
+ *     status colours are separate tokens below, not the accent
+ *   - three surface levels (base / panel / raised), one border colour, 2px radius
  */
 @import "tailwindcss";
 @import "@nuxt/ui";
 
 /*
- * Dark-only, matching the app's long-standing behaviour (Vuetify was hardcoded
- * to its dark theme). `colorMode` is pinned in nuxt.config.ts; this keeps the
- * page background painted even before the color-mode class lands, so there is
- * no light flash on first paint.
+ * Dark-only, matching the app's long-standing behaviour. `colorMode` is pinned
+ * in nuxt.config.ts; this keeps the page background painted even before the
+ * color-mode class lands, so there is no light flash on first paint.
  */
 html {
   color-scheme: dark;
 }
 
-/* Make Inter the default sans stack so Nuxt UI's own components inherit it
-   rather than Tailwind's ui-sans-serif default. */
 @theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* Neutral with a slight cool bias. app.config.ts points `neutral` here. */
+  --color-graphite-50: #f3f5f6;
+  --color-graphite-100: #e4e8eb;
+  --color-graphite-200: #d4d9de;
+  --color-graphite-300: #b1b8bf;
+  --color-graphite-400: #7d868f;
+  --color-graphite-500: #5f6871;
+  --color-graphite-600: #3a4048;
+  --color-graphite-700: #262b31;
+  --color-graphite-800: #191d22;
+  --color-graphite-900: #13161a;
+  --color-graphite-950: #0d0f11;
+
+  /* The single accent. Nuxt UI's dark mode reads primary-400. */
+  --color-ochre-50: #fdf6e7;
+  --color-ochre-100: #faeac4;
+  --color-ochre-200: #f4d38a;
+  --color-ochre-300: #ecbd5c;
+  --color-ochre-400: #e2a336;
+  --color-ochre-500: #c98a22;
+  --color-ochre-600: #a56d18;
+  --color-ochre-700: #7f5316;
+  --color-ochre-800: #5a3b12;
+  --color-ochre-900: #3a260c;
+  --color-ochre-950: #22160a;
+}
+
+:root {
+  --ui-radius: 0.125rem;
+
+  /* Data-series and status colours, shared by charts, the snapshot and the
+     sensor list so "model" and "sensor" read the same everywhere. */
+  --oe-model: #e2a336;
+  --oe-sensor: #5fb3d6;
+  --oe-live: #5cc28a;
+  --oe-stale: #7d868f;
+}
+
+/* Surfaces: base (map ground / page), panel (header, side panel, footer),
+   raised (inputs, selected rows). Borders are hairlines one step above. */
+.dark {
+  --ui-bg: #0d0f11;
+  --ui-bg-muted: #13161a;
+  --ui-bg-elevated: #191d22;
+  --ui-bg-accented: #20252b;
+  --ui-border: #262b31;
+  --ui-border-muted: #1e2227;
+  --ui-border-accented: #3a4048;
+  --ui-text-dimmed: #5f6871;
+  --ui-text-muted: #7d868f;
+  --ui-text-toned: #a7afb7;
+  --ui-text: #d4d9de;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+/* Every readout lines its digits up. */
+.oe-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Small uppercase label used for field names and group captions. */
+.oe-label {
+  font-size: 10.5px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ui-text-muted);
+}
+
+code,
+pre,
+kbd,
+samp,
+.text-monospace {
+  font-family: var(--font-mono);
 }

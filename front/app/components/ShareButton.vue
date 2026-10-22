@@ -2,6 +2,8 @@
   <UPopover v-model:open="open" :content="{ side: 'bottom', align: 'end' }">
     <UButton
       variant="ghost"
+      color="neutral"
+      :size="label ? 'xs' : undefined"
       icon="i-mdi-share-variant"
       class="shrink-0"
       title="Share this view"

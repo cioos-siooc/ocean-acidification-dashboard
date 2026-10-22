@@ -159,7 +159,7 @@
 
       <!-- Cursor readout (coordinates and/or model value), follows the mouse over the map -->
       <div
-        class="bg-elevated rounded-lg cursor-coord-label"
+        class="cursor-coord-label"
         v-if="mouseCoords.visible && (mainStore.showCursorCoords || cursorValueText)"
         :style="{ left: mouseCoords.x + 'px', top: mouseCoords.y + 'px' }"
       >
@@ -183,92 +183,6 @@
         <div class="footer-resize-grip"></div>
       </div>
       <div class="flex footer-content" style="width: 100%">
-        <!-- Vertical tab rail. Plain buttons with explicit active classes
-                     rather than v-btn-toggle: Explore's sub-list is nested directly
-                     beneath it and only shown while Explore is active, which makes
-                     the rail's item heights variable — incompatible with the sliding
-                     "pill" a uniform-height toggle group can animate. -->
-        <div class="footer-rail flex flex-col shrink-0">
-          <div class="footer-rail-track">
-            <UButton
-              variant="ghost"
-              class="footer-rail-item"
-              block
-              :class="{ 'footer-rail-item--active': activeTab === 'explore' }"
-              @click="activeTab = 'explore'"
-            >
-              Explore
-            </UButton>
-            <div v-if="activeTab === 'explore'" class="footer-rail-sublist">
-              <UButton
-                variant="ghost"
-                class="footer-rail-subitem"
-                block
-                v-for="sv in exploreSubViews"
-                :key="sv.value"
-                :disabled="sv.disabled"
-                :title="sv.title"
-                :class="{
-                  'footer-rail-subitem--active': mainStore.exploreView === sv.value,
-                }"
-                @click="mainStore.setExploreView(sv.value)"
-              >
-                {{ sv.label }}
-              </UButton>
-            </div>
-
-            <USeparator v-if="remainingFooterTabs.length > 0" />
-
-            <UButton
-              variant="ghost"
-              class="footer-rail-item"
-              block
-              v-for="t in remainingFooterTabs"
-              :key="t.value"
-              :disabled="t.disabled"
-              :title="t.title"
-              :class="{ 'footer-rail-item--active': activeTab === t.value }"
-              @click="activeTab = t.value"
-            >
-              {{ t.label }}
-            </UButton>
-
-            <USeparator />
-
-            <!-- Analysis is a fullscreen dialog with no rail of its own once
-                             open, so Model/Sensor is picked here rather than inside it —
-                             a sub-item both sets the source and opens the workspace. The
-                             top-level row only expands the sub-list (rather than opening
-                             straight away, as Explore's does) since opening immediately
-                             would cover the rail before the sub-list was ever clickable. -->
-            <UButton
-              variant="ghost"
-              class="footer-rail-item"
-              block
-              :class="{ 'footer-rail-item--active': activeTab === 'analysis' }"
-            >
-              Analysis
-            </UButton>
-            <div class="footer-rail-sublist">
-              <UButton
-                variant="ghost"
-                class="footer-rail-subitem"
-                block
-                v-for="sv in analysisSubViews"
-                :key="sv.value"
-                :disabled="sv.disabled"
-                :title="sv.title"
-                @click="
-                  mainStore.setAnalysisSource(sv.value);
-                  activeTab = 'analysis';
-                "
-              >
-                {{ sv.label }}
-              </UButton>
-            </div>
-          </div>
-        </div>
-
         <!-- Content area. Both panes stay mounted (like the fullscreen
                      workspaces below) so switching tabs doesn't refetch or reset
                      whatever each pane had already loaded. -->
@@ -368,60 +282,9 @@ const activeTab = computed({
     get: () => mainStore.activeBottomTab,
     set: (v: 'explore' | 'analysis' | 'comparison' | 'crossSection') => mainStore.setActiveBottomTab(v),
 });
-// Every rail row is always listed; the ones that need a sensor render disabled
-// (with a title explaining why) rather than vanishing, so the rail's shape stays
-// stable and the capability is discoverable before anything is selected.
-const footerTabs = computed(() => {
-    const hasSensor = !!mainStore.selectedSensor?.id;
-    return [
-        { value: 'explore' as const, icon: 'mdi-chart-line', label: 'Explore', disabled: false, title: '' },
-        { value: 'crossSection' as const, icon: 'mdi-vector-polyline', label: 'Cross-Section', disabled: false, title: '' },
-        { value: 'analysis' as const, icon: 'mdi-poll', label: 'Analysis', disabled: false, title: '' },
-        {
-            value: 'comparison' as const, icon: 'mdi-compare-horizontal', label: 'Comparison',
-            disabled: !hasSensor,
-            title: hasSensor ? 'Compare the model against the sensor' : 'Select a sensor first',
-        },
-    ];
-});
-// Explore and Analysis are rendered separately (each has its own sub-list
-// nested directly beneath it), so the rail's trailing loop only needs the rest
-// — just Comparison, when a sensor is selected.
-const remainingFooterTabs = computed(() => footerTabs.value.filter(t => t.value !== 'explore' && t.value !== 'analysis'));
+// Navigation between panes and workspaces lives in the header (AppNav.vue);
+// Explore's own sub-views are picked from ExplorePanel's toolbar.
 
-// Explore's own sub-views. Sensor depth is always listed but disabled until a
-// profiler sensor is selected — `selectedProfilerSensorId` is the same store
-// getter ExplorePanel itself uses to decide whether there's a section to fetch,
-// so the rail and the panel never disagree about whether it's available.
-const exploreSubViews = computed(() => {
-    const hasProfiler = !!mainStore.selectedProfilerSensorId;
-    return [
-        { value: 'series' as const, label: 'Timeseries', disabled: false, title: '' },
-        { value: 'model-depth' as const, label: 'Model depth', disabled: false, title: '' },
-        {
-            value: 'sensor-depth' as const, label: 'Sensor depth',
-            disabled: !hasProfiler,
-            title: hasProfiler ? "The sensor's own depth section" : 'Select a profiling sensor first',
-        },
-    ];
-});
-
-// Analysis's own sub-views. Sensor stays visible but disabled with no sensor
-// selected, the same convention every other conditional row in the rail follows.
-const analysisSubViews = computed(() => {
-    const hasSensor = !!mainStore.selectedSensor?.id;
-    return [
-        { value: 'model' as const, label: 'Model', disabled: false, title: '' },
-        {
-            value: 'sensor' as const, label: 'Sensor', disabled: !hasSensor,
-            title: hasSensor ? "Analyse the sensor's own record" : 'Select a sensor first',
-        },
-    ];
-});
-
-// Analysis and Comparison are fullscreen workspaces rather than footer panes.
-// Picking them in the rail opens the workspace; closing it drops back to Explore,
-// the only tab whose content is tied to the map behind it.
 const analysisOpen = computed({
     get: () => activeTab.value === 'analysis',
     set: (open: boolean) => { if (!open) activeTab.value = 'explore'; },
@@ -1954,15 +1817,15 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
   overflow: hidden;
   flex-direction: column;
   align-items: stretch;
-  border-top: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.35);
+  background: var(--ui-bg-muted);
+  border-top: 1px solid var(--ui-border);
 }
 
 /* Handle sits in the layout flow as a reserved band above the content,
    so it never overlaps the tab controls (playback buttons, etc.). */
 .footer-resize-handle {
-  flex: 0 0 12px;
-  height: 12px;
+  flex: 0 0 6px;
+  height: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1983,10 +1846,9 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
 }
 
 .footer-resize-grip {
-  width: 44px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.25);
+  width: 36px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.18);
   transition: background 0.15s ease;
 }
 
@@ -2003,120 +1865,25 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
-.footer-rail {
-  width: 150px;
-  background: rgba(255, 255, 255, 0.03);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.footer-rail-track {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  gap: 2px;
-  padding: 6px;
-}
-
-.footer-rail-item {
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 8px !important;
-  font-size: 0.75rem;
-  letter-spacing: 0;
-  opacity: 0.65;
-  transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
-  /* UButton centres its leading icon + label as a group by default; override so all rows share a left edge regardless of label length */
-  justify-content: flex-start;
-}
-
-.footer-rail-item {
-  justify-content: flex-start;
-}
-
-.footer-rail-item:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-/* The active row has to read at a glance against the rail's near-black ground,
-   so it gets three cues at once: a lightened primary text colour (raw primary is
-   too dark a blue on this background), a primary-tinted fill, and a solid left
-   accent bar drawn as an inset shadow so it costs no layout. */
-.footer-rail-item--active,
-.footer-rail-item--active:hover {
-  opacity: 1;
-  font-weight: 600;
-  color: color-mix(in oklab, var(--ui-primary) 55%, white);
-  background: color-mix(in oklab, var(--ui-primary) 22%, transparent);
-  box-shadow: inset 3px 0 0 0 var(--ui-primary);
-}
-
-/* Rows that need a selection they don't have yet: still listed, plainly inert. */
-.footer-rail-item:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-/* Explore's sub-views, nested directly beneath the Explore row while it's active. */
-.footer-rail-sublist {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding-left: 14px;
-  margin: 1px 0 3px;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.footer-rail-subitem {
-  height: 26px;
-  padding: 0 8px;
-  border-radius: 6px !important;
-  font-size: 0.7rem;
-  letter-spacing: 0;
-  opacity: 0.55;
-  transition: opacity 150ms ease, color 150ms ease, background 150ms ease;
-  justify-content: flex-start;
-}
-
-.footer-rail-subitem {
-  justify-content: flex-start;
-}
-
-.footer-rail-subitem:hover:not(:disabled) {
-  opacity: 0.85;
-}
-
-.footer-rail-subitem--active,
-.footer-rail-subitem--active:hover {
-  opacity: 1;
-  font-weight: 600;
-  color: color-mix(in oklab, var(--ui-primary) 55%, white);
-  background: color-mix(in oklab, var(--ui-primary) 18%, transparent);
-  box-shadow: inset 2px 0 0 0 var(--ui-primary);
-}
-
-.footer-rail-subitem:disabled {
-  opacity: 0.28;
-  cursor: not-allowed;
-}
-
 .cursor-coord-label {
   position: absolute;
   z-index: 998;
   pointer-events: none;
   transform: translate(-14px, 14px);
   width: fit-content;
-  padding: 3px 6px;
-  border-radius: 6px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-  font-family: monospace;
+  padding: 3px 7px;
+  background: rgba(19, 22, 26, 0.94);
+  border: 1px solid var(--ui-border);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
-  color: #ccc;
+  color: var(--ui-text-muted);
   white-space: nowrap;
 }
 
 .cursor-value {
-  color: #fff;
-  font-weight: 600;
+  color: var(--ui-text);
+  font-weight: 500;
 }
 </style>
 
@@ -2133,32 +1900,18 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
 }
 
 .footer-text {
-  font-family: "Roboto Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   vertical-align: text-bottom;
 }
 
-@keyframes map-click-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(255, 87, 34, 0.7);
-  }
-
-  70% {
-    box-shadow: 0 0 0 14px rgba(255, 87, 34, 0);
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 87, 34, 0);
-  }
-}
-
 .map-click-marker {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  background: #ff5722;
-  border: 2px solid white;
-  animation: map-click-pulse 1.5s ease-out infinite;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), inset 0 0 0 3px transparent;
+  background: radial-gradient(circle, #fff 0 2px, transparent 2.5px);
 }
 </style>
 
