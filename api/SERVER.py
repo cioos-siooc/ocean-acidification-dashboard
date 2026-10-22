@@ -22,6 +22,7 @@ from modules.extractMinMax import extract_minmax
 from modules.extractSensorTimeseries import extract_sensor_timeseries
 from modules.extract_depth_profile import extract_depth_profile
 from modules.extract_cross_section import extract_cross_section
+from modules.point_snapshot import extract_point_snapshot
 from modules.extract_image import generate_image
 from modules.ocean_analysis import lookup_grid_cells_for_polygon, lookup_nearest_grid_cell, query_region_timeseries
 from modules.sync_hourly import import_native_file, import_daily_native_file, SyncConflict, SyncError, SYNC_API_TOKEN
@@ -556,6 +557,55 @@ async def get_raster_tiles(z: int, x: int, y: int):
     }
     return FileResponse(full_path, media_type="image/webp", headers=headers)
 
+
+#######################################
+
+class pointSnapshotRequest(BaseModel):
+    source: str = "SalishSeaCast"
+    lat: float
+    lon: float
+    depth: float                       # model depth (the map's level)
+    to: Optional[str] = None           # window end, ISO; default now
+    hours: int = 72
+    sensorId: Optional[str] = None     # selected sensor, if any
+    sensorDepth: Optional[float] = None  # its depth; -1/None = profiler (read at `depth`)
+
+@app.post("/pointSnapshot")
+async def fn_point_snapshot(request: pointSnapshotRequest):
+    """Every variable at one point: the model's eight variables at `depth`
+    and the selected sensor's own variables, each over the trailing `hours`
+    ending at `to`. Out-of-domain points return `model: null` with
+    `modelError` (same payload as the 400s elsewhere) — the sensor half still
+    answers, so this never 400s on location."""
+    key = response_cache.make_key("pointSnapshot", request)
+    cached = response_cache.get_model(key)
+    if cached is not None:
+        return cached
+    async with extract_slot("pointSnapshot"):
+        try:
+            result = await asyncio.wait_for(
+                run_in_threadpool(
+                    partial(
+                        extract_point_snapshot,
+                        source=request.source,
+                        lat=request.lat,
+                        lon=request.lon,
+                        depth=request.depth,
+                        to=request.to,
+                        hours=request.hours,
+                        sensor_id=request.sensorId,
+                        sensor_depth=request.sensorDepth,
+                    )
+                ),
+                timeout=THREADPOOL_TIMEOUT,
+            )
+            response_cache.set_model(key, result)
+            return result
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            logger.exception("point_snapshot failed")
+            raise HTTPException(status_code=500, detail=str(exc))
 
 #######################################
 

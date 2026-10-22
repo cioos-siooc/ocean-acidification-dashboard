@@ -162,12 +162,7 @@ const selectedVarName = computed({
   get() { return selectedVariable.value.var },
   set(v: string) {
     trackEvent('variable_changed', { variable: v, source: selectedVariable.value.source });
-    const matchingVar = variables.value.find(variable => variable.source === selectedVariable.value.source && variable.var === v);
-    const colormap = matchingVar?.colormap ?? null;
-    const colormapMin = matchingVar?.colormapMin ?? null;
-    const colormapMax = matchingVar?.colormapMax ?? null;
-    const precision = matchingVar?.precision ?? null;
-    mainStore.updateSelectedVariable({ var: v, colormap, colormapMin, colormapMax, precision });
+    mainStore.selectVariable(v);
   }
 });
 

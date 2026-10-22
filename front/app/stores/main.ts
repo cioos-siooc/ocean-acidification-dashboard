@@ -230,6 +230,19 @@ export const useMainStore = defineStore('main', {
             this.variables = vars;
         },
 
+        /** Switch the active field, carrying its colormap and precision over
+         *  from `/variables` (Field dropdown and point snapshot share this). */
+        selectVariable(varId: string) {
+            const meta = this.variables.find(v => v.source === this.selected_variable.source && v.var === varId);
+            this.updateSelectedVariable({
+                var: varId,
+                colormap: meta?.colormap ?? null,
+                colormapMin: meta?.colormapMin ?? null,
+                colormapMax: meta?.colormapMax ?? null,
+                precision: meta?.precision ?? null,
+            });
+        },
+
         updateSelectedVariable(partial: Partial<MainStoreState['selected_variable']>) {
             // Use individual property assignment to ensure Pinia tracks mutations properly
             for (const [key, value] of Object.entries(partial)) {
