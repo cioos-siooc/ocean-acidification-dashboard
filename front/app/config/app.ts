@@ -32,3 +32,16 @@ export const MAP_MAX_ZOOM = 14
 
 /** Mapbox style for the basemap. */
 export const MAP_STYLE = 'mapbox://styles/taimazb/cmkfvuotu00mw01svbld48v7y?optimize=true&fresh=true'
+
+/**
+ * Runtime paint overrides for the basemap, keyed by style layer id, so it
+ * matches the app's surfaces without editing the shared Mapbox Studio style.
+ * Water outside the model domain reads as darker than land; the model raster
+ * draws on top of both. Ids that a style doesn't have are skipped.
+ */
+export const BASEMAP_PAINT: Record<string, Record<string, string>> = {
+  'water copy': { 'fill-color': '#0c0f12' },
+  'landcover copy': { 'fill-color': '#1b1f24' },
+  'country-boundaries': { 'fill-color': '#1b1f24' },
+  'road-polygon': { 'fill-color': '#262b31' },
+}

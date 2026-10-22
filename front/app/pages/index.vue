@@ -105,7 +105,7 @@
             :x2="spoke.x"
             :y2="spoke.y"
             :stroke="
-              spoke.sensor.isRealtime ? 'rgba(102,187,106,0.75)' : 'rgba(255,167,38,0.75)'
+              spoke.sensor.isRealtime ? 'rgba(92,194,138,0.7)' : 'rgba(125,134,143,0.7)'
             "
             stroke-width="1.5"
           />
@@ -127,7 +127,7 @@
         >
           <div
             class="spiderfy-dot"
-            :style="{ background: spoke.sensor.isRealtime ? '#66BB6A' : '#FFA726' }"
+            :style="{ background: spoke.sensor.isRealtime ? '#5cc28a' : '#13161a' }"
           />
           <div class="spiderfy-label">{{ spoke.sensor.name }}</div>
         </div>
@@ -209,10 +209,10 @@ import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 import { resolveColormap } from '~~/composables/useColormapResolver'
-import { MAP_BOUNDS, MAP_MIN_ZOOM, MAP_MAX_ZOOM, MAP_STYLE } from '@/config/app'
+import { MAP_BOUNDS, MAP_MIN_ZOOM, MAP_MAX_ZOOM, MAP_STYLE, BASEMAP_PAINT } from '@/config/app'
 import { utc2pst } from '~~/composables/useUTC2PST'
 import useStationsInteraction from '~~/composables/useStationsInteraction';
-import { addBuoyLayer, setBuoyLayerVisibility, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '~~/composables/useBuoyLayer';
+import { addBuoyLayer, setBuoyLayerVisibility, setSelectedBuoy, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '~~/composables/useBuoyLayer';
 import getSensorTimeseries from '~~/composables/useSensorTimeseries';
 import AnalysisWorkspace from '../components/AnalysisWorkspace.vue'
 import ExplorePanel from '../components/ExplorePanel.vue'
@@ -404,6 +404,17 @@ const snackMessages = computed({
 
 const showHow = ref(false);
 
+// Recolour the basemap's fills to the app's surfaces (see BASEMAP_PAINT).
+function applyBasemapPaint() {
+    if (!map) return;
+    for (const [id, paint] of Object.entries(BASEMAP_PAINT)) {
+        if (!map.getLayer(id)) continue;
+        for (const [prop, value] of Object.entries(paint)) {
+            try { map.setPaintProperty(id, prop, value); } catch (e) { /* layer type mismatch */ }
+        }
+    }
+}
+
 const overlayGap = 8; // gap in px between map edge and overlays (info, colorbar, buttons)
 
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
@@ -455,6 +466,7 @@ onMounted(async () => {
 
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
+        applyBasemapPaint();
         // Every other layer added below/elsewhere on this page (PNG overlay,
         // bathymetry, stations, analysis box, cross-section...) can land
         // above the style's built-in "water names" labels depending on add
@@ -974,6 +986,8 @@ function buildSensorGeoJSON(groups: any[][], sensorIsRealtime: (s: any) => boole
             geometry: { type: 'Point', coordinates: [first.longitude, first.latitude] },
             properties: {
                 coordKey: coordKey(first.latitude, first.longitude),
+                // "|id1|id2|" so the selection layer can match one sensor by substring.
+                sensorIds: `|${group.map((s: any) => s.id).join('|')}|`,
                 sensorCount: group.length,
                 active: anyActive,
                 isRealtime,
@@ -1056,6 +1070,7 @@ async function addSensors() {
     try {
         const detach = await addBuoyLayer(map, geojson, clickSensor, openSensorPicker, openSpiderfy);
         (map as any).__stationsDetach = detach;
+        setSelectedBuoy(map, mainStore.selectedSensor?.id ?? null);
         // addBuoyLayer re-creates the layers from scratch, so the rail's toggle
         // has to be re-applied every time the sensor list changes.
         setBuoyLayerVisibility(map, mainStore.showSensorLayer);
@@ -1782,6 +1797,9 @@ watch(activeTab, (tab) => {
 // press Enter) — clicking the map again would just select/drag the existing
 // line, not start a new one. CrossSectionPanel's "New line" button bumps this
 // token to re-arm drawing without waiting for a tab round-trip.
+// Ring the selected sensor's marker.
+watch(() => mainStore.selectedSensor?.id, (id) => setSelectedBuoy(map, id ?? null));
+
 watch(() => mainStore.crossSectionRedrawToken, () => {
     if (!crossSectionDraw) return;
     crossSectionDraw.deleteAll();
@@ -1928,10 +1946,9 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
 }
 
 .spiderfy-dot {
-  width: 13px;
-  height: 13px;
-  border: 2px solid #333;
-  border-radius: 50%;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #d4d9de;
   transition: transform 0.12s ease;
 }
 

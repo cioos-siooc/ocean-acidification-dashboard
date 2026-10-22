@@ -231,8 +231,9 @@ function renderChart(points: ProfilePoint[]) {
             nameGap: 24,
             axisLine: { show: true },
             scale: true,
-            // A 300px-wide drawer fits about four labels.
-            splitNumber: 4
+            // A 300px-wide drawer fits about four labels; drop any that still collide.
+            splitNumber: 4,
+            axisLabel: { hideOverlap: true }
         },
         yAxis: {
             type: 'value',

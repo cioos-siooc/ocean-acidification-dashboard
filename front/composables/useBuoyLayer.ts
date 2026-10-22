@@ -1,42 +1,50 @@
 import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 import useStationsInteraction from './useStationsInteraction';
 
-const PATH = `M9.68 13c-.08 0-.16 0-.24.01c-.14.03-.27.1-.38.21c-.14.12-.27.24-.42.36c-.73.57-1.78.55-2.48-.07l-.39-.34a.784.784 0 0 0-1 0c-.19.15-.36.31-.55.46c-.7.51-1.67.49-2.35-.06l-.31-.26A.92.92 0 0 0 1 13v-.97c.26-.04.52.01.75.13c.28.17.54.36.79.57a.84.84 0 0 0 1.12.09c.16-.12.29-.26.45-.38c.24-.2.52-.33.8-.39c.15-.07.32-.08.48-.05c.42.02.83.16 1.17.44c.16.12.31.27.47.4c.18.15.43.21.65.17l-.09-.03c.11-.01.21-.03.32-.06c.04-.02.08-.05.12-.08c.16-.13.31-.28.47-.4c.23-.19.48-.31.75-.38c.13-.05.26-.07.4-.06c.46-.02.93.13 1.31.44c.15.12.29.26.44.38c.29.24.71.24 1 0l.47-.4c.32-.26.72-.4 1.13-.39V13c-.26.02-.51.14-.68.34c-.27.28-.62.48-1 .58c-.61.18-1.28.05-1.77-.36l-.39-.34c-.13-.13-.3-.2-.48-.22m2.09-1a.83.83 0 0 1-.42-.18c-.15-.12-.29-.26-.44-.38a1.93 1.93 0 0 0-2.46 0c-.16.12-.31.27-.47.4c-.29.24-.71.24-1 0c-.16-.13-.31-.28-.47-.4c-.71-.58-1.74-.58-2.45 0c-.13.1-.23.2-.35.3a2.002 2.002 0 0 1 1.81-3.46l2.26-4.57l-.48-.13a.5.5 0 0 1-.36-.61c.07-.26.35-.42.61-.35l.49.13l.13-.48C8.38 1.46 9.2.99 10 1.2c.8.22 1.28 1.04 1.06 1.84l-.13.48l.49.13c.26.08.42.35.35.62a.5.5 0 0 1-.61.35l-.48-.13l-.33 5.09A2 2 0 0 1 11.77 12M9.23 4.1l-.49-.13l-2.26 4.57l1.45.39z`;
+// Marker sprites (v2 "Instrument"). Shape says what kind of sensor sits at a
+// location — square for fixed depth, diamond for a profiler — and the fill
+// says whether its data is live, so colour never carries meaning alone.
+// Drawn at 2x and added with pixelRatio 2 so they stay crisp.
+const INK = '#d4d9de';
+const GROUND = '#13161a';
+const LIVE = '#5cc28a';
+const MUTED = '#7d868f';
+const ACCENT = '#e2a336';
 
-function makeSvg(fill: string) {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 15 15"><path fill="${fill}" stroke="black" stroke-width="1" stroke-linejoin="round" paint-order="stroke fill" d="${PATH}"/></svg>`;
+function makeMarkerSvg(shape: 'square' | 'diamond', status: 'live' | 'historic' | 'inactive') {
+    const stroke = status === 'inactive' ? MUTED : INK;
+    const body = shape === 'square'
+        ? `<rect x="7" y="7" width="14" height="14" fill="${GROUND}" stroke="${stroke}" stroke-width="2.4"/>`
+        : `<rect x="7" y="7" width="14" height="14" transform="rotate(45 14 14)" fill="${GROUND}" stroke="${stroke}" stroke-width="2.4"/>`;
+    const dot = status === 'live' ? `<circle cx="14" cy="14" r="3.2" fill="${LIVE}"/>` : '';
+    // A dark outline under everything keeps the marker legible over a bright raster.
+    const halo = shape === 'square'
+        ? `<rect x="5.5" y="5.5" width="17" height="17" fill="none" stroke="rgba(0,0,0,0.55)" stroke-width="1.5"/>`
+        : `<rect x="5.5" y="5.5" width="17" height="17" transform="rotate(45 14 14)" fill="none" stroke="rgba(0,0,0,0.55)" stroke-width="1.5"/>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">${halo}${body}${dot}</svg>`;
 }
 
-function makeSplitSvg() {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 15 15">
-        <defs>
-            <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="50%" stop-color="#66BB6A"/>
-                <stop offset="50%" stop-color="#FFA726"/>
-            </linearGradient>
-        </defs>
-        <path fill="url(#g)" stroke="black" stroke-width="1" stroke-linejoin="round" paint-order="stroke fill" d="${PATH}"/>
-    </svg>`;
-}
-
-// Vertical double-headed arrow badge for variable-depth (profiler) sensors. Drawn as a
-// raster image — like the buoy icons — rather than a Mapbox text glyph, since Unicode
-// arrow glyphs (e.g. U+2195) aren't guaranteed to be present in the glyph server's range.
-function makeVariableDepthBadgeSvg() {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14">
-        <circle cx="7" cy="7" r="7" fill="#333333"/>
-        <path d="M7 2 L4.5 5 L6 5 L6 9 L4.5 9 L7 12 L9.5 9 L8 9 L8 5 L9.5 5 Z" fill="#ffffff"/>
+// Selection: accent crosshair ticks around whichever marker holds the selected sensor.
+function makeSelectedSvg() {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56">
+        <g stroke="rgba(0,0,0,0.6)" stroke-width="5" stroke-linecap="square">
+            <path d="M4 28h10M42 28h10M28 4v10M28 42v10"/>
+        </g>
+        <g stroke="${ACCENT}" stroke-width="2.6" stroke-linecap="square">
+            <path d="M4 28h10M42 28h10M28 4v10M28 42v10"/>
+        </g>
+        <rect x="16" y="16" width="24" height="24" fill="none" stroke="${ACCENT}" stroke-width="2.4"/>
     </svg>`;
 }
 
 export const STATIONS_LAYER_ID = 'stations-circles';
 export const SOURCE_ID = 'stations';
 const LAYER_BADGE_ID = 'stations-badge';
-const LAYER_VARIABLE_DEPTH_BADGE_ID = 'stations-variable-depth-badge';
+const LAYER_SELECTED_ID = 'stations-selected';
 
 // Every layer the buoy overlay owns — the Overlay rail's "Sensor Layer" toggle
 // hides them as one group.
-export const BUOY_LAYER_IDS = [STATIONS_LAYER_ID, LAYER_BADGE_ID, LAYER_VARIABLE_DEPTH_BADGE_ID];
+export const BUOY_LAYER_IDS = [STATIONS_LAYER_ID, LAYER_BADGE_ID, LAYER_SELECTED_ID];
 
 export function setBuoyLayerVisibility(map: any, visible: boolean) {
     if (!map) return;
@@ -45,13 +53,17 @@ export function setBuoyLayerVisibility(map: any, visible: boolean) {
         try { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility); } catch (e) { }
     }
 }
-const IMAGE_REALTIME = 'buoy-realtime';
-const IMAGE_ACTIVE   = 'buoy-active';
-const IMAGE_INACTIVE = 'buoy-inactive';
-const IMAGE_MIXED    = 'buoy-mixed';
-const IMAGE_VARIABLE_DEPTH_BADGE = 'buoy-variable-depth-badge';
+const IMG = {
+    fixedLive: 'buoy-fixed-live',
+    fixedHistoric: 'buoy-fixed-historic',
+    fixedInactive: 'buoy-fixed-inactive',
+    profilerLive: 'buoy-profiler-live',
+    profilerHistoric: 'buoy-profiler-historic',
+    profilerInactive: 'buoy-profiler-inactive',
+    selected: 'buoy-selected',
+} as const;
 
-async function loadImage(map: any, id: string, svg: string, size = 30): Promise<void> {
+async function loadImage(map: any, id: string, svg: string, size: number): Promise<void> {
     if (map.hasImage(id)) map.removeImage(id);
     const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     return new Promise<void>((resolve) => {
@@ -61,12 +73,20 @@ async function loadImage(map: any, id: string, svg: string, size = 30): Promise<
             canvas.width = size;
             canvas.height = size;
             canvas.getContext('2d')!.drawImage(img, 0, 0);
-            map.addImage(id, canvas.getContext('2d')!.getImageData(0, 0, size, size));
+            map.addImage(id, canvas.getContext('2d')!.getImageData(0, 0, size, size), { pixelRatio: 2 });
             resolve();
         };
         img.onerror = () => resolve();
         img.src = dataUrl;
     });
+}
+
+/** Ring the marker holding `sensorId` (or clear the ring with null). */
+export function setSelectedBuoy(map: any, sensorId: string | null) {
+    if (!map?.getLayer(LAYER_SELECTED_ID)) return;
+    map.setFilter(LAYER_SELECTED_ID, sensorId
+        ? ['in', `|${sensorId}|`, ['get', 'sensorIds']]
+        : ['==', ['get', 'sensorIds'], '__none__']);
 }
 
 export type MultiSensorCandidate = {
@@ -92,15 +112,17 @@ export async function addBuoyLayer(
     onSpiderfyClick: (sensors: MultiSensorCandidate[], screenX: number, screenY: number) => void,
 ): Promise<() => void> {
     await Promise.all([
-        loadImage(map, IMAGE_REALTIME, makeSvg('#66BB6A')),   // green  — data within last 14 days
-        loadImage(map, IMAGE_ACTIVE,   makeSvg('#FFA726')),   // orange — active but only historical
-        loadImage(map, IMAGE_INACTIVE, makeSvg('#888888')),   // grey   — inactive
-        loadImage(map, IMAGE_MIXED,    makeSplitSvg()),       // half green / half orange — mixed group
-        loadImage(map, IMAGE_VARIABLE_DEPTH_BADGE, makeVariableDepthBadgeSvg(), 14),
+        loadImage(map, IMG.fixedLive, makeMarkerSvg('square', 'live'), 28),
+        loadImage(map, IMG.fixedHistoric, makeMarkerSvg('square', 'historic'), 28),
+        loadImage(map, IMG.fixedInactive, makeMarkerSvg('square', 'inactive'), 28),
+        loadImage(map, IMG.profilerLive, makeMarkerSvg('diamond', 'live'), 28),
+        loadImage(map, IMG.profilerHistoric, makeMarkerSvg('diamond', 'historic'), 28),
+        loadImage(map, IMG.profilerInactive, makeMarkerSvg('diamond', 'inactive'), 28),
+        loadImage(map, IMG.selected, makeSelectedSvg(), 56),
     ]);
 
     // Remove existing layers/source before re-adding
-    try { if (map.getLayer(LAYER_VARIABLE_DEPTH_BADGE_ID)) map.removeLayer(LAYER_VARIABLE_DEPTH_BADGE_ID); } catch (e) { }
+    try { if (map.getLayer(LAYER_SELECTED_ID)) map.removeLayer(LAYER_SELECTED_ID); } catch (e) { }
     try { if (map.getLayer(LAYER_BADGE_ID)) map.removeLayer(LAYER_BADGE_ID); } catch (e) { }
     try { if (map.getLayer(STATIONS_LAYER_ID)) map.removeLayer(STATIONS_LAYER_ID); } catch (e) { }
     try { if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID); } catch (e) { }
@@ -111,19 +133,19 @@ export async function addBuoyLayer(
         type: 'symbol',
         source: SOURCE_ID,
         layout: {
+            // A location with any profiler draws as a diamond; live wins over
+            // historic when a location mixes the two.
             'icon-image': [
                 'case',
-                ['all', ['==', ['get', 'active'], true], ['==', ['get', 'hasMixed'], true]], IMAGE_MIXED,
-                ['all', ['==', ['get', 'active'], true], ['==', ['get', 'isRealtime'], true]], IMAGE_REALTIME,
-                ['==', ['get', 'active'], true], IMAGE_ACTIVE,
-                IMAGE_INACTIVE,
+                ['!', ['get', 'active']],
+                ['case', ['get', 'isVariableDepth'], IMG.profilerInactive, IMG.fixedInactive],
+                ['get', 'isRealtime'],
+                ['case', ['get', 'isVariableDepth'], IMG.profilerLive, IMG.fixedLive],
+                ['case', ['get', 'isVariableDepth'], IMG.profilerHistoric, IMG.fixedHistoric],
             ],
             'icon-size': 1,
             'icon-allow-overlap': true,
             'icon-anchor': 'center',
-        },
-        paint: {
-            'icon-opacity': 0.95,
         },
     });
 
@@ -135,34 +157,33 @@ export async function addBuoyLayer(
         filter: ['>', ['get', 'sensorCount'], 1],
         layout: {
             'text-field': ['to-string', ['get', 'sensorCount']],
-            'text-size': 14,
-            'text-font': ['DIN Offc Pro Bold', 'Arial Unicode MS Bold'],
-            'text-offset': [0.7, -0.7],
+            'text-size': 10,
+            'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Regular'],
+            'text-offset': [1.1, -1.0],
             'text-allow-overlap': true,
             'text-ignore-placement': true,
         },
         paint: {
-            'text-color': '#ffffff',
-            'text-halo-color': '#333333',
-            'text-halo-width': 5,
+            'text-color': '#d4d9de',
+            'text-halo-color': '#0d0f11',
+            'text-halo-width': 2,
         },
     });
 
-    // Badge layer: bottom-left marker for locations with a variable-depth (profiler) sensor,
-    // so profilers are visually distinguishable from fixed-depth sensors on the map.
+    // Selection ring, drawn under the marker it surrounds. Starts empty;
+    // setSelectedBuoy() points its filter at the selected sensor.
     map.addLayer({
-        id: LAYER_VARIABLE_DEPTH_BADGE_ID,
+        id: LAYER_SELECTED_ID,
         type: 'symbol',
         source: SOURCE_ID,
-        filter: ['==', ['get', 'isVariableDepth'], true],
+        filter: ['==', ['get', 'sensorIds'], '__none__'],
         layout: {
-            'icon-image': IMAGE_VARIABLE_DEPTH_BADGE,
+            'icon-image': IMG.selected,
             'icon-size': 1,
-            'icon-offset': [-15, 15],
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
         },
-    });
+    }, STATIONS_LAYER_ID);
 
     const layerAdapter = {
         on: (event: string, handler: (evt: any) => void) => {
