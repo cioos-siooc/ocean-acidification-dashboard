@@ -182,6 +182,9 @@
             <CrossSectionPanel :active="activeTab === 'crossSection'" />
           </div>
         </div>
+        <!-- Model, depth and field controls with every variable at the point;
+             permanent and shared by both panes. -->
+        <PointSnapshot class="footer-snap" />
       </div>
     </footer>
 
@@ -218,6 +221,7 @@ import AnalysisWorkspace from '../components/AnalysisWorkspace.vue'
 import ExplorePanel from '../components/ExplorePanel.vue'
 import ComparisonWorkspace from '../components/ComparisonWorkspace.vue'
 import CrossSectionPanel from '../components/crossSection/CrossSectionPanel.vue'
+import PointSnapshot from '../components/snapshot/PointSnapshot.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 
 ///////////////////////////////////  SETUP  ///////////////////////////////////
@@ -1838,6 +1842,11 @@ watch(() => mainStore.crossSectionRedrawToken, () => {
 .footer-content {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.footer-snap {
+  flex: 0 0 340px;
+  height: 100%;
 }
 
 .footer-resize-handle:hover,

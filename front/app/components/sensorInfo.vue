@@ -351,12 +351,13 @@ function openInfoDialog(sensor: typeof mainStore.sensors[number]) {
 .sensors__list {
     flex: 1 1 auto;
     min-height: 0;
+    overflow-x: hidden;
     overflow-y: auto;
 }
 
 .srow {
     display: grid;
-    grid-template-columns: 8px 1fr auto;
+    grid-template-columns: 8px minmax(0, 1fr) auto;
     gap: 2px 8px;
     align-items: center;
     padding: 7px 14px;
@@ -441,7 +442,7 @@ function openInfoDialog(sensor: typeof mainStore.sensors[number]) {
 
 .srow__kv {
     display: grid;
-    grid-template-columns: 64px 1fr;
+    grid-template-columns: 64px minmax(0, 1fr);
     gap: 3px 8px;
     font-size: 11px;
 }

@@ -55,10 +55,6 @@
 </UPopover>
         <UButton variant="ghost" size="xs" icon="i-mdi-chevron-right" class="shrink-0" :disabled="!canPageForward || loading" @click="pageWindow(1)" />
         <DownloadButton :datasets="csvDatasets" size="xs" class="shrink-0" />
-        <UButton size="xs" variant="outline" icon="i-mdi-view-grid-outline" class="shrink-0"
-          :class="snapshotOpen ? 'oe-on' : ''" :aria-pressed="snapshotOpen"
-          :title="snapshotOpen ? 'Hide the point snapshot' : 'Show every variable at this point'"
-          @click="snapshotOpen = !snapshotOpen">Snapshot</UButton>
       </div>
 
       <UAlert
@@ -131,8 +127,6 @@
           <UIcon name="i-mdi-loading" class="animate-spin size-[42px] text-primary" />
         </div>
       </div>
-
-      <PointSnapshot v-if="snapshotOpen" class="explore-snap" />
       </div>
     </template>
   </div>
@@ -153,7 +147,6 @@ import { sensorSourceUrl } from '~~/composables/useSensorDownloadLinks'
 import DownloadButton from './ui/DownloadButton.vue'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import TimeDepthHeatmap from './depth/TimeDepthHeatmap.vue'
-import PointSnapshot from './snapshot/PointSnapshot.vue'
 import TimeseriesChart from './TimeseriesChart.vue'
 import TimeControls from './TimeControls.vue'
 import ChartContextBar, { type ContextItem } from './ChartContextBar.vue'
@@ -397,9 +390,6 @@ const sensorMeta = computed(() => {
 })
 
 const viewMode = computed(() => mainStore.exploreView)
-// The point snapshot beside the chart; hideable, and shared with the view.
-const snapshotOpen = useViewState('explore')('snapshotOpen', true)
-watch(snapshotOpen, () => nextTick().then(resizeAll))
 // Sensor depth is always listed but disabled until a profiler is selected —
 // the same `selectedProfilerSensorId` the section fetch keys off, so the
 // toggle and the panel never disagree about whether it's available.
@@ -1121,10 +1111,6 @@ onBeforeUnmount(() => {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.explore-snap {
-  flex: 0 0 340px;
 }
 
 .loading-overlay {

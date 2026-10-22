@@ -1,8 +1,11 @@
 <template>
-  <!-- Every variable at the clicked point at once, model and sensor, so
-       comparing latest pH and temperature doesn't mean switching fields.
-       Clicking a card switches the field for the map and the chart. -->
-  <aside class="snap" :class="{ 'snap--loading': loading }" aria-label="Point snapshot">
+  <!-- The map's model controls, then every variable at the clicked point at
+       once, model and sensor, so comparing latest pH and temperature doesn't
+       mean switching fields. Clicking a card is how the field is picked for
+       the map and the charts. -->
+  <aside class="snap" :class="{ 'snap--loading': loading }" aria-label="Model and point snapshot">
+    <ModelControls />
+
     <div class="snap__head oe-num">
       <span class="snap__title">Point · {{ hours }} h to map time</span>
       <span class="snap__key"><i style="background: var(--oe-model)" />Model {{ modelDepthLabel }}</span>
@@ -33,6 +36,7 @@ import { useVariableRegistry } from '~~/composables/useVariableRegistry'
 import { depth2txt } from '~~/composables/useSensorFormat'
 import { trackEvent } from '~~/composables/useAnalytics'
 import SnapshotCard from './SnapshotCard.vue'
+import ModelControls from './ModelControls.vue'
 
 const mainStore = useMainStore()
 const { variableLabel, variableShort, displayUnit, toDisplayValue, formatDisplayValue } = useVariableRegistry()
@@ -166,10 +170,10 @@ function select(varId: string) {
 <style scoped>
 .snap {
   display: grid;
-  grid-template-rows: auto auto 1fr;
-  gap: 6px;
+  grid-template-rows: auto auto auto 1fr;
+  gap: 8px;
   min-height: 0;
-  padding: 6px 0 4px 10px;
+  padding: 8px 10px 6px;
   border-left: 1px solid var(--ui-border);
   transition: opacity 0.2s;
 }
