@@ -53,6 +53,8 @@ function createInitialState() {
         // are visible by default (part of the base Mapbox style), so this
         // defaults to true — matching what's on screen until toggled off.
         showMapLabels: false,
+        // Satellite imagery in place of the flat land/water fills.
+        showSatellite: false,
         colormaps: {} as Record<string, any>,
         autoRangeDisabled: false,
 
@@ -264,6 +266,10 @@ export const useMainStore = defineStore('main', {
 
         setShowMapLabels(value: boolean) {
             this.showMapLabels = value;
+        },
+
+        setShowSatellite(value: boolean) {
+            this.showSatellite = value;
         },
 
         setUnitPreference(varId: string, unit: string) {

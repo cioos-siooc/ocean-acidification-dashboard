@@ -77,6 +77,7 @@ export interface SharedState {
         cpw?: number   // control panel width
         bc?: boolean   // bathymetry contours
         ml?: boolean   // map labels
+        sat?: boolean  // satellite basemap
         cc?: boolean   // cursor coords
         cv?: boolean   // cursor value
         vp?: boolean   // vertical profile drawer
@@ -171,6 +172,7 @@ export function captureShareState(): SharedState {
             cpw: s.controlPanel_width,
             bc: s.showBathymetryContours,
             ml: s.showMapLabels,
+            sat: s.showSatellite || undefined,
             cc: s.showCursorCoords,
             cv: s.showCursorValue,
             vp: s.isVerticalProfileOpen,
@@ -229,6 +231,7 @@ export function applyShareState(state: SharedState): void {
         if (ui.cpw != null) s.controlPanel_width = ui.cpw
         if (ui.bc != null) s.setShowBathymetryContours(ui.bc)
         if (ui.ml != null) s.setShowMapLabels(ui.ml)
+        if (ui.sat != null) s.setShowSatellite(ui.sat)
         if (ui.cc != null) s.setShowCursorCoords(ui.cc)
         if (ui.cv != null) s.setShowCursorValue(ui.cv)
         if (ui.vp != null) s.setIsVerticalProfileOpen(ui.vp)

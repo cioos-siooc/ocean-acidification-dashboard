@@ -79,6 +79,8 @@ const showBathymetryContours = computed(() => mainStore.showBathymetryContours);
 
 const showMapLabels = computed(() => mainStore.showMapLabels);
 
+const showSatellite = computed(() => mainStore.showSatellite);
+
 const showCursorCoords = computed(() => mainStore.showCursorCoords);
 
 const showCursorValue = computed(() => mainStore.showCursorValue);
@@ -100,6 +102,7 @@ const layerButtons = computed<ToolButton[]>(() => [
   { label: "Sensors", icon: "i-mdi-map-marker-multiple", on: showSensorLayer.value, toggle: () => mainStore.setShowSensorLayer(!showSensorLayer.value) },
   { label: "Bathymetry contours", component: contourIcon, on: showBathymetryContours.value, toggle: () => mainStore.setShowBathymetryContours(!showBathymetryContours.value) },
   { label: "Map labels", icon: "i-mdi-format-text", on: showMapLabels.value, toggle: () => mainStore.setShowMapLabels(!showMapLabels.value) },
+  { label: "Satellite imagery", icon: "i-mdi-satellite-variant", on: showSatellite.value, toggle: () => mainStore.setShowSatellite(!showSatellite.value) },
 ]);
 
 const readoutButtons = computed<ToolButton[]>(() => [

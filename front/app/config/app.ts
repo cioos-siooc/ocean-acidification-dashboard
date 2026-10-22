@@ -36,12 +36,16 @@ export const MAP_STYLE = 'mapbox://styles/taimazb/cmkfvuotu00mw01svbld48v7y?opti
 /**
  * Runtime paint overrides for the basemap, keyed by style layer id, so it
  * matches the app's surfaces without editing the shared Mapbox Studio style.
- * Water outside the model domain reads as darker than land; the model raster
- * draws on top of both. Ids that a style doesn't have are skipped.
+ * Water outside the model domain reads as darker than land, with enough of a
+ * step that the coastline holds; the model raster draws on top of both. Ids
+ * that a style doesn't have are skipped.
  */
 export const BASEMAP_PAINT: Record<string, Record<string, string>> = {
-  'water copy': { 'fill-color': '#0c0f12' },
-  'landcover copy': { 'fill-color': '#1b1f24' },
-  'country-boundaries': { 'fill-color': '#1b1f24' },
-  'road-polygon': { 'fill-color': '#262b31' },
+  'water copy': { 'fill-color': '#0f1a24' },
+  'landcover copy': { 'fill-color': '#2a2f36' },
+  'country-boundaries': { 'fill-color': '#2a2f36' },
+  'road-polygon': { 'fill-color': '#353b43' },
 }
+
+/** Fills hidden while satellite imagery is on, so the imagery shows through. */
+export const BASEMAP_FILLS = Object.keys(BASEMAP_PAINT)

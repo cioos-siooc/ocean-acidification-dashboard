@@ -212,7 +212,7 @@ import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 import { resolveColormap } from '~~/composables/useColormapResolver'
-import { MAP_BOUNDS, MAP_MIN_ZOOM, MAP_MAX_ZOOM, MAP_STYLE, BASEMAP_PAINT } from '@/config/app'
+import { MAP_BOUNDS, MAP_MIN_ZOOM, MAP_MAX_ZOOM, MAP_STYLE, BASEMAP_PAINT, BASEMAP_FILLS } from '@/config/app'
 import { utc2pst } from '~~/composables/useUTC2PST'
 import useStationsInteraction from '~~/composables/useStationsInteraction';
 import { addBuoyLayer, setBuoyLayerVisibility, setSelectedBuoy, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '~~/composables/useBuoyLayer';
@@ -419,6 +419,28 @@ function applyBasemapPaint() {
     }
 }
 
+// Satellite imagery in place of the basemap fills, always under the model
+// raster: the raster may be added before or after this, so it's re-ordered on
+// every toggle. Added once at load; Mapbox fetches no tiles while it's hidden.
+function addSatelliteLayer() {
+    if (!map || map.getLayer('satellite')) return;
+    map.addSource('satellite', { type: 'raster', url: 'mapbox://mapbox.satellite', tileSize: 512 });
+    map.addLayer({
+        id: 'satellite', type: 'raster', source: 'satellite',
+        paint: { 'raster-saturation': -0.3, 'raster-brightness-max': 0.8 },
+        layout: { visibility: 'none' },
+    }, 'country-boundaries');
+}
+
+function setSatelliteVisibility(visible: boolean) {
+    if (!map?.getLayer('satellite')) return;
+    map.moveLayer('satellite', map.getLayer('png-image-layer') ? 'png-image-layer' : 'country-boundaries');
+    map.setLayoutProperty('satellite', 'visibility', visible ? 'visible' : 'none');
+    for (const id of BASEMAP_FILLS) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'none' : 'visible');
+    }
+}
+
 const overlayGap = 8; // gap in px between map edge and overlays (info, colorbar, buttons)
 
 ///////////////////////////////////  COMPUTED  ///////////////////////////////////
@@ -471,6 +493,7 @@ onMounted(async () => {
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
         applyBasemapPaint();
+        addSatelliteLayer();
         // Every other layer added below/elsewhere on this page (PNG overlay,
         // bathymetry, stations, analysis box, cross-section...) can land
         // above the style's built-in "water names" labels depending on add
@@ -511,6 +534,7 @@ onMounted(async () => {
         // A share link sets these before the style has loaded, when their watchers can't add layers yet.
         if (mainStore.showBathymetryContours) applyBathymetryContours(true);
         if (mainStore.showMapLabels) setMapLabelsVisibility(true);
+        if (mainStore.showSatellite) setSatelliteVisibility(true);
 
         updateAnalysisBox();
 
@@ -787,6 +811,14 @@ watch(() => mainStore.showMapLabels, (visible: boolean) => {
         setMapLabelsVisibility(visible);
     } catch (e) {
         console.warn('Failed to toggle map labels visibility:', e);
+    }
+});
+
+watch(() => mainStore.showSatellite, (visible: boolean) => {
+    try {
+        setSatelliteVisibility(visible);
+    } catch (e) {
+        console.warn('Failed to toggle satellite imagery:', e);
     }
 });
 
