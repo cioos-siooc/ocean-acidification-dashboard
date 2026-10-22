@@ -1,9 +1,9 @@
 # process
 
-Data pipeline for the OA project. The active pipeline is `process/SSC` — a ClickHouse-native
-downloader/compute/imaging/sync pipeline for SalishSeaCast. (The older Postgres-backed
-`nc_jobs` pipeline and LiveOcean support have both been removed — see git history if you need
-to look at that code.)
+Data pipeline for the OA project. Two ClickHouse-native downloader/compute/imaging/sync
+pipelines live here: `process/SSC` for SalishSeaCast and `process/LO` for the LiveOcean
+forecast ([below](#liveocean-processlo)). (The older Postgres-backed `nc_jobs` pipeline has
+been removed — see git history if you need to look at that code.)
 
 ## Overview
 
@@ -68,6 +68,69 @@ run CLI commands in the scheduler container (`run --rm scheduler ...` while it's
 
 `--force` (where supported) acts on a row regardless of its current status, useful for a
 redundant re-download or re-compute.
+
+## LiveOcean (`process/LO`)
+
+UW LiveOcean (ROMS `cas7_t2_x11b`) publishes one `layers.nc` per daily run at
+`{LO_BASE_URL}/fYYYY.MM.DD/layers.nc`: a 72 h forecast at 4-hourly steps (19 steps), sliced at
+fixed z-levels (surface, 10, 20, 30, 50, 100, 500, 1000, 1500, 2000, 2500 m, plus `bottom`,
+stored as −1; runs before 2025-12-29 only carry surface–50 m and bottom). The archive starts at
+2025-07-15.
+
+- Entry point: `python -m LO.cli <command>`. The unit is a **run** (`--date` is the run date),
+  tracked as one row in `LiveOcean_status`:
+  ```
+  pending_download → downloading → success_download → computing → success_compute
+    → imaging → success_image → ingesting → success_ingest → syncing → success_sync
+  ```
+  with `failed_*` per step (retried up to `LO_MAX_RETRY_ATTEMPTS`). Each step consumes the
+  previous step's `success_*` rows, so there is no promote stage.
+- **Latest wins.** Runs overlap, so every row carries the `run_date` that produced it, and
+  `LiveOcean_days` records which run owns each valid day. Once a newer run exists, a run keeps
+  only its day 0 (6 steps); the newest keeps all 19. A run never replaces a day owned by a newer
+  one, so backfills and retries can't overwrite fresher data. Days are swapped atomically with
+  `REPLACE PARTITION` (tables are partitioned by day; see `shared/liveocean_schema.py`).
+- Key modules:
+  - `LO/downloader.py` — probes the archive, seeds runs, populates `grid_LO`, and writes a
+    compact per-run NetCDF
+  - `LO/compute.py` — derives Ω calcite, total alkalinity and DIC via PyCO2SYS from LO's pH and
+    Ω aragonite
+  - `LO/imaging.py` — WebP tiles to `LiveOcean/images/{var}/{YYYY-MM-DDTHHMMSS}/{depth}.webp`
+  - `LO/ingest.py` — loads `LiveOcean_4h` and `LiveOcean_daily`, one valid day at a time
+  - `LO/sync.py` — exports each day the run owns, rsyncs it plus its tiles to the API machine,
+    calls `POST /admin/syncLiveOcean`, then drops the local copy and deletes the run's NetCDF
+    (unless `LO_KEEP_NC` is set)
+
+```bash
+python -m LO.cli check    [--date YYYY-MM-DD] [--init-days N] [--backfill [--from YYYY-MM-DD]]
+python -m LO.cli download [--date YYYY-MM-DD] [--limit N] [--force]
+python -m LO.cli compute  [--date YYYY-MM-DD] [--limit N] [--workers N] [--force]
+python -m LO.cli image    [--date YYYY-MM-DD] [--limit N] [--workers N] [--force]
+python -m LO.cli ingest   [--date YYYY-MM-DD] [--limit N] [--workers N] [--force]
+python -m LO.cli sync     [--date YYYY-MM-DD] [--limit N] [--force]
+python -m LO.cli run      [--date YYYY-MM-DD] [--limit N] [--workers N] [--force] [--init-days N] [--backfill [--from YYYY-MM-DD]]
+python -m LO.cli status   [--date YYYY-MM-DD]
+```
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `LO_BASE_URL` | `https://s3.kopah.uw.edu/liveocean-share` | Archive root |
+| `LO_ARCHIVE_DIR` | — | Local mirror (`fYYYY.MM.DD/layers.nc`), read before the URL |
+| `LO_ARCHIVE_START` | `2025-07-15` | Earliest run `--backfill` asks for |
+| `LO_VARIABLES` | all 10 | Subset to process, e.g. `temperature` for a quick backfill. Other columns stay NaN until the run is redone |
+| `LO_IMAGE_DEPTHS` | all levels | Levels to pre-render (e.g. `surface`); the rest render on demand via `GET /png` |
+| `LO_INGEST_WORKERS` | 6 | Parallel runs per ingest sweep (~1–2 GB RAM each) |
+| `LO_MAX_RETRY_ATTEMPTS` | 3 | Retries per failed step |
+| `LO_NC_DIR` / `LO_IMAGE_DIR` / `LO_SYNC_STAGING_DIR` | `/opt/data/LiveOcean/{nc,images,sync_staging}` | Working paths |
+| `LO_KEEP_NC` | off | Keep the run's NetCDF after sync |
+
+**Not scheduled yet:** there is no Prefect flow or compose service for LiveOcean, so run it from
+the CLI.
+
+**Storage** (all 10 variables, every level): about 250 MiB/day in `LiveOcean_4h`, 130 MiB/day in
+`LiveOcean_daily` and 380 MB/day of tiles, roughly 275 GB/year on the API machine. The PROCESS
+machine only holds runs that haven't synced yet. Limiting `LO_IMAGE_DEPTHS` is the main way to
+cut this.
 
 ## Other subsystems in this directory
 

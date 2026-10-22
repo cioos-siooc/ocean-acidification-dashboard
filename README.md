@@ -20,6 +20,11 @@ The frontend is a high-performance dashboard that visualizes spatial and tempora
 ## 2. API Services
 The API acts as the bridge between ClickHouse and the frontend, providing on-demand data extraction. It never reads NetCDF: all data comes from ClickHouse.
 
+### Model Sources
+*   **Two models**: SalishSeaCast (hourly hindcast) and LiveOcean (UW's 4-hourly, 3-day forecast). Both are declared in `shared/variable_config.yml`'s `sources:` block, and every endpoint takes a `source` and resolves its tables through `modules/sources.py`.
+*   **Capabilities**: LiveOcean's archive only starts in July 2025, so climatology and trend requests for it return a 400 with `error.code == "capability_unavailable"`.
+*   **LiveOcean sync**: `POST /admin/syncLiveOcean` (`modules/sync_liveocean.py`) imports one valid day at a time and swaps it in atomically. A day held from a newer forecast run is never replaced by an older one.
+
 ### Data Extraction Endpoints
 *   **`extractTimeseries.py`**: Pulls historical data for a specific coordinate (lat/lon) across time for ECharts graphs.
 *   **`extract_profile.py`**: Generates vertical "depth profiles," showing variable changes from surface to seabed.
@@ -38,6 +43,7 @@ The "engine" that transforms raw external data into precisely-tiled, color-corre
 
 ### ERDDAP Ingestion & Management
 *   **Intelligent Fetching**: Logic in `SSC/downloader.py` for ERDDAP downloads with automatic backfilling and compression.
+*   **LiveOcean**: `process/LO/` downloads, computes, tiles, ingests and syncs each daily forecast run (`python -m LO.cli ...`). Newer runs replace the days that older runs forecast. See [process/README.md](process/README.md#liveocean-processlo) for commands, environment settings and storage needs. It isn't scheduled in Prefect yet.
 *   **State Tracking**: ClickHouse integration to track download status and manage re-queuing.
 
 ### Imaging & Tiling
@@ -45,7 +51,7 @@ The "engine" that transforms raw external data into precisely-tiled, color-corre
 *   **WebP Pipeline**: `SSC/imaging.py` renders tiles with PST/UTC timezone handling and consistent color scaling.
 
 ### Derived Calculations
-*   **Biogeochemical Models**: The live pipeline derives pH, Aragonite Saturation (Omega), and Inorganic Carbon via PyCO2SYS in `process/SSC/compute.py`.
+*   **Biogeochemical Models**: The live pipeline derives pH, Aragonite Saturation (Omega), and Inorganic Carbon via PyCO2SYS in `process/SSC/compute.py`. For LiveOcean, `process/LO/compute.py` derives calcite saturation, total alkalinity and DIC from the model's own pH and aragonite saturation.
 *   **Shared Memory Scaling**: A standalone `calc_carbon_grid_shm_memmap_year_aware.py` offers shared-memory (`shm_memmap`) high-concurrency computation for ad-hoc, DB-free runs.
 
 ### Statistics & Climatology
@@ -58,6 +64,7 @@ The "engine" that transforms raw external data into precisely-tiled, color-corre
 ### Technology & Foundation
 *   **Spatial Support**: The curvilinear model grid (`grid_SSC`) and sensor locations are stored as ClickHouse tables, queried with `geoDistance()` for nearest-neighbor lookups.
 *   **State Machine Logic**: `SalishSeaCast_status` tracks the processing queue, letting workers coordinate downloading, computing, and tiling tasks.
+*   **LiveOcean tables**: `grid_LO`, `LiveOcean_4h` and `LiveOcean_daily` are partitioned by day so a newer forecast can replace a whole day at once. `LiveOcean_status` tracks one row per run, and `LiveOcean_days` records which run owns each day.
 
 ### Pipeline Orchestration
 *   **Status Evolution**: Managed processing statuses (e.g., `downloading`, `computing`, `imaging`).
