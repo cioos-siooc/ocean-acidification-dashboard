@@ -27,7 +27,18 @@ import { registerEchartsDarkTheme } from '~~/composables/useEchartsTheme';
 import { computeNightRanges } from '~~/composables/useSunCalc';
 import moment from 'moment-timezone';
 import { APP_TIMEZONE } from '@/config/app';
-import colors from '@/config/palette';
+import { chart as chartPalette } from '@/config/palette';
+
+// The two vertical markers on the time axis: "Now" is context (muted, dashed),
+// "Map" is the instant the raster shows, so it takes the accent.
+const NOW_MARK = {
+    lineStyle: { color: chartPalette.muted, width: 1, type: [2, 3] },
+    label: { show: true, position: 'insideEndTop', formatter: 'Now', color: chartPalette.muted, fontSize: 10.5, fontFamily: chartPalette.fontSans },
+};
+const MAP_MARK = {
+    lineStyle: { color: chartPalette.model, width: 1, type: 'solid', opacity: 0.7 },
+    label: { show: true, position: 'insideEndTop', formatter: 'Map', color: chartPalette.model, fontSize: 10.5, fontFamily: chartPalette.fontSans },
+};
 import timeseriesChartHelpImg from '../../public/timeseriesChartHelp.png';
 
 import { useMainStore } from '../stores/main';
@@ -159,8 +170,8 @@ function initChart() {
             }
         },
         legend: legendConfig.value,
-        xAxis: { type: 'time', axisLabel: { color: '#e0e0e0' } },
-        yAxis: { type: 'value', min: 'dataMin', max: 'dataMax', axisLabel: { color: '#e0e0e0' } },
+        xAxis: { type: 'time' },
+        yAxis: { type: 'value', min: 'dataMin', max: 'dataMax' },
         grid: gridConfig.value,
         series: []
     });
@@ -413,13 +424,9 @@ function plot(modelData: any, climateData: any, sensorData: any | null, instrume
                 type: 'cross',
                 animation: true,
                 label: {
-                    backgroundColor: '#333333cc',
-                    borderColor: '#aaaaaa88',
-                    borderWidth: 1,
                     shadowBlur: 0,
                     shadowOffsetX: 0,
                     shadowOffsetY: 0,
-                    color: '#e0e0e0',
                     // The x label is a timestamp and formats itself; only the value
                     // axis needs rounding, or it reads out raw floats (8.282905).
                     formatter: (p: any) => p.axisDimension === 'y'
@@ -444,17 +451,21 @@ function plot(modelData: any, climateData: any, sensorData: any | null, instrume
             type: 'time',
             min: startLocal.format(),
             max: endLocal.format(),
-            axisLabel: { color: '#e0e0e0', formatter: (v: any) => moment.parseZone(v).format('DD MMM, HH:mm') }
+            // Midnight ticks name the day; any other tick only needs the time.
+            axisLabel: {
+                formatter: (v: any) => {
+                    const m = moment.parseZone(v);
+                    return m.hours() === 0 && m.minutes() === 0 ? m.format('DD MMM') : m.format('HH:mm');
+                }
+            }
         },
         yAxis: {
             type: 'value',
             min: 'dataMin',
             max: 'dataMax',
-            splitLine: { show: false },
             name: displayUnit(varId),
             nameLocation: 'center',
-            nameTextStyle: { color: '#e0e0e0' },
-            axisLabel: { color: '#e0e0e0', formatter: (v: any) => Number(v).toFixed(Math.min(axisDecimals, variableDecimals(varId))) }
+            axisLabel: { formatter: (v: any) => Number(v).toFixed(Math.min(axisDecimals, variableDecimals(varId))) }
         },
         series: []
     };
@@ -464,27 +475,25 @@ function plot(modelData: any, climateData: any, sensorData: any | null, instrume
         type: 'line',
         data: [],
         markArea: {},
-        itemStyle: { color: colors.yellow.accent2 },
-        legendIcon: 'roundRect',
+        itemStyle: { color: chartPalette.axis },
         markLine: {
             symbol: ['none', 'none'],
+            silent: true,
             data: [
                 {
                     xAxis: moment.tz(moment(), tz).format(),
-                    lineStyle: { color: colors.green.lighten2, width: 1, type: 'dashed' },
-                    label: { show: true, position: 'insideStartBottom', formatter: 'NOW', color: colors.green.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.green.lighten2 }
+                    ...NOW_MARK
                 },
                 {
                     xAxis: selectedXLocal,
-                    lineStyle: { color: colors.orange.lighten2, width: 1, type: 'dashed' },
-                    label: { show: true, position: 'insideEndBottom', formatter: 'MAP', color: colors.orange.lighten2, backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.orange.lighten2 }
+                    ...MAP_MARK
                 }
             ]
         },
         showSymbol: false
     };
     if (markAreaData.length > 0) {
-        dayNightSeries.markArea = { silent: true, itemStyle: { color: colors.yellow.accent2, opacity: 0.05 }, data: markAreaData };
+        dayNightSeries.markArea = { silent: true, itemStyle: { color: chartPalette.night }, data: markAreaData };
     }
 
     const seriesArr: any[] = [dayNightSeries];
@@ -504,7 +513,7 @@ function plot(modelData: any, climateData: any, sensorData: any | null, instrume
         // the end label of a series clipped at the axis edge off its line ("Max" landed beside
         // "Mean"), so each series ends exactly at the axis edge with an interpolated point.
         const statsEndLabel = (formatter: string) => ({
-            show: true, formatter, color: mainStore.colors.stats, fontSize: 14, distance: -28,
+            show: true, formatter, color: chartPalette.muted, fontSize: 10.5, distance: -28,
         });
 
         const endMs = endLocal.valueOf();
@@ -522,10 +531,10 @@ function plot(modelData: any, climateData: any, sensorData: any | null, instrume
             return out;
         };
         seriesArr.push({ name: '_stats_min_base', type: 'line', data: fmt(climate_ts, min), lineStyle: { opacity: 0 }, stack: 'minmax', symbol: 'none', endLabel: statsEndLabel('Min') });
-        seriesArr.push({ name: '_stats_max_range', type: 'line', data: fmt(climate_ts, maxDiff), lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.2 }, stack: 'minmax', symbol: 'none' });
+        seriesArr.push({ name: '_stats_max_range', type: 'line', data: fmt(climate_ts, maxDiff), lineStyle: { opacity: 0 }, areaStyle: { color: mainStore.colors.stats, opacity: 0.12 }, stack: 'minmax', symbol: 'none' });
         seriesArr.push({ name: '_stats_max_label', type: 'line', data: fmt(climate_ts, climateData.map((row: any) => row.max)), lineStyle: { opacity: 0 }, symbol: 'none', silent: true, tooltip: { show: false }, endLabel: statsEndLabel('Max') });
-        seriesArr.push({ name: '_stats_mean', type: 'line', data: fmt(climate_ts, mean), smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 2, type: 'dashed' }, symbol: 'none', endLabel: statsEndLabel('Mean') });
-        seriesArr.push({ name: 'Climatology', type: 'line', data: [], showSymbol: false, legendIcon: 'roundRect', lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
+        seriesArr.push({ name: '_stats_mean', type: 'line', data: fmt(climate_ts, mean), smooth: true, lineStyle: { color: mainStore.colors.stats, opacity: 0.8, width: 1, type: [4, 3] }, symbol: 'none', endLabel: statsEndLabel('Mean') });
+        seriesArr.push({ name: 'Climatology', type: 'line', data: [], showSymbol: false, lineStyle: { color: mainStore.colors.stats, opacity: 0 }, itemStyle: { color: mainStore.colors.stats } });
     }
 
     if (hasModelData) {
@@ -534,9 +543,10 @@ function plot(modelData: any, climateData: any, sensorData: any | null, instrume
             type: 'line',
             data: __series_model,
             smooth: true,
-            lineStyle: { width: 1, color: mainStore.colors.model.line, shadowColor: mainStore.colors.model.shadow, shadowBlur: mainStore.colors.model.shadowBlur, opacity: 0.8 },
+            showSymbol: __series_model.length < 3,
+            lineStyle: { width: 1.5, color: mainStore.colors.model.line },
             itemStyle: { color: mainStore.colors.model.line },
-            legendIcon: 'roundRect'
+            z: 5
         });
     }
 
@@ -553,7 +563,6 @@ function plot(modelData: any, climateData: any, sensorData: any | null, instrume
                 lineStyle: { width: 1, color, opacity: 0.85 },
                 itemStyle: { color },
                 showSymbol: false,
-                legendIcon: 'roundRect',
             });
         });
         // Same series name as its instrument, so one legend click hides both.
@@ -589,14 +598,13 @@ function plot(modelData: any, climateData: any, sensorData: any | null, instrume
             {
                 type: 'value',
                 gridIndex: 1,
-                splitLine: { show: true, lineStyle: { color: '#ffffff14' } },
                 name: `Δ vs ${primary!.label}`,
                 nameLocation: 'center',
                 nameGap: 34,
-                nameTextStyle: { color: '#e0e0e0', fontSize: 9 },
+                nameTextStyle: { fontSize: 9 },
                 // ECharts' own labels: differences are small, and a fixed
                 // decimal count prints the same label on neighbouring ticks.
-                axisLabel: { color: '#e0e0e0', fontSize: 9 },
+                axisLabel: { fontSize: 9 },
             },
         ];
     } else if (hasSensorData) {
@@ -605,9 +613,11 @@ function plot(modelData: any, climateData: any, sensorData: any | null, instrume
             name: 'Sensor',
             type: 'line',
             data: sensor_ts.map((t: number, i: number) => [moment.utc(t).tz(tz).format(), sensorData.value[i]]),
-            lineStyle: { width: 1, color: mainStore.colors.observation.line, opacity: 0.8, shadowColor: mainStore.colors.observation.shadow, shadowBlur: mainStore.colors.observation.shadowBlur },
+            // Sparse records (a few casts) need their points, or one value is invisible.
+            showSymbol: sensorData.time.length < 40,
+            lineStyle: { width: 1.5, color: mainStore.colors.observation.line },
             itemStyle: { color: mainStore.colors.observation.line },
-            legendIcon: 'roundRect'
+            z: 4
         });
     }
 
@@ -635,9 +645,9 @@ function plot(modelData: any, climateData: any, sensorData: any | null, instrume
             chart!.setOption({
                 series: [
                     { name: '_stats_min_base', endLabel: { show: visible } },
-                    { name: '_stats_max_range', areaStyle: { color: mainStore.colors.stats, opacity: visible ? 0.2 : 0 } },
+                    { name: '_stats_max_range', areaStyle: { color: mainStore.colors.stats, opacity: visible ? 0.12 : 0 } },
                     { name: '_stats_max_label', endLabel: { show: visible } },
-                    { name: '_stats_mean', lineStyle: { color: mainStore.colors.stats, opacity: visible ? 0.8 : 0, width: 2, type: 'dashed' }, endLabel: { show: visible } },
+                    { name: '_stats_mean', lineStyle: { color: mainStore.colors.stats, opacity: visible ? 0.8 : 0, width: 1, type: [4, 3] }, endLabel: { show: visible } },
                 ]
             });
         };
@@ -667,13 +677,11 @@ watch(() => mainStore.selected_variable.dt, (newDt) => {
                     data: [
                         {
                             xAxis: moment.tz(moment(), tz).format(),
-                            lineStyle: { color: colors.green.lighten2, width: 1, type: 'dashed' },
-                            label: { show: true, position: 'insideStartBottom', formatter: 'NOW', backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.green.lighten2 }
+                            ...NOW_MARK
                         },
                         {
                             xAxis: sel,
-                            lineStyle: { color: colors.orange.lighten2, width: 1, type: 'dashed' },
-                            label: { show: true, position: 'insideEndBottom', formatter: 'MAP', backgroundColor: '', padding: [2, 4], borderRadius: 2, borderWidth: 1, borderColor: colors.orange.lighten2 }
+                            ...MAP_MARK
                         }
                     ]
                 }
@@ -829,7 +837,7 @@ defineExpose({ plot, fetchAndPlot, resize, loading });
     bottom: 8px;
     left: 8px;
     z-index: 10;
-    color: #e0e0e0;
+    color: var(--ui-text);
     border-radius: 4px;
     padding: 4px;
     animation: glow 2s ease-in-out infinite;

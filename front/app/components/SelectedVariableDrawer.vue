@@ -1,14 +1,12 @@
 <template>
-    <aside v-show="isOpen" class="p-2 absolute right-0 top-0 h-full w-[300px] overflow-y-auto bg-default border-l border-default"
+    <aside v-show="isOpen" class="p-2 absolute right-0 top-0 h-full w-[300px] overflow-y-auto bg-muted border-l border-default"
         style="z-index:999;">
         <div class="flex flex-wrap m-0 p-0 items-center" style="height: 38px;">
             <div class="drawer-header grow" style="min-width:0;">
                 <div class="title-text truncate">{{ title }}</div>
-                <div class="subtitle-text truncate">{{ timestamp }}</div>
+                <div class="subtitle-text truncate oe-num">{{ timestamp }}</div>
             </div>
-            <UButton variant="solid" color="error" class="size-[20px] p-0 justify-center shrink-0" @click="isOpen = false">
-                <UIcon name="i-mdi-close" class="size-[16px]" />
-            </UButton>
+            <UButton variant="ghost" color="neutral" size="xs" icon="i-mdi-close" class="shrink-0" aria-label="Close profile" @click="isOpen = false" />
         </div>
 
         <div class="profile-chart-wrapper">
@@ -233,7 +231,8 @@ function renderChart(points: ProfilePoint[]) {
             nameGap: 24,
             axisLine: { show: true },
             scale: true,
-            axisLabel: { color: '#e0e0e0' }
+            // A 300px-wide drawer fits about four labels.
+            splitNumber: 4
         },
         yAxis: {
             type: 'value',
@@ -241,8 +240,7 @@ function renderChart(points: ProfilePoint[]) {
             nameLocation: 'middle',
             inverse: true,
             axisLine: { show: true },
-            scale: true,
-            axisLabel: { color: '#e0e0e0' }
+            scale: true
         },
         series: [
             {
@@ -251,7 +249,9 @@ function renderChart(points: ProfilePoint[]) {
                 // type: "scatter",
                 // showSymbol: false,
                 smooth: true,
+                // Model levels are discrete, so mark them — but small.
                 showSymbol: true,
+                symbolSize: 3,
                 data,
                 // lineStyle: {
                 //     width: 1,
@@ -267,7 +267,7 @@ function renderChart(points: ProfilePoint[]) {
                 //     shadowColor: mainStore.colors.model.shadow,
                 //     shadowBlur: 3,
                 // },
-                lineStyle: { width: 1, color: mainStore.colors.model.line, shadowColor: mainStore.colors.model.shadow, shadowBlur: mainStore.colors.model.shadowBlur, opacity: 0.8 },
+                lineStyle: { width: 1.5, color: mainStore.colors.model.line },
                 itemStyle: { color: mainStore.colors.model.line },
             }
         ],
@@ -390,14 +390,14 @@ function cancelRequest() {
 }
 
 .title-text {
-    font-weight: 600;
-    font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.9);
+    font-weight: 500;
+    font-size: 12.5px;
+    color: var(--ui-text);
 }
 
 .subtitle-text {
-    font-size: 0.7rem;
-    color: rgba(255, 255, 255, 0.55);
+    font-size: 11px;
+    color: var(--ui-text-muted);
 }
 
 .profile-chart-wrapper {
@@ -429,16 +429,16 @@ function cancelRequest() {
 }
 
 .profile-chart-overlay:not(.loading) {
-    color: #333;
-    background: rgba(255, 255, 255, 0.9);
+    color: var(--ui-text-muted);
+    background: var(--ui-bg-muted);
 }
 
 .profile-chart-overlay.loading {
-    background: #33333366;
+    background: rgba(13, 15, 17, 0.4);
 }
 
 .profile-chart-overlay.error {
-    color: #b71c1c;
+    color: var(--ui-error);
 }
 
 .progress {

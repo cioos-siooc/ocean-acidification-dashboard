@@ -1,6 +1,6 @@
 import type moment from 'moment';
 import { defineStore } from 'pinia'
-import colors from '@/config/palette';
+import { chart as chartPalette } from '@/config/palette';
 import { trackEvent } from '~~/composables/useAnalytics';
 
 // Depths are plain numbers (the WebP filename stem too, e.g. 18.0 -> "18.0.webp")
@@ -16,21 +16,21 @@ export function formatDepthLabel(depth: number): string {
 // access to every state property. Naming the type keeps `this.<state>` working.
 function createInitialState() {
     return {
+        // Series colours for the Explore chart; values come from the v2 chart
+        // palette so model/sensor match the snapshot and the sensor list.
         colors: {
             model: {
-                line: colors.red.lighten3,
-                shadow: colors.red.lighten4,
-                shadowBlur: 3
+                line: chartPalette.model,
+                shadow: 'transparent',
+                shadowBlur: 0
             },
             observation: {
-                line: colors.green.lighten3,
-                shadow: colors.green.lighten4,
-                shadowBlur: 3
+                line: chartPalette.sensor,
+                shadow: 'transparent',
+                shadowBlur: 0
             },
-            stats: colors.blue.darken2,
-            // One per instrument when a sensor's instruments are compared, in
-            // priority order; the first matches the single merged sensor line.
-            instruments: [colors.green.lighten3, colors.amber.lighten2, colors.cyan.lighten2, colors.purple.lighten3],
+            stats: chartPalette.clim,
+            instruments: [...chartPalette.instruments],
         },
 
         dfnDays: 14, // days from now for climate timeseries

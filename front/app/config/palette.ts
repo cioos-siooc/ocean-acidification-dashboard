@@ -18,4 +18,28 @@ export const material = {
     purple: { lighten3: '#ce93d8' },
 } as const
 
+/**
+ * Chart colours for the v2 "Instrument" theme. Mirrors the CSS tokens in
+ * assets/css/main.css (ECharts draws on canvas, so it can't read CSS vars).
+ * Model is the accent; sensor data is always blue, so the two sources read the
+ * same in every chart, the snapshot and the sensor list.
+ */
+export const chart = {
+    text: '#a7afb7',      // axis labels
+    muted: '#7d868f',     // secondary labels, climatology, "Now"
+    axis: '#3a4048',      // axis lines
+    grid: '#1e2227',      // split lines
+    tooltipBg: 'rgba(19,22,26,0.96)',
+    tooltipBorder: '#3a4048',
+    model: '#e2a336',
+    sensor: '#5fb3d6',
+    clim: '#7d868f',
+    night: 'rgba(255,255,255,0.025)',
+    // One per instrument when a sensor's instruments are compared; the first
+    // matches the single merged sensor line.
+    instruments: ['#5fb3d6', '#9ad08a', '#c9a0dc', '#e07a7a'],
+    fontSans: "'IBM Plex Sans', system-ui, sans-serif",
+    fontMono: "'IBM Plex Mono', ui-monospace, monospace",
+} as const
+
 export default material
