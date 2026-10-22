@@ -51,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, resolveComponent } from "vue";
+import { computed, resolveComponent, type Component } from "vue";
 
 import { useMainStore } from "../stores/main";
 
@@ -89,7 +89,7 @@ const autoRangeUnavailable = computed(() =>
   !selectedVariableName.value || selectedVariableName.value === "bathymetry" || mainStore.autoRangeDisabled
 );
 
-type ToolButton = { label: string; on: boolean; toggle: () => void; icon?: string; component?: any };
+type ToolButton = { label: string; on: boolean; toggle: () => void; icon?: string; component?: Component | string };
 
 // Icons components are auto-imported globally (components/icons/*).
 const contourIcon = resolveComponent("IconsContour");

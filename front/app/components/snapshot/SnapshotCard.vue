@@ -10,8 +10,10 @@
     <span class="card__name"><b>{{ short }}</b><span v-if="unit">{{ unit }}</span></span>
     <span class="card__vals oe-num">
       <span class="card__model" :title="`Model at ${modelDepthLabel}`">{{ modelText }}</span>
-      <span v-if="hasSensor" class="card__sensor" :class="{ 'card__sensor--stale': sensorStale }" :title="sensorTitle">{{ sensorText }}</span>
-      <span v-else class="card__none" title="The selected sensor doesn't measure this">—</span>
+      <template v-if="sensorSelected">
+        <span v-if="hasSensor" class="card__sensor" :class="{ 'card__sensor--stale': sensorStale }" :title="sensorTitle">{{ sensorText }}</span>
+        <span v-else class="card__none" title="The selected sensor doesn't measure this">—</span>
+      </template>
     </span>
     <div ref="chartEl" class="card__plot" />
   </button>
@@ -34,6 +36,8 @@ const props = defineProps<{
   active: boolean
   modelText: string
   modelDepthLabel: string
+  /** Whether a sensor is selected at all; without one there's no second line. */
+  sensorSelected: boolean
   hasSensor: boolean
   sensorText: string
   sensorTitle: string

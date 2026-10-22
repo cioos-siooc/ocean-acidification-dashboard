@@ -26,6 +26,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import moment from 'moment'
+import axios from 'axios'
 import { useMainStore, formatDepthLabel } from '../../stores/main'
 import { fetchPointSnapshot, type PointSnapshot } from '~~/composables/usePointSnapshot'
 import { useVariableRegistry } from '~~/composables/useVariableRegistry'
@@ -75,8 +76,8 @@ async function load() {
   try {
     data.value = await fetchPointSnapshot(p, controller.signal)
     error.value = null
-  } catch (e: any) {
-    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
+  } catch (e: unknown) {
+    if (axios.isCancel(e)) return
     error.value = "Couldn't load the snapshot for this point."
   } finally {
     loading.value = false
@@ -142,6 +143,7 @@ const cards = computed(() => varIds.value.map(varId => {
       active: mainStore.selected_variable.var === varId,
       modelText: formatDisplayValue(varId, modelLatest),
       modelDepthLabel: modelDepthLabel.value,
+      sensorSelected: !!selectedSensor.value,
       hasSensor: !!sv,
       sensorText: last ? formatDisplayValue(varId, toDisplayValue(varId, last.value)) : '—',
       sensorStale: stale,
