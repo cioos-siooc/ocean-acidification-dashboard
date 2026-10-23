@@ -212,10 +212,10 @@ import SelectedVariableDrawer from '../components/SelectedVariableDrawer.vue'
 import BetaDisclaimerDialog from '../components/BetaDisclaimerDialog.vue'
 import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson';
 import { resolveColormap } from '~~/composables/useColormapResolver'
-import { MAP_BOUNDS, MAP_MIN_ZOOM, MAP_MAX_ZOOM, MAP_STYLE, BASEMAP_PAINT, BASEMAP_FILLS } from '@/config/app'
+import { MAP_BOUNDS, MAP_MIN_ZOOM, MAP_MAX_ZOOM, MAP_STYLE, BASEMAP_PAINT, BASEMAP_FILLS, BASEMAP_HIDDEN_SOURCE_LAYERS } from '@/config/app'
 import { utc2pst } from '~~/composables/useUTC2PST'
 import useStationsInteraction from '~~/composables/useStationsInteraction';
-import { addBuoyLayer, setBuoyLayerVisibility, setSelectedBuoy, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '~~/composables/useBuoyLayer';
+import { addBuoyLayer, setBuoyLayerVisibility, setSelectedBuoy, setHoveredBuoy, SOURCE_ID, STATIONS_LAYER_ID, type MultiSensorCandidate } from '~~/composables/useBuoyLayer';
 import getSensorTimeseries from '~~/composables/useSensorTimeseries';
 import AnalysisWorkspace from '../components/AnalysisWorkspace.vue'
 import ExplorePanel from '../components/ExplorePanel.vue'
@@ -408,9 +408,15 @@ const snackMessages = computed({
 
 const showHow = ref(false);
 
-// Recolour the basemap's fills to the app's surfaces (see BASEMAP_PAINT).
+// Recolour the basemap's fills to the app's surfaces (see BASEMAP_PAINT) and
+// hide the layers it doesn't need (BASEMAP_HIDDEN_SOURCE_LAYERS).
 function applyBasemapPaint() {
     if (!map) return;
+    for (const layer of map.getStyle().layers) {
+        if (BASEMAP_HIDDEN_SOURCE_LAYERS.includes(layer['source-layer'])) {
+            map.setLayoutProperty(layer.id, 'visibility', 'none');
+        }
+    }
     for (const [id, paint] of Object.entries(BASEMAP_PAINT)) {
         if (!map.getLayer(id)) continue;
         for (const [prop, value] of Object.entries(paint)) {
@@ -1107,6 +1113,7 @@ async function addSensors() {
         const detach = await addBuoyLayer(map, geojson, clickSensor, openSensorPicker, openSpiderfy);
         (map as any).__stationsDetach = detach;
         setSelectedBuoy(map, mainStore.selectedSensor?.id ?? null);
+        setHoveredBuoy(map, mainStore.hoveredSensorId);
         // addBuoyLayer re-creates the layers from scratch, so the rail's toggle
         // has to be re-applied every time the sensor list changes.
         setBuoyLayerVisibility(map, mainStore.showSensorLayer);
@@ -1835,6 +1842,7 @@ watch(activeTab, (tab) => {
 // token to re-arm drawing without waiting for a tab round-trip.
 // Ring the selected sensor's marker.
 watch(() => mainStore.selectedSensor?.id, (id) => setSelectedBuoy(map, id ?? null));
+watch(() => mainStore.hoveredSensorId, (id) => setHoveredBuoy(map, id));
 
 watch(() => mainStore.crossSectionRedrawToken, () => {
     if (!crossSectionDraw) return;

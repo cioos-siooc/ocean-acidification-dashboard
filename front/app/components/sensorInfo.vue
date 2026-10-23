@@ -58,7 +58,8 @@
             <div v-else class="sensors__list">
                 <div v-for="sensor in sortedSensors" :key="sensor.id" :ref="setSensorRef(sensor.id)"
                     role="button" tabindex="0" class="srow" :class="{ 'srow--on': sensor.id === selectedSensor?.id }"
-                    @click="selectSensor(sensor.id)" @keydown.enter="selectSensor(sensor.id)">
+                    @click="selectSensor(sensor.id)" @keydown.enter="selectSensor(sensor.id)"
+                    @mouseenter="mainStore.hoveredSensorId = sensor.id" @mouseleave="mainStore.hoveredSensorId = null">
                     <span class="srow__dot" :class="`srow__dot--${statusOf(sensor)}`" :title="statusTitle(sensor)" />
                     <span class="srow__name">{{ sensor.name }}</span>
                     <span class="srow__depth oe-num">{{ shortDepth(sensor) }}</span>

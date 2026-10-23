@@ -44,8 +44,13 @@ export const BASEMAP_PAINT: Record<string, Record<string, string>> = {
   'water copy': { 'fill-color': '#0f1a24' },
   'landcover copy': { 'fill-color': '#2a2f36' },
   'country-boundaries': { 'fill-color': '#2a2f36' },
-  'road-polygon': { 'fill-color': '#353b43' },
 }
+
+/**
+ * Basemap source-layers hidden at runtime: roads (lines, fills, shields and
+ * labels). Borders and place names stay.
+ */
+export const BASEMAP_HIDDEN_SOURCE_LAYERS = ['road', 'motorway_junction']
 
 /** Fills hidden while satellite imagery is on, so the imagery shows through. */
 export const BASEMAP_FILLS = Object.keys(BASEMAP_PAINT)

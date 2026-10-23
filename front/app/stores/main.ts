@@ -65,6 +65,8 @@ function createInitialState() {
 
         sensors: [] as Array<{ id: string, name: string, latitude: number, longitude: number, depth: number, depth_min: number | null, depth_max: number | null, device_config: {}, variables: {}, active: boolean, first_data_at: string | null, latest_data_at: string | null, source: { api?: string, link?: string, description?: string }, organization: string }>,
         selectedSensor: {} as { id: string, depth: number } | null,
+        // Sensor under the pointer in the sensor list; the map highlights its marker.
+        hoveredSensorId: null as string | null,
 
         // Sensor panel filters — shared with the map so markers stay in sync with the sensor list.
         sensorSearchQuery: '' as string,
