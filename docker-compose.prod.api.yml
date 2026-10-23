@@ -5,7 +5,7 @@ services:
       dockerfile: api/Dockerfile
     user: "${UID:-1000}:${GID:-1000}"
     ports:
-      - "${API_PORT:-4000}:4000"
+      - "${API_PORT:-9011}:4000"
     volumes:
       - ./shared:/app/shared
       - /home/cioos/OA_data:/opt/data

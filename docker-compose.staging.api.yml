@@ -1,0 +1,49 @@
+# Staging API — a second `api` (e.g. a v2 branch) alongside prod on the same
+# machine, sharing prod's db-ch and data. From a separate clone:
+#
+#   docker compose -f docker-compose.staging.api.yml --env-file .env up -d --build
+#
+# No db-ch, sensors or sensors-scheduler here: it reads prod's ClickHouse
+# (joined via prod's compose network, PROD_NETWORK — find it with
+# `docker network ls`, usually <prod-dir>_default) and prod's scheduler keeps
+# ingesting sensors. The PROCESS machine still syncs only to prod's api.
+#
+# The prod .env can be reused as-is: the port comes from STAGING_API_PORT,
+# not API_PORT, so copying it can't collide with prod.
+name: oa-staging
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${STAGING_API_PORT:-9021}:4000"
+    volumes:
+      - ./shared:/app/shared
+      # Shared with prod: on-demand tiles are cached here, and both branches
+      # render the same format.
+      - /home/cioos/OA_data:/opt/data
+    environment:
+      - SSC_NC_DIR=${SSC_NC_DIR:-/opt/data/SSC/nc}
+      - SSC_IMAGE_DIR=${SSC_IMAGE_DIR:-/opt/data/SSC/images}
+      - VECTOR_ROOT=${VECTOR_ROOT:-/opt/data/bathymetry/NONNA/tiles}
+      # prod's db-ch, resolved over PROD_NETWORK
+      - CH_HOST=${CH_HOST:-db-ch}
+      - CH_PORT=${CH_PORT:-8123}
+      - CH_USER=${CH_USER:-default}
+      - CH_PASSWORD=${CH_PASSWORD:-}
+      - CH_USE_REMOTE=${CH_USE_REMOTE:-false}
+      - CH_REMOTE_URL=${CH_REMOTE_URL:-}
+      - CH_REMOTE_USER=${CH_REMOTE_USER:-}
+      - CH_REMOTE_PASSWORD=${CH_REMOTE_PASSWORD:-}
+      # Unset: the PROCESS machine syncs to prod, so /admin/sync* answers 401 here.
+      - SYNC_API_TOKEN=
+    networks: [prod]
+    restart: unless-stopped
+
+networks:
+  prod:
+    external: true
+    name: ${PROD_NETWORK:?set PROD_NETWORK to prod's compose network (docker network ls, e.g. ocean-acidification-dashboard_default)}

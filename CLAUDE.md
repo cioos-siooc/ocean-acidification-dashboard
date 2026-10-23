@@ -15,6 +15,8 @@ Host ports come from `docker-compose.dev.yml`'s `${VAR:-default}` fallbacks, ove
 | `scheduler` | Prod only (`docker-compose.prod.process.yml`): `process` image serving `SSC/flows.py` to Prefect; the only pipeline container there | — |
 | `sensors-scheduler` | Prod only (`docker-compose.prod.api.yml`): `sensors` image serving `sensors/flows.py` (hourly ERDDAP/ONC ingestion) | — |
 
+`docker-compose.staging.api.yml` runs a second `api` only (project `oa-staging`, port `STAGING_API_PORT`, default 9021; prod is 9011) from a separate clone, for example a v2 branch. It shares prod's `db-ch` via the external network `PROD_NETWORK` and has no sensors or sync.
+
 Prefect is **prod-only**: both schedulers report to the shared https://pipelines.cioospacific.ca (the [cioos-pacific-pipeline](https://github.com/cioos-siooc/cioos-pacific-pipeline) stack; our flows are served by our own containers, not its `pipelines` work pool). Dev has no Prefect server or schedulers — run the CLI instead.
 
 ## Common Commands
