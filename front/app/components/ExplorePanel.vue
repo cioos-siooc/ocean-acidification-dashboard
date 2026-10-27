@@ -129,7 +129,7 @@ import moment from 'moment'
 import { useMainStore, formatDepthLabel } from '../stores/main'
 import { fetchDepthProfile, parseCoverageBound, asOutsideDomainError, type DepthProfileResponse, type OutsideDomainError, dataDepthCount } from '~~/composables/useDepthProfileFetch'
 import { resolveColormap } from '~~/composables/useColormapResolver'
-import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, floorToBin, type BinMode } from '~~/composables/useTimeDepthWindow'
+import { BIN_CONFIG, useTimeDepthWindow, toApiIso, binSeries, floorToBin, addBins, type BinMode } from '~~/composables/useTimeDepthWindow'
 import { fetchClimateTimeseries } from '~~/composables/useClimateTimeseries'
 import { getSensorTimeseries, sensorInstruments } from '~~/composables/useSensorTimeseries'
 import { useViewState } from '~~/composables/useViewState'
@@ -492,9 +492,13 @@ async function fetchSensorOverlay() {
   // captured values — would bin the response against whatever window is
   // current when the response lands, not the one it was actually fetched
   // for, silently mislabelling every point if the window moved meanwhile.
+  // Runs to `chartWindowEnd`, not `windowEnd`: at the live edge the model's
+  // ceiling lags real time by days, and the sensor keeps reporting past it.
   const reqId = ++sensorFetchSeq
   const mode = binMode.value
-  const starts = binStarts.value
+  const end = chartWindowEnd.value
+  const starts = [...binStarts.value]
+  for (let b = windowEnd.value; b < end; b = addBins(b, 1, mode)) starts.push(b)
 
   const binned = (resp: { data?: { time?: string[]; value?: (number | null)[] } } | null) => {
     const rawTime: string[] = resp?.data?.time ?? []
@@ -505,7 +509,7 @@ async function fetchSensorOverlay() {
   }
   const fetchOne = (instrument: string | null) => getSensorTimeseries(
     sel.id, varId.value,
-    toSensorApiDate(windowStart.value), toSensorApiDate(windowEnd.value),
+    toSensorApiDate(windowStart.value), toSensorApiDate(end),
     d, isProfiler ? source.value : null, instrument,
   )
   const compared = compareInstruments.value && canCompareInstruments.value ? instruments.value : []
@@ -864,7 +868,7 @@ watch([selectedDepthIdx, viewMode], updateLineChart)
 // and a watcher's source array is evaluated during setup, so it has to come
 // after that ref is declared.
 watch(
-  [windowEnd, binMode, varId, () => mainStore.selectedSensor?.id, selectedDepthIdx, () => props.active, () => mainStore.unitPreference[varId.value], compareInstruments, canCompareInstruments],
+  [chartWindowEnd, binMode, varId, () => mainStore.selectedSensor?.id, selectedDepthIdx, () => props.active, () => mainStore.unitPreference[varId.value], compareInstruments, canCompareInstruments],
   async () => {
     if (!props.active) return
     await fetchSensorOverlay()
