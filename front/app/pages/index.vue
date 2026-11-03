@@ -347,6 +347,7 @@ const apiBaseUrl = config.public.apiBaseUrl
 
 
 const mapContainer = ref<HTMLDivElement | null>(null);
+let mapResizeObserver: ResizeObserver | null = null;
 let map: mapboxgl.Map | null = null;
 let crossSectionDraw: MapboxDraw | null = null;
 const meta = ref<any>(null);
@@ -608,6 +609,11 @@ onMounted(async () => {
     });
     console.log(map);
 
+    // Mapbox only tracks window resizes; layout changes above the map (the
+    // API status banner in app.vue) shrink its container without one.
+    mapResizeObserver = new ResizeObserver(() => map?.resize());
+    mapResizeObserver.observe(mapContainer.value);
+
     // When the map finishes loading the style, add the PNG overlay and chart
     map.on('load', () => {
         // Every other layer added below/elsewhere on this page (PNG overlay,
@@ -670,6 +676,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+    mapResizeObserver?.disconnect();
     clearMapLoadTimers();
     mainStore.setMapLayerLoading(false);
     if (map) {
