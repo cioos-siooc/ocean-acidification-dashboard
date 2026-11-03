@@ -11,6 +11,8 @@
         <span class="text-xs font-medium mx-2" style="font-family: monospace">v{{ versionLabel }}</span>
       </div>
 
+      <ApiStatusIndicator />
+
       <a href="https://cioospacific.ca/" target="_blank" rel="noopener noreferrer" class="logo-link"
         style="position: absolute; left: 50%; transform: translateX(-50%);">
         <img src="/cioos_pacific.png" alt="OA Logo" class="logo-icon" />
@@ -35,6 +37,8 @@
 
     </header>
 
+    <ApiStatusBanner />
+
     <NuxtRouteAnnouncer />
     <NuxtPage v-if="!isMobile" />
 
@@ -52,6 +56,9 @@ import { useRuntimeConfig } from '#app'
 import { useMainStore, formatDepthLabel } from './stores/main'
 import { readShareHash, decodeShareState, applyShareState, applySharedVariable } from '~~/composables/useShareState'
 import ShareButton from './components/ShareButton.vue'
+import ApiStatusIndicator from './components/status/ApiStatusIndicator.vue'
+import ApiStatusBanner from './components/status/ApiStatusBanner.vue'
+import { useApiStatus } from '~~/composables/useApiStatus'
 const mainStore = useMainStore();
 const config = useRuntimeConfig();
 // NUXT_PUBLIC_* env values are JSON-parsed at runtime, so "1.0" arrives as the number 1.
@@ -60,6 +67,7 @@ const versionLabel = computed(() => {
   return /^\d+$/.test(v) ? `${v}.0` : v;
 });
 const apiBaseUrl = config.public.apiBaseUrl;
+const apiStatus = useApiStatus();
 
 // A shared link's payload is decoded before anything is fetched, so
 // `getVariables()` below can honour it instead of the cold-start default.
@@ -102,10 +110,12 @@ onMounted(() => {
   mql = window.matchMedia(MOBILE_QUERY);
   updateIsMobile();
   mql.addEventListener('change', updateIsMobile);
+  apiStatus.start();
 });
 
 onBeforeUnmount(() => {
   mql?.removeEventListener('change', updateIsMobile);
+  apiStatus.stop();
 });
 
 async function getVariables() {

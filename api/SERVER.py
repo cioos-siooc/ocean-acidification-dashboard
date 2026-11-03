@@ -157,6 +157,30 @@ async def read_root():
 
 #######################################
 
+_HEALTH_DB_TIMEOUT_S = 5
+
+
+def _ping_clickhouse():
+    from modules.clickhouse_helpers import get_ch_client
+    get_ch_client().command("SELECT 1")
+
+
+@app.get("/health")
+async def health():
+    """Liveness for the frontend's status indicator: 200 when ClickHouse answers, else 503.
+
+    Every data endpoint reads ClickHouse, so an API that is up with the
+    database down still serves no data — the frontend reports the two apart.
+    """
+    try:
+        await asyncio.wait_for(run_in_threadpool(_ping_clickhouse), timeout=_HEALTH_DB_TIMEOUT_S)
+    except Exception as exc:
+        logger.warning("health: ClickHouse unreachable: %s", exc)
+        return JSONResponse(status_code=503, content={"status": "degraded", "database": "unreachable"})
+    return {"status": "ok", "database": "ok"}
+
+#######################################
+
 @app.get("/variables")
 async def get_variables():
     """
