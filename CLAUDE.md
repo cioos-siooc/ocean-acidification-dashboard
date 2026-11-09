@@ -94,6 +94,7 @@ pending_download → downloading → success_download → pending_compute → co
 Nuxt 4 + Nuxt UI v4 (Tailwind v4 + Reka UI) + Pinia. Vuetify has been fully removed — don't reintroduce `v-*` components.
 - `app/pages/index.vue` — main MapboxGL page. Raster/vector-tile and time-animation logic lives **inline** here (no composables for it).
 - `app/pages/caseStudy/` — standalone narrative pages built from static chart exports (`public/images/case-studies/`), not live data.
+- `app/pages/guide/[[slug]].vue` — user guide (header "User Guide" button): renders `content/guide/*.md` (one page per tutorial clip, GitHub-readable; `NN-topic.md` links rewritten to `/guide/NN-topic`) with `marked`, embedding `${guideVideoBase}<slug>.mp4` (`NUXT_PUBLIC_GUIDE_VIDEO_BASE`, default `/videos/`; `*.mp4` is gitignored, so videos must be hosted separately).
 - `app/components/`, `app/stores/main.ts`, `composables/` (map-layer logic like `useBuoyLayer`/`useStationsInteraction`, and data fetching).
 - `app/config/app.ts` — domain constants (timezone, map extent/zoom/style); `app/config/palette.ts` — Material palette values charts use. Per-environment values go in `runtimeConfig` (`NUXT_PUBLIC_API_BASE_URL`, `NUXT_PUBLIC_MAPBOX_TOKEN`, `NUXT_PUBLIC_UMAMI_WEBSITE_ID`, `NUXT_PUBLIC_UMAMI_HOST`).
 - Dark-only: `colorMode` pinned in `nuxt.config.ts`; light mode is unverified.

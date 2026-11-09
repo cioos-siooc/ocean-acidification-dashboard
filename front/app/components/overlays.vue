@@ -146,12 +146,6 @@
         <span class="overlay-btn__label">Color Settings</span>
       </UButton>
 
-      <!-- <USeparator /> -->
-
-      <!-- <UButton variant="solid" class="m-1 overlay-btn" disabled @click="showHow">
-          <IconsHelp />
-          <span class="overlay-btn__label">How to Use</span>
-        </UButton> -->
     </div>
   </div>
 </template>
@@ -164,7 +158,6 @@ import { useMainStore } from "../stores/main";
 const mainStore = useMainStore();
 
 const emit = defineEmits<{
-  (e: "show-how"): void;
   (e: "autorange"): void;
 }>();
 
@@ -201,10 +194,6 @@ function autorange() {
   mainStore.setAutoRangeDisabled(true);
   emit("autorange");
 }
-
-const showHow = () => {
-  emit("show-how");
-};
 </script>
 
 <style scoped>

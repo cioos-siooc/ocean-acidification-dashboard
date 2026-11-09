@@ -46,6 +46,8 @@ export default defineNuxtConfig({
       version: process.env.NUXT_PUBLIC_VERSION || '',
       umamiWebsiteId: process.env.NUXT_PUBLIC_UMAMI_WEBSITE_ID || '',
       umamiHost: process.env.NUXT_PUBLIC_UMAMI_HOST || 'https://analytics.cioospacific.ca',
+      // Where the user guide's tutorial clips (<page>.mp4 + <page>.webp poster) are served from.
+      guideVideoBase: process.env.NUXT_PUBLIC_GUIDE_VIDEO_BASE || '/videos/',
     },
   },
 })

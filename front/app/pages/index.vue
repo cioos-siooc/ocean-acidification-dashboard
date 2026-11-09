@@ -1,7 +1,6 @@
 <template>
   <main class="grow min-h-0">
     <BetaDisclaimerDialog />
-    <howTo v-model="showHow" />
     <!-- <div class="flex flex-col h-screen overflow-hidden"> -->
     <!-- Top: Map -->
     <div
@@ -12,7 +11,6 @@
       <!-- <Layers @toggleLayer="onToggleLayer" /> -->
 
       <Overlays
-        @show-how="showHow = true"
         @autorange="autorange"
         class="overlay"
         :style="{
@@ -557,8 +555,6 @@ const snackMessages = computed({
     get: () => mainStore.snackMessages,
     set: (val) => { mainStore.snackMessages = val; },
 });
-
-const showHow = ref(false);
 
 const overlayGap = 8; // gap in px between map edge and overlays (info, colorbar, buttons)
 

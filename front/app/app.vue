@@ -18,22 +18,22 @@
         <img src="/cioos_pacific.png" alt="OA Logo" class="logo-icon" />
       </a>
 
-      <!-- Optional: Add menu items here -->
-      <!-- FEEDBACK FORM -->
-      <UButton variant="ghost" href="https://docs.google.com/forms/d/e/1FAIpQLSdGiIclM5wvIbPReZydsXKiRBXbZsQVEdoQPlA0EruKIoNJkg/viewform?usp=dialog" target="_blank" rel="noopener noreferrer">
-        Feedback
-      </UButton>
+      <div class="ml-auto flex items-center gap-1">
+        <ShareButton label="Share" />
 
-      <ShareButton label="Share" />
+        <!-- Hidden for v1.0; the /caseStudy pages still exist. -->
+        <!-- <NuxtLink to="/caseStudy" target="_blank">
+          <UButton variant="ghost">Case Studies</UButton>
+        </NuxtLink> -->
 
-      <!-- Hidden for v1.0; the /caseStudy pages still exist. -->
-      <!-- <NuxtLink to="/caseStudy" target="_blank">
-        <UButton variant="ghost">Case Studies</UButton>
-      </NuxtLink> -->
+        <UButton to="/guide" target="_blank" variant="ghost" icon="i-mdi-book-open-variant">
+          User Guide
+        </UButton>
 
-      <NuxtLink to="/about" target="_blank">
-        <UButton variant="ghost">About</UButton>
-      </NuxtLink>
+        <UButton to="/about" target="_blank" variant="ghost" icon="i-mdi-information-outline">
+          About
+        </UButton>
+      </div>
 
     </header>
 
