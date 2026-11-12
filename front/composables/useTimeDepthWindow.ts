@@ -117,14 +117,22 @@ export function useTimeDepthWindow(opts: TimeDepthWindowOptions) {
         return Array.from({ length: binCount.value }, (_, i) => addBins(start, i, mode))
     })
 
+    // Start of the last bin with data, and the exclusive window end that
+    // includes it. Anchoring `windowEnd` (exclusive) at the last bin's *start*
+    // drops that bin, so the latest instant (the map's default time) fell one
+    // bin past the chart's right edge.
     const flooredCeil = computed(() => floorToBin(dataCeil.value, binMode.value))
+    const ceilEnd = computed(() => addBins(flooredCeil.value, 1, binMode.value))
     const flooredFloor = computed(() => dataFloor.value ? floorToBin(dataFloor.value, binMode.value) : null)
 
     const canPageBack = computed(() => !flooredFloor.value || windowStart.value.getTime() > flooredFloor.value.getTime())
-    const canPageForward = computed(() => windowEnd.value.getTime() < flooredCeil.value.getTime())
+    const canPageForward = computed(() => windowEnd.value.getTime() < ceilEnd.value.getTime())
 
     function clampWindowEnd(proposed: Date): Date {
-        const ceil = flooredCeil.value.getTime()
+        // Floored so a raw instant (e.g. a caller passing dataCeil) still
+        // lands on a bin boundary; consumers match bins by exact timestamp.
+        proposed = floorToBin(proposed, binMode.value)
+        const ceil = ceilEnd.value.getTime()
         // The earliest legal windowEnd is one full window past the data floor,
         // so paging back never scrolls into a range with nothing in it...
         const floorBound = flooredFloor.value ? addBins(flooredFloor.value, binCount.value, binMode.value).getTime() : -Infinity
@@ -149,7 +157,7 @@ export function useTimeDepthWindow(opts: TimeDepthWindowOptions) {
     // Switching bin mode resets the window to "latest" rather than trying to
     // preserve the prior window's centre — simpler, and consistent with how
     // every other context change (sensor/source/variable) already behaves.
-    function resetWindowToLatest() { windowEnd.value = flooredCeil.value }
+    function resetWindowToLatest() { windowEnd.value = ceilEnd.value }
     watch([binMode, ...(opts.resetOn ?? [])], resetWindowToLatest, { immediate: true })
 
     // A plain month/day label was unambiguous while the window was always a
@@ -202,6 +210,8 @@ export function useTimeDepthWindow(opts: TimeDepthWindowOptions) {
     return {
         binCount, gridlineBins, windowEnd, windowStart, binStarts,
         canPageBack, canPageForward, page, clampWindowEnd, resetWindowToLatest,
+        /** The window end that shows the latest bin with data. */
+        latestWindowEnd: ceilEnd,
         rangeLabel, dateMenuOpen, pickedDate, minDateStr, maxDateStr, confirmDatePick,
     }
 }

@@ -220,7 +220,7 @@ const dataCeil = computed(() => coverage.value.to ?? latestKnownDt.value)
 
 const {
   binCount, gridlineBins, windowEnd, windowStart, binStarts,
-  canPageBack, canPageForward, page, clampWindowEnd, rangeLabel,
+  canPageBack, canPageForward, page, clampWindowEnd, latestWindowEnd, rangeLabel,
   dateMenuOpen, pickedDate, minDateStr, maxDateStr, confirmDatePick,
 } = useTimeDepthWindow({
   binMode, dataFloor, dataCeil,
@@ -305,7 +305,7 @@ watch(coverage, () => {
     windowEnd.value = clampWindowEnd(new Date(restored))
     return
   }
-  const next = pinnedToLatest.value ? clampWindowEnd(dataCeil.value) : clampWindowEnd(windowEnd.value)
+  const next = pinnedToLatest.value ? latestWindowEnd.value : clampWindowEnd(windowEnd.value)
   if (next.getTime() !== windowEnd.value.getTime()) windowEnd.value = next
 })
 
