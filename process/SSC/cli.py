@@ -5,9 +5,9 @@ Usage (from the process/ directory):
   python -m SSC.cli download    [--date YYYY-MM-DD] [--variable VAR] [--limit N] [--force]
   python -m SSC.cli compute     [--date YYYY-MM-DD] [--limit N] [--workers N] [--force]
   python -m SSC.cli check_image [--limit N]
-  python -m SSC.cli image       [--date YYYY-MM-DD] [--variable VAR] [--limit N] [--workers N] [--force]
+  python -m SSC.cli image       [--date YYYY-MM-DD] [--variable VAR] [--limit N] [--workers N] [--force] [--surface-only]
   python -m SSC.cli promote     [--limit N]
-  python -m SSC.cli ingest      [--date YYYY-MM-DD] [--limit N] [--force]
+  python -m SSC.cli ingest      [--date YYYY-MM-DD] [--limit N] [--force] [--variables V,V] [--daily-only]
   python -m SSC.cli sync        [--date YYYY-MM-DD] [--limit N] [--force]
   python -m SSC.cli run         [--date YYYY-MM-DD] [--limit N] [--workers N] [--force] [--init-days N]
   python -m SSC.cli status      [--date YYYY-MM-DD]
@@ -22,6 +22,9 @@ Commands:
               partial date.
   image       Process pending_image jobs (nc2tile WebP).
   ingest      Process pending_ingest jobs (insert into SalishSeaCast_hourly).
+              --variables / --daily-only make it an ad-hoc backfill of NC files
+              already on disk: needs --date, bypasses SalishSeaCast_status
+              (neither checked nor written), and inserts without dedup.
   promote     Advance fully-imaged dates (all 8 at success_image) to
               pending_ingest, and fully-ingested dates (all 8 at
               success_ingest) to pending_sync.
@@ -205,7 +208,7 @@ def cmd_compute(args) -> None:
 
 
 def _image_date(client, date_val, variable=None, workers=None, force=False,
-                nc_dir=None, image_dir=None) -> None:
+                nc_dir=None, image_dir=None, surface_only=False) -> None:
     from .imaging import image_variable
     from .config import ALL_VARIABLES, IMAGE_BASE_DIR, NC_BASE_DIR, PAST_IMAGE_STATUSES
     from .db import get_row
@@ -226,12 +229,14 @@ def _image_date(client, date_val, variable=None, workers=None, force=False,
             raise PipelineError(f'Unknown variable: {variable}')
         if not _should_skip(variable):
             image_variable(client, date_val, variable, workers=workers,
-                           nc_base_dir=nc_dir, image_base_dir=image_dir)
+                           nc_base_dir=nc_dir, image_base_dir=image_dir,
+                           surface_only=surface_only)
     else:
         for var in ALL_VARIABLES:
             if not _should_skip(var):
                 image_variable(client, date_val, var, workers=workers,
-                               nc_base_dir=nc_dir, image_base_dir=image_dir)
+                               nc_base_dir=nc_dir, image_base_dir=image_dir,
+                               surface_only=surface_only)
 
 
 def cmd_image(args) -> None:
@@ -244,7 +249,10 @@ def cmd_image(args) -> None:
 
     if args.date:
         _image_date(client, _parse_date(args.date), variable=args.variable, workers=workers,
-                    force=args.force, nc_dir=nc_dir, image_dir=image_dir)
+                    force=args.force, nc_dir=nc_dir, image_dir=image_dir,
+                    surface_only=args.surface_only)
+    elif args.surface_only:
+        raise PipelineError('--surface-only needs --date')
     else:
         process_pending_images(client, limit=args.limit, workers=workers,
                                nc_base_dir=nc_dir, image_base_dir=image_dir)
@@ -292,13 +300,34 @@ def _ingest_date(client, date_val, force=False, nc_dir=None) -> None:
                         'ingest_date raised an exception', attempts=row.get('attempts', 0))
 
 
+def _backfill_ingest(client, date_val, variables, hourly, nc_dir) -> None:
+    """Ad-hoc ingest of NC files already on disk, outside the status machine:
+    a subset of variables and/or daily-only rows don't fit its all-8-variables
+    states, so SalishSeaCast_status is neither checked nor written. Not
+    deduplicated: delete the date's rows first when re-running."""
+    from .ingest import ingest_date
+    n = ingest_date(client, date_val, nc_base_dir=nc_dir, variables=variables, hourly=hourly)
+    logger.info('backfill ingest %s (%s%s): %d hourly rows', date_val,
+                ','.join(variables) if variables else 'all variables',
+                ', daily only' if not hourly else '', n)
+
+
 def cmd_ingest(args) -> None:
     from .ingest import process_pending_ingests
     from .config import NC_BASE_DIR
     client = _get_client()
     nc_dir = os.getenv('SSC_NC_DIR', NC_BASE_DIR)
 
-    if args.date:
+    if args.variables or args.daily_only:
+        if not args.date:
+            raise PipelineError('--variables / --daily-only need --date')
+        variables = [v.strip() for v in args.variables.split(',')] if args.variables else None
+        try:
+            _backfill_ingest(client, _parse_date(args.date), variables,
+                             hourly=not args.daily_only, nc_dir=nc_dir)
+        except (ValueError, FileNotFoundError) as e:
+            raise PipelineError(str(e)) from e
+    elif args.date:
         _ingest_date(client, _parse_date(args.date), force=args.force, nc_dir=nc_dir)
     else:
         process_pending_ingests(client, limit=args.limit, nc_base_dir=nc_dir)
@@ -508,10 +537,17 @@ def main(argv=None) -> None:
     p = sub.add_parser('image', help='Generate WebP tiles via nc2tile')
     _add_date(p); _add_limit(p, default=40); _add_workers(p, default=30); _add_force(p)
     p.add_argument('--variable', metavar='VAR', help='Restrict to one variable')
+    p.add_argument('--surface-only', action='store_true',
+                   help='Render only the first (surface) depth, no bottom layer; needs --date')
     p.set_defaults(func=cmd_image)
 
     p = sub.add_parser('ingest', help='Insert hourly rows into SalishSeaCast_hourly')
     _add_date(p); _add_limit(p, default=5); _add_force(p)
+    p.add_argument('--variables', metavar='V,V',
+                   help='Backfill only these variables (must include temperature); '
+                        'others are written as NaN. Needs --date, bypasses status')
+    p.add_argument('--daily-only', action='store_true',
+                   help='Backfill SalishSeaCast_daily only, no hourly rows. Needs --date, bypasses status')
     p.set_defaults(func=cmd_ingest)
 
     p = sub.add_parser('promote',

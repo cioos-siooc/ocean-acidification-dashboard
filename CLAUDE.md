@@ -34,7 +34,8 @@ docker compose -f docker-compose.dev.yml exec db-ch clickhouse-client --query "S
 **Process CLI** — dev: the `process` container or uv; prod: `docker compose -f docker-compose.prod.process.yml --env-file .env.process.remote exec scheduler uv run python -m SSC.cli …` (or `run --rm scheduler …` while it's stopped):
 ```bash
 python -m SSC.cli {check|download|compute|image|ingest|sync|run|status} [--date YYYY-MM-DD] [--limit N] [--workers N]
-# check: [--init-days N]; download/image: [--variable VAR]; run = all steps in order
+# check: [--init-days N]; download/image: [--variable VAR]; image: [--surface-only] (needs --date); run = all steps in order
+# ingest backfill (bypasses SalishSeaCast_status; needs --date): [--variables temperature,V,...] [--daily-only]; reads per-day NC, else the yearly {var}_{YYYY}.nc
 ```
 
 ## Architecture

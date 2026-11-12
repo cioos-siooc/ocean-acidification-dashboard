@@ -80,7 +80,10 @@ def image_variable(
     workers: Optional[int] = None,
     nc_base_dir: str = NC_BASE_DIR,
     image_base_dir: str = IMAGE_BASE_DIR,
+    surface_only: bool = False,
 ) -> bool:
+    """Render a variable-day's WebP tiles: every depth plus the companion
+    bottom layer, or only the first (surface) depth when surface_only."""
     # nc2tile reads its output root from this env var (no CLI flag is exposed for it).
     os.environ['IMAGE_ROOT'] = image_base_dir
     src = _nc_path(variable, date_val, nc_base_dir)
@@ -101,6 +104,8 @@ def image_variable(
         precision = VARIABLE_PRECISION.get(variable, 0.1)
 
         depth_indices, depth_labels = _get_all_depths(src)
+        if surface_only:
+            depth_indices, depth_labels = depth_indices[:1], depth_labels[:1]
         args = [
             '--data', src,
             '--vars', variable,
@@ -119,7 +124,7 @@ def image_variable(
 
         # Process companion bottom-layer file if present
         bottom_src = _bottom_nc_path(src)
-        if os.path.exists(bottom_src):
+        if not surface_only and os.path.exists(bottom_src):
             bottom_args = [
                 '--data', bottom_src, '--vars', variable,
                 '--precision', str(precision),
