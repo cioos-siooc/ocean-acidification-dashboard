@@ -508,6 +508,12 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
         sel[depth_dim] = int(d_idx)
 
     tslice = ds_data[varname].isel(sel).values
+    # SSC NetCDF slices are (gridY, gridX); get_grid_from_db's lon/lat are
+    # (gridX, gridY). Flattening both without aligning scatters every value
+    # onto the wrong cell (sparse diagonal stripes on the map).
+    transpose = tslice.shape != lon_src.shape and tslice.shape == lon_src.shape[::-1]
+    if transpose:
+        tslice = tslice.T
 
     # Build a valid-data mask from the file (prefer an explicit mask variable if present)
     tslice_vals = tslice.astype(float)
@@ -518,6 +524,8 @@ def _process_task(task: Tuple) -> Tuple[str, str]:
         if m in ds_data:
             try:
                 ms = ds_data[m].isel(sel).values
+                if transpose:
+                    ms = ms.T
                 if ms.shape == tslice_vals.shape:
                     mask_slice = ms
                     break
